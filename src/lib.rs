@@ -8,7 +8,6 @@
 
 pub(crate) mod tol {
     /// Angular tolerance for parallelism/orthogonality checks (radians).
-    #[allow(dead_code)] // used by upcoming modules
     pub const ANGULAR: f64 = 1e-12;
     /// Distance below which two points are considered coincident.
     pub const CONFUSION: f64 = 1e-7;
@@ -26,6 +25,8 @@ pub mod frame;
 pub mod point;
 /// Internal analytic surface evaluation math.
 pub(crate) mod surface_math;
+/// Public surface types: planes, cylinders, cones, spheres, and tori.
+pub mod surfaces;
 /// Rigid and affine transformations.
 pub mod transform;
 /// Vectors in 2D and 3D space.
@@ -39,5 +40,9 @@ pub use curves::{
 };
 pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
 pub use point::{Point2, Point3};
+pub use surfaces::{
+    Cone, ConeConstructionError, Cylinder, CylinderConstructionError, Plane,
+    PlaneConstructionError, Sphere, SphereConstructionError, Torus, TorusConstructionError,
+};
 pub use transform::Transform;
 pub use vector::{Vector2, Vector3};

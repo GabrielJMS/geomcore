@@ -8,7 +8,8 @@ use common::{
     FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
 };
 use geomrust::{
-    Axis3, BSplineCurve3D, Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Transform,
+    Axis3, BSplineCurve3D, Circle3D, Cone, Cylinder, Ellipse3D, Hyperbola3D, Line3D, Parabola3D,
+    Plane, Sphere, Torus, Transform,
 };
 use serde::Deserialize;
 
@@ -574,5 +575,301 @@ fn bsplines_match_golden_fixture() {
             let d2 = curve.eval_derivative(sample.u, 2);
             assert_vector3(d2, sample.d2);
         }
+    }
+}
+
+// ---- surfaces_analytic.json: the five analytic surface types ----
+
+#[derive(Deserialize)]
+struct SurfaceSample {
+    u: f64,
+    v: f64,
+    point: [f64; 3],
+    d1u: [f64; 3],
+    d1v: [f64; 3],
+    d2u: [f64; 3],
+    d2v: [f64; 3],
+    d2uv: [f64; 3],
+}
+
+#[derive(Deserialize)]
+struct SurfaceParametersOf {
+    point: [f64; 3],
+    u: f64,
+    v: f64,
+}
+
+#[derive(Deserialize)]
+struct PlaneCase {
+    frame: FrameJson,
+    samples: Vec<SurfaceSample>,
+    parameters_of: Vec<SurfaceParametersOf>,
+}
+
+#[derive(Deserialize)]
+struct CylinderCase {
+    frame: FrameJson,
+    radius: f64,
+    samples: Vec<SurfaceSample>,
+    parameters_of: Vec<SurfaceParametersOf>,
+}
+
+#[derive(Deserialize)]
+struct ConeCase {
+    frame: FrameJson,
+    ref_radius: f64,
+    semi_angle: f64,
+    samples: Vec<SurfaceSample>,
+    parameters_of: Vec<SurfaceParametersOf>,
+}
+
+#[derive(Deserialize)]
+struct SphereCase {
+    frame: FrameJson,
+    radius: f64,
+    samples: Vec<SurfaceSample>,
+    parameters_of: Vec<SurfaceParametersOf>,
+}
+
+#[derive(Deserialize)]
+struct TorusCase {
+    frame: FrameJson,
+    major_radius: f64,
+    minor_radius: f64,
+    samples: Vec<SurfaceSample>,
+    parameters_of: Vec<SurfaceParametersOf>,
+}
+
+#[derive(Deserialize)]
+struct SurfacesAnalyticFixture {
+    planes: Vec<PlaneCase>,
+    cylinders: Vec<CylinderCase>,
+    cones: Vec<ConeCase>,
+    spheres: Vec<SphereCase>,
+    tori: Vec<TorusCase>,
+}
+
+fn assert_surface_samples_and_parameters<F>(
+    samples: &[SurfaceSample],
+    parameters_of: &[SurfaceParametersOf],
+    eval_point: impl Fn(f64, f64) -> geomrust::Point3,
+    eval_derivative: impl Fn(f64, f64, u32, u32) -> geomrust::Vector3,
+    parameters: F,
+) where
+    F: Fn(geomrust::Point3) -> (f64, f64),
+{
+    for sample in samples {
+        let (u, v) = (sample.u, sample.v);
+        assert_point3(eval_point(u, v), sample.point);
+        assert_vector3(eval_derivative(u, v, 1, 0), sample.d1u);
+        assert_vector3(eval_derivative(u, v, 0, 1), sample.d1v);
+        assert_vector3(eval_derivative(u, v, 2, 0), sample.d2u);
+        assert_vector3(eval_derivative(u, v, 0, 2), sample.d2v);
+        assert_vector3(eval_derivative(u, v, 1, 1), sample.d2uv);
+    }
+
+    for inversion in parameters_of {
+        let (u, v) = parameters(point3(inversion.point));
+        assert_close(u, inversion.u);
+        assert_close(v, inversion.v);
+    }
+}
+
+#[test]
+fn planes_match_golden_fixture() {
+    let fixture: SurfacesAnalyticFixture =
+        serde_json::from_value(load("surfaces_analytic.json")).unwrap();
+
+    for case in &fixture.planes {
+        let plane = Plane::from_frame(frame3(&case.frame));
+        assert_surface_samples_and_parameters(
+            &case.samples,
+            &case.parameters_of,
+            |u, v| plane.eval_point(u, v),
+            |u, v, du, dv| plane.eval_derivative(u, v, du, dv),
+            |p| plane.parameters_of(p),
+        );
+    }
+}
+
+#[test]
+fn cylinders_match_golden_fixture() {
+    let fixture: SurfacesAnalyticFixture =
+        serde_json::from_value(load("surfaces_analytic.json")).unwrap();
+
+    for (i, case) in fixture.cylinders.iter().enumerate() {
+        let cylinder = Cylinder::from_frame(frame3(&case.frame), case.radius)
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Cylinder: {e}"));
+        assert_surface_samples_and_parameters(
+            &case.samples,
+            &case.parameters_of,
+            |u, v| cylinder.eval_point(u, v),
+            |u, v, du, dv| cylinder.eval_derivative(u, v, du, dv),
+            |p| cylinder.parameters_of(p),
+        );
+    }
+}
+
+#[test]
+fn cones_match_golden_fixture() {
+    let fixture: SurfacesAnalyticFixture =
+        serde_json::from_value(load("surfaces_analytic.json")).unwrap();
+
+    for (i, case) in fixture.cones.iter().enumerate() {
+        let cone = Cone::from_frame(frame3(&case.frame), case.semi_angle, case.ref_radius)
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Cone: {e}"));
+        assert_surface_samples_and_parameters(
+            &case.samples,
+            &case.parameters_of,
+            |u, v| cone.eval_point(u, v),
+            |u, v, du, dv| cone.eval_derivative(u, v, du, dv),
+            |p| cone.parameters_of(p),
+        );
+    }
+}
+
+#[test]
+fn spheres_match_golden_fixture() {
+    let fixture: SurfacesAnalyticFixture =
+        serde_json::from_value(load("surfaces_analytic.json")).unwrap();
+
+    for (i, case) in fixture.spheres.iter().enumerate() {
+        let sphere = Sphere::from_frame(frame3(&case.frame), case.radius)
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Sphere: {e}"));
+        assert_surface_samples_and_parameters(
+            &case.samples,
+            &case.parameters_of,
+            |u, v| sphere.eval_point(u, v),
+            |u, v, du, dv| sphere.eval_derivative(u, v, du, dv),
+            |p| sphere.parameters_of(p),
+        );
+    }
+}
+
+#[test]
+fn tori_match_golden_fixture() {
+    let fixture: SurfacesAnalyticFixture =
+        serde_json::from_value(load("surfaces_analytic.json")).unwrap();
+
+    for (i, case) in fixture.tori.iter().enumerate() {
+        let torus = Torus::from_frame(frame3(&case.frame), case.major_radius, case.minor_radius)
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Torus: {e}"));
+        assert_surface_samples_and_parameters(
+            &case.samples,
+            &case.parameters_of,
+            |u, v| torus.eval_point(u, v),
+            |u, v, du, dv| torus.eval_derivative(u, v, du, dv),
+            |p| torus.parameters_of(p),
+        );
+    }
+}
+
+// ---- construction.json: plane/cone/cylinder derived-construction goldens ----
+
+#[derive(Deserialize)]
+struct PlaneFromThreePointsCase {
+    p1: [f64; 3],
+    p2: [f64; 3],
+    p3: [f64; 3],
+    frame: FrameJson,
+}
+
+#[derive(Deserialize)]
+struct PlaneFromCoefficientsCase {
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    frame: FrameJson,
+}
+
+#[derive(Deserialize)]
+struct ConeTwoPointsRadiiCase {
+    p1: [f64; 3],
+    p2: [f64; 3],
+    r1: f64,
+    r2: f64,
+    frame: FrameJson,
+    ref_radius: f64,
+    semi_angle: f64,
+}
+
+#[derive(Deserialize)]
+struct CircleFrameJson {
+    frame: FrameJson,
+    radius: f64,
+}
+
+#[derive(Deserialize)]
+struct CylinderFromCircleCase {
+    circle: CircleFrameJson,
+    frame: FrameJson,
+    radius: f64,
+}
+
+#[derive(Deserialize)]
+struct SurfaceConstructionFixture {
+    planes_from_three_points: Vec<PlaneFromThreePointsCase>,
+    planes_from_coefficients: Vec<PlaneFromCoefficientsCase>,
+    cones_two_points_radii: Vec<ConeTwoPointsRadiiCase>,
+    cylinders_from_circle: Vec<CylinderFromCircleCase>,
+}
+
+fn assert_frame_matches(frame: geomrust::Frame3, expected: &FrameJson) {
+    assert_point3(frame.origin(), expected.origin);
+    assert_vector3(frame.x_direction(), expected.x_dir);
+    assert_vector3(frame.y_direction(), expected.y_dir);
+    assert_vector3(frame.z_direction(), expected.z_dir);
+}
+
+#[test]
+fn planes_from_three_points_match_golden_fixture() {
+    let fixture: SurfaceConstructionFixture =
+        serde_json::from_value(load("construction.json")).unwrap();
+
+    for (i, case) in fixture.planes_from_three_points.iter().enumerate() {
+        let plane = Plane::from_three_points(point3(case.p1), point3(case.p2), point3(case.p3))
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Plane: {e}"));
+        assert_frame_matches(plane.frame(), &case.frame);
+    }
+}
+
+#[test]
+fn planes_from_coefficients_match_golden_fixture() {
+    let fixture: SurfaceConstructionFixture =
+        serde_json::from_value(load("construction.json")).unwrap();
+
+    for (i, case) in fixture.planes_from_coefficients.iter().enumerate() {
+        let plane = Plane::from_coefficients(case.a, case.b, case.c, case.d)
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Plane: {e}"));
+        assert_frame_matches(plane.frame(), &case.frame);
+    }
+}
+
+#[test]
+fn cones_from_two_points_and_radii_match_golden_fixture() {
+    let fixture: SurfaceConstructionFixture =
+        serde_json::from_value(load("construction.json")).unwrap();
+
+    for (i, case) in fixture.cones_two_points_radii.iter().enumerate() {
+        let cone =
+            Cone::from_two_points_and_radii(point3(case.p1), point3(case.p2), case.r1, case.r2)
+                .unwrap_or_else(|e| panic!("case {i}: failed to build Cone: {e}"));
+        assert_close(cone.ref_radius(), case.ref_radius);
+        assert_close(cone.semi_angle(), case.semi_angle);
+        assert_frame_matches(cone.frame(), &case.frame);
+    }
+}
+
+#[test]
+fn cylinders_from_circle_match_golden_fixture() {
+    let fixture: SurfaceConstructionFixture =
+        serde_json::from_value(load("construction.json")).unwrap();
+
+    for case in &fixture.cylinders_from_circle {
+        let circle = Circle3D::from_frame(frame3(&case.circle.frame), case.circle.radius).unwrap();
+        let cylinder = Cylinder::from_circle(&circle);
+        assert_close(cylinder.radius(), case.radius);
+        assert_frame_matches(cylinder.frame(), &case.frame);
     }
 }
