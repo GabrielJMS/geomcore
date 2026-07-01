@@ -315,6 +315,13 @@ impl Vector3 {
     ///
     /// Uses `atan2(reference.normalized · (self × other), self · other)`.
     ///
+    /// # Preconditions
+    ///
+    /// The `reference` vector must be non-zero. If `reference` is a zero vector (squared magnitude
+    /// ≤ `f64::MIN_POSITIVE`), the function cannot determine the sign and returns the unsigned angle
+    /// in [0, π]: `atan2(0.0, self · other)`. This collapses to 0 for `self · other > 0` and π for
+    /// `self · other < 0`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -327,11 +334,16 @@ impl Vector3 {
         let cross_prod = self.cross(other);
         let dot_prod = self.dot(other);
 
-        // Try to normalize reference; if it can't be normalized, use it raw
-        let ref_normalized = reference.normalized().unwrap_or(reference);
-
-        let signed_mag = ref_normalized.dot(cross_prod);
-        signed_mag.atan2(dot_prod)
+        match reference.normalized() {
+            Some(ref_normalized) => {
+                let signed_mag = ref_normalized.dot(cross_prod);
+                signed_mag.atan2(dot_prod)
+            }
+            None => {
+                // Degenerate reference: sign is unknowable; collapse to the unsigned 0/π case
+                f64::atan2(0.0, dot_prod)
+            }
+        }
     }
 }
 
@@ -514,12 +526,38 @@ mod tests {
     }
 
     #[test]
+    fn test_vector3_normalized_min_positive_boundary() {
+        // Boundary test: exactly at f64::MIN_POSITIVE should return None
+        let v_at_boundary = Vector3::new(f64::MIN_POSITIVE.sqrt(), 0.0, 0.0);
+        assert_eq!(v_at_boundary.normalized(), None);
+
+        // Boundary test: slightly above f64::MIN_POSITIVE should return Some
+        let v_above_boundary = Vector3::new((f64::MIN_POSITIVE * 4.0).sqrt(), 0.0, 0.0);
+        let normalized = v_above_boundary.normalized();
+        assert!(normalized.is_some());
+        let n = normalized.unwrap();
+        assert!((n.x - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
     fn test_vector3_angle_with_ref() {
         let angle = Vector3::X.angle_with_ref(Vector3::Y, Vector3::Z);
         assert!((angle - PI / 2.0).abs() < 1e-10);
 
         let angle2 = Vector3::Y.angle_with_ref(Vector3::X, Vector3::Z);
         assert!((angle2 + PI / 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_vector3_angle_with_ref_degenerate_reference() {
+        // Degenerate reference (zero vector): should return unsigned angle
+        // For orthogonal vectors (dot product = 0), result should be 0
+        let angle1 = Vector3::X.angle_with_ref(Vector3::Y, Vector3::ZERO);
+        assert!((angle1 - 0.0).abs() < 1e-10);
+
+        // For opposite vectors (dot product < 0), result should be π
+        let angle2 = Vector3::X.angle_with_ref(-Vector3::X, Vector3::ZERO);
+        assert!((angle2 - PI).abs() < 1e-10);
     }
 
     #[test]
@@ -607,6 +645,20 @@ mod tests {
     #[test]
     fn test_vector2_normalized_zero_returns_none() {
         assert_eq!(Vector2::ZERO.normalized(), None);
+    }
+
+    #[test]
+    fn test_vector2_normalized_min_positive_boundary() {
+        // Boundary test: exactly at f64::MIN_POSITIVE should return None
+        let v_at_boundary = Vector2::new(f64::MIN_POSITIVE.sqrt(), 0.0);
+        assert_eq!(v_at_boundary.normalized(), None);
+
+        // Boundary test: slightly above f64::MIN_POSITIVE should return Some
+        let v_above_boundary = Vector2::new((f64::MIN_POSITIVE * 4.0).sqrt(), 0.0);
+        let normalized = v_above_boundary.normalized();
+        assert!(normalized.is_some());
+        let n = normalized.unwrap();
+        assert!((n.x - 1.0).abs() < 1e-10);
     }
 
     #[test]
