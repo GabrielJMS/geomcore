@@ -1,0 +1,13 @@
+/target
+Cargo.lock
+.venv-fixtures/
+# local working documents, not part of the published repo
+2026-07-01-geomrust-poc-design.md
+docs/superpowers/
+__pycache__/
+*.pyc
+.pytest_cache/
+geomrust-py/target
+*.so
+*.whl
+dist/
