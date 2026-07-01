@@ -11,7 +11,6 @@ pub(crate) mod tol {
     #[allow(dead_code)] // used by upcoming modules
     pub const ANGULAR: f64 = 1e-12;
     /// Distance below which two points are considered coincident.
-    #[allow(dead_code)] // used by upcoming modules
     pub const CONFUSION: f64 = 1e-7;
     /// Parametric-space tolerance.
     pub const P_CONFUSION: f64 = 1e-9;
@@ -30,7 +29,9 @@ pub mod transform;
 /// Vectors in 2D and 3D space.
 pub mod vector;
 
-pub use curves::{Line2D, Line3D, LineConstructionError};
+pub use curves::{
+    Circle2D, Circle3D, CircleConstructionError, Line2D, Line3D, LineConstructionError,
+};
 pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
 pub use point::{Point2, Point3};
 pub use transform::Transform;

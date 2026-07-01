@@ -7,7 +7,7 @@ mod common;
 use common::{
     FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
 };
-use geomrust::{Axis3, Line3D, Transform};
+use geomrust::{Axis3, Circle3D, Line3D, Transform};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -153,8 +153,42 @@ struct LineCase {
 }
 
 #[derive(Deserialize)]
+struct CircleSample {
+    u: f64,
+    point: [f64; 3],
+    d1: [f64; 3],
+    d2: [f64; 3],
+    d3: [f64; 3],
+}
+
+#[derive(Deserialize)]
+struct CircleParameterOf {
+    point: [f64; 3],
+    u: f64,
+}
+
+#[derive(Deserialize)]
+struct CircleCase {
+    frame: FrameJson,
+    radius: f64,
+    samples: Vec<CircleSample>,
+    parameter_of: Vec<CircleParameterOf>,
+}
+
+#[derive(Deserialize)]
+struct ThreePointCase {
+    p1: [f64; 3],
+    p2: [f64; 3],
+    p3: [f64; 3],
+    frame: FrameJson,
+    radius: f64,
+}
+
+#[derive(Deserialize)]
 struct CurvesAnalyticFixture {
     lines: Vec<LineCase>,
+    circles: Vec<CircleCase>,
+    three_point_cases: Vec<ThreePointCase>,
 }
 
 #[test]
@@ -184,5 +218,54 @@ fn lines_match_golden_fixture() {
             let u = line.parameter_of(point3(inversion.point));
             assert_close(u, inversion.u);
         }
+    }
+}
+
+#[test]
+fn circles_match_golden_fixture() {
+    let fixture: CurvesAnalyticFixture =
+        serde_json::from_value(load("curves_analytic.json")).unwrap();
+
+    for (i, case) in fixture.circles.iter().enumerate() {
+        let circle = Circle3D::from_frame(frame3(&case.frame), case.radius)
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Circle3D: {e}"));
+
+        for sample in &case.samples {
+            let point = circle.eval_point(sample.u);
+            assert_point3(point, sample.point);
+
+            let d1 = circle.eval_derivative(sample.u, 1);
+            assert_vector3(d1, sample.d1);
+
+            let d2 = circle.eval_derivative(sample.u, 2);
+            assert_vector3(d2, sample.d2);
+
+            let d3 = circle.eval_derivative(sample.u, 3);
+            assert_vector3(d3, sample.d3);
+        }
+
+        for inversion in &case.parameter_of {
+            let u = circle.parameter_of(point3(inversion.point));
+            assert_close(u, inversion.u);
+        }
+    }
+}
+
+#[test]
+fn circle_three_point_cases_match_golden_fixture() {
+    let fixture: CurvesAnalyticFixture =
+        serde_json::from_value(load("curves_analytic.json")).unwrap();
+
+    for (i, case) in fixture.three_point_cases.iter().enumerate() {
+        let circle = Circle3D::from_three_points(point3(case.p1), point3(case.p2), point3(case.p3))
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Circle3D: {e}"));
+
+        assert_close(circle.radius(), case.radius);
+
+        let frame = circle.frame();
+        assert_point3(frame.origin(), case.frame.origin);
+        assert_vector3(frame.x_direction(), case.frame.x_dir);
+        assert_vector3(frame.y_direction(), case.frame.y_dir);
+        assert_vector3(frame.z_direction(), case.frame.z_dir);
     }
 }
