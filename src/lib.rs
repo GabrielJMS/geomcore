@@ -36,7 +36,7 @@ pub use curves::{
     BSplineConstructionError, BSplineCurve3D, Circle2D, Circle3D, CircleConstructionError, Curve2D,
     Curve3D, Ellipse3D, EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError, Line2D,
     Line3D, LineConstructionError, Parabola3D, ParabolaConstructionError, ParametricCurve2D,
-    ParametricCurve3D,
+    ParametricCurve3D, ParametrizeError,
 };
 pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
 pub use point::{Point2, Point3};

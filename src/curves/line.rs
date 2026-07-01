@@ -2,6 +2,9 @@
 //! inversion, thin wrappers over [`crate::curve_math::analytic`].
 
 use crate::curve_math::analytic;
+use crate::curves::Curve2D;
+use crate::curves::parametrize::{self, ParametrizeError};
+use crate::surfaces::Surface;
 use crate::{Axis2, Axis3, Point2, Point3, Vector2, Vector3};
 use std::fmt;
 
@@ -208,6 +211,43 @@ impl Line3D {
     /// ```
     pub fn parameter_of(&self, point: Point3) -> f64 {
         analytic::line_parameter(&self.axis, point)
+    }
+
+    /// Computes the exact 2D representation of this line in a surface's
+    /// parameter space: a [`Curve2D`] `q(t)` such that
+    /// `surface.eval_point(q(t)) == self.eval_point(t)` for the same `t`.
+    ///
+    /// Only a few line/surface pairs admit a closed-form 2D image: a line on
+    /// a plane (projects to a 2D line), a line parallel to a cylinder or cone
+    /// axis / a cone generator (a vertical iso-`u` line in `(u, v)`). Every
+    /// other pair — including a line on a sphere or torus — returns
+    /// [`ParametrizeError::NotAnalytic`].
+    ///
+    /// The projection math assumes the line lies on the surface. As a
+    /// geomrust safeguard, the candidate 2D image is verified against the
+    /// surface at a few parameters; if `surface.eval_point(q(t))` disagrees
+    /// with `self.eval_point(t)`, [`ParametrizeError::CurveNotOnSurface`] is
+    /// returned. For periodic surfaces the result is normalized so `q(0)`
+    /// lies in the canonical parameter window.
+    ///
+    /// # Examples
+    ///
+    /// A vertical line on a cylinder maps to a vertical line in `(u, v)`:
+    ///
+    /// ```
+    /// use geomrust::curves::{Curve2D, ParametricCurve2D};
+    /// use geomrust::{Cylinder, Line3D, Point3, Vector3};
+    ///
+    /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+    /// let line = Line3D::new(Point3::new(2.0, 0.0, 0.0), Vector3::Z).unwrap();
+    /// let pcurve = line.parametrize_on(&cylinder).unwrap();
+    /// // q(0) sits at u = 0 (angle of x-axis), v = 0 (height of the origin).
+    /// let q0 = pcurve.eval_point(0.0);
+    /// assert!(q0.x.abs() < 1e-9 && q0.y.abs() < 1e-9);
+    /// assert!(matches!(pcurve, Curve2D::Line(_)));
+    /// ```
+    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+        parametrize::line_on_surface(self, &surface.into())
     }
 }
 

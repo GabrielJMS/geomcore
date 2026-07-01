@@ -3,6 +3,8 @@
 //! [`crate::curve_math::analytic`].
 
 use crate::curve_math::analytic;
+use crate::curves::{Curve2D, ParametrizeError};
+use crate::surfaces::Surface;
 use crate::tol;
 use crate::{Frame3, Point3, Vector3};
 use std::fmt;
@@ -310,6 +312,30 @@ impl Ellipse3D {
     /// ```
     pub fn parameter_of(&self, point: Point3) -> f64 {
         analytic::ellipse_parameter(&self.frame, self.major_radius, self.minor_radius, point)
+    }
+
+    /// Computes the exact 2D representation of this ellipse in a surface's
+    /// parameter space.
+    ///
+    /// No ellipse/surface pair has a closed-form 2D image in this release, so
+    /// this always returns [`ParametrizeError::NotAnalytic`]. The `surface`
+    /// argument is accepted for signature parity with the analytic
+    /// [`crate::Line3D::parametrize_on`] and
+    /// [`crate::Circle3D::parametrize_on`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomrust::curves::ParametrizeError;
+    /// use geomrust::{Ellipse3D, Plane, Point3, Vector3};
+    ///
+    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+    /// assert_eq!(ellipse.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
+    /// ```
+    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+        let _ = surface.into();
+        Err(ParametrizeError::NotAnalytic)
     }
 }
 

@@ -9,6 +9,8 @@
 use std::fmt;
 
 use crate::curve_math::bspline as math;
+use crate::curves::{Curve2D, ParametrizeError};
+use crate::surfaces::Surface;
 use crate::{Point3, Vector3};
 
 /// Error returned when a [`BSplineCurve3D`] cannot be constructed from the
@@ -402,6 +404,31 @@ impl BSplineCurve3D {
                 "eval_derivative: order {order} is not supported (only first and second derivatives are supported)"
             ),
         }
+    }
+
+    /// Computes the exact 2D representation of this B-spline curve in a
+    /// surface's parameter space.
+    ///
+    /// No B-spline-curve/surface pair has a closed-form 2D image in this
+    /// release, so this always returns [`ParametrizeError::NotAnalytic`]. The
+    /// `surface` argument is accepted for signature parity with the analytic
+    /// [`crate::Line3D::parametrize_on`] and
+    /// [`crate::Circle3D::parametrize_on`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomrust::curves::ParametrizeError;
+    /// use geomrust::{BSplineCurve3D, Plane, Point3, Vector3};
+    ///
+    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// assert_eq!(curve.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
+    /// ```
+    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+        let _ = surface.into();
+        Err(ParametrizeError::NotAnalytic)
     }
 
     /// Evaluates the value and derivatives up to `n` (`n <= 2`) at `u`,

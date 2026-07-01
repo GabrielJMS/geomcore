@@ -7,10 +7,11 @@ mod common;
 use common::{
     FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
 };
-use geomrust::surfaces::BSplineSurface;
+use geomrust::curves::ParametricCurve2D;
+use geomrust::surfaces::{BSplineSurface, ParametricSurface};
 use geomrust::{
-    Axis3, BSplineCurve3D, Circle3D, Cone, Cylinder, Ellipse3D, Hyperbola3D, Line3D, Parabola3D,
-    Plane, Sphere, Torus, Transform,
+    Axis3, BSplineCurve3D, Circle3D, Cone, Curve2D, Cylinder, Ellipse3D, Hyperbola3D, Line3D,
+    Parabola3D, ParametrizeError, Plane, Sphere, Torus, Transform,
 };
 use serde::Deserialize;
 
@@ -954,6 +955,240 @@ fn bspline_surfaces_match_golden_fixture() {
             assert_point3(surface.eval_point(u, v), sample.point);
             assert_vector3(surface.eval_derivative(u, v, 1, 0), sample.d1u);
             assert_vector3(surface.eval_derivative(u, v, 0, 1), sample.d1v);
+        }
+    }
+}
+
+// ---- parametrize.json: analytic curve-on-surface parametrization ----
+
+#[derive(Deserialize)]
+struct ParametrizeSurface {
+    kind: String,
+    frame: FrameJson,
+    radius: Option<f64>,
+    ref_radius: Option<f64>,
+    semi_angle: Option<f64>,
+    major_radius: Option<f64>,
+    minor_radius: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct ParametrizeCurve {
+    kind: String,
+    origin: Option<[f64; 3]>,
+    direction: Option<[f64; 3]>,
+    frame: Option<FrameJson>,
+    radius: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct ParametrizeExpect {
+    kind: String,
+    origin: Option<[f64; 2]>,
+    direction: Option<[f64; 2]>,
+    center: Option<[f64; 2]>,
+    x_dir: Option<[f64; 2]>,
+    y_dir: Option<[f64; 2]>,
+    radius: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct ParametrizeNormalized {
+    origin: [f64; 2],
+    direction: [f64; 2],
+}
+
+#[derive(Deserialize)]
+struct ParametrizeCase {
+    name: String,
+    surface: ParametrizeSurface,
+    curve: ParametrizeCurve,
+    expect: ParametrizeExpect,
+    #[serde(default)]
+    in_window: bool,
+    #[serde(default)]
+    consistency_params: Vec<f64>,
+    #[serde(default)]
+    consistency_points: Vec<[f64; 3]>,
+    normalized: Option<ParametrizeNormalized>,
+}
+
+#[derive(Deserialize)]
+struct ParametrizeFixture {
+    cases: Vec<ParametrizeCase>,
+}
+
+enum ParamCurve {
+    Line(Line3D),
+    Circle(Circle3D),
+}
+
+fn build_parametrize_surface(s: &ParametrizeSurface) -> geomrust::Surface {
+    let frame = frame3(&s.frame);
+    match s.kind.as_str() {
+        "plane" => Plane::from_frame(frame).into(),
+        "cylinder" => Cylinder::from_frame(frame, s.radius.unwrap())
+            .unwrap()
+            .into(),
+        "cone" => Cone::from_frame(frame, s.semi_angle.unwrap(), s.ref_radius.unwrap())
+            .unwrap()
+            .into(),
+        "sphere" => Sphere::from_frame(frame, s.radius.unwrap()).unwrap().into(),
+        "torus" => Torus::from_frame(frame, s.major_radius.unwrap(), s.minor_radius.unwrap())
+            .unwrap()
+            .into(),
+        other => panic!("unknown parametrize surface kind: {other}"),
+    }
+}
+
+fn build_parametrize_curve(c: &ParametrizeCurve) -> ParamCurve {
+    match c.kind.as_str() {
+        "line" => ParamCurve::Line(
+            Line3D::new(point3(c.origin.unwrap()), vector3(c.direction.unwrap())).unwrap(),
+        ),
+        "circle" => {
+            let frame = frame3(c.frame.as_ref().unwrap());
+            ParamCurve::Circle(Circle3D::from_frame(frame, c.radius.unwrap()).unwrap())
+        }
+        other => panic!("unknown parametrize curve kind: {other}"),
+    }
+}
+
+fn parametrize_curve(
+    curve: &ParamCurve,
+    surface: &geomrust::Surface,
+) -> Result<Curve2D, ParametrizeError> {
+    match curve {
+        ParamCurve::Line(l) => l.parametrize_on(surface.clone()),
+        ParamCurve::Circle(c) => c.parametrize_on(surface.clone()),
+    }
+}
+
+#[test]
+fn parametrize_matches_golden_fixture() {
+    let fixture: ParametrizeFixture = serde_json::from_value(load("parametrize.json")).unwrap();
+
+    for case in &fixture.cases {
+        let surface = build_parametrize_surface(&case.surface);
+        let curve = build_parametrize_curve(&case.curve);
+        let result = parametrize_curve(&curve, &surface);
+
+        // not_analytic cases: must report NotAnalytic and stop.
+        if case.expect.kind == "not_analytic" {
+            assert_eq!(
+                result,
+                Err(ParametrizeError::NotAnalytic),
+                "case {}: expected NotAnalytic",
+                case.name
+            );
+            continue;
+        }
+
+        let pcurve =
+            result.unwrap_or_else(|e| panic!("case {}: unexpected error {e:?}", case.name));
+
+        // (a) result kind matches.
+        match (case.expect.kind.as_str(), &pcurve) {
+            ("line2d", Curve2D::Line(_)) => {}
+            ("circle2d", Curve2D::Circle(_)) => {}
+            (k, got) => panic!("case {}: expected kind {k}, got {got:?}", case.name),
+        }
+
+        // (b) consistency invariant: surface(q(t)) ~= consistency_points[i].
+        for (t, expected) in case.consistency_params.iter().zip(&case.consistency_points) {
+            let uv = pcurve.eval_point(*t);
+            let on_surface = surface.eval_point(uv.x, uv.y);
+            assert_point3(on_surface, *expected);
+        }
+
+        // (c) q(0) lies inside the canonical parameter window.
+        let q0 = pcurve.eval_point(0.0);
+        match case.surface.kind.as_str() {
+            "cylinder" | "cone" => {
+                assert!(
+                    (-1e-9..=std::f64::consts::TAU + 1e-9).contains(&q0.x),
+                    "case {}: u(0) = {} out of [0, 2pi)",
+                    case.name,
+                    q0.x
+                );
+            }
+            "sphere" => {
+                assert!(
+                    (-1e-9..=std::f64::consts::TAU + 1e-9).contains(&q0.x),
+                    "case {}: u(0) = {} out of [0, 2pi)",
+                    case.name,
+                    q0.x
+                );
+                assert!(
+                    (-std::f64::consts::FRAC_PI_2 - 1e-9..=std::f64::consts::FRAC_PI_2 + 1e-9)
+                        .contains(&q0.y),
+                    "case {}: v(0) = {} out of [-pi/2, pi/2]",
+                    case.name,
+                    q0.y
+                );
+            }
+            "torus" => {
+                assert!(
+                    (-1e-9..=std::f64::consts::TAU + 1e-9).contains(&q0.x),
+                    "case {}: u(0) = {} out of [0, 2pi)",
+                    case.name,
+                    q0.x
+                );
+                assert!(
+                    (-1e-9..=std::f64::consts::TAU + 1e-9).contains(&q0.y),
+                    "case {}: v(0) = {} out of [0, 2pi)",
+                    case.name,
+                    q0.y
+                );
+            }
+            _ => {}
+        }
+
+        // (d) literal comparison where the raw golden is already canonical.
+        // Plane cases have no window, so compare literally always.
+        if case.surface.kind == "plane" {
+            match &pcurve {
+                Curve2D::Line(l) => {
+                    let o = case.expect.origin.unwrap();
+                    let d = case.expect.direction.unwrap();
+                    assert_close(l.origin().x, o[0]);
+                    assert_close(l.origin().y, o[1]);
+                    assert_close(l.direction().x, d[0]);
+                    assert_close(l.direction().y, d[1]);
+                }
+                Curve2D::Circle(c) => {
+                    let center = case.expect.center.unwrap();
+                    let x_dir = case.expect.x_dir.unwrap();
+                    let y_dir = case.expect.y_dir.unwrap();
+                    assert_close(c.center().x, center[0]);
+                    assert_close(c.center().y, center[1]);
+                    assert_close(c.frame().x_direction().x, x_dir[0]);
+                    assert_close(c.frame().x_direction().y, x_dir[1]);
+                    assert_close(c.frame().y_direction().x, y_dir[0]);
+                    assert_close(c.frame().y_direction().y, y_dir[1]);
+                    assert_close(c.radius(), case.expect.radius.unwrap());
+                }
+                _ => unreachable!(),
+            }
+        } else if case.expect.kind == "line2d" && case.in_window && case.normalized.is_none() {
+            // Periodic-surface line whose raw projection was already in-window:
+            // raw == normalized, so compare origin/direction literally.
+            if let Curve2D::Line(l) = &pcurve {
+                let o = case.expect.origin.unwrap();
+                let d = case.expect.direction.unwrap();
+                assert_close(l.origin().x, o[0]);
+                assert_close(l.origin().y, o[1]);
+                assert_close(l.direction().x, d[0]);
+                assert_close(l.direction().y, d[1]);
+            }
+        }
+
+        // (e) sphere meridian cases: compare against the normalized golden.
+        if let (Some(norm), Curve2D::Line(l)) = (&case.normalized, &pcurve) {
+            assert_close(l.origin().x, norm.origin[0]);
+            assert_close(l.origin().y, norm.origin[1]);
+            assert_close(l.direction().x, norm.direction[0]);
+            assert_close(l.direction().y, norm.direction[1]);
         }
     }
 }

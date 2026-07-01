@@ -3,6 +3,8 @@
 //! [`crate::curve_math::analytic`].
 
 use crate::curve_math::analytic;
+use crate::curves::{Curve2D, ParametrizeError};
+use crate::surfaces::Surface;
 use crate::tol;
 use crate::{Frame3, Point3, Vector3};
 use std::fmt;
@@ -312,6 +314,30 @@ impl Hyperbola3D {
     /// ```
     pub fn parameter_of(&self, point: Point3) -> f64 {
         analytic::hyperbola_parameter(&self.frame, self.minor_radius, point)
+    }
+
+    /// Computes the exact 2D representation of this hyperbola in a surface's
+    /// parameter space.
+    ///
+    /// No hyperbola/surface pair has a closed-form 2D image in this release,
+    /// so this always returns [`ParametrizeError::NotAnalytic`]. The `surface`
+    /// argument is accepted for signature parity with the analytic
+    /// [`crate::Line3D::parametrize_on`] and
+    /// [`crate::Circle3D::parametrize_on`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomrust::curves::ParametrizeError;
+    /// use geomrust::{Hyperbola3D, Plane, Point3, Vector3};
+    ///
+    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
+    /// assert_eq!(hyperbola.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
+    /// ```
+    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+        let _ = surface.into();
+        Err(ParametrizeError::NotAnalytic)
     }
 }
 

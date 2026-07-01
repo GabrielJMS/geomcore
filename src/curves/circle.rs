@@ -3,6 +3,9 @@
 //! [`crate::curve_math::analytic`].
 
 use crate::curve_math::analytic;
+use crate::curves::Curve2D;
+use crate::curves::parametrize::{self, ParametrizeError};
+use crate::surfaces::Surface;
 use crate::tol;
 use crate::{Axis3, Frame2, Frame3, Point2, Point3, Vector2, Vector3};
 use std::fmt;
@@ -307,6 +310,47 @@ impl Circle3D {
     /// ```
     pub fn parameter_of(&self, point: Point3) -> f64 {
         analytic::circle_parameter(&self.frame, point)
+    }
+
+    /// Computes the exact 2D representation of this circle in a surface's
+    /// parameter space: a [`Curve2D`] `q(t)` such that
+    /// `surface.eval_point(q(t)) == self.eval_point(t)` for the same `t`.
+    ///
+    /// The closed-form cases are: a circle in a plane (maps to a 2D circle);
+    /// a circle whose axis matches a cylinder or cone axis (a horizontal
+    /// iso-`v` line in `(u, v)`); a meridian or parallel of a sphere; and a
+    /// poloidal or toroidal circle of a torus (each a straight line in
+    /// `(u, v)`). Every other pair returns
+    /// [`ParametrizeError::NotAnalytic`].
+    ///
+    /// The projection math assumes the circle lies on the surface. As a
+    /// geomrust safeguard, the candidate 2D image is verified against the
+    /// surface at a few parameters; if `surface.eval_point(q(t))` disagrees
+    /// with `self.eval_point(t)`, [`ParametrizeError::CurveNotOnSurface`] is
+    /// returned (this also rejects, for example, a circle whose radius does
+    /// not match the cylinder). For periodic surfaces the result is
+    /// normalized so `q(0)` lies in the canonical parameter window.
+    ///
+    /// # Examples
+    ///
+    /// A cross-section circle of a cylinder maps to a horizontal line in
+    /// `(u, v)` at the section height:
+    ///
+    /// ```
+    /// use geomrust::curves::{Curve2D, ParametricCurve2D};
+    /// use geomrust::{Circle3D, Cylinder, Point3, Vector3};
+    ///
+    /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+    /// let circle = Circle3D::new(Point3::new(0.0, 0.0, 3.0), Vector3::Z, 2.0).unwrap();
+    /// let pcurve = circle.parametrize_on(&cylinder).unwrap();
+    /// // q(t) = (t, 3): the angular parameter runs in u, the height v is fixed.
+    /// let q = pcurve.eval_point(1.0);
+    /// assert!((q.x - 1.0).abs() < 1e-9);
+    /// assert!((q.y - 3.0).abs() < 1e-9);
+    /// assert!(matches!(pcurve, Curve2D::Line(_)));
+    /// ```
+    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+        parametrize::circle_on_surface(self, &surface.into())
     }
 }
 
