@@ -17,6 +17,8 @@ pub(crate) mod tol {
     pub const P_CONFUSION: f64 = 1e-9;
 }
 
+/// Internal analytic curve evaluation math.
+pub(crate) mod curve_math;
 /// Axis and frame placement types.
 pub mod frame;
 /// Points in 2D and 3D space.
