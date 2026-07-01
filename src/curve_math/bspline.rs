@@ -250,7 +250,8 @@ fn eval_dn_nonperiodic(
 /// knot, so the seam knot is not duplicated), tiles it into four period-shifted
 /// copies (offsets `-P, 0, +P, +2P`), and evaluates in the middle copy. Poles
 /// are tiled to align with the extended knots; the alignment offset is
-/// `-degree` so the first middle-copy window starts at pole 0's window.
+/// `+degree` (see the derivation at the pole-tiling loop) so that the located
+/// span consumes the correct wrapped poles.
 fn eval_dn_periodic(
     u: f64,
     degree: usize,
@@ -293,10 +294,18 @@ fn eval_dn_periodic(
     }
 
     // Extended pole buffer aligned with ext_flat, wrapping modulo n_poles.
+    //
+    // The middle copy starts at ext index `mid_off` (knot value `first`),
+    // whose first span consumes poles `ext_poles[mid_off - degree ..= mid_off]`;
+    // these must be the logical poles `P_0..P_degree`. Solving
+    // `ext_poles[mid_off - degree + t] = P_t` for `t = 0..=degree` gives
+    // `ext_poles[k] = P_{k - mid_off + degree}` — hence the `+ degree` offset
+    // (with wrapping via `rem_euclid`). A previous `- degree` offset was
+    // coincidentally correct only when `2 * degree` was a multiple of `n_poles`.
     let n_ext = ext_flat.len() - degree - 1;
     let mut ext_poles = vec![0.0f64; n_ext * dim];
     for k in 0..n_ext {
-        let logical = k as isize - mid_off as isize - degree as isize;
+        let logical = k as isize - mid_off as isize + degree as isize;
         let pidx = logical.rem_euclid(n_poles as isize) as usize;
         ext_poles[k * dim..(k + 1) * dim].copy_from_slice(&poles[pidx * dim..(pidx + 1) * dim]);
     }

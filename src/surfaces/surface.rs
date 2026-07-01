@@ -1,7 +1,7 @@
 //! [`ParametricSurface`] trait and the [`Surface`] enum adaptor unifying the
 //! concrete analytic surface types.
 
-use crate::surfaces::{Cone, Cylinder, Plane, Sphere, Torus};
+use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Torus};
 use crate::{Point3, Vector3};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
@@ -243,6 +243,8 @@ pub enum Surface {
     Sphere(Sphere),
     /// A [`Torus`] surface.
     Torus(Torus),
+    /// A [`BSplineSurface`] (tensor-product NURBS) surface.
+    BSpline(BSplineSurface),
 }
 
 impl ParametricSurface for Surface {
@@ -253,6 +255,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.eval_point(u, v),
             Surface::Sphere(s) => s.eval_point(u, v),
             Surface::Torus(s) => s.eval_point(u, v),
+            Surface::BSpline(s) => s.eval_point(u, v),
         }
     }
 
@@ -263,6 +266,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.eval_derivative(u, v, du, dv),
             Surface::Sphere(s) => s.eval_derivative(u, v, du, dv),
             Surface::Torus(s) => s.eval_derivative(u, v, du, dv),
+            Surface::BSpline(s) => s.eval_derivative(u, v, du, dv),
         }
     }
 
@@ -273,6 +277,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.u_bounds(),
             Surface::Sphere(s) => s.u_bounds(),
             Surface::Torus(s) => s.u_bounds(),
+            Surface::BSpline(s) => s.u_bounds(),
         }
     }
 
@@ -283,6 +288,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.v_bounds(),
             Surface::Sphere(s) => s.v_bounds(),
             Surface::Torus(s) => s.v_bounds(),
+            Surface::BSpline(s) => s.v_bounds(),
         }
     }
 
@@ -293,6 +299,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.u_period(),
             Surface::Sphere(s) => s.u_period(),
             Surface::Torus(s) => s.u_period(),
+            Surface::BSpline(s) => s.u_period(),
         }
     }
 
@@ -303,6 +310,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.v_period(),
             Surface::Sphere(s) => s.v_period(),
             Surface::Torus(s) => s.v_period(),
+            Surface::BSpline(s) => s.v_period(),
         }
     }
 
@@ -313,6 +321,7 @@ impl ParametricSurface for Surface {
             Surface::Cone(s) => s.eval_points(uvs),
             Surface::Sphere(s) => s.eval_points(uvs),
             Surface::Torus(s) => s.eval_points(uvs),
+            Surface::BSpline(s) => s.eval_points(uvs),
         }
     }
 }
@@ -387,6 +396,23 @@ impl From<&Torus> for Surface {
     }
 }
 
+impl From<BSplineSurface> for Surface {
+    /// Wraps a [`BSplineSurface`] as a [`Surface::BSpline`].
+    fn from(surface: BSplineSurface) -> Surface {
+        Surface::BSpline(surface)
+    }
+}
+
+impl From<&BSplineSurface> for Surface {
+    /// Clones a [`BSplineSurface`] reference into a [`Surface::BSpline`].
+    ///
+    /// Unlike the analytic surfaces (which are `Copy`), a [`BSplineSurface`]
+    /// owns its pole and knot buffers, so this performs a deep clone.
+    fn from(surface: &BSplineSurface) -> Surface {
+        Surface::BSpline(surface.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,6 +440,26 @@ mod tests {
 
     fn torus() -> Torus {
         Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap()
+    }
+
+    fn bspline() -> BSplineSurface {
+        // Bilinear degree-1x1 patch over the unit square (clamped both ways).
+        let poles = vec![
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+        ];
+        BSplineSurface::new(
+            1,
+            1,
+            poles,
+            vec![0.0, 1.0],
+            vec![2, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
     }
 
     // ---- generic fn agrees with inherent calls ----
@@ -446,6 +492,12 @@ mod tests {
     fn test_sample_torus_agrees_with_inherent() {
         let t = torus();
         assert_eq!(sample(&t), t.eval_point(0.3, 0.4));
+    }
+
+    #[test]
+    fn test_sample_bspline_agrees_with_inherent() {
+        let b = bspline();
+        assert_eq!(sample(&b), b.eval_point(0.3, 0.4));
     }
 
     #[test]
@@ -569,6 +621,24 @@ mod tests {
     }
 
     #[test]
+    fn test_from_bspline_round_trips() {
+        let b = bspline();
+        match Surface::from(b.clone()) {
+            Surface::BSpline(inner) => assert_eq!(inner, b),
+            _ => panic!("expected Surface::BSpline"),
+        }
+    }
+
+    #[test]
+    fn test_from_bspline_ref_clones() {
+        let b = bspline();
+        match Surface::from(&b) {
+            Surface::BSpline(inner) => assert_eq!(inner, b),
+            _ => panic!("expected Surface::BSpline"),
+        }
+    }
+
+    #[test]
     #[allow(clippy::needless_borrows_for_generic_args)]
     fn test_into_from_reference_supports_parametrize_on_style_call() {
         // Mirrors the Task 17 usage pattern: a function taking
@@ -672,6 +742,36 @@ mod tests {
         assert_eq!(wrapped.v_bounds(), (0.0, TAU));
         assert_eq!(wrapped.u_period(), Some(TAU));
         assert_eq!(wrapped.v_period(), Some(TAU));
+    }
+
+    #[test]
+    fn test_bspline_bounds_and_periods() {
+        let b = bspline();
+        assert_eq!(ParametricSurface::u_bounds(&b), (0.0, 1.0));
+        assert_eq!(ParametricSurface::v_bounds(&b), (0.0, 1.0));
+        assert_eq!(ParametricSurface::u_period(&b), None);
+        assert_eq!(ParametricSurface::v_period(&b), None);
+
+        let wrapped: Surface = b.into();
+        assert_eq!(wrapped.u_bounds(), (0.0, 1.0));
+        assert_eq!(wrapped.v_bounds(), (0.0, 1.0));
+        assert_eq!(wrapped.u_period(), None);
+        assert_eq!(wrapped.v_period(), None);
+    }
+
+    #[test]
+    fn test_bspline_enum_dispatch_agrees_with_inherent() {
+        let b = bspline();
+        let wrapped: Surface = b.clone().into();
+        assert_eq!(wrapped.eval_point(0.3, 0.4), b.eval_point(0.3, 0.4));
+        assert_eq!(
+            wrapped.eval_derivative(0.3, 0.4, 1, 0),
+            b.eval_derivative(0.3, 0.4, 1, 0)
+        );
+        assert_eq!(
+            wrapped.eval_derivative(0.3, 0.4, 0, 1),
+            b.eval_derivative(0.3, 0.4, 0, 1)
+        );
     }
 
     // ---- default eval_points == mapped eval_point ----

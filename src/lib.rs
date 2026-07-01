@@ -41,9 +41,9 @@ pub use curves::{
 pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
 pub use point::{Point2, Point3};
 pub use surfaces::{
-    Cone, ConeConstructionError, Cylinder, CylinderConstructionError, ParametricSurface, Plane,
-    PlaneConstructionError, Sphere, SphereConstructionError, Surface, Torus,
-    TorusConstructionError,
+    BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
+    ParametricSurface, Plane, PlaneConstructionError, Sphere, SphereConstructionError, Surface,
+    Torus, TorusConstructionError,
 };
 pub use transform::Transform;
 pub use vector::{Vector2, Vector3};

@@ -7,6 +7,7 @@ mod common;
 use common::{
     FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
 };
+use geomrust::surfaces::BSplineSurface;
 use geomrust::{
     Axis3, BSplineCurve3D, Circle3D, Cone, Cylinder, Ellipse3D, Hyperbola3D, Line3D, Parabola3D,
     Plane, Sphere, Torus, Transform,
@@ -871,5 +872,88 @@ fn cylinders_from_circle_match_golden_fixture() {
         let cylinder = Cylinder::from_circle(&circle);
         assert_close(cylinder.radius(), case.radius);
         assert_frame_matches(cylinder.frame(), &case.frame);
+    }
+}
+
+// ---- surfaces_bspline.json: tensor-product B-spline surfaces ----
+
+#[derive(Deserialize)]
+struct BSplineSurfaceSample {
+    u: f64,
+    v: f64,
+    point: [f64; 3],
+    d1u: [f64; 3],
+    d1v: [f64; 3],
+}
+
+#[derive(Deserialize)]
+struct BSplineSurfaceCase {
+    name: String,
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    poles: Vec<Vec<[f64; 3]>>,
+    weights: Option<Vec<Vec<f64>>>,
+    u_knots: Vec<f64>,
+    u_mults: Vec<u32>,
+    v_knots: Vec<f64>,
+    v_mults: Vec<u32>,
+    samples: Vec<BSplineSurfaceSample>,
+}
+
+#[derive(Deserialize)]
+struct BSplineSurfaceFixture {
+    cases: Vec<BSplineSurfaceCase>,
+}
+
+fn build_bspline_surface(case: &BSplineSurfaceCase) -> BSplineSurface {
+    let poles: Vec<Vec<geomrust::Point3>> = case
+        .poles
+        .iter()
+        .map(|row| row.iter().map(|&p| point3(p)).collect())
+        .collect();
+    let result = match &case.weights {
+        Some(weights) => BSplineSurface::new_rational(
+            case.u_degree,
+            case.v_degree,
+            poles,
+            weights.clone(),
+            case.u_knots.clone(),
+            case.u_mults.clone(),
+            case.v_knots.clone(),
+            case.v_mults.clone(),
+            case.u_periodic,
+            case.v_periodic,
+        ),
+        None => BSplineSurface::new(
+            case.u_degree,
+            case.v_degree,
+            poles,
+            case.u_knots.clone(),
+            case.u_mults.clone(),
+            case.v_knots.clone(),
+            case.v_mults.clone(),
+            case.u_periodic,
+            case.v_periodic,
+        ),
+    };
+    result.unwrap_or_else(|e| panic!("{}: failed to build BSplineSurface: {e}", case.name))
+}
+
+#[test]
+fn bspline_surfaces_match_golden_fixture() {
+    let fixture: BSplineSurfaceFixture =
+        serde_json::from_value(load("surfaces_bspline.json")).unwrap();
+
+    for case in &fixture.cases {
+        let surface = build_bspline_surface(case);
+
+        for sample in &case.samples {
+            let (u, v) = (sample.u, sample.v);
+            assert_point3(surface.eval_point(u, v), sample.point);
+            assert_vector3(surface.eval_derivative(u, v, 1, 0), sample.d1u);
+            assert_vector3(surface.eval_derivative(u, v, 0, 1), sample.d1v);
+        }
     }
 }
