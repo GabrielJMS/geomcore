@@ -7,7 +7,9 @@ mod common;
 use common::{
     FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
 };
-use geomrust::{Axis3, Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Transform};
+use geomrust::{
+    Axis3, BSplineCurve3D, Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Transform,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -505,5 +507,72 @@ fn hyperbolas_center_two_points_match_golden_fixture() {
         assert_vector3(frame.x_direction(), case.frame.x_dir);
         assert_vector3(frame.y_direction(), case.frame.y_dir);
         assert_vector3(frame.z_direction(), case.frame.z_dir);
+    }
+}
+
+#[derive(Deserialize)]
+struct BSplineSample {
+    u: f64,
+    point: [f64; 3],
+    d1: [f64; 3],
+    d2: [f64; 3],
+}
+
+#[derive(Deserialize)]
+struct BSplineCase {
+    name: String,
+    degree: usize,
+    periodic: bool,
+    poles: Vec<[f64; 3]>,
+    weights: Option<Vec<f64>>,
+    knots: Vec<f64>,
+    mults: Vec<u32>,
+    samples: Vec<BSplineSample>,
+}
+
+#[derive(Deserialize)]
+struct BSplineFixture {
+    cases: Vec<BSplineCase>,
+}
+
+fn build_bspline(case: &BSplineCase) -> BSplineCurve3D {
+    let poles: Vec<geomrust::Point3> = case.poles.iter().map(|&p| point3(p)).collect();
+    let result = match &case.weights {
+        Some(weights) => BSplineCurve3D::new_rational(
+            case.degree,
+            poles,
+            weights.clone(),
+            case.knots.clone(),
+            case.mults.clone(),
+            case.periodic,
+        ),
+        None => BSplineCurve3D::new(
+            case.degree,
+            poles,
+            case.knots.clone(),
+            case.mults.clone(),
+            case.periodic,
+        ),
+    };
+    result.unwrap_or_else(|e| panic!("{}: failed to build BSplineCurve3D: {e}", case.name))
+}
+
+#[test]
+fn bsplines_match_golden_fixture() {
+    let fixture: BSplineFixture = serde_json::from_value(load("curves_bspline.json")).unwrap();
+
+    for case in &fixture.cases {
+        let curve = build_bspline(case);
+
+        for sample in &case.samples {
+            let point = curve.eval_point(sample.u);
+            assert_point3(point, sample.point);
+
+            let d1 = curve.eval_derivative(sample.u, 1);
+            assert_vector3(d1, sample.d1);
+
+            let d2 = curve.eval_derivative(sample.u, 2);
+            assert_vector3(d2, sample.d2);
+        }
     }
 }

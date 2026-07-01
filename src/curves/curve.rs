@@ -1,7 +1,7 @@
 //! [`ParametricCurve3D`] trait and the [`Curve3D`] enum adaptor unifying the
 //! concrete 3D curve types.
 
-use crate::curves::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D};
+use crate::curves::{BSplineCurve3D, Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D};
 use crate::{Point3, Vector3};
 use std::f64::consts::TAU;
 
@@ -180,6 +180,33 @@ impl ParametricCurve3D for Hyperbola3D {
     }
 }
 
+impl ParametricCurve3D for BSplineCurve3D {
+    fn eval_point(&self, u: f64) -> Point3 {
+        BSplineCurve3D::eval_point(self, u)
+    }
+
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+        BSplineCurve3D::eval_derivative(self, u, order)
+    }
+
+    fn bounds(&self) -> (f64, f64) {
+        BSplineCurve3D::bounds(self)
+    }
+
+    fn period(&self) -> Option<f64> {
+        if self.is_periodic() {
+            let (first, last) = BSplineCurve3D::bounds(self);
+            Some(last - first)
+        } else {
+            None
+        }
+    }
+
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+        BSplineCurve3D::eval_points(self, us)
+    }
+}
+
 /// Enum adaptor unifying the concrete 3D curve types behind a single value
 /// type, so callers can build a heterogeneous collection of curves and
 /// evaluate them uniformly through [`ParametricCurve3D`].
@@ -214,6 +241,8 @@ pub enum Curve3D {
     Parabola(Parabola3D),
     /// A [`Hyperbola3D`] curve.
     Hyperbola(Hyperbola3D),
+    /// A [`BSplineCurve3D`] curve.
+    BSpline(BSplineCurve3D),
 }
 
 impl ParametricCurve3D for Curve3D {
@@ -224,6 +253,7 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Ellipse(c) => c.eval_point(u),
             Curve3D::Parabola(c) => c.eval_point(u),
             Curve3D::Hyperbola(c) => c.eval_point(u),
+            Curve3D::BSpline(c) => c.eval_point(u),
         }
     }
 
@@ -234,6 +264,7 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Ellipse(c) => c.eval_derivative(u, order),
             Curve3D::Parabola(c) => c.eval_derivative(u, order),
             Curve3D::Hyperbola(c) => c.eval_derivative(u, order),
+            Curve3D::BSpline(c) => c.eval_derivative(u, order),
         }
     }
 
@@ -244,6 +275,7 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Ellipse(c) => c.bounds(),
             Curve3D::Parabola(c) => c.bounds(),
             Curve3D::Hyperbola(c) => c.bounds(),
+            Curve3D::BSpline(c) => ParametricCurve3D::bounds(c),
         }
     }
 
@@ -254,6 +286,7 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Ellipse(c) => c.period(),
             Curve3D::Parabola(c) => c.period(),
             Curve3D::Hyperbola(c) => c.period(),
+            Curve3D::BSpline(c) => ParametricCurve3D::period(c),
         }
     }
 
@@ -264,6 +297,7 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Ellipse(c) => c.eval_points(us),
             Curve3D::Parabola(c) => c.eval_points(us),
             Curve3D::Hyperbola(c) => c.eval_points(us),
+            Curve3D::BSpline(c) => c.eval_points(us),
         }
     }
 }
@@ -303,6 +337,13 @@ impl From<Hyperbola3D> for Curve3D {
     }
 }
 
+impl From<BSplineCurve3D> for Curve3D {
+    /// Wraps a [`BSplineCurve3D`] as a [`Curve3D::BSpline`].
+    fn from(curve: BSplineCurve3D) -> Curve3D {
+        Curve3D::BSpline(curve)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +370,22 @@ mod tests {
 
     fn hyperbola() -> Hyperbola3D {
         Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap()
+    }
+
+    fn bspline() -> BSplineCurve3D {
+        // Clamped degree-1 curve: straight segment (0,0,0) -> (2,0,0).
+        let poles = vec![Point3::ORIGIN, Point3::new(2.0, 0.0, 0.0)];
+        BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap()
+    }
+
+    fn bspline_periodic() -> BSplineCurve3D {
+        // Periodic degree-1 triangle, knots [0,1,2,3] period 3.
+        let poles = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ];
+        BSplineCurve3D::new(1, poles, vec![0.0, 1.0, 2.0, 3.0], vec![1, 1, 1, 1], true).unwrap()
     }
 
     // ---- generic fn agrees with inherent calls ----
@@ -364,6 +421,12 @@ mod tests {
     }
 
     #[test]
+    fn test_sample_bspline_agrees_with_inherent() {
+        let b = bspline();
+        assert_eq!(sample(&b), b.eval_point(0.5));
+    }
+
+    #[test]
     fn test_sample_curve3d_enum_agrees_with_inherent() {
         let l = line();
         let wrapped: Curve3D = l.into();
@@ -379,13 +442,22 @@ mod tests {
         let e = ellipse();
         let p = parabola();
         let h = hyperbola();
-        let curves: Vec<Curve3D> = vec![l.into(), c.into(), e.into(), p.into(), h.into()];
+        let b = bspline();
+        let curves: Vec<Curve3D> = vec![
+            l.into(),
+            c.into(),
+            e.into(),
+            p.into(),
+            h.into(),
+            b.clone().into(),
+        ];
         let points: Vec<Point3> = curves.iter().map(|curve| curve.eval_point(0.25)).collect();
         assert_eq!(points[0], l.eval_point(0.25));
         assert_eq!(points[1], c.eval_point(0.25));
         assert_eq!(points[2], e.eval_point(0.25));
         assert_eq!(points[3], p.eval_point(0.25));
         assert_eq!(points[4], h.eval_point(0.25));
+        assert_eq!(points[5], b.eval_point(0.25));
     }
 
     // ---- From round-trips ----
@@ -432,6 +504,15 @@ mod tests {
         match Curve3D::from(h) {
             Curve3D::Hyperbola(inner) => assert_eq!(inner, h),
             _ => panic!("expected Curve3D::Hyperbola"),
+        }
+    }
+
+    #[test]
+    fn test_from_bspline_round_trips() {
+        let b = bspline();
+        match Curve3D::from(b.clone()) {
+            Curve3D::BSpline(inner) => assert_eq!(inner, b),
+            _ => panic!("expected Curve3D::BSpline"),
         }
     }
 
@@ -511,6 +592,32 @@ mod tests {
         assert!(!wrapped.is_periodic());
     }
 
+    #[test]
+    fn test_bspline_clamped_bounds_and_period() {
+        let b = bspline();
+        assert_eq!(ParametricCurve3D::bounds(&b), (0.0, 1.0));
+        assert_eq!(ParametricCurve3D::period(&b), None);
+        assert!(!ParametricCurve3D::is_periodic(&b));
+
+        let wrapped: Curve3D = b.into();
+        assert_eq!(wrapped.bounds(), (0.0, 1.0));
+        assert_eq!(wrapped.period(), None);
+        assert!(!wrapped.is_periodic());
+    }
+
+    #[test]
+    fn test_bspline_periodic_bounds_and_period() {
+        let b = bspline_periodic();
+        assert_eq!(ParametricCurve3D::bounds(&b), (0.0, 3.0));
+        assert_eq!(ParametricCurve3D::period(&b), Some(3.0));
+        assert!(ParametricCurve3D::is_periodic(&b));
+
+        let wrapped: Curve3D = b.into();
+        assert_eq!(wrapped.bounds(), (0.0, 3.0));
+        assert_eq!(wrapped.period(), Some(3.0));
+        assert!(wrapped.is_periodic());
+    }
+
     // ---- default eval_points == mapped eval_point ----
 
     #[test]
@@ -536,6 +643,10 @@ mod tests {
         let h = hyperbola();
         let expected: Vec<Point3> = us.iter().map(|&u| h.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&h, &us), expected);
+
+        let b = bspline();
+        let expected: Vec<Point3> = us.iter().map(|&u| b.eval_point(u)).collect();
+        assert_eq!(ParametricCurve3D::eval_points(&b, &us), expected);
     }
 
     #[test]
@@ -547,6 +658,7 @@ mod tests {
             ellipse().into(),
             parabola().into(),
             hyperbola().into(),
+            bspline().into(),
         ];
         for curve in &curves {
             let expected: Vec<Point3> = us.iter().map(|&u| curve.eval_point(u)).collect();
@@ -566,6 +678,12 @@ mod tests {
         assert_eq!(
             ParametricCurve3D::eval_derivative(&c, 0.5, 1),
             c.eval_derivative(0.5, 1)
+        );
+
+        let b = bspline();
+        assert_eq!(
+            ParametricCurve3D::eval_derivative(&b, 0.5, 1),
+            b.eval_derivative(0.5, 1)
         );
     }
 }

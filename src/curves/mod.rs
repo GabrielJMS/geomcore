@@ -2,6 +2,7 @@
 //! crate's placement types ([`crate::Axis3`]/[`crate::Axis2`],
 //! [`crate::Frame3`]/[`crate::Frame2`]).
 
+mod bspline;
 mod circle;
 mod curve;
 mod curve2d;
@@ -9,6 +10,7 @@ mod ellipse;
 mod hyperbola;
 mod line;
 mod parabola;
+pub use bspline::{BSplineConstructionError, BSplineCurve3D};
 pub use circle::{Circle2D, Circle3D, CircleConstructionError};
 pub use curve::{Curve3D, ParametricCurve3D};
 pub use curve2d::{Curve2D, ParametricCurve2D};

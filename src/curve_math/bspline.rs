@@ -14,69 +14,16 @@
 //! flat knots into three-plus period-shifted copies and evaluating in the
 //! middle copy, wrapping pole indices modulo the pole count.
 
-use std::fmt;
-
 use super::analytic::in_period;
 
 /// Maximum supported B-spline degree.
 const MAX_DEGREE: usize = 25;
 
-/// Error describing why a B-spline direction (curve, or one direction of a
-/// surface) cannot be constructed from the given degree/knots/multiplicities.
-///
-/// The `WeightCountMismatch` and `NonPositiveWeight` variants are *not* raised
-/// by [`validate_direction`] (which knows nothing about weights); they are
-/// defined here so the constructing type can report weight problems through
-/// the same error enum, and are checked by that type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BSplineConstructionError {
-    /// The degree is `< 1` or `> 25`.
-    InvalidDegree,
-    /// Fewer than two distinct knot values were given.
-    TooFewKnots,
-    /// The knot values are not strictly increasing.
-    KnotsNotIncreasing,
-    /// A multiplicity is too large: an interior multiplicity exceeds the
-    /// degree, or (non-periodic) an end multiplicity exceeds `degree + 1`, or
-    /// (periodic) any multiplicity exceeds the degree.
-    MultiplicityTooLarge,
-    /// The curve is periodic but the first and last multiplicities differ.
-    PeriodicEndMultiplicityMismatch,
-    /// The pole count is inconsistent with the knots and multiplicities:
-    /// non-periodic requires `n_poles == sum(mults) - degree - 1`; periodic
-    /// requires `n_poles == sum(mults) - mults[last]`.
-    PoleCountMismatch,
-    /// The number of weights does not equal the number of poles. Checked by
-    /// the constructing type, not by [`validate_direction`].
-    WeightCountMismatch,
-    /// A weight is zero or negative. Checked by the constructing type, not by
-    /// [`validate_direction`].
-    NonPositiveWeight,
-}
-
-impl fmt::Display for BSplineConstructionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let message = match self {
-            BSplineConstructionError::InvalidDegree => "degree must be between 1 and 25",
-            BSplineConstructionError::TooFewKnots => "fewer than two distinct knots",
-            BSplineConstructionError::KnotsNotIncreasing => "knots are not strictly increasing",
-            BSplineConstructionError::MultiplicityTooLarge => "a knot multiplicity is too large",
-            BSplineConstructionError::PeriodicEndMultiplicityMismatch => {
-                "periodic end multiplicities differ"
-            }
-            BSplineConstructionError::PoleCountMismatch => {
-                "pole count is inconsistent with knots and multiplicities"
-            }
-            BSplineConstructionError::WeightCountMismatch => {
-                "weight count does not match pole count"
-            }
-            BSplineConstructionError::NonPositiveWeight => "a weight is zero or negative",
-        };
-        f.write_str(message)
-    }
-}
-
-impl std::error::Error for BSplineConstructionError {}
+/// Error type re-exported here for use by [`validate_direction`]; the
+/// canonical definition (and its docs) live on [`crate::curves`], next to
+/// [`crate::curves::BSplineCurve3D`], the type that actually constructs and
+/// reports these errors.
+pub(crate) use crate::curves::BSplineConstructionError;
 
 /// Builds the flattened knot sequence: knot `i` repeated `mults[i]` times.
 ///
@@ -217,6 +164,13 @@ fn derivative_curve(
 }
 
 /// Evaluates the curve value into `out[..dim]` (see module docs for layout).
+///
+/// Only exercised directly by this module's own tests today: the public
+/// [`crate::curves::BSplineCurve3D`] always calls [`eval_dn`] with `n`
+/// derived from the requested derivative order (0 for `eval_point`), rather
+/// than special-casing `n == 0`. Kept `pub(crate)` for API symmetry with
+/// [`eval_dn`] and as the natural entry point for position-only evaluation.
+#[allow(dead_code)]
 pub(crate) fn eval_d0(
     u: f64,
     degree: usize,
