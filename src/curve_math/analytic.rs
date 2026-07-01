@@ -176,7 +176,7 @@ pub(crate) fn in_period(u: f64, first: f64, last: f64) -> f64 {
 
 /// Wraps a signed angle in `(-PI, PI]` into `[0, 2*PI)`, treating an exact
 /// `2*PI` result as `0`.
-fn wrap_to_turn(angle: f64) -> f64 {
+pub(crate) fn wrap_to_turn(angle: f64) -> f64 {
     let wrapped = if angle < 0.0 { angle + TAU } else { angle };
     if wrapped >= TAU { 0.0 } else { wrapped }
 }

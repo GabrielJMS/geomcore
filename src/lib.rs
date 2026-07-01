@@ -24,6 +24,8 @@ pub mod curves;
 pub mod frame;
 /// Points in 2D and 3D space.
 pub mod point;
+/// Internal analytic surface evaluation math.
+pub(crate) mod surface_math;
 /// Rigid and affine transformations.
 pub mod transform;
 /// Vectors in 2D and 3D space.
