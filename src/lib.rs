@@ -30,7 +30,9 @@ pub mod transform;
 pub mod vector;
 
 pub use curves::{
-    Circle2D, Circle3D, CircleConstructionError, Line2D, Line3D, LineConstructionError,
+    Circle2D, Circle3D, CircleConstructionError, Ellipse3D, EllipseConstructionError, Hyperbola3D,
+    HyperbolaConstructionError, Line2D, Line3D, LineConstructionError, Parabola3D,
+    ParabolaConstructionError,
 };
 pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
 pub use point::{Point2, Point3};
