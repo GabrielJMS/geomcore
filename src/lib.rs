@@ -15,3 +15,11 @@ pub(crate) mod tol {
     /// Parametric-space tolerance.
     pub const P_CONFUSION: f64 = 1e-9;
 }
+
+/// Points in 2D and 3D space.
+pub mod point;
+/// Vectors in 2D and 3D space.
+pub mod vector;
+
+pub use point::{Point2, Point3};
+pub use vector::{Vector2, Vector3};
