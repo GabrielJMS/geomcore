@@ -19,6 +19,8 @@ pub(crate) mod tol {
 
 /// Internal analytic curve evaluation math.
 pub(crate) mod curve_math;
+/// Public curve types: lines, and (later) circles, ellipses, and more.
+pub mod curves;
 /// Axis and frame placement types.
 pub mod frame;
 /// Points in 2D and 3D space.
@@ -28,6 +30,7 @@ pub mod transform;
 /// Vectors in 2D and 3D space.
 pub mod vector;
 
+pub use curves::{Line2D, Line3D, LineConstructionError};
 pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
 pub use point::{Point2, Point3};
 pub use transform::Transform;

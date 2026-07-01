@@ -4,8 +4,10 @@
 
 mod common;
 
-use common::{FrameJson, assert_point3, assert_vector3, frame3, load, point3, vector3};
-use geomrust::{Axis3, Transform};
+use common::{
+    FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
+};
+use geomrust::{Axis3, Line3D, Transform};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -123,6 +125,64 @@ fn transforms_match_golden_fixture() {
         for (v, expected) in case.apply_to_vectors.iter().zip(&case.expected_vectors) {
             let actual = transform.apply_vector(vector3(*v));
             assert_vector3(actual, *expected);
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct LineSample {
+    u: f64,
+    point: [f64; 3],
+    d1: [f64; 3],
+    d2: [f64; 3],
+    d3: [f64; 3],
+}
+
+#[derive(Deserialize)]
+struct LineParameterOf {
+    point: [f64; 3],
+    u: f64,
+}
+
+#[derive(Deserialize)]
+struct LineCase {
+    origin: [f64; 3],
+    direction: [f64; 3],
+    samples: Vec<LineSample>,
+    parameter_of: Vec<LineParameterOf>,
+}
+
+#[derive(Deserialize)]
+struct CurvesAnalyticFixture {
+    lines: Vec<LineCase>,
+}
+
+#[test]
+fn lines_match_golden_fixture() {
+    let fixture: CurvesAnalyticFixture =
+        serde_json::from_value(load("curves_analytic.json")).unwrap();
+
+    for (i, case) in fixture.lines.iter().enumerate() {
+        let line = Line3D::new(point3(case.origin), vector3(case.direction))
+            .unwrap_or_else(|e| panic!("case {i}: failed to build Line3D: {e}"));
+
+        for sample in &case.samples {
+            let point = line.eval_point(sample.u);
+            assert_point3(point, sample.point);
+
+            let d1 = line.eval_derivative(sample.u, 1);
+            assert_vector3(d1, sample.d1);
+
+            let d2 = line.eval_derivative(sample.u, 2);
+            assert_vector3(d2, sample.d2);
+
+            let d3 = line.eval_derivative(sample.u, 3);
+            assert_vector3(d3, sample.d3);
+        }
+
+        for inversion in &case.parameter_of {
+            let u = line.parameter_of(point3(inversion.point));
+            assert_close(u, inversion.u);
         }
     }
 }
