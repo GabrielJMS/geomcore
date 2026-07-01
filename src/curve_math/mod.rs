@@ -3,3 +3,4 @@
 #![allow(dead_code)]
 
 pub(crate) mod analytic;
+pub(crate) mod bspline;
