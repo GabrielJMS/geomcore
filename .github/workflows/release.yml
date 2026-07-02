@@ -88,17 +88,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-      - name: Publish to crates.io (skipped if the version is already there)
+      - name: Check whether this version is already on crates.io
+        id: exists
         run: |
           v="${GITHUB_REF_NAME#v}"
           if curl -fsS -A "geomcore-release-workflow" \
               "https://crates.io/api/v1/crates/geomcore/$v" >/dev/null 2>&1; then
-            echo "geomcore $v is already on crates.io; skipping publish"
+            echo "geomcore $v is already on crates.io; nothing to publish"
+            echo "published=true" >> "$GITHUB_OUTPUT"
           else
-            cargo publish -p geomcore
+            echo "published=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: rust-lang/crates-io-auth-action@v1
+        if: steps.exists.outputs.published == 'false'
+        id: auth
+      - if: steps.exists.outputs.published == 'false'
+        run: cargo publish -p geomcore
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
