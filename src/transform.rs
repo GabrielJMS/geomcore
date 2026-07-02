@@ -12,7 +12,7 @@ use crate::{Axis3, Frame3, Point3, Vector3};
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Point3, Transform, Vector3};
+/// use geomcore::{Point3, Transform, Vector3};
 /// let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
 /// assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 2.0, 3.0));
 /// ```
@@ -99,7 +99,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Transform};
+    /// use geomcore::{Point3, Transform};
     /// assert_eq!(Transform::IDENTITY.apply_point(Point3::new(1.0, 2.0, 3.0)), Point3::new(1.0, 2.0, 3.0));
     /// ```
     pub const IDENTITY: Transform = Transform {
@@ -112,7 +112,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Transform, Vector3};
+    /// use geomcore::{Point3, Transform, Vector3};
     /// let t = Transform::translation(Vector3::new(1.0, 0.0, 0.0));
     /// assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 0.0, 0.0));
     /// ```
@@ -132,7 +132,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Point3, Transform, Vector3};
+    /// use geomcore::{Axis3, Point3, Transform, Vector3};
     /// use std::f64::consts::PI;
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let r = Transform::rotation(axis, PI / 2.0);
@@ -165,7 +165,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Transform};
+    /// use geomcore::{Point3, Transform};
     /// let s = Transform::scaling(Point3::new(1.0, 1.0, 1.0), 2.0);
     /// let p = s.apply_point(Point3::new(2.0, 2.0, 2.0));
     /// assert!((p.x - 3.0).abs() < 1e-10);
@@ -184,7 +184,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Transform};
+    /// use geomcore::{Point3, Transform};
     /// let m = Transform::mirror_point(Point3::new(1.0, 1.0, 1.0));
     /// let p = m.apply_point(Point3::ORIGIN);
     /// assert!((p.x - 2.0).abs() < 1e-10);
@@ -205,7 +205,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Point3, Transform, Vector3};
+    /// use geomcore::{Axis3, Point3, Transform, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
     /// let m = Transform::mirror_axis(axis);
     /// let p = m.apply_point(Point3::new(0.0, 1.0, 0.0));
@@ -227,7 +227,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3, Transform};
+    /// use geomcore::{Frame3, Point3, Transform};
     /// let m = Transform::mirror_plane(Frame3::WORLD);
     /// let p = m.apply_point(Point3::new(0.0, 0.0, 5.0));
     /// assert!((p.z - (-5.0)).abs() < 1e-10);
@@ -247,7 +247,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Point3, Transform, Vector3};
+    /// use geomcore::{Axis3, Point3, Transform, Vector3};
     /// use std::f64::consts::PI;
     /// let translate = Transform::translation(Vector3::new(1.0, 0.0, 0.0));
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
@@ -271,7 +271,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Transform, Vector3};
+    /// use geomcore::{Point3, Transform, Vector3};
     /// let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
     /// assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -286,7 +286,7 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Transform, Vector3};
+    /// use geomcore::{Transform, Vector3};
     /// let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
     /// let v = Vector3::new(4.0, 5.0, 6.0);
     /// assert_eq!(t.apply_vector(v), v);

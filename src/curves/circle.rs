@@ -47,7 +47,7 @@ impl std::error::Error for CircleConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Circle3D, Point3, Vector3};
+/// use geomcore::{Circle3D, Point3, Vector3};
 /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
 /// assert_eq!(circle.eval_point(0.0), Point3::new(2.0, 0.0, 0.0));
 /// ```
@@ -71,7 +71,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(circle.radius(), 2.0);
     /// assert_eq!(circle.normal(), Vector3::Z);
@@ -95,7 +95,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Circle3D, Point3, Vector3};
+    /// use geomcore::{Axis3, Circle3D, Point3, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let circle = Circle3D::from_axis(axis, 2.0).unwrap();
     /// assert_eq!(circle.center(), Point3::ORIGIN);
@@ -115,7 +115,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Frame3};
+    /// use geomcore::{Circle3D, Frame3};
     /// let circle = Circle3D::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(circle.frame(), Frame3::WORLD);
     /// ```
@@ -151,7 +151,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3};
+    /// use geomcore::{Circle3D, Point3};
     /// let circle = Circle3D::from_three_points(
     ///     Point3::new(1.0, 0.0, 0.0),
     ///     Point3::new(0.0, 1.0, 0.0),
@@ -199,7 +199,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, 2.0).unwrap();
     /// assert_eq!(circle.center(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -212,7 +212,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(circle.radius(), 2.0);
     /// ```
@@ -225,7 +225,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Frame3};
+    /// use geomcore::{Circle3D, Frame3};
     /// let circle = Circle3D::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(circle.frame(), Frame3::WORLD);
     /// ```
@@ -238,7 +238,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(circle.normal(), Vector3::Z);
     /// ```
@@ -252,7 +252,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(circle.eval_point(0.0), Point3::new(2.0, 0.0, 0.0));
     /// ```
@@ -265,7 +265,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// let points = circle.eval_points(&[0.0, 1.0]);
     /// assert_eq!(points[0], Point3::new(2.0, 0.0, 0.0));
@@ -287,7 +287,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(circle.eval_derivative(0.0, 1), Vector3::new(0.0, 2.0, 0.0));
     /// ```
@@ -304,7 +304,7 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Point3, Vector3};
+    /// use geomcore::{Circle3D, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert!((circle.parameter_of(Point3::new(0.0, 2.0, 0.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     /// ```
@@ -324,7 +324,7 @@ impl Circle3D {
     /// [`ParametrizeError::NotAnalytic`].
     ///
     /// The projection math assumes the circle lies on the surface. As a
-    /// geomrust safeguard, the candidate 2D image is verified against the
+    /// geomcore safeguard, the candidate 2D image is verified against the
     /// surface at a few parameters; if `surface.eval_point(q(t))` disagrees
     /// with `self.eval_point(t)`, [`ParametrizeError::CurveNotOnSurface`] is
     /// returned (this also rejects, for example, a circle whose radius does
@@ -337,8 +337,8 @@ impl Circle3D {
     /// `(u, v)` at the section height:
     ///
     /// ```
-    /// use geomrust::curves::{Curve2D, ParametricCurve2D};
-    /// use geomrust::{Circle3D, Cylinder, Point3, Vector3};
+    /// use geomcore::curves::{Curve2D, ParametricCurve2D};
+    /// use geomcore::{Circle3D, Cylinder, Point3, Vector3};
     ///
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// let circle = Circle3D::new(Point3::new(0.0, 0.0, 3.0), Vector3::Z, 2.0).unwrap();
@@ -361,7 +361,7 @@ impl Circle3D {
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Circle2D, Point2};
+/// use geomcore::{Circle2D, Point2};
 /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
 /// assert_eq!(circle.eval_point(0.0), Point2::new(2.0, 0.0));
 /// ```
@@ -383,7 +383,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2};
+    /// use geomcore::{Circle2D, Point2};
     /// let circle = Circle2D::new(Point2::new(1.0, 2.0), 3.0).unwrap();
     /// assert_eq!(circle.center(), Point2::new(1.0, 2.0));
     /// ```
@@ -402,7 +402,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Frame2};
+    /// use geomcore::{Circle2D, Frame2};
     /// let circle = Circle2D::from_frame(Frame2::WORLD, 2.0).unwrap();
     /// assert_eq!(circle.frame(), Frame2::WORLD);
     /// ```
@@ -418,7 +418,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2};
+    /// use geomcore::{Circle2D, Point2};
     /// let circle = Circle2D::new(Point2::new(1.0, 2.0), 2.0).unwrap();
     /// assert_eq!(circle.center(), Point2::new(1.0, 2.0));
     /// ```
@@ -431,7 +431,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2};
+    /// use geomcore::{Circle2D, Point2};
     /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
     /// assert_eq!(circle.radius(), 2.0);
     /// ```
@@ -444,7 +444,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Frame2};
+    /// use geomcore::{Circle2D, Frame2};
     /// let circle = Circle2D::from_frame(Frame2::WORLD, 2.0).unwrap();
     /// assert_eq!(circle.frame(), Frame2::WORLD);
     /// ```
@@ -458,7 +458,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2};
+    /// use geomcore::{Circle2D, Point2};
     /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
     /// assert_eq!(circle.eval_point(0.0), Point2::new(2.0, 0.0));
     /// ```
@@ -471,7 +471,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2};
+    /// use geomcore::{Circle2D, Point2};
     /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
     /// let points = circle.eval_points(&[0.0, 1.0]);
     /// assert_eq!(points[0], Point2::new(2.0, 0.0));
@@ -493,7 +493,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2, Vector2};
+    /// use geomcore::{Circle2D, Point2, Vector2};
     /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
     /// assert_eq!(circle.eval_derivative(0.0, 1), Vector2::new(0.0, 2.0));
     /// ```
@@ -510,7 +510,7 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle2D, Point2};
+    /// use geomcore::{Circle2D, Point2};
     /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
     /// assert!((circle.parameter_of(Point2::new(0.0, 2.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     /// ```

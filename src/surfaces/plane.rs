@@ -44,7 +44,7 @@ impl std::error::Error for PlaneConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Plane, Point3, Vector3};
+/// use geomcore::{Plane, Point3, Vector3};
 /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
 /// assert_eq!(plane.eval_point(2.0, 3.0), Point3::new(2.0, 3.0, 0.0));
 /// ```
@@ -66,7 +66,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// assert_eq!(plane.normal(), Vector3::Z);
     /// ```
@@ -82,7 +82,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Plane};
+    /// use geomcore::{Frame3, Plane};
     /// let plane = Plane::from_frame(Frame3::WORLD);
     /// assert_eq!(plane.frame(), Frame3::WORLD);
     /// ```
@@ -110,7 +110,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::from_three_points(
     ///     Point3::ORIGIN,
     ///     Point3::new(1.0, 0.0, 0.0),
@@ -164,9 +164,9 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Plane;
+    /// use geomcore::Plane;
     /// let plane = Plane::from_coefficients(0.0, 0.0, 1.0, -2.0).unwrap();
-    /// assert_eq!(plane.frame().origin(), geomrust::Point3::new(0.0, 0.0, 2.0));
+    /// assert_eq!(plane.frame().origin(), geomcore::Point3::new(0.0, 0.0, 2.0));
     /// ```
     pub fn from_coefficients(
         a: f64,
@@ -197,7 +197,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Plane};
+    /// use geomcore::{Frame3, Plane};
     /// let plane = Plane::from_frame(Frame3::WORLD);
     /// assert_eq!(plane.frame(), Frame3::WORLD);
     /// ```
@@ -210,7 +210,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// assert_eq!(plane.normal(), Vector3::Z);
     /// ```
@@ -224,7 +224,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// assert_eq!(plane.eval_point(2.0, 3.0), Point3::new(2.0, 3.0, 0.0));
     /// ```
@@ -237,7 +237,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let points = plane.eval_points(&[(1.0, 0.0), (0.0, 1.0)]);
     /// assert_eq!(points[0], Point3::new(1.0, 0.0, 0.0));
@@ -259,7 +259,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// assert_eq!(plane.eval_derivative(0.0, 0.0, 1, 0), Vector3::X);
     /// ```
@@ -281,7 +281,7 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3, Vector3};
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// assert_eq!(plane.parameters_of(Point3::new(2.0, 3.0, 0.0)), (2.0, 3.0));
     /// ```

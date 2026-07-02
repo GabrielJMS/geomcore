@@ -7,9 +7,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::f64::consts::TAU;
 use std::hint::black_box;
 
-use geomrust::curves::{BSplineCurve3D, Circle3D};
-use geomrust::surfaces::BSplineSurface;
-use geomrust::{Point3, Vector3};
+use geomcore::curves::{BSplineCurve3D, Circle3D};
+use geomcore::surfaces::BSplineSurface;
+use geomcore::{Point3, Vector3};
 
 const N: usize = 100_000;
 

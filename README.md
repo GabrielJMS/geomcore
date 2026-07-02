@@ -1,11 +1,11 @@
-# geomrust
+# geomcore
 
 A pure, standalone geometric kernel for CAD-grade curves and surfaces —
 parametric evaluation, rigid transformations, and analytic curve-on-surface
 parametrization, built as small, independently useful Rust libraries with a
 clean API and idiomatic Python bindings.
 
-`geomrust` is not a modeling/CAD system — no topology, no B-rep, no boolean
+`geomcore` is not a modeling/CAD system — no topology, no B-rep, no boolean
 operations (yet). It's the layer underneath one: parametric curve/surface
 evaluation, rigid transformations, and curve-on-surface parametrization,
 usable on their own by anyone who needs robust computational geometry — not
@@ -35,29 +35,29 @@ CAD-kernel-grade tolerances (1e-7).
 ## Rust
 
 ```rust
-use geomrust::{Point3, Vector3};
-use geomrust::curves::Circle3D;
+use geomcore::{Point3, Vector3};
+use geomcore::curves::Circle3D;
 
 let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
 let point = circle.eval_point(std::f64::consts::PI / 4.0);
 ```
 
-    cargo add geomrust
+    cargo add geomcore
 
 Not yet published to crates.io — coming with the first release.
 
 ## Python
 
 ```python
-from geomrust import Point3, Vector3
-from geomrust.curves import Circle3D
+from geomcore import Point3, Vector3
+from geomcore.curves import Circle3D
 import math
 
 circle = Circle3D.new(Point3.origin(), Vector3.z(), 2.0)
 point = circle.eval_point(math.pi / 4)
 ```
 
-    pip install geomrust-py
+    pip install geomcore
 
 Not yet published to PyPI — coming with the first release.
 
@@ -65,7 +65,7 @@ Not yet published to PyPI — coming with the first release.
 
 Most of what a CAD kernel needs — parametric evaluation, transformations,
 curve-on-surface math — is useful on its own, to anyone doing computational
-geometry, not just people building a full modeling system. `geomrust` grows
+geometry, not just people building a full modeling system. `geomcore` grows
 these as small, independently useful, well-tested libraries, with the goal
 of eventually adding up to a complete, open, high-performance CAD kernel —
 without forcing that scope on anyone who just needs the math.

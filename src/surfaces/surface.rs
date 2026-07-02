@@ -19,8 +19,8 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 /// [`eval_point`](ParametricSurface::eval_point) over each parameter pair:
 ///
 /// ```
-/// use geomrust::surfaces::ParametricSurface;
-/// use geomrust::{Plane, Point3, Vector3};
+/// use geomcore::surfaces::ParametricSurface;
+/// use geomcore::{Plane, Point3, Vector3};
 ///
 /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
 /// let uvs = [(0.0, 0.0), (1.0, 2.0)];
@@ -219,8 +219,8 @@ impl ParametricSurface for Torus {
 /// # Examples
 ///
 /// ```
-/// use geomrust::surfaces::{ParametricSurface, Surface};
-/// use geomrust::{Plane, Point3, Sphere, Vector3};
+/// use geomcore::surfaces::{ParametricSurface, Surface};
+/// use geomcore::{Plane, Point3, Sphere, Vector3};
 ///
 /// let surfaces: Vec<Surface> = vec![
 ///     Plane::new(Point3::ORIGIN, Vector3::Z).unwrap().into(),

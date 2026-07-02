@@ -7,7 +7,7 @@ docs/superpowers/
 __pycache__/
 *.pyc
 .pytest_cache/
-geomrust-py/target
+geomcore-py/target
 *.so
 *.whl
 dist/

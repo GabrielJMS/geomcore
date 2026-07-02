@@ -49,7 +49,7 @@ impl std::error::Error for ConeConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Cone, Point3, Vector3};
+/// use geomcore::{Cone, Point3, Vector3};
 /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, 0.4, 2.0).unwrap();
 /// assert_eq!(cone.eval_point(0.0, 0.0), Point3::new(2.0, 0.0, 0.0));
 /// ```
@@ -76,7 +76,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Frame3};
+    /// use geomcore::{Cone, Frame3};
     /// let cone = Cone::from_frame(Frame3::WORLD, 0.4, 2.0).unwrap();
     /// assert_eq!(cone.ref_radius(), 2.0);
     /// ```
@@ -112,7 +112,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3, Vector3};
+    /// use geomcore::{Cone, Point3, Vector3};
     /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, 0.4, 2.0).unwrap();
     /// assert_eq!(cone.semi_angle(), 0.4);
     /// ```
@@ -149,7 +149,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3};
+    /// use geomcore::{Cone, Point3};
     /// let cone = Cone::from_two_points_and_radii(
     ///     Point3::ORIGIN,
     ///     Point3::new(0.0, 0.0, 4.0),
@@ -193,7 +193,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Frame3};
+    /// use geomcore::{Cone, Frame3};
     /// let cone = Cone::from_frame(Frame3::WORLD, 0.4, 2.0).unwrap();
     /// assert_eq!(cone.frame(), Frame3::WORLD);
     /// ```
@@ -206,7 +206,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Frame3};
+    /// use geomcore::{Cone, Frame3};
     /// let cone = Cone::from_frame(Frame3::WORLD, 0.4, 2.0).unwrap();
     /// assert_eq!(cone.semi_angle(), 0.4);
     /// ```
@@ -220,7 +220,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Frame3};
+    /// use geomcore::{Cone, Frame3};
     /// let cone = Cone::from_frame(Frame3::WORLD, 0.4, 2.0).unwrap();
     /// assert_eq!(cone.ref_radius(), 2.0);
     /// ```
@@ -234,7 +234,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3, Vector3};
+    /// use geomcore::{Cone, Point3, Vector3};
     /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, std::f64::consts::FRAC_PI_4, 1.0).unwrap();
     /// let apex = cone.apex();
     /// assert!((apex.z + 1.0).abs() < 1e-9);
@@ -250,7 +250,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3, Vector3};
+    /// use geomcore::{Cone, Point3, Vector3};
     /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, 0.4, 2.0).unwrap();
     /// assert_eq!(cone.eval_point(0.0, 0.0), Point3::new(2.0, 0.0, 0.0));
     /// ```
@@ -263,7 +263,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3, Vector3};
+    /// use geomcore::{Cone, Point3, Vector3};
     /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, 0.4, 2.0).unwrap();
     /// let points = cone.eval_points(&[(0.0, 0.0)]);
     /// assert_eq!(points[0], Point3::new(2.0, 0.0, 0.0));
@@ -283,7 +283,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3, Vector3};
+    /// use geomcore::{Cone, Point3, Vector3};
     /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, 0.4, 2.0).unwrap();
     /// let d1v = cone.eval_derivative(0.0, 0.0, 0, 1);
     /// assert!(d1v.x > 0.0);
@@ -315,7 +315,7 @@ impl Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cone, Point3, Vector3};
+    /// use geomcore::{Cone, Point3, Vector3};
     /// let cone = Cone::new(Point3::ORIGIN, Vector3::Z, 0.4, 2.0).unwrap();
     /// let (u, v) = cone.parameters_of(Point3::new(2.0, 0.0, 0.0));
     /// assert_eq!((u, v), (0.0, 0.0));

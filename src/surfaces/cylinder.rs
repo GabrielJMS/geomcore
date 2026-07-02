@@ -35,7 +35,7 @@ impl std::error::Error for CylinderConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Cylinder, Point3, Vector3};
+/// use geomcore::{Cylinder, Point3, Vector3};
 /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
 /// assert_eq!(cylinder.eval_point(0.0, 5.0), Point3::new(2.0, 0.0, 5.0));
 /// ```
@@ -59,7 +59,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Point3, Vector3};
+    /// use geomcore::{Cylinder, Point3, Vector3};
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(cylinder.radius(), 2.0);
     /// ```
@@ -83,7 +83,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Frame3};
+    /// use geomcore::{Cylinder, Frame3};
     /// let cylinder = Cylinder::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(cylinder.frame(), Frame3::WORLD);
     /// ```
@@ -105,7 +105,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Cylinder, Point3, Vector3};
+    /// use geomcore::{Axis3, Cylinder, Point3, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let cylinder = Cylinder::from_axis(axis, 2.0).unwrap();
     /// assert_eq!(cylinder.axis(), axis);
@@ -123,7 +123,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Circle3D, Cylinder, Point3, Vector3};
+    /// use geomcore::{Circle3D, Cylinder, Point3, Vector3};
     /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// let cylinder = Cylinder::from_circle(&circle);
     /// assert_eq!(cylinder.radius(), 2.0);
@@ -141,7 +141,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Frame3};
+    /// use geomcore::{Cylinder, Frame3};
     /// let cylinder = Cylinder::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(cylinder.frame(), Frame3::WORLD);
     /// ```
@@ -154,7 +154,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Frame3};
+    /// use geomcore::{Cylinder, Frame3};
     /// let cylinder = Cylinder::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(cylinder.radius(), 2.0);
     /// ```
@@ -167,7 +167,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Point3, Vector3};
+    /// use geomcore::{Cylinder, Point3, Vector3};
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(cylinder.axis().direction(), Vector3::Z);
     /// ```
@@ -181,7 +181,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Point3, Vector3};
+    /// use geomcore::{Cylinder, Point3, Vector3};
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(cylinder.eval_point(0.0, 5.0), Point3::new(2.0, 0.0, 5.0));
     /// ```
@@ -194,7 +194,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Point3, Vector3};
+    /// use geomcore::{Cylinder, Point3, Vector3};
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// let points = cylinder.eval_points(&[(0.0, 0.0)]);
     /// assert_eq!(points[0], Point3::new(2.0, 0.0, 0.0));
@@ -217,7 +217,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Point3, Vector3};
+    /// use geomcore::{Cylinder, Point3, Vector3};
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// assert_eq!(cylinder.eval_derivative(0.0, 5.0, 0, 1), Vector3::Z);
     /// ```
@@ -240,7 +240,7 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Cylinder, Point3, Vector3};
+    /// use geomcore::{Cylinder, Point3, Vector3};
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// let (u, v) = cylinder.parameters_of(Point3::new(2.0, 0.0, 5.0));
     /// assert_eq!((u, v), (0.0, 5.0));

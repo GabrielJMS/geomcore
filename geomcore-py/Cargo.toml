@@ -1,0 +1,16 @@
+[package]
+name = "geomcore-py"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Python bindings for geomcore, a standalone geometric kernel for CAD-grade curves and surfaces."
+repository = "https://github.com/GabrielJMS/geomcore"
+publish = false
+
+[lib]
+name = "geomcore"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.26", features = ["extension-module", "abi3-py39"] }
+geomcore = { path = ".." }

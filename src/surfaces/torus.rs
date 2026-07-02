@@ -10,7 +10,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TorusConstructionError {
     /// Either the major or the minor radius is negative. Unlike some
-    /// analytic surfaces, geomrust deliberately rejects a negative major
+    /// analytic surfaces, geomcore deliberately rejects a negative major
     /// radius too (rather than accepting it as geometrically meaningless
     /// but harmless): a negative major radius has no consistent
     /// parametric meaning here, so it is treated the same as a negative
@@ -39,7 +39,7 @@ impl std::error::Error for TorusConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Point3, Torus, Vector3};
+/// use geomcore::{Point3, Torus, Vector3};
 /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
 /// assert_eq!(torus.eval_point(0.0, 0.0), Point3::new(6.5, 0.0, 0.0));
 /// ```
@@ -66,7 +66,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Torus, Vector3};
+    /// use geomcore::{Point3, Torus, Vector3};
     /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.major_radius(), 5.0);
     /// assert_eq!(torus.minor_radius(), 1.5);
@@ -93,7 +93,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Torus};
+    /// use geomcore::{Frame3, Torus};
     /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.frame(), Frame3::WORLD);
     /// ```
@@ -117,7 +117,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Torus, Vector3};
+    /// use geomcore::{Point3, Torus, Vector3};
     /// let torus = Torus::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.center(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -130,7 +130,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Torus};
+    /// use geomcore::{Frame3, Torus};
     /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.frame(), Frame3::WORLD);
     /// ```
@@ -144,7 +144,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Torus};
+    /// use geomcore::{Frame3, Torus};
     /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.major_radius(), 5.0);
     /// ```
@@ -157,7 +157,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Torus};
+    /// use geomcore::{Frame3, Torus};
     /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.minor_radius(), 1.5);
     /// ```
@@ -171,7 +171,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Torus, Vector3};
+    /// use geomcore::{Point3, Torus, Vector3};
     /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.eval_point(0.0, 0.0), Point3::new(6.5, 0.0, 0.0));
     /// ```
@@ -184,7 +184,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Torus, Vector3};
+    /// use geomcore::{Point3, Torus, Vector3};
     /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
     /// let points = torus.eval_points(&[(0.0, 0.0)]);
     /// assert_eq!(points[0], Point3::new(6.5, 0.0, 0.0));
@@ -205,7 +205,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Torus, Vector3};
+    /// use geomcore::{Point3, Torus, Vector3};
     /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.eval_derivative(0.0, 0.0, 0, 1), Vector3::Z * 1.5);
     /// ```
@@ -237,7 +237,7 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Torus, Vector3};
+    /// use geomcore::{Point3, Torus, Vector3};
     /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
     /// let (u, v) = torus.parameters_of(Point3::new(6.5, 0.0, 0.0));
     /// assert_eq!((u, v), (0.0, 0.0));

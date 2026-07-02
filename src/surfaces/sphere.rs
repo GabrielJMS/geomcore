@@ -37,7 +37,7 @@ impl std::error::Error for SphereConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Sphere, Point3};
+/// use geomcore::{Sphere, Point3};
 /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
 /// assert_eq!(sphere.eval_point(0.0, 0.0), Point3::new(3.0, 0.0, 0.0));
 /// ```
@@ -60,7 +60,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere};
+    /// use geomcore::{Point3, Sphere};
     /// let sphere = Sphere::new(Point3::new(1.0, 2.0, 3.0), 2.0).unwrap();
     /// assert_eq!(sphere.center(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -80,7 +80,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Sphere};
+    /// use geomcore::{Frame3, Sphere};
     /// let sphere = Sphere::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(sphere.frame(), Frame3::WORLD);
     /// ```
@@ -96,7 +96,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere};
+    /// use geomcore::{Point3, Sphere};
     /// let sphere = Sphere::new(Point3::new(1.0, 2.0, 3.0), 2.0).unwrap();
     /// assert_eq!(sphere.center(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -109,7 +109,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Sphere};
+    /// use geomcore::{Frame3, Sphere};
     /// let sphere = Sphere::from_frame(Frame3::WORLD, 2.0).unwrap();
     /// assert_eq!(sphere.frame(), Frame3::WORLD);
     /// ```
@@ -122,7 +122,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere};
+    /// use geomcore::{Point3, Sphere};
     /// let sphere = Sphere::new(Point3::ORIGIN, 2.0).unwrap();
     /// assert_eq!(sphere.radius(), 2.0);
     /// ```
@@ -136,7 +136,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere};
+    /// use geomcore::{Point3, Sphere};
     /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
     /// assert_eq!(sphere.eval_point(0.0, 0.0), Point3::new(3.0, 0.0, 0.0));
     /// ```
@@ -149,7 +149,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere};
+    /// use geomcore::{Point3, Sphere};
     /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
     /// let points = sphere.eval_points(&[(0.0, 0.0)]);
     /// assert_eq!(points[0], Point3::new(3.0, 0.0, 0.0));
@@ -170,7 +170,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere, Vector3};
+    /// use geomcore::{Point3, Sphere, Vector3};
     /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
     /// assert_eq!(sphere.eval_derivative(0.0, 0.0, 0, 1), Vector3::Z * 3.0);
     /// ```
@@ -193,7 +193,7 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Point3, Sphere};
+    /// use geomcore::{Point3, Sphere};
     /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
     /// let (u, v) = sphere.parameters_of(Point3::new(3.0, 0.0, 0.0));
     /// assert_eq!((u, v), (0.0, 0.0));

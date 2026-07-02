@@ -49,7 +49,7 @@ impl std::error::Error for HyperbolaConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Hyperbola3D, Point3, Vector3};
+/// use geomcore::{Hyperbola3D, Point3, Vector3};
 /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
 /// assert_eq!(hyperbola.eval_point(0.0), Point3::new(2.0, 0.0, 0.0));
 /// ```
@@ -78,7 +78,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3, Vector3};
+    /// use geomcore::{Hyperbola3D, Point3, Vector3};
     /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.major_radius(), 2.0);
     /// assert_eq!(hyperbola.minor_radius(), 1.0);
@@ -109,7 +109,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Frame3};
+    /// use geomcore::{Hyperbola3D, Frame3};
     /// let hyperbola = Hyperbola3D::from_frame(Frame3::WORLD, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.frame(), Frame3::WORLD);
     /// ```
@@ -148,7 +148,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3};
+    /// use geomcore::{Hyperbola3D, Point3};
     /// let hyperbola = Hyperbola3D::from_center_and_points(
     ///     Point3::ORIGIN,
     ///     Point3::new(2.0, 0.0, 0.0),
@@ -198,7 +198,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3, Vector3};
+    /// use geomcore::{Hyperbola3D, Point3, Vector3};
     /// let hyperbola = Hyperbola3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.center(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -211,7 +211,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Frame3};
+    /// use geomcore::{Hyperbola3D, Frame3};
     /// let hyperbola = Hyperbola3D::from_frame(Frame3::WORLD, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.frame(), Frame3::WORLD);
     /// ```
@@ -224,7 +224,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Frame3};
+    /// use geomcore::{Hyperbola3D, Frame3};
     /// let hyperbola = Hyperbola3D::from_frame(Frame3::WORLD, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.major_radius(), 2.0);
     /// ```
@@ -237,7 +237,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Frame3};
+    /// use geomcore::{Hyperbola3D, Frame3};
     /// let hyperbola = Hyperbola3D::from_frame(Frame3::WORLD, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.minor_radius(), 1.0);
     /// ```
@@ -251,7 +251,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3, Vector3};
+    /// use geomcore::{Hyperbola3D, Point3, Vector3};
     /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.eval_point(0.0), Point3::new(2.0, 0.0, 0.0));
     /// ```
@@ -264,7 +264,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3, Vector3};
+    /// use geomcore::{Hyperbola3D, Point3, Vector3};
     /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
     /// let points = hyperbola.eval_points(&[0.0, 1.0]);
     /// assert_eq!(points[0], Point3::new(2.0, 0.0, 0.0));
@@ -288,7 +288,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3, Vector3};
+    /// use geomcore::{Hyperbola3D, Point3, Vector3};
     /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
     /// assert_eq!(hyperbola.eval_derivative(0.0, 1), Vector3::new(0.0, 1.0, 0.0));
     /// ```
@@ -308,7 +308,7 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Hyperbola3D, Point3, Vector3};
+    /// use geomcore::{Hyperbola3D, Point3, Vector3};
     /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();
     /// assert!((hyperbola.parameter_of(Point3::new(2.0, 0.0, 0.0)) - 0.0).abs() < 1e-9);
     /// ```
@@ -328,8 +328,8 @@ impl Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::curves::ParametrizeError;
-    /// use geomrust::{Hyperbola3D, Plane, Point3, Vector3};
+    /// use geomcore::curves::ParametrizeError;
+    /// use geomcore::{Hyperbola3D, Plane, Point3, Vector3};
     ///
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let hyperbola = Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap();

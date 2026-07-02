@@ -1,19 +1,19 @@
-//! Python bindings for the `geomrust` geometric kernel.
+//! Python bindings for the `geomcore` geometric kernel.
 //!
 //! The extension module mirrors the Rust crate's namespaces: value types live
-//! at the package root (`geomrust`), curves under `geomrust.curves`, and
-//! surfaces under `geomrust.surfaces`. Fallible constructors raise
+//! at the package root (`geomcore`), curves under `geomcore.curves`, and
+//! surfaces under `geomcore.surfaces`. Fallible constructors raise
 //! `ValueError` carrying the underlying error description.
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
-use geomrust::curves::{
+use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Ellipse3D, Hyperbola3D, Line2D, Line3D, Parabola3D,
 };
-use geomrust::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
-use geomrust::{Axis3, Frame3, Point2, Point3, Transform, Vector2, Vector3};
+use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
+use geomcore::{Axis3, Frame3, Point2, Point3, Transform, Vector2, Vector3};
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -24,7 +24,7 @@ fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
 // ---------------------------------------------------------------------------
 
 /// A point in 3D space with `x`, `y` and `z` coordinates.
-#[pyclass(name = "Point3", module = "geomrust")]
+#[pyclass(name = "Point3", module = "geomcore")]
 #[derive(Clone)]
 struct PyPoint3(Point3);
 
@@ -76,7 +76,7 @@ impl PyPoint3 {
 ///
 /// Components are read with `components()`; the unit vectors along the world
 /// axes are available as the static methods `x()`, `y()` and `z()`.
-#[pyclass(name = "Vector3", module = "geomrust")]
+#[pyclass(name = "Vector3", module = "geomcore")]
 #[derive(Clone)]
 struct PyVector3(Vector3);
 
@@ -143,7 +143,7 @@ impl PyVector3 {
 }
 
 /// A point in 2D space (used by curves living in a surface's (u, v) domain).
-#[pyclass(name = "Point2", module = "geomrust")]
+#[pyclass(name = "Point2", module = "geomcore")]
 #[derive(Clone)]
 struct PyPoint2(Point2);
 
@@ -187,7 +187,7 @@ impl PyPoint2 {
 }
 
 /// A vector in 2D space.
-#[pyclass(name = "Vector2", module = "geomrust")]
+#[pyclass(name = "Vector2", module = "geomcore")]
 #[derive(Clone)]
 struct PyVector2(Vector2);
 
@@ -230,7 +230,7 @@ impl PyVector2 {
 }
 
 /// An axis: a point plus a unit direction.
-#[pyclass(name = "Axis3", module = "geomrust")]
+#[pyclass(name = "Axis3", module = "geomcore")]
 #[derive(Clone)]
 struct PyAxis3(Axis3);
 
@@ -261,7 +261,7 @@ impl PyAxis3 {
 }
 
 /// A right-handed orthonormal placement frame (origin + x/y/z directions).
-#[pyclass(name = "Frame3", module = "geomrust")]
+#[pyclass(name = "Frame3", module = "geomcore")]
 #[derive(Clone)]
 struct PyFrame3(Frame3);
 
@@ -322,7 +322,7 @@ impl PyFrame3 {
 }
 
 /// A rigid (or mirrored/scaled) affine transformation.
-#[pyclass(name = "Transform", module = "geomrust")]
+#[pyclass(name = "Transform", module = "geomcore")]
 #[derive(Clone)]
 struct PyTransform(Transform);
 
@@ -392,7 +392,7 @@ impl PyTransform {
 // ---------------------------------------------------------------------------
 
 /// An infinite plane, parametrized by in-plane coordinates (u, v).
-#[pyclass(name = "Plane", module = "geomrust.surfaces")]
+#[pyclass(name = "Plane", module = "geomcore.surfaces")]
 #[derive(Clone)]
 struct PyPlane(Plane);
 
@@ -459,7 +459,7 @@ impl PyPlane {
 
 /// An infinite circular cylinder; u is the angle around the axis, v the
 /// height along it.
-#[pyclass(name = "Cylinder", module = "geomrust.surfaces")]
+#[pyclass(name = "Cylinder", module = "geomcore.surfaces")]
 #[derive(Clone)]
 struct PyCylinder(Cylinder);
 
@@ -531,7 +531,7 @@ impl PyCylinder {
 
 /// An infinite cone; u is the angle around the axis, v the distance along a
 /// generator from the reference circle.
-#[pyclass(name = "Cone", module = "geomrust.surfaces")]
+#[pyclass(name = "Cone", module = "geomcore.surfaces")]
 #[derive(Clone)]
 struct PyCone(Cone);
 
@@ -616,7 +616,7 @@ impl PyCone {
 }
 
 /// A sphere; u is the longitude in [0, 2*pi), v the latitude in [-pi/2, pi/2].
-#[pyclass(name = "Sphere", module = "geomrust.surfaces")]
+#[pyclass(name = "Sphere", module = "geomcore.surfaces")]
 #[derive(Clone)]
 struct PySphere(Sphere);
 
@@ -673,7 +673,7 @@ impl PySphere {
 }
 
 /// A torus; u is the angle around the main axis, v the angle around the tube.
-#[pyclass(name = "Torus", module = "geomrust.surfaces")]
+#[pyclass(name = "Torus", module = "geomcore.surfaces")]
 #[derive(Clone)]
 struct PyTorus(Torus);
 
@@ -744,7 +744,7 @@ impl PyTorus {
 }
 
 /// A tensor-product B-spline (optionally rational, optionally periodic) surface.
-#[pyclass(name = "BSplineSurface", module = "geomrust.surfaces")]
+#[pyclass(name = "BSplineSurface", module = "geomcore.surfaces")]
 #[derive(Clone)]
 struct PyBSplineSurface(BSplineSurface);
 
@@ -907,7 +907,7 @@ fn extract_surface(obj: &Bound<'_, PyAny>) -> PyResult<Surface> {
         return Ok(Surface::from(&s.0));
     }
     Err(PyTypeError::new_err(
-        "expected a geomrust surface (Plane, Cylinder, Cone, Sphere, Torus or BSplineSurface)",
+        "expected a geomcore surface (Plane, Cylinder, Cone, Sphere, Torus or BSplineSurface)",
     ))
 }
 
@@ -924,7 +924,7 @@ fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny>> {
 // ---------------------------------------------------------------------------
 
 /// An infinite straight line in 3D, parametrized by arc length from its origin.
-#[pyclass(name = "Line3D", module = "geomrust.curves")]
+#[pyclass(name = "Line3D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyLine3D(Line3D);
 
@@ -1000,7 +1000,7 @@ impl PyLine3D {
 }
 
 /// A circle in 3D, parametrized by the angle from its frame's x direction.
-#[pyclass(name = "Circle3D", module = "geomrust.curves")]
+#[pyclass(name = "Circle3D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyCircle3D(Circle3D);
 
@@ -1094,7 +1094,7 @@ impl PyCircle3D {
 }
 
 /// An ellipse in 3D.
-#[pyclass(name = "Ellipse3D", module = "geomrust.curves")]
+#[pyclass(name = "Ellipse3D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyEllipse3D(Ellipse3D);
 
@@ -1201,7 +1201,7 @@ impl PyEllipse3D {
 }
 
 /// A parabola in 3D, parametrized so the apex is at parameter 0.
-#[pyclass(name = "Parabola3D", module = "geomrust.curves")]
+#[pyclass(name = "Parabola3D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyParabola3D(Parabola3D);
 
@@ -1273,7 +1273,7 @@ impl PyParabola3D {
 }
 
 /// One branch of a hyperbola in 3D.
-#[pyclass(name = "Hyperbola3D", module = "geomrust.curves")]
+#[pyclass(name = "Hyperbola3D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyHyperbola3D(Hyperbola3D);
 
@@ -1380,7 +1380,7 @@ impl PyHyperbola3D {
 }
 
 /// A B-spline (optionally rational, optionally periodic) curve in 3D.
-#[pyclass(name = "BSplineCurve3D", module = "geomrust.curves")]
+#[pyclass(name = "BSplineCurve3D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyBSplineCurve3D(BSplineCurve3D);
 
@@ -1472,7 +1472,7 @@ impl PyBSplineCurve3D {
 }
 
 /// A straight line in a surface's 2D (u, v) parameter space.
-#[pyclass(name = "Line2D", module = "geomrust.curves")]
+#[pyclass(name = "Line2D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyLine2D(Line2D);
 
@@ -1534,7 +1534,7 @@ impl PyLine2D {
 }
 
 /// A circle in a surface's 2D (u, v) parameter space.
-#[pyclass(name = "Circle2D", module = "geomrust.curves")]
+#[pyclass(name = "Circle2D", module = "geomcore.curves")]
 #[derive(Clone)]
 struct PyCircle2D(Circle2D);
 
@@ -1600,8 +1600,8 @@ impl PyCircle2D {
 // Module wiring
 // ---------------------------------------------------------------------------
 
-#[pymodule(name = "geomrust")]
-fn geomrust_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pymodule(name = "geomcore")]
+fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
 
     m.add_class::<PyPoint3>()?;
@@ -1633,10 +1633,10 @@ fn geomrust_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&surfaces)?;
 
     // Register the submodules in sys.modules so that
-    // `from geomrust.curves import Circle3D` works.
+    // `from geomcore.curves import Circle3D` works.
     let sys_modules = py.import("sys")?.getattr("modules")?;
-    sys_modules.set_item("geomrust.curves", &curves)?;
-    sys_modules.set_item("geomrust.surfaces", &surfaces)?;
+    sys_modules.set_item("geomcore.curves", &curves)?;
+    sys_modules.set_item("geomcore.surfaces", &surfaces)?;
 
     Ok(())
 }
