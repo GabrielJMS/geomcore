@@ -8,17 +8,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify tag matches crate versions
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify tag matches the workspace version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          for f in Cargo.toml geomcore-py/Cargo.toml; do
-            v="$(grep -m1 '^version = ' "$f" | cut -d'"' -f2)"
+          for p in geomcore geomcore-py; do
+            v="$(cargo metadata --no-deps --format-version 1 \
+              | jq -r --arg p "$p" '.packages[] | select(.name == $p) | .version')"
             if [ "$v" != "$tag" ]; then
-              echo "::error::$f has version $v but the tag is $tag"
+              echo "::error::$p is at version $v but the tag is $tag"
               exit 1
             fi
           done
-      - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
       - run: cargo test --doc
 

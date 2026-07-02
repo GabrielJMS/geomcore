@@ -48,9 +48,10 @@ GitHub release with the artifacts attached.
 
 ## Cutting a release
 
-1. Bump `version` in **both** `Cargo.toml` and `geomcore-py/Cargo.toml`
-   (lockstep — the tag check enforces it). The Python package version follows
-   `geomcore-py/Cargo.toml` automatically.
+1. Bump `version` under `[workspace.package]` in the root `Cargo.toml` — the
+   single source of truth. Both crates inherit it (`version.workspace = true`),
+   and the Python package version follows the crate version automatically via
+   maturin. The tag check refuses a release if they ever disagree.
 2. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new
    `[X.Y.Z] - YYYY-MM-DD` heading and update the compare links at the bottom.
 3. PR, review, merge to `main`.
