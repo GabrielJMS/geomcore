@@ -16,7 +16,8 @@ just future CAD-kernel builders.
 Proof-of-concept. Implemented so far:
 
 - Parametric evaluation for lines, circles, ellipses, parabolas,
-  hyperbolas, and B-spline curves in 2D/3D.
+  hyperbolas, and B-spline curves in 3D (plus 2D lines and circles, the
+  shapes curve-on-surface parametrization produces).
 - Parametric evaluation for planes, cylinders, cones, spheres, tori, and
   B-spline surfaces.
 - Rigid transformations (translation, rotation, mirroring, scaling) via a

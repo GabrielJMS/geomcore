@@ -62,7 +62,7 @@ pub(crate) mod tol {
 
 /// Internal analytic curve evaluation math.
 pub(crate) mod curve_math;
-/// Public curve types: lines, and (later) circles, ellipses, and more.
+/// Public curve types: lines, conics, and B-spline curves.
 pub mod curves;
 /// Axis and frame placement types.
 pub mod frame;
@@ -70,7 +70,8 @@ pub mod frame;
 pub mod point;
 /// Internal analytic surface evaluation math.
 pub(crate) mod surface_math;
-/// Public surface types: planes, cylinders, cones, spheres, and tori.
+/// Public surface types: planes, cylinders, cones, spheres, tori, and
+/// B-spline surfaces.
 pub mod surfaces;
 /// Rigid and affine transformations.
 pub mod transform;
