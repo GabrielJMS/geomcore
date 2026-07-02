@@ -558,8 +558,15 @@ fn angle_or_zero(y: f64, x: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::curves::ParametrizeError;
-    use crate::{Circle3D, Cylinder, Line3D, Plane, Point3, Vector3};
+    use super::{
+        FRAC_PI_2, PI, TAU, mirror_about_horizontal, sphere_meridian, sphere_set_in_bounds,
+    };
+    use crate::curve_math::analytic::in_period;
+    use crate::curves::{Curve2D, ParametricCurve2D, ParametrizeError};
+    use crate::tol;
+    use crate::{
+        Circle3D, Cylinder, Frame3, Line2D, Line3D, Plane, Point2, Point3, Sphere, Vector2, Vector3,
+    };
 
     #[test]
     fn test_circle_on_cylinder_radius_mismatch_is_not_on_surface() {
@@ -616,5 +623,153 @@ mod tests {
         takes_error(&ParametrizeError::NotAnalytic);
         assert!(!ParametrizeError::NotAnalytic.to_string().is_empty());
         assert!(!ParametrizeError::CurveNotOnSurface.to_string().is_empty());
+    }
+
+    // ---- sphere pole-mirror branch (sphere_set_in_bounds lines 397-410) ----
+    //
+    // The branch mirrors a meridian pcurve about v = +-pi/2 when q(0) sits
+    // at a pole boundary AND the line's v-direction continues past it. The
+    // reviewer's suggested construction (circle-frame x_direction() pointing
+    // exactly at a pole) does NOT trigger it: `sphere_meridian` derives the
+    // pcurve's v-direction from `p2 - p1`, where `p2` comes from the
+    // circle's y_direction() — orthogonal to x_direction(), and therefore
+    // always closer to the equator. That forces `dir.y` to point *away* from
+    // whichever pole `p1` sits at, the opposite of what the mirror condition
+    // needs. Exhaustive random search over orthonormal circle frames
+    // confirms this construction never triggers the branch.
+    //
+    // The actual trigger is the *seam-fold* sub-case (line 336): tilt the
+    // circle's x_direction() a hair off the pole (a few 1e-7 rad) so
+    // `sphere_meridian`'s own pole snap-to (`tol::P_CONFUSION = 1e-9`)
+    // does *not* fire, but the endpoints still straddle the u-seam
+    // (`|p1.x - p2.x| ~ pi`), which folds `p2` across the pole and makes the
+    // line's v-direction continue *past* it. The resulting `p1.y` then lands
+    // just inside `sphere_set_in_bounds`'s looser boundary tolerance
+    // (`tol::CONFUSION = 1e-7`) with the matching direction sign, which is
+    // exactly the condition on lines 393-396.
+    #[test]
+    fn test_sphere_meridian_pole_mirror_north() {
+        let sphere = Sphere::new(Point3::ORIGIN, 2.0).unwrap();
+
+        // circle normal = +X (perpendicular to the sphere's z-axis, so this
+        // is a meridian); x_hint tilts x_direction() a hair off the north
+        // pole and just past the u-seam relative to y_direction(), which is
+        // what makes sphere_meridian fold p2 across the pole (the seam-fold
+        // sub-case) instead of snapping p1 to it (the pole sub-case).
+        let eps = 2e-7_f64;
+        let phi = 15.0_f64.to_radians();
+        let x_hint = Vector3::new(phi.cos() * eps.sin(), phi.sin() * eps.sin(), eps.cos());
+        let frame = Frame3::new(Point3::ORIGIN, Vector3::X, x_hint).unwrap();
+        let circle = Circle3D::from_frame(frame, 2.0).unwrap();
+
+        let sf = sphere.frame();
+        let raw = sphere_meridian(&circle, sf);
+        // q(0) sits just short of the north pole, with the v-direction
+        // continuing past it — the trigger condition on line 394.
+        assert!(FRAC_PI_2 - raw.origin().y > 0.0);
+        assert!(FRAC_PI_2 - raw.origin().y < tol::CONFUSION);
+        assert_close(raw.direction().y, 1.0);
+
+        let normalized = sphere_set_in_bounds(raw);
+        // Observable proof the mirror branch ran: v is reflected about
+        // pi/2 (staying within tol::CONFUSION of the pole, on the other
+        // side of it from the raw line) and u picks up the +pi shift
+        // (wrapped into [0, 2pi)).
+        assert_close(
+            normalized.origin().x,
+            in_period(raw.origin().x + PI, 0.0, TAU),
+        );
+        assert_close(normalized.direction().y, -raw.direction().y);
+        assert!((normalized.origin().y - FRAC_PI_2).abs() < tol::CONFUSION);
+        assert!((0.0..TAU + 1e-9).contains(&normalized.origin().x));
+
+        // The consistency invariant is the real proof the mirror math is
+        // right: it must hold across t values that cross the pole.
+        let pcurve = circle.parametrize_on(sphere).unwrap();
+        assert_eq!(pcurve, Curve2D::Line(normalized));
+        for t in [0.0_f64, 0.5, 1.7, 3.0, 4.5] {
+            let uv = pcurve.eval_point(t);
+            let on_surface = sphere.eval_point(uv.x, uv.y);
+            let expected = circle.eval_point(t);
+            assert!(
+                on_surface.distance(expected) < 1e-9,
+                "t={t}: sphere.eval_point(u,v)={on_surface:?} != circle.eval_point(t)={expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sphere_meridian_pole_mirror_south() {
+        let sphere = Sphere::new(Point3::ORIGIN, 2.0).unwrap();
+
+        // South twin: negating the whole north x_hint reflects the
+        // construction through the sphere's center, landing x_direction()
+        // just short of the south pole with the matching seam-fold geometry.
+        let eps = 2e-7_f64;
+        let phi = 15.0_f64.to_radians();
+        let x_hint = -Vector3::new(phi.cos() * eps.sin(), phi.sin() * eps.sin(), eps.cos());
+        let frame = Frame3::new(Point3::ORIGIN, Vector3::X, x_hint).unwrap();
+        let circle = Circle3D::from_frame(frame, 2.0).unwrap();
+
+        let sf = sphere.frame();
+        let raw = sphere_meridian(&circle, sf);
+        assert!(raw.origin().y - (-FRAC_PI_2) > 0.0);
+        assert!(raw.origin().y - (-FRAC_PI_2) < tol::CONFUSION);
+        assert_close(raw.direction().y, -1.0);
+
+        let normalized = sphere_set_in_bounds(raw);
+        // Observable proof the mirror branch ran: v is reflected about
+        // -pi/2 and u picks up the +pi shift (wrapped into [0, 2pi)).
+        assert_close(
+            normalized.origin().x,
+            in_period(raw.origin().x + PI, 0.0, TAU),
+        );
+        assert_close(normalized.direction().y, -raw.direction().y);
+        assert!((normalized.origin().y - (-FRAC_PI_2)).abs() < tol::CONFUSION);
+        assert!((0.0..TAU + 1e-9).contains(&normalized.origin().x));
+
+        let pcurve = circle.parametrize_on(sphere).unwrap();
+        assert_eq!(pcurve, Curve2D::Line(normalized));
+        for t in [0.0_f64, 0.5, 1.7, 3.0, 4.5] {
+            let uv = pcurve.eval_point(t);
+            let on_surface = sphere.eval_point(uv.x, uv.y);
+            let expected = circle.eval_point(t);
+            assert!(
+                on_surface.distance(expected) < 1e-9,
+                "t={t}: sphere.eval_point(u,v)={on_surface:?} != circle.eval_point(t)={expected:?}"
+            );
+        }
+    }
+
+    /// Direct unit test of the mirror helper: `mirror_about_horizontal`
+    /// reflects `(u, v)` about the horizontal line `v = c`, i.e.
+    /// `(u, v) -> (u, 2c - v)`, and flips the sign of the direction's `v`
+    /// component. The caller (`sphere_set_in_bounds`) applies the separate
+    /// `u += π` shift itself; that translation does not live inside this
+    /// helper.
+    #[test]
+    fn test_mirror_about_horizontal() {
+        let line = Line2D::new(Point2::new(1.0, 1.7), Vector2::new(0.0, 1.0)).unwrap();
+        let mirrored = mirror_about_horizontal(line, FRAC_PI_2);
+        assert_close(mirrored.origin().x, 1.0);
+        assert_close(mirrored.origin().y, 2.0 * FRAC_PI_2 - 1.7);
+        assert_close(mirrored.direction().x, 0.0);
+        assert_close(mirrored.direction().y, -1.0);
+    }
+
+    #[test]
+    fn test_mirror_about_horizontal_is_involution() {
+        // Mirroring twice about the same axis returns the original line.
+        let line = Line2D::new(Point2::new(-2.3, 0.4), Vector2::new(0.0, -1.0)).unwrap();
+        let once = mirror_about_horizontal(line, FRAC_PI_2);
+        let twice = mirror_about_horizontal(once, FRAC_PI_2);
+        assert_close(twice.origin().x, line.origin().x);
+        assert_close(twice.origin().y, line.origin().y);
+        assert_close(twice.direction().x, line.direction().x);
+        assert_close(twice.direction().y, line.direction().y);
+    }
+
+    fn assert_close(a: f64, b: f64) {
+        assert!((a - b).abs() < 1e-9, "expected {b}, got {a}");
     }
 }
