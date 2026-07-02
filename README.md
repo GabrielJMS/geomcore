@@ -32,6 +32,9 @@ curve-on-surface parametrization when no closed form exists.
 Evaluation results are validated against golden fixtures with
 CAD-kernel-grade tolerances (1e-7).
 
+See [ROADMAP.md](ROADMAP.md) for what's coming next and
+[CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Rust
 
 ```rust
