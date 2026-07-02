@@ -19,8 +19,8 @@ use std::f64::consts::TAU;
 /// [`eval_point`](ParametricCurve3D::eval_point) over each parameter:
 ///
 /// ```
-/// use geomrust::curves::ParametricCurve3D;
-/// use geomrust::{Line3D, Point3, Vector3};
+/// use geomcore::curves::ParametricCurve3D;
+/// use geomcore::{Line3D, Point3, Vector3};
 ///
 /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
 /// let us = [0.0, 1.0, 2.0];
@@ -32,8 +32,8 @@ use std::f64::consts::TAU;
 /// whether [`period`](ParametricCurve3D::period) is `Some`:
 ///
 /// ```
-/// use geomrust::curves::ParametricCurve3D;
-/// use geomrust::{Circle3D, Line3D, Point3, Vector3};
+/// use geomcore::curves::ParametricCurve3D;
+/// use geomcore::{Circle3D, Line3D, Point3, Vector3};
 ///
 /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
 /// assert!(!ParametricCurve3D::is_periodic(&line));
@@ -217,8 +217,8 @@ impl ParametricCurve3D for BSplineCurve3D {
 /// # Examples
 ///
 /// ```
-/// use geomrust::curves::{Curve3D, ParametricCurve3D};
-/// use geomrust::{Circle3D, Line3D, Point3, Vector3};
+/// use geomcore::curves::{Curve3D, ParametricCurve3D};
+/// use geomcore::{Circle3D, Line3D, Point3, Vector3};
 ///
 /// let curves: Vec<Curve3D> = vec![
 ///     Line3D::new(Point3::ORIGIN, Vector3::X).unwrap().into(),

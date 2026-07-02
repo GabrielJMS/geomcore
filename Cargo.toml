@@ -1,11 +1,11 @@
 [package]
-name = "geomrust"
-version = "0.1.0"
+name = "geomcore"
+version.workspace = true
 edition = "2024"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 description = "A pure, standalone geometric kernel for CAD-grade curves and surfaces: parametric evaluation, transformations, and curve-on-surface parametrization."
-repository = "https://github.com/GabrielJMS/geomrust"
+repository = "https://github.com/GabrielJMS/geomcore"
 keywords = ["geometry", "cad", "curves", "surfaces", "nurbs"]
 categories = ["mathematics", "graphics"]
 
@@ -19,4 +19,7 @@ name = "eval_throughput"
 harness = false
 
 [workspace]
-members = [".", "geomrust-py"]
+members = [".", "geomcore-py"]
+
+[workspace.package]
+version = "0.1.0"

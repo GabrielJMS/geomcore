@@ -33,8 +33,8 @@ pub use crate::curves::BSplineConstructionError;
 /// A bilinear (degree-1 × degree-1) patch over the unit square:
 ///
 /// ```
-/// use geomrust::surfaces::BSplineSurface;
-/// use geomrust::Point3;
+/// use geomcore::surfaces::BSplineSurface;
+/// use geomcore::Point3;
 ///
 /// let poles = vec![
 ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
@@ -99,8 +99,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::surfaces::BSplineSurface;
-    /// use geomrust::Point3;
+    /// use geomcore::surfaces::BSplineSurface;
+    /// use geomcore::Point3;
     ///
     /// let poles = vec![
     ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
@@ -155,8 +155,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::surfaces::BSplineSurface;
-    /// use geomrust::Point3;
+    /// use geomcore::surfaces::BSplineSurface;
+    /// use geomcore::Point3;
     ///
     /// let poles = vec![
     ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
@@ -269,8 +269,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -287,8 +287,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -305,8 +305,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -323,8 +323,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -341,8 +341,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -362,8 +362,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -393,8 +393,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::Point3;
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3;
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
@@ -421,8 +421,8 @@ impl BSplineSurface {
     /// # Examples
     ///
     /// ```
-    /// # use geomrust::surfaces::BSplineSurface;
-    /// # use geomrust::{Point3, Vector3};
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::{Point3, Vector3};
     /// # let poles = vec![
     /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
     /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],

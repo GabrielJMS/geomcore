@@ -1,6 +1,6 @@
 //! A pure, standalone geometric kernel for CAD-grade curves and surfaces.
 //!
-//! `geomrust` provides parametric evaluation of elementary curves and
+//! `geomcore` provides parametric evaluation of elementary curves and
 //! surfaces (lines, circles, ellipses, parabolas, hyperbolas, B-splines;
 //! planes, cylinders, cones, spheres, tori, B-spline surfaces), rigid
 //! transformations, and analytic curve-on-surface parametrization: computing
@@ -27,8 +27,8 @@
 //! # Quick start
 //!
 //! ```
-//! use geomrust::{Cylinder, Point3, Vector3};
-//! use geomrust::curves::Circle3D;
+//! use geomcore::{Cylinder, Point3, Vector3};
+//! use geomcore::curves::Circle3D;
 //!
 //! // Evaluate a circle at a single parameter, and over a batch of parameters.
 //! let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();

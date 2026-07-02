@@ -1,13 +1,13 @@
-"""Behavioral tests for the geomrust Python bindings."""
+"""Behavioral tests for the geomcore Python bindings."""
 
 import math
 
 import pytest
 
-import geomrust
-from geomrust import Axis3, Frame3, Point3, Transform, Vector3
-from geomrust.curves import BSplineCurve3D, Circle3D, Line2D
-from geomrust.surfaces import Cylinder, Sphere
+import geomcore
+from geomcore import Axis3, Frame3, Point3, Transform, Vector3
+from geomcore.curves import BSplineCurve3D, Circle3D, Line2D
+from geomcore.surfaces import Cylinder, Sphere
 
 
 def test_readme_snippet():
@@ -20,8 +20,8 @@ def test_readme_snippet():
 
 def test_submodule_import_forms():
     # Both attribute access and from-import must work.
-    assert geomrust.curves.Circle3D is Circle3D
-    from geomrust.curves import Circle3D as C2
+    assert geomcore.curves.Circle3D is Circle3D
+    from geomcore.curves import Circle3D as C2
 
     assert C2 is Circle3D
 
@@ -65,7 +65,7 @@ def test_parametrize_on_cylinder():
 
 def test_parametrize_on_not_analytic_raises():
     sphere = Sphere.new(Point3.origin(), 2.0)
-    line = geomrust.curves.Line3D.new(Point3.new(2.0, 0.0, 0.0), Vector3.z())
+    line = geomcore.curves.Line3D.new(Point3.new(2.0, 0.0, 0.0), Vector3.z())
     with pytest.raises(ValueError):
         line.parametrize_on(sphere)
 

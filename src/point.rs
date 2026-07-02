@@ -15,7 +15,7 @@ impl Point2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Point2;
+    /// use geomcore::Point2;
     /// assert_eq!(Point2::ORIGIN, Point2::new(0.0, 0.0));
     /// ```
     pub const ORIGIN: Point2 = Point2 { x: 0.0, y: 0.0 };
@@ -25,7 +25,7 @@ impl Point2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Point2;
+    /// use geomcore::Point2;
     /// let p = Point2::new(1.0, 2.0);
     /// assert_eq!(p.x, 1.0);
     /// assert_eq!(p.y, 2.0);
@@ -39,7 +39,7 @@ impl Point2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Point2;
+    /// use geomcore::Point2;
     /// assert_eq!(Point2::new(0.0, 0.0).distance(Point2::new(3.0, 4.0)), 5.0);
     /// ```
     pub fn distance(self, other: Point2) -> f64 {
@@ -66,7 +66,7 @@ impl Point3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Point3;
+    /// use geomcore::Point3;
     /// assert_eq!(Point3::ORIGIN, Point3::new(0.0, 0.0, 0.0));
     /// ```
     pub const ORIGIN: Point3 = Point3 {
@@ -80,7 +80,7 @@ impl Point3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Point3;
+    /// use geomcore::Point3;
     /// let p = Point3::new(1.0, 2.0, 3.0);
     /// assert_eq!(p.x, 1.0);
     /// assert_eq!(p.y, 2.0);
@@ -95,7 +95,7 @@ impl Point3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Point3;
+    /// use geomcore::Point3;
     /// assert_eq!(Point3::new(1.0, 2.0, 3.0).distance(Point3::new(4.0, 6.0, 3.0)), 5.0);
     /// ```
     pub fn distance(self, other: Point3) -> f64 {

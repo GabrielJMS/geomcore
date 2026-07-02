@@ -78,7 +78,7 @@ impl std::error::Error for BSplineConstructionError {}
 /// A clamped cubic through six poles:
 ///
 /// ```
-/// use geomrust::{BSplineCurve3D, Point3};
+/// use geomcore::{BSplineCurve3D, Point3};
 ///
 /// let poles = vec![
 ///     Point3::new(0.0, 0.0, 0.0),
@@ -123,7 +123,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     ///
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
@@ -152,7 +152,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     ///
     /// // Rational quadratic quarter circle.
     /// let w = std::f64::consts::FRAC_1_SQRT_2;
@@ -229,7 +229,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.degree(), 1);
@@ -243,7 +243,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert!(!curve.is_periodic());
@@ -257,7 +257,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert!(!curve.is_rational());
@@ -271,7 +271,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles.clone(), vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.poles(), poles.as_slice());
@@ -285,7 +285,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.weights(), None);
@@ -299,7 +299,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.knots(), &[0.0, 1.0]);
@@ -313,7 +313,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.multiplicities(), &[2, 2]);
@@ -331,7 +331,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.bounds(), (0.0, 1.0));
@@ -349,7 +349,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.eval_point(0.5), Point3::new(1.0, 0.0, 0.0));
@@ -364,7 +364,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3};
+    /// use geomcore::{BSplineCurve3D, Point3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// let points = curve.eval_points(&[0.0, 0.5, 1.0]);
@@ -387,7 +387,7 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{BSplineCurve3D, Point3, Vector3};
+    /// use geomcore::{BSplineCurve3D, Point3, Vector3};
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     /// assert_eq!(curve.eval_derivative(0.5, 1), Vector3::new(2.0, 0.0, 0.0));
@@ -418,8 +418,8 @@ impl BSplineCurve3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::curves::ParametrizeError;
-    /// use geomrust::{BSplineCurve3D, Plane, Point3, Vector3};
+    /// use geomcore::curves::ParametrizeError;
+    /// use geomcore::{BSplineCurve3D, Plane, Point3, Vector3};
     ///
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let poles = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)];

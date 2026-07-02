@@ -35,7 +35,7 @@ impl std::error::Error for FrameConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Axis3, Point3, Vector3};
+/// use geomcore::{Axis3, Point3, Vector3};
 /// let axis = Axis3::new(Point3::ORIGIN, Vector3::new(0.0, 0.0, 2.0)).unwrap();
 /// assert_eq!(axis.direction(), Vector3::Z);
 /// ```
@@ -55,7 +55,7 @@ impl Axis3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Point3, Vector3};
+    /// use geomcore::{Axis3, Point3, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
     /// assert_eq!(axis.origin(), Point3::ORIGIN);
     /// assert_eq!(axis.direction(), Vector3::X);
@@ -72,7 +72,7 @@ impl Axis3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Point3, Vector3};
+    /// use geomcore::{Axis3, Point3, Vector3};
     /// let axis = Axis3::new(Point3::new(1.0, 2.0, 3.0), Vector3::X).unwrap();
     /// assert_eq!(axis.origin(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -85,7 +85,7 @@ impl Axis3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Point3, Vector3};
+    /// use geomcore::{Axis3, Point3, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::new(0.0, 5.0, 0.0)).unwrap();
     /// assert_eq!(axis.direction(), Vector3::Y);
     /// ```
@@ -100,9 +100,9 @@ impl Axis3 {
 /// # Examples
 ///
 /// ```
-/// use geomrust::Frame3;
+/// use geomcore::Frame3;
 /// let f = Frame3::WORLD;
-/// assert_eq!(f.z_direction(), geomrust::Vector3::Z);
+/// assert_eq!(f.z_direction(), geomcore::Vector3::Z);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame3 {
@@ -119,7 +119,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3, Vector3};
+    /// use geomcore::{Frame3, Point3, Vector3};
     /// assert_eq!(Frame3::WORLD.origin(), Point3::ORIGIN);
     /// assert_eq!(Frame3::WORLD.x_direction(), Vector3::X);
     /// ```
@@ -150,7 +150,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3, Vector3};
+    /// use geomcore::{Frame3, Point3, Vector3};
     /// let f = Frame3::new(Point3::ORIGIN, Vector3::Z, Vector3::X).unwrap();
     /// assert_eq!(f.x_direction(), Vector3::X);
     /// assert_eq!(f.y_direction(), Vector3::Y);
@@ -198,7 +198,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3, Vector3};
+    /// use geomcore::{Frame3, Point3, Vector3};
     /// let f = Frame3::from_z(Point3::ORIGIN, Vector3::Z).unwrap();
     /// assert!((f.x_direction().dot(f.y_direction())).abs() < 1e-10);
     /// assert!((f.x_direction().cross(f.y_direction()) - f.z_direction()).magnitude() < 1e-10);
@@ -226,7 +226,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3};
+    /// use geomcore::{Frame3, Point3};
     /// assert_eq!(Frame3::WORLD.origin(), Point3::ORIGIN);
     /// ```
     pub fn origin(self) -> Point3 {
@@ -238,7 +238,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Vector3};
+    /// use geomcore::{Frame3, Vector3};
     /// assert_eq!(Frame3::WORLD.x_direction(), Vector3::X);
     /// ```
     pub fn x_direction(self) -> Vector3 {
@@ -250,7 +250,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Vector3};
+    /// use geomcore::{Frame3, Vector3};
     /// assert_eq!(Frame3::WORLD.y_direction(), Vector3::Y);
     /// ```
     pub fn y_direction(self) -> Vector3 {
@@ -262,7 +262,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Vector3};
+    /// use geomcore::{Frame3, Vector3};
     /// assert_eq!(Frame3::WORLD.z_direction(), Vector3::Z);
     /// ```
     pub fn z_direction(self) -> Vector3 {
@@ -274,7 +274,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3, Vector3};
+    /// use geomcore::{Frame3, Point3, Vector3};
     /// let axis = Frame3::WORLD.axis();
     /// assert_eq!(axis.origin(), Point3::ORIGIN);
     /// assert_eq!(axis.direction(), Vector3::Z);
@@ -292,7 +292,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3};
+    /// use geomcore::{Frame3, Point3};
     /// let (u, v, w) = Frame3::WORLD.local_coordinates(Point3::new(1.0, 2.0, 3.0));
     /// assert_eq!((u, v, w), (1.0, 2.0, 3.0));
     /// ```
@@ -306,7 +306,7 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame3, Point3};
+    /// use geomcore::{Frame3, Point3};
     /// let p = Frame3::WORLD.point_at(1.0, 2.0, 3.0);
     /// assert_eq!(p, Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -320,7 +320,7 @@ impl Frame3 {
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Axis2, Point2, Vector2};
+/// use geomcore::{Axis2, Point2, Vector2};
 /// let axis = Axis2::new(Point2::ORIGIN, Vector2::new(0.0, 3.0)).unwrap();
 /// assert_eq!(axis.direction(), Vector2::Y);
 /// ```
@@ -340,7 +340,7 @@ impl Axis2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis2, Point2, Vector2};
+    /// use geomcore::{Axis2, Point2, Vector2};
     /// let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
     /// assert_eq!(axis.origin(), Point2::ORIGIN);
     /// assert_eq!(axis.direction(), Vector2::X);
@@ -357,7 +357,7 @@ impl Axis2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis2, Point2, Vector2};
+    /// use geomcore::{Axis2, Point2, Vector2};
     /// let axis = Axis2::new(Point2::new(1.0, 2.0), Vector2::X).unwrap();
     /// assert_eq!(axis.origin(), Point2::new(1.0, 2.0));
     /// ```
@@ -370,7 +370,7 @@ impl Axis2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis2, Point2, Vector2};
+    /// use geomcore::{Axis2, Point2, Vector2};
     /// let axis = Axis2::new(Point2::ORIGIN, Vector2::new(5.0, 0.0)).unwrap();
     /// assert_eq!(axis.direction(), Vector2::X);
     /// ```
@@ -386,7 +386,7 @@ impl Axis2 {
 /// # Examples
 ///
 /// ```
-/// use geomrust::Frame2;
+/// use geomcore::Frame2;
 /// let f = Frame2::WORLD;
 /// assert!(f.is_direct());
 /// ```
@@ -404,7 +404,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame2, Point2, Vector2};
+    /// use geomcore::{Frame2, Point2, Vector2};
     /// assert_eq!(Frame2::WORLD.origin(), Point2::ORIGIN);
     /// assert_eq!(Frame2::WORLD.x_direction(), Vector2::X);
     /// ```
@@ -429,7 +429,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame2, Point2, Vector2};
+    /// use geomcore::{Frame2, Point2, Vector2};
     /// let f = Frame2::new(Point2::ORIGIN, Vector2::X, Vector2::Y).unwrap();
     /// assert_eq!(f.x_direction(), Vector2::X);
     /// assert_eq!(f.y_direction(), Vector2::Y);
@@ -466,7 +466,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame2, Point2, Vector2};
+    /// use geomcore::{Frame2, Point2, Vector2};
     /// let f = Frame2::from_x(Point2::ORIGIN, Vector2::new(0.6, 0.8)).unwrap();
     /// assert_eq!(f.y_direction(), Vector2::new(-0.8, 0.6));
     /// assert!(f.is_direct());
@@ -487,7 +487,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame2, Point2};
+    /// use geomcore::{Frame2, Point2};
     /// assert_eq!(Frame2::WORLD.origin(), Point2::ORIGIN);
     /// ```
     pub fn origin(self) -> Point2 {
@@ -499,7 +499,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame2, Vector2};
+    /// use geomcore::{Frame2, Vector2};
     /// assert_eq!(Frame2::WORLD.x_direction(), Vector2::X);
     /// ```
     pub fn x_direction(self) -> Vector2 {
@@ -511,7 +511,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Frame2, Vector2};
+    /// use geomcore::{Frame2, Vector2};
     /// assert_eq!(Frame2::WORLD.y_direction(), Vector2::Y);
     /// ```
     pub fn y_direction(self) -> Vector2 {
@@ -523,7 +523,7 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Frame2;
+    /// use geomcore::Frame2;
     /// assert!(Frame2::WORLD.is_direct());
     /// ```
     pub fn is_direct(self) -> bool {

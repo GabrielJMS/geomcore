@@ -38,7 +38,7 @@ impl std::error::Error for ParabolaConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Parabola3D, Point3, Vector3};
+/// use geomcore::{Parabola3D, Point3, Vector3};
 /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
 /// assert_eq!(parabola.eval_point(2.0), Point3::new(1.0, 2.0, 0.0));
 /// ```
@@ -65,7 +65,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Point3, Vector3};
     /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
     /// assert_eq!(parabola.focal(), 1.0);
     /// ```
@@ -89,7 +89,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Frame3};
+    /// use geomcore::{Parabola3D, Frame3};
     /// let parabola = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
     /// assert_eq!(parabola.frame(), Frame3::WORLD);
     /// ```
@@ -105,7 +105,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Point3, Vector3};
     /// let parabola = Parabola3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, Vector3::X, 1.0).unwrap();
     /// assert_eq!(parabola.apex(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -118,7 +118,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Frame3};
+    /// use geomcore::{Parabola3D, Frame3};
     /// let parabola = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
     /// assert_eq!(parabola.frame(), Frame3::WORLD);
     /// ```
@@ -131,7 +131,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Frame3};
+    /// use geomcore::{Parabola3D, Frame3};
     /// let parabola = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
     /// assert_eq!(parabola.focal(), 1.7);
     /// ```
@@ -148,7 +148,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Point3, Vector3};
     /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
     /// assert_eq!(parabola.eval_point(2.0), Point3::new(1.0, 2.0, 0.0));
     /// ```
@@ -161,7 +161,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Point3, Vector3};
     /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
     /// let points = parabola.eval_points(&[0.0, 2.0]);
     /// assert_eq!(points[0], Point3::ORIGIN);
@@ -188,7 +188,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Point3, Vector3};
     /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
     /// assert_eq!(parabola.eval_derivative(0.0, 1), Vector3::Y);
     /// ```
@@ -205,7 +205,7 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Parabola3D, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Point3, Vector3};
     /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
     /// assert_eq!(parabola.parameter_of(Point3::new(1.0, 2.0, 0.0)), 2.0);
     /// ```
@@ -225,8 +225,8 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::curves::ParametrizeError;
-    /// use geomrust::{Parabola3D, Plane, Point3, Vector3};
+    /// use geomcore::curves::ParametrizeError;
+    /// use geomcore::{Parabola3D, Plane, Point3, Vector3};
     ///
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();

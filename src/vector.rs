@@ -13,7 +13,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::ZERO, Vector2::new(0.0, 0.0));
     /// ```
     pub const ZERO: Vector2 = Vector2 { x: 0.0, y: 0.0 };
@@ -23,7 +23,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::X, Vector2::new(1.0, 0.0));
     /// ```
     pub const X: Vector2 = Vector2 { x: 1.0, y: 0.0 };
@@ -33,7 +33,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::Y, Vector2::new(0.0, 1.0));
     /// ```
     pub const Y: Vector2 = Vector2 { x: 0.0, y: 1.0 };
@@ -43,7 +43,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// let v = Vector2::new(3.0, 4.0);
     /// assert_eq!(v.x, 3.0);
     /// assert_eq!(v.y, 4.0);
@@ -57,7 +57,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::X.dot(Vector2::Y), 0.0);
     /// assert_eq!(Vector2::X.dot(Vector2::X), 1.0);
     /// ```
@@ -70,7 +70,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::X.cross(Vector2::Y), 1.0);
     /// assert_eq!(Vector2::Y.cross(Vector2::X), -1.0);
     /// ```
@@ -83,7 +83,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::X.perp(), Vector2::Y);
     /// assert_eq!(Vector2::Y.perp(), Vector2::new(-1.0, 0.0));
     /// ```
@@ -99,7 +99,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::new(3.0, 4.0).magnitude(), 5.0);
     /// ```
     pub fn magnitude(self) -> f64 {
@@ -111,7 +111,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// assert_eq!(Vector2::new(3.0, 4.0).square_magnitude(), 25.0);
     /// ```
     pub fn square_magnitude(self) -> f64 {
@@ -125,7 +125,7 @@ impl Vector2 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector2;
+    /// use geomcore::Vector2;
     /// let v = Vector2::new(3.0, 4.0);
     /// let normalized = v.normalized().unwrap();
     /// assert!((normalized.x - 0.6).abs() < 1e-10);
@@ -162,7 +162,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::ZERO, Vector3::new(0.0, 0.0, 0.0));
     /// ```
     pub const ZERO: Vector3 = Vector3 {
@@ -176,7 +176,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::X, Vector3::new(1.0, 0.0, 0.0));
     /// ```
     pub const X: Vector3 = Vector3 {
@@ -190,7 +190,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::Y, Vector3::new(0.0, 1.0, 0.0));
     /// ```
     pub const Y: Vector3 = Vector3 {
@@ -204,7 +204,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::Z, Vector3::new(0.0, 0.0, 1.0));
     /// ```
     pub const Z: Vector3 = Vector3 {
@@ -218,7 +218,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// let v = Vector3::new(1.0, 2.0, 3.0);
     /// assert_eq!(v.x, 1.0);
     /// assert_eq!(v.y, 2.0);
@@ -233,7 +233,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::X.dot(Vector3::Y), 0.0);
     /// assert_eq!(Vector3::X.dot(Vector3::X), 1.0);
     /// ```
@@ -246,7 +246,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::X.cross(Vector3::Y), Vector3::Z);
     /// assert_eq!(Vector3::Y.cross(Vector3::Z), Vector3::X);
     /// assert_eq!(Vector3::Z.cross(Vector3::X), Vector3::Y);
@@ -264,7 +264,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert!((Vector3::new(1.0, 2.0, 2.0).magnitude() - 3.0).abs() < 1e-10);
     /// ```
     pub fn magnitude(self) -> f64 {
@@ -276,7 +276,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// assert_eq!(Vector3::new(1.0, 2.0, 2.0).square_magnitude(), 9.0);
     /// ```
     pub fn square_magnitude(self) -> f64 {
@@ -290,7 +290,7 @@ impl Vector3 {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// let v = Vector3::new(3.0, 4.0, 0.0);
     /// let normalized = v.normalized().unwrap();
     /// assert!((normalized.x - 0.6).abs() < 1e-10);
@@ -326,7 +326,7 @@ impl Vector3 {
     ///
     /// ```
     /// use std::f64::consts::PI;
-    /// use geomrust::Vector3;
+    /// use geomcore::Vector3;
     /// let angle = Vector3::X.angle_with_ref(Vector3::Y, Vector3::Z);
     /// assert!((angle - PI / 2.0).abs() < 1e-10);
     /// ```

@@ -4,8 +4,8 @@
 //!
 //! Run with `cargo run --example sample_conics`.
 
-use geomrust::curves::{Circle3D, Curve2D, Ellipse3D, ParametricCurve2D};
-use geomrust::{Cylinder, Point3, Vector3};
+use geomcore::curves::{Circle3D, Curve2D, Ellipse3D, ParametricCurve2D};
+use geomcore::{Cylinder, Point3, Vector3};
 use std::f64::consts::TAU;
 
 const SAMPLE_COUNT: usize = 100;

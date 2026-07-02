@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "geomcore"
+description = "A pure, standalone geometric kernel for CAD-grade curves and surfaces: parametric evaluation, transformations, and curve-on-surface parametrization."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+keywords = ["geometry", "cad", "curves", "surfaces", "nurbs"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/GabrielJMS/geomcore"
+Changelog = "https://github.com/GabrielJMS/geomcore/blob/main/CHANGELOG.md"
+Roadmap = "https://github.com/GabrielJMS/geomcore/blob/main/ROADMAP.md"
+
+[tool.maturin]
+module-name = "geomcore"

@@ -21,8 +21,8 @@ use std::f64::consts::TAU;
 /// [`eval_point`](ParametricCurve2D::eval_point) over each parameter:
 ///
 /// ```
-/// use geomrust::curves::ParametricCurve2D;
-/// use geomrust::{Line2D, Point2, Vector2};
+/// use geomcore::curves::ParametricCurve2D;
+/// use geomcore::{Line2D, Point2, Vector2};
 ///
 /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
 /// let us = [0.0, 1.0, 2.0];
@@ -34,10 +34,10 @@ use std::f64::consts::TAU;
 /// whether [`period`](ParametricCurve2D::period) is `Some`:
 ///
 /// ```
-/// use geomrust::curves::ParametricCurve2D;
-/// use geomrust::{Circle2D, Line2D, Point2};
+/// use geomcore::curves::ParametricCurve2D;
+/// use geomcore::{Circle2D, Line2D, Point2};
 ///
-/// let line = Line2D::new(Point2::ORIGIN, geomrust::Vector2::X).unwrap();
+/// let line = Line2D::new(Point2::ORIGIN, geomcore::Vector2::X).unwrap();
 /// assert!(!ParametricCurve2D::is_periodic(&line));
 ///
 /// let circle = Circle2D::new(Point2::ORIGIN, 1.0).unwrap();
@@ -126,8 +126,8 @@ impl ParametricCurve2D for Circle2D {
 /// # Examples
 ///
 /// ```
-/// use geomrust::curves::{Curve2D, ParametricCurve2D};
-/// use geomrust::{Circle2D, Line2D, Point2, Vector2};
+/// use geomcore::curves::{Curve2D, ParametricCurve2D};
+/// use geomcore::{Circle2D, Line2D, Point2, Vector2};
 ///
 /// let curves: Vec<Curve2D> = vec![
 ///     Line2D::new(Point2::ORIGIN, Vector2::X).unwrap().into(),

@@ -54,7 +54,7 @@ impl std::error::Error for EllipseConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Ellipse3D, Point3, Vector3};
+/// use geomcore::{Ellipse3D, Point3, Vector3};
 /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
 /// assert_eq!(ellipse.eval_point(0.0), Point3::new(3.0, 0.0, 0.0));
 /// ```
@@ -84,7 +84,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Point3, Vector3};
     /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.major_radius(), 3.0);
     /// assert_eq!(ellipse.minor_radius(), 1.5);
@@ -113,7 +113,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Frame3};
+    /// use geomcore::{Ellipse3D, Frame3};
     /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.frame(), Frame3::WORLD);
     /// ```
@@ -155,7 +155,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3};
+    /// use geomcore::{Ellipse3D, Point3};
     /// let ellipse = Ellipse3D::from_center_and_points(
     ///     Point3::ORIGIN,
     ///     Point3::new(3.0, 0.0, 0.0),
@@ -201,7 +201,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Point3, Vector3};
     /// let ellipse = Ellipse3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.center(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -214,7 +214,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Frame3};
+    /// use geomcore::{Ellipse3D, Frame3};
     /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.frame(), Frame3::WORLD);
     /// ```
@@ -227,7 +227,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Frame3};
+    /// use geomcore::{Ellipse3D, Frame3};
     /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.major_radius(), 3.0);
     /// ```
@@ -240,7 +240,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Frame3};
+    /// use geomcore::{Ellipse3D, Frame3};
     /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.minor_radius(), 1.5);
     /// ```
@@ -254,7 +254,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Point3, Vector3};
     /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.eval_point(0.0), Point3::new(3.0, 0.0, 0.0));
     /// ```
@@ -267,7 +267,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Point3, Vector3};
     /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
     /// let points = ellipse.eval_points(&[0.0, 1.0]);
     /// assert_eq!(points[0], Point3::new(3.0, 0.0, 0.0));
@@ -289,7 +289,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Point3, Vector3};
     /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.eval_derivative(0.0, 1), Vector3::new(0.0, 1.5, 0.0));
     /// ```
@@ -306,7 +306,7 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Ellipse3D, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Point3, Vector3};
     /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
     /// assert!((ellipse.parameter_of(Point3::new(0.0, 1.5, 0.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     /// ```
@@ -326,8 +326,8 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::curves::ParametrizeError;
-    /// use geomrust::{Ellipse3D, Plane, Point3, Vector3};
+    /// use geomcore::curves::ParametrizeError;
+    /// use geomcore::{Ellipse3D, Plane, Point3, Vector3};
     ///
     /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
     /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();

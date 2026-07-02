@@ -1,4 +1,4 @@
-//! Golden-fixture replay tests: build geomrust values from recorded JSON
+//! Golden-fixture replay tests: build geomcore values from recorded JSON
 //! specs and check parity against recorded expected outputs. Grows with
 //! every fixture-replay task.
 
@@ -7,9 +7,9 @@ mod common;
 use common::{
     FrameJson, assert_close, assert_point3, assert_vector3, frame3, load, point3, vector3,
 };
-use geomrust::curves::ParametricCurve2D;
-use geomrust::surfaces::{BSplineSurface, ParametricSurface};
-use geomrust::{
+use geomcore::curves::ParametricCurve2D;
+use geomcore::surfaces::{BSplineSurface, ParametricSurface};
+use geomcore::{
     Axis3, BSplineCurve3D, Circle3D, Cone, Curve2D, Cylinder, Ellipse3D, Hyperbola3D, Line3D,
     Parabola3D, ParametrizeError, Plane, Sphere, Torus, Transform,
 };
@@ -539,7 +539,7 @@ struct BSplineFixture {
 }
 
 fn build_bspline(case: &BSplineCase) -> BSplineCurve3D {
-    let poles: Vec<geomrust::Point3> = case.poles.iter().map(|&p| point3(p)).collect();
+    let poles: Vec<geomcore::Point3> = case.poles.iter().map(|&p| point3(p)).collect();
     let result = match &case.weights {
         Some(weights) => BSplineCurve3D::new_rational(
             case.degree,
@@ -654,11 +654,11 @@ struct SurfacesAnalyticFixture {
 fn assert_surface_samples_and_parameters<F>(
     samples: &[SurfaceSample],
     parameters_of: &[SurfaceParametersOf],
-    eval_point: impl Fn(f64, f64) -> geomrust::Point3,
-    eval_derivative: impl Fn(f64, f64, u32, u32) -> geomrust::Vector3,
+    eval_point: impl Fn(f64, f64) -> geomcore::Point3,
+    eval_derivative: impl Fn(f64, f64, u32, u32) -> geomcore::Vector3,
     parameters: F,
 ) where
-    F: Fn(geomrust::Point3) -> (f64, f64),
+    F: Fn(geomcore::Point3) -> (f64, f64),
 {
     for sample in samples {
         let (u, v) = (sample.u, sample.v);
@@ -817,7 +817,7 @@ struct SurfaceConstructionFixture {
     cylinders_from_circle: Vec<CylinderFromCircleCase>,
 }
 
-fn assert_frame_matches(frame: geomrust::Frame3, expected: &FrameJson) {
+fn assert_frame_matches(frame: geomcore::Frame3, expected: &FrameJson) {
     assert_point3(frame.origin(), expected.origin);
     assert_vector3(frame.x_direction(), expected.x_dir);
     assert_vector3(frame.y_direction(), expected.y_dir);
@@ -909,7 +909,7 @@ struct BSplineSurfaceFixture {
 }
 
 fn build_bspline_surface(case: &BSplineSurfaceCase) -> BSplineSurface {
-    let poles: Vec<Vec<geomrust::Point3>> = case
+    let poles: Vec<Vec<geomcore::Point3>> = case
         .poles
         .iter()
         .map(|row| row.iter().map(|&p| point3(p)).collect())
@@ -1023,7 +1023,7 @@ enum ParamCurve {
     Circle(Circle3D),
 }
 
-fn build_parametrize_surface(s: &ParametrizeSurface) -> geomrust::Surface {
+fn build_parametrize_surface(s: &ParametrizeSurface) -> geomcore::Surface {
     let frame = frame3(&s.frame);
     match s.kind.as_str() {
         "plane" => Plane::from_frame(frame).into(),
@@ -1056,7 +1056,7 @@ fn build_parametrize_curve(c: &ParametrizeCurve) -> ParamCurve {
 
 fn parametrize_curve(
     curve: &ParamCurve,
-    surface: &geomrust::Surface,
+    surface: &geomcore::Surface,
 ) -> Result<Curve2D, ParametrizeError> {
     match curve {
         ParamCurve::Line(l) => l.parametrize_on(surface.clone()),

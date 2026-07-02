@@ -122,7 +122,7 @@ fn finish_line(
 
 /// Checks that `surface(pcurve(t)) ~= curve(t)` at the sample parameters.
 ///
-/// This is a geomrust addition on top of the raw projection: the projection
+/// This is a geomcore addition on top of the raw projection: the projection
 /// math assumes the curve already lies on the surface, so an off-surface curve
 /// would otherwise silently produce a wrong-but-plausible 2D image. The
 /// tolerance scales with the characteristic size of the configuration so it

@@ -37,7 +37,7 @@ impl std::error::Error for LineConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Line3D, Point3, Vector3};
+/// use geomcore::{Line3D, Point3, Vector3};
 /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
 /// assert_eq!(line.eval_point(3.0), Point3::new(3.0, 0.0, 0.0));
 /// ```
@@ -56,7 +56,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::ORIGIN, Vector3::new(2.0, 0.0, 0.0)).unwrap();
     /// assert_eq!(line.direction(), Vector3::X);
     /// ```
@@ -71,7 +71,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Line3D, Point3, Vector3};
+    /// use geomcore::{Axis3, Line3D, Point3, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Y).unwrap();
     /// let line = Line3D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
@@ -90,7 +90,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3};
+    /// use geomcore::{Line3D, Point3};
     /// let line = Line3D::from_two_points(Point3::ORIGIN, Point3::new(2.0, 0.0, 0.0)).unwrap();
     /// assert_eq!(line.origin(), Point3::ORIGIN);
     /// ```
@@ -108,7 +108,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::X).unwrap();
     /// assert_eq!(line.origin(), Point3::new(1.0, 2.0, 3.0));
     /// ```
@@ -121,7 +121,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::ORIGIN, Vector3::new(0.0, 5.0, 0.0)).unwrap();
     /// assert_eq!(line.direction(), Vector3::Y);
     /// ```
@@ -134,7 +134,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis3, Line3D, Point3, Vector3};
+    /// use geomcore::{Axis3, Line3D, Point3, Vector3};
     /// let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
     /// let line = Line3D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
@@ -148,7 +148,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
     /// assert_eq!(line.eval_point(3.0), Point3::new(3.0, 0.0, 0.0));
     /// ```
@@ -161,7 +161,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
     /// let points = line.eval_points(&[0.0, 1.0, 2.0]);
     /// assert_eq!(points, vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]);
@@ -185,7 +185,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::ORIGIN, Vector3::new(0.0, 3.0, 0.0)).unwrap();
     /// assert_eq!(line.eval_derivative(1.5, 1), Vector3::Y);
     /// assert_eq!(line.eval_derivative(1.5, 2), Vector3::ZERO);
@@ -205,7 +205,7 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line3D, Point3, Vector3};
+    /// use geomcore::{Line3D, Point3, Vector3};
     /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
     /// assert_eq!(line.parameter_of(Point3::new(2.5, 0.0, 0.0)), 2.5);
     /// ```
@@ -224,7 +224,7 @@ impl Line3D {
     /// [`ParametrizeError::NotAnalytic`].
     ///
     /// The projection math assumes the line lies on the surface. As a
-    /// geomrust safeguard, the candidate 2D image is verified against the
+    /// geomcore safeguard, the candidate 2D image is verified against the
     /// surface at a few parameters; if `surface.eval_point(q(t))` disagrees
     /// with `self.eval_point(t)`, [`ParametrizeError::CurveNotOnSurface`] is
     /// returned. For periodic surfaces the result is normalized so `q(0)`
@@ -235,8 +235,8 @@ impl Line3D {
     /// A vertical line on a cylinder maps to a vertical line in `(u, v)`:
     ///
     /// ```
-    /// use geomrust::curves::{Curve2D, ParametricCurve2D};
-    /// use geomrust::{Cylinder, Line3D, Point3, Vector3};
+    /// use geomcore::curves::{Curve2D, ParametricCurve2D};
+    /// use geomcore::{Cylinder, Line3D, Point3, Vector3};
     ///
     /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
     /// let line = Line3D::new(Point3::new(2.0, 0.0, 0.0), Vector3::Z).unwrap();
@@ -257,7 +257,7 @@ impl Line3D {
 /// # Examples
 ///
 /// ```
-/// use geomrust::{Line2D, Point2, Vector2};
+/// use geomcore::{Line2D, Point2, Vector2};
 /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
 /// assert_eq!(line.eval_point(3.0), Point2::new(3.0, 0.0));
 /// ```
@@ -276,7 +276,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 5.0)).unwrap();
     /// assert_eq!(line.direction(), Vector2::Y);
     /// ```
@@ -291,7 +291,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis2, Line2D, Point2, Vector2};
+    /// use geomcore::{Axis2, Line2D, Point2, Vector2};
     /// let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
     /// let line = Line2D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
@@ -310,7 +310,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2};
+    /// use geomcore::{Line2D, Point2};
     /// let line = Line2D::from_two_points(Point2::ORIGIN, Point2::new(0.0, 4.0)).unwrap();
     /// assert_eq!(line.origin(), Point2::ORIGIN);
     /// ```
@@ -328,7 +328,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::new(1.0, 2.0), Vector2::X).unwrap();
     /// assert_eq!(line.origin(), Point2::new(1.0, 2.0));
     /// ```
@@ -341,7 +341,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 5.0)).unwrap();
     /// assert_eq!(line.direction(), Vector2::Y);
     /// ```
@@ -354,7 +354,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Axis2, Line2D, Point2, Vector2};
+    /// use geomcore::{Axis2, Line2D, Point2, Vector2};
     /// let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
     /// let line = Line2D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
@@ -368,7 +368,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
     /// assert_eq!(line.eval_point(3.0), Point2::new(3.0, 0.0));
     /// ```
@@ -381,7 +381,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
     /// let points = line.eval_points(&[0.0, 1.0, 2.0]);
     /// assert_eq!(points, vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)]);
@@ -405,7 +405,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 3.0)).unwrap();
     /// assert_eq!(line.eval_derivative(1.5, 1), Vector2::Y);
     /// assert_eq!(line.eval_derivative(1.5, 2), Vector2::ZERO);
@@ -425,7 +425,7 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomrust::{Line2D, Point2, Vector2};
+    /// use geomcore::{Line2D, Point2, Vector2};
     /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
     /// assert_eq!(line.parameter_of(Point2::new(2.5, 0.0)), 2.5);
     /// ```
