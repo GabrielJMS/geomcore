@@ -13,3 +13,4 @@ geomrust-py/target
 dist/
 .superpowers/
 .venv-py/
+.idea/
