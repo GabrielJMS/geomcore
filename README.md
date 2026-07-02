@@ -1,5 +1,10 @@
 # geomcore
 
+[![crates.io](https://img.shields.io/crates/v/geomcore.svg)](https://crates.io/crates/geomcore)
+[![docs.rs](https://img.shields.io/docsrs/geomcore)](https://docs.rs/geomcore)
+[![PyPI](https://img.shields.io/pypi/v/geomcore.svg)](https://pypi.org/project/geomcore/)
+[![CI](https://github.com/GabrielJMS/geomcore/actions/workflows/ci.yml/badge.svg)](https://github.com/GabrielJMS/geomcore/actions/workflows/ci.yml)
+
 A pure, standalone geometric kernel for CAD-grade curves and surfaces —
 parametric evaluation, rigid transformations, and analytic curve-on-surface
 parametrization, built as small, independently useful Rust libraries with a
@@ -47,7 +52,7 @@ let point = circle.eval_point(std::f64::consts::PI / 4.0);
 
     cargo add geomcore
 
-Not yet published to crates.io — coming with the first release.
+API reference: [docs.rs/geomcore](https://docs.rs/geomcore).
 
 ## Python
 
@@ -62,7 +67,8 @@ point = circle.eval_point(math.pi / 4)
 
     pip install geomcore
 
-Not yet published to PyPI — coming with the first release.
+Pre-built wheels for Linux (x86_64, aarch64), macOS, and Windows,
+Python 3.9+ (abi3 — one wheel covers all versions).
 
 ## Why
 
