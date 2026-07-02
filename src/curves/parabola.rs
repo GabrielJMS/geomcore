@@ -175,7 +175,7 @@ impl Parabola3D {
     /// The parabola is a degree-2 polynomial curve: the first derivative is
     /// linear in `u`, the second is a constant, and every derivative of
     /// order above 2 is zero (see
-    /// [`crate::curve_math::analytic::parabola_dn`]).
+    /// `curve_math::analytic::parabola_dn`).
     ///
     /// A parabola with focal = 0 is degenerate; evaluation returns
     /// non-finite values.

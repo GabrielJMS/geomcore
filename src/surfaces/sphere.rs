@@ -159,7 +159,7 @@ impl Sphere {
     }
 
     /// Evaluates the derivative of order `(du, dv)` at `(u, v)`. See
-    /// [`crate::surface_math::analytic::sphere_derivative`] for the
+    /// `surface_math::analytic::sphere_derivative` for the
     /// formulas.
     ///
     /// # Panics
@@ -187,7 +187,7 @@ impl Sphere {
     }
 
     /// Recovers `(u, v)` of a point on (or near) the sphere. See
-    /// [`crate::surface_math::analytic::sphere_parameters`] for the
+    /// `surface_math::analytic::sphere_parameters` for the
     /// formula, including the pole handling.
     ///
     /// # Examples

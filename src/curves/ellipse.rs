@@ -147,7 +147,7 @@ impl Ellipse3D {
     /// # Errors
     ///
     /// Returns [`EllipseConstructionError::NullAxis`] if `d1` is below
-    /// [`crate::tol::CONFUSION`] (`s1` coincides with `center`); or
+    /// `tol::CONFUSION` (`s1` coincides with `center`); or
     /// [`EllipseConstructionError::InvertedAxis`] if `d1 < d2`, if `d2` is
     /// below `1e-7`, or if `x_axis` is parallel to `s2 - center` (the two
     /// points and the center are collinear).
@@ -279,7 +279,7 @@ impl Ellipse3D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     ///
     /// Derivatives cycle with period 4 in `order` (see
-    /// [`crate::curve_math::analytic::ellipse_dn`]).
+    /// `curve_math::analytic::ellipse_dn`).
     ///
     /// # Panics
     ///

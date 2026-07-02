@@ -64,7 +64,7 @@ impl Cone {
     /// Creates a cone from a frame, a semi-angle, and a reference radius.
     ///
     /// The semi-angle must satisfy `0 < |semi_angle| < PI/2` (both bounds
-    /// excluded with [`crate::tol::ANGULAR`] tolerance); a negative
+    /// excluded with `tol::ANGULAR` tolerance); a negative
     /// semi-angle flips the direction the cone opens in along `z`.
     ///
     /// # Errors
@@ -136,7 +136,7 @@ impl Cone {
     /// from `p1` to `p2`). The frame's origin is `p1`, its z direction is
     /// `normalize(p2 - p1)`, and its x direction is an arbitrary vector
     /// perpendicular to `z`, matching the reference implementation's
-    /// convention (see [`arbitrary_perpendicular_frame`]).
+    /// convention (see `arbitrary_perpendicular_frame`).
     ///
     /// # Errors
     ///
@@ -273,7 +273,7 @@ impl Cone {
     }
 
     /// Evaluates the derivative of order `(du, dv)` at `(u, v)`. See
-    /// [`crate::surface_math::analytic::cone_derivative`] for the formulas.
+    /// `surface_math::analytic::cone_derivative` for the formulas.
     ///
     /// # Panics
     ///
@@ -309,7 +309,7 @@ impl Cone {
     }
 
     /// Recovers `(u, v)` of a point on (or near) the cone. See
-    /// [`crate::surface_math::analytic::cone_parameters`] for the formula,
+    /// `surface_math::analytic::cone_parameters` for the formula,
     /// including the opposite-nappe handling below the apex.
     ///
     /// # Examples

@@ -129,7 +129,7 @@ impl Circle3D {
     /// Creates the circumcircle through three points.
     ///
     /// Failure checks run before any circumcenter computation: any pairwise
-    /// distance below [`crate::tol::CONFUSION`] is reported as
+    /// distance below `tol::CONFUSION` is reported as
     /// [`CircleConstructionError::ConfusedPoints`] (this also covers all
     /// three points being coincident); otherwise, if the points are
     /// collinear (`|(p2-p1) x (p3-p1)| <= tol::CONFUSION * max(|p2-p1|,
@@ -277,7 +277,7 @@ impl Circle3D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     ///
     /// Derivatives cycle with period 4 in `order` (see
-    /// [`crate::curve_math::analytic::circle_dn`]).
+    /// `curve_math::analytic::circle_dn`).
     ///
     /// # Panics
     ///
@@ -483,7 +483,7 @@ impl Circle2D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     ///
     /// Derivatives cycle with period 4 in `order` (see
-    /// [`crate::curve_math::analytic::circle2d_dn`]).
+    /// `curve_math::analytic::circle2d_dn`).
     ///
     /// # Panics
     ///

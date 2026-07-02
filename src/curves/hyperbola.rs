@@ -141,7 +141,7 @@ impl Hyperbola3D {
     /// # Errors
     ///
     /// Returns [`HyperbolaConstructionError::ConfusedPoints`] if any pair
-    /// among `{s1, s2, center}` is within [`crate::tol::CONFUSION`]; or
+    /// among `{s1, s2, center}` is within `tol::CONFUSION`; or
     /// [`HyperbolaConstructionError::CollinearPoints`] if `s2` lies on the
     /// line `(center, x_axis)`, or `x_axis` is parallel to `s2 - center`.
     ///
@@ -276,7 +276,7 @@ impl Hyperbola3D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     ///
     /// Unlike the trigonometric conics, hyperbolic derivatives do not cycle
-    /// with period 4 (see [`crate::curve_math::analytic::hyperbola_dn`]):
+    /// with period 4 (see `curve_math::analytic::hyperbola_dn`):
     /// odd orders follow the `sinh`/`cosh` pattern of the first derivative,
     /// even orders follow the `cosh`/`sinh` pattern of the second.
     ///

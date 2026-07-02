@@ -194,7 +194,7 @@ impl Torus {
     }
 
     /// Evaluates the derivative of order `(du, dv)` at `(u, v)`. See
-    /// [`crate::surface_math::analytic::torus_derivative`] for the
+    /// `surface_math::analytic::torus_derivative` for the
     /// formulas.
     ///
     /// # Panics
@@ -230,7 +230,7 @@ impl Torus {
     }
 
     /// Recovers `(u, v)` of a point on (or near) the torus. See
-    /// [`crate::surface_math::analytic::torus_parameters`] for the formula,
+    /// `surface_math::analytic::torus_parameters` for the formula,
     /// including the near/far branch handling when `major_radius <
     /// minor_radius`.
     ///
