@@ -11,3 +11,6 @@ geomrust-py/target
 *.so
 *.whl
 dist/
+.superpowers/
+.venv-py/
+.idea/

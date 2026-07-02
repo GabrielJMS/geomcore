@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "geomrust-py"
+version = "0.1.0"
+description = "Python bindings for geomrust, a standalone geometric kernel for CAD-grade curves and surfaces."
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+
+[tool.maturin]
+module-name = "geomrust"
