@@ -34,8 +34,6 @@ ones before them. If you'd like to help with any of it, see
 
 ## Later
 
-- B-spline toolkit operations: knot insertion and refinement, curve/surface
-  splitting, Bézier decomposition.
 - B-spline interpolation and approximation from point data.
 - General surface–surface intersection (marching + B-spline approximation of
   the result).

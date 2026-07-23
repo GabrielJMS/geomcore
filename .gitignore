@@ -14,5 +14,3 @@ dist/
 .superpowers/
 .venv-py/
 .idea/
-# mkdocs build output
-site/
