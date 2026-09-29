@@ -16,8 +16,8 @@ pub(crate) mod poly;
 pub(crate) mod solve;
 
 // Re-exported for the projection/extrema consumers landing in v0.12.0;
-// the allow expires then.
-#[allow(dead_code)]
+// the allows expire then.
+#[allow(dead_code, unused_imports)]
 pub(crate) use poly::{RealRoot, real_roots};
-#[allow(dead_code)]
+#[allow(dead_code, unused_imports)]
 pub(crate) use solve::{brent_minimum, gauss_newton_1d, gauss_newton_2d, newton_1d, solve_2x2};

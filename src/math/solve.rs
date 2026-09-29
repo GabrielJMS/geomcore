@@ -100,9 +100,7 @@ pub(crate) fn gauss_newton_2d(
         let (r, ju, jv) = (residual(u, v), jac_u(u, v), jac_v(u, v));
         let lhs = [[dot(ju, ju), dot(ju, jv)], [dot(ju, jv), dot(jv, jv)]];
         let rhs = [-dot(ju, r), -dot(jv, r)];
-        let Some(delta) = solve_2x2(lhs, rhs, tol) else {
-            return None;
-        };
+        let delta = solve_2x2(lhs, rhs, tol)?;
         let (mut su, mut sv) = (delta[0], delta[1]);
         let mut improved = false;
         for _ in 0..12 {

@@ -188,13 +188,16 @@ fn cluster(
     let mut roots: Vec<RealRoot> = Vec::new();
     for x in raw {
         let gap = tol * (1.0 + x.abs());
-        if let Some(last) = roots.last_mut() {
-            if (x - last.value).abs() <= gap.max(tol * (1.0 + last.value.abs())) {
-                last.value =
-                    (last.value * last.multiplicity as f64 + x) / (last.multiplicity as f64 + 1.0);
-                last.multiplicity += 1;
-                continue;
-            }
+        let merge = match roots.last() {
+            Some(last) => (x - last.value).abs() <= gap.max(tol * (1.0 + last.value.abs())),
+            None => false,
+        };
+        if merge {
+            let last = roots.last_mut().expect("merge implies a root exists");
+            last.value =
+                (last.value * last.multiplicity as f64 + x) / (last.multiplicity as f64 + 1.0);
+            last.multiplicity += 1;
+            continue;
         }
         roots.push(RealRoot {
             value: x,
