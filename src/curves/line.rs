@@ -4,6 +4,7 @@
 use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
+use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{Axis2D, Axis3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D};
 use std::fmt;
@@ -230,6 +231,36 @@ impl Line3D {
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+    }
+
+    /// Projects `point` onto the line, returning the parameter of the
+    /// closest point and its distance. Distances within `tol.confusion`
+    /// snap to `0.0`, matching [`Line3D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let proj = line.project_point(Point3D::new(2.5, 1.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(proj.parameter, 2.5);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        let u = self.parameter_of(point);
+        let distance = self.eval_point(u).distance(point);
+        CurveProjection {
+            parameter: u,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the line.
+    ///
+    /// Default-style batch wrapper over [`Line3D::project_point`]: one
+    /// native call per batch, mirroring [`Line3D::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
     /// Computes the exact 2D representation of this line in a surface's
@@ -470,6 +501,36 @@ impl Line2D {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
     }
+
+    /// Projects `point` onto the line, returning the parameter of the
+    /// closest point and its distance. Distances within `tol.confusion`
+    /// snap to `0.0`, matching [`Line2D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line2D, Point2D, Tolerance, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let proj = line.project_point(Point2D::new(2.5, 1.0), Tolerance::DEFAULT);
+    /// assert_eq!(proj.parameter, 2.5);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection {
+        let u = self.parameter_of(point);
+        let distance = self.eval_point(u).distance(point);
+        CurveProjection {
+            parameter: u,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the line.
+    ///
+    /// Default-style batch wrapper over [`Line2D::project_point`]: one
+    /// native call per batch, mirroring [`Line2D::eval_points`].
+    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
 }
 
 #[cfg(test)]
@@ -707,5 +768,49 @@ mod tests {
         assert!(line.contains(Point2D::new(2.5, 0.0), tol));
         assert!(line.contains(line.eval_point(-3.0), tol));
         assert!(!line.contains(Point2D::new(2.5, 1.0), tol));
+    }
+
+    #[test]
+    fn test_line3d_project_point() {
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let on = line.project_point(Point3D::new(2.5, 0.0, 0.0), tol);
+        assert_eq!(on.parameter, 2.5);
+        assert_eq!(on.distance, 0.0);
+        let off = line.project_point(Point3D::new(2.5, 1.0, 0.0), tol);
+        assert_eq!(off.parameter, 2.5);
+        assert_eq!(off.distance, 1.0);
+        // contains agrees with zero distance.
+        assert_eq!(
+            line.contains(Point3D::new(2.5, 0.0, 0.0), tol),
+            on.distance == 0.0
+        );
+    }
+
+    #[test]
+    fn test_line3d_project_points_batch() {
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let points = [
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 2.0, 0.0),
+            Point3D::new(-1.0, 0.0, 3.0),
+        ];
+        let projs = line.project_points(&points, tol);
+        assert_eq!(projs.len(), 3);
+        assert_eq!(projs[0].distance, 0.0);
+        assert_eq!(projs[1].parameter, 1.0);
+        assert_eq!(projs[1].distance, 2.0);
+        assert_eq!(projs[2].parameter, -1.0);
+        assert_eq!(projs[2].distance, 3.0);
+    }
+
+    #[test]
+    fn test_line2d_project_point() {
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let proj = line.project_point(Point2D::new(2.5, 1.0), tol);
+        assert_eq!(proj.parameter, 2.5);
+        assert_eq!(proj.distance, 1.0);
     }
 }

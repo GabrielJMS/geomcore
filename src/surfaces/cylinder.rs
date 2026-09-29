@@ -2,6 +2,7 @@
 //! construction from an axis or an existing circle, thin wrappers over
 //! [`crate::surface_math::analytic`].
 
+use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{Axis3D, Circle3D, Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
@@ -267,6 +268,37 @@ impl Cylinder {
         let (u, v) = self.parameters_of(point);
         self.eval_point(u, v).distance(point) <= tol.confusion
     }
+
+    /// Projects `point` onto the cylinder, returning the `(u, v)`
+    /// parameters of the closest point and its distance. Distances within
+    /// `tol.confusion` snap to `0.0`, matching [`Cylinder::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Tolerance, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let proj = cylinder.project_point(Point3D::new(3.0, 0.0, 5.0), Tolerance::DEFAULT);
+    /// assert_eq!((proj.u, proj.v), (0.0, 5.0));
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        let (u, v) = self.parameters_of(point);
+        let distance = self.eval_point(u, v).distance(point);
+        SurfaceProjection {
+            u,
+            v,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the cylinder.
+    ///
+    /// Default-style batch wrapper over [`Cylinder::project_point`]: one
+    /// native call per batch, mirroring [`Cylinder::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
 }
 
 #[cfg(test)]
@@ -411,5 +443,18 @@ mod tests {
         assert!(cylinder.contains(cylinder.eval_point(1.0, 3.0), tol));
         assert!(!cylinder.contains(Point3D::ORIGIN, tol));
         assert!(!cylinder.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+    }
+
+    #[test]
+    fn test_cylinder_project_point() {
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let proj = cylinder.project_point(Point3D::new(3.0, 0.0, 5.0), tol);
+        assert_eq!((proj.u, proj.v), (0.0, 5.0));
+        assert_eq!(proj.distance, 1.0);
+        // Axis point: the whole height circle is equidistant; distance is exact.
+        let axis = cylinder.project_point(Point3D::new(0.0, 0.0, 5.0), tol);
+        assert_eq!(axis.v, 5.0);
+        assert_eq!(axis.distance, 2.0);
     }
 }

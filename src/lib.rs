@@ -68,6 +68,8 @@ pub mod curves;
 pub mod frame;
 /// Points in 2D and 3D space.
 pub mod point;
+/// Point-projection result types.
+pub mod projection;
 /// Internal analytic surface evaluation math.
 pub(crate) mod surface_math;
 /// Public surface types: planes, cylinders, cones, spheres, tori, and
@@ -88,6 +90,7 @@ pub use curves::{
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use point::{Point2D, Point3D};
+pub use projection::{CurveProjection, SurfaceProjection};
 pub use surfaces::{
     BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
     ParametricSurface, Plane, PlaneConstructionError, Sphere, SphereConstructionError, Surface,

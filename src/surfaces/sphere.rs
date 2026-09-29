@@ -1,6 +1,7 @@
 //! Spheres in 3D: parametric evaluation and parameter inversion, thin
 //! wrappers over [`crate::surface_math::analytic`].
 
+use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
@@ -220,6 +221,37 @@ impl Sphere {
         let (u, v) = self.parameters_of(point);
         self.eval_point(u, v).distance(point) <= tol.confusion
     }
+
+    /// Projects `point` onto the sphere, returning the `(u, v)` parameters
+    /// of the closest point and its distance. Distances within
+    /// `tol.confusion` snap to `0.0`, matching [`Sphere::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, Tolerance};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// let proj = sphere.project_point(Point3D::new(4.0, 0.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!((proj.u, proj.v), (0.0, 0.0));
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        let (u, v) = self.parameters_of(point);
+        let distance = self.eval_point(u, v).distance(point);
+        SurfaceProjection {
+            u,
+            v,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the sphere.
+    ///
+    /// Default-style batch wrapper over [`Sphere::project_point`]: one
+    /// native call per batch, mirroring [`Sphere::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
 }
 
 #[cfg(test)]
@@ -335,5 +367,17 @@ mod tests {
         assert!(sphere.contains(sphere.eval_point(0.7, 0.4), tol));
         assert!(!sphere.contains(Point3D::ORIGIN, tol));
         assert!(!sphere.contains(Point3D::new(4.0, 0.0, 0.0), tol));
+    }
+
+    #[test]
+    fn test_sphere_project_point() {
+        let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let proj = sphere.project_point(Point3D::new(4.0, 0.0, 0.0), tol);
+        assert_eq!((proj.u, proj.v), (0.0, 0.0));
+        assert_eq!(proj.distance, 1.0);
+        // Center: every surface point is equidistant; distance is exact.
+        let center = sphere.project_point(Point3D::ORIGIN, tol);
+        assert_eq!(center.distance, 3.0);
     }
 }

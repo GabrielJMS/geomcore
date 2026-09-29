@@ -2,6 +2,7 @@
 //! construction from points or an implicit equation, thin wrappers over
 //! [`crate::surface_math::analytic`].
 
+use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
 use crate::{Frame3D, Point3D, Tolerance, Vector3D};
@@ -308,6 +309,37 @@ impl Plane {
         let (u, v) = self.parameters_of(point);
         self.eval_point(u, v).distance(point) <= tol.confusion
     }
+
+    /// Projects `point` onto the plane, returning the `(u, v)` parameters
+    /// of the closest point and its distance. Distances within
+    /// `tol.confusion` snap to `0.0`, matching [`Plane::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let proj = plane.project_point(Point3D::new(1.0, 2.0, 3.0), Tolerance::DEFAULT);
+    /// assert_eq!((proj.u, proj.v), (1.0, 2.0));
+    /// assert_eq!(proj.distance, 3.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        let (u, v) = self.parameters_of(point);
+        let distance = self.eval_point(u, v).distance(point);
+        SurfaceProjection {
+            u,
+            v,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the plane.
+    ///
+    /// Default-style batch wrapper over [`Plane::project_point`]: one
+    /// native call per batch, mirroring [`Plane::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
 }
 
 /// Builds a frame at `origin` with `z_dir = normalize(normal)` and an
@@ -522,5 +554,33 @@ mod tests {
                 ..tol
             }
         ));
+    }
+
+    #[test]
+    fn test_plane_project_point() {
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let proj = plane.project_point(Point3D::new(1.0, 2.0, 3.0), tol);
+        assert_eq!((proj.u, proj.v), (1.0, 2.0));
+        assert_eq!(proj.distance, 3.0);
+        let on = plane.project_point(Point3D::new(1.0, 2.0, 0.0), tol);
+        assert_eq!(on.distance, 0.0);
+    }
+
+    #[test]
+    fn test_plane_project_points_batch() {
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let points = [
+            Point3D::ORIGIN,
+            Point3D::new(0.0, 0.0, 2.0),
+            Point3D::new(1.0, 1.0, -3.0),
+        ];
+        let projs = plane.project_points(&points, tol);
+        assert_eq!(projs.len(), 3);
+        assert_eq!(projs[0].distance, 0.0);
+        assert_eq!(projs[1].distance, 2.0);
+        assert_eq!((projs[2].u, projs[2].v), (1.0, 1.0));
+        assert_eq!(projs[2].distance, 3.0);
     }
 }

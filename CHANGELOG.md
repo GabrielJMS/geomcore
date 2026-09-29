@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-29
+
+### Added
+
+- Closed-form point projection: `project_point(point, tol)` and batch
+  `project_points(points, tol)` on `Line3D`, `Circle3D`, `Line2D`,
+  `Circle2D` (returning `CurveProjection { parameter, distance }`) and on
+  `Plane`, `Cylinder`, `Cone`, `Sphere`, `Torus` (returning
+  `SurfaceProjection { u, v, distance }`). Sub-tolerance distances snap
+  to `0.0`, so projection agrees with `contains`. Python returns
+  `(parameter, distance)` / `(u, v, distance)` tuples.
+  (Conic and B-spline projection arrive with the `math` foundations.)
+
 ## [0.4.0] - 2026-09-29
 
 ### Added
@@ -63,7 +76,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.5.0
 [0.4.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.4.0
 [0.3.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.2.0

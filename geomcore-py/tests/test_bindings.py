@@ -160,3 +160,28 @@ def test_contains_surface():
     torus = Torus(Point3D.origin(), Vector3D.z(), 4.0, 1.0)
     assert torus.contains(Point3D(5.0, 0.0, 0.0))
     assert not torus.contains(Point3D.origin())
+
+
+def test_project_point_curve():
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    u, dist = circle.project_point(Point3D(3.0, 0.0, 0.0))
+    assert u == pytest.approx(0.0)
+    assert dist == pytest.approx(1.0)
+    u, dist = circle.project_point(Point3D(2.0, 0.0, 0.0))
+    assert dist == 0.0
+    # Batch variant agrees with scalar calls.
+    batch = circle.project_points([Point3D(3.0, 0.0, 0.0), Point3D(2.0, 0.0, 0.0)])
+    assert batch[0] == pytest.approx((0.0, 1.0))
+    assert batch[1][1] == 0.0
+
+
+def test_project_point_surface():
+    from geomcore.surfaces import Plane
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    u, v, dist = plane.project_point(Point3D(1.0, 2.0, 3.0))
+    assert (u, v) == pytest.approx((1.0, 2.0))
+    assert dist == pytest.approx(3.0)
+    batch = plane.project_points([Point3D.origin(), Point3D(0.0, 0.0, 2.0)])
+    assert batch[0][2] == 0.0
+    assert batch[1][2] == pytest.approx(2.0)

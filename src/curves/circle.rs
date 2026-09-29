@@ -5,6 +5,7 @@
 use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
+use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
 use crate::{Axis3D, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D};
@@ -331,6 +332,36 @@ impl Circle3D {
         self.eval_point(u).distance(point) <= tol.confusion
     }
 
+    /// Projects `point` onto the circle, returning the parameter of the
+    /// closest point and its distance. Distances within `tol.confusion`
+    /// snap to `0.0`, matching [`Circle3D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Point3D, Tolerance, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let proj = circle.project_point(Point3D::new(3.0, 0.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(proj.parameter, 0.0);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        let u = self.parameter_of(point);
+        let distance = self.eval_point(u).distance(point);
+        CurveProjection {
+            parameter: u,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the circle.
+    ///
+    /// Default-style batch wrapper over [`Circle3D::project_point`]: one
+    /// native call per batch, mirroring [`Circle3D::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
     /// Computes the exact 2D representation of this circle in a surface's
     /// parameter space: a [`Curve2D`] `q(t)` such that
     /// `surface.eval_point(q(t)) == self.eval_point(t)` for the same `t`.
@@ -554,6 +585,36 @@ impl Circle2D {
     pub fn contains(&self, point: Point2D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+    }
+
+    /// Projects `point` onto the circle, returning the parameter of the
+    /// closest point and its distance. Distances within `tol.confusion`
+    /// snap to `0.0`, matching [`Circle2D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle2D, Point2D, Tolerance};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let proj = circle.project_point(Point2D::new(3.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(proj.parameter, 0.0);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection {
+        let u = self.parameter_of(point);
+        let distance = self.eval_point(u).distance(point);
+        CurveProjection {
+            parameter: u,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the circle.
+    ///
+    /// Default-style batch wrapper over [`Circle2D::project_point`]: one
+    /// native call per batch, mirroring [`Circle2D::eval_points`].
+    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 }
 
@@ -848,5 +909,40 @@ mod tests {
         assert!(circle.contains(circle.eval_point(1.0), tol));
         assert!(!circle.contains(Point2D::ORIGIN, tol));
         assert!(!circle.contains(Point2D::new(3.0, 0.0), tol));
+    }
+
+    #[test]
+    fn test_circle3d_project_point() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let on = circle.project_point(Point3D::new(2.0, 0.0, 0.0), tol);
+        assert_eq!(on.parameter, 0.0);
+        assert_eq!(on.distance, 0.0);
+        let off = circle.project_point(Point3D::new(3.0, 0.0, 0.0), tol);
+        assert_eq!(off.parameter, 0.0);
+        assert_eq!(off.distance, 1.0);
+        // Axis point: every circle point is equidistant; distance is exact.
+        let axis = circle.project_point(Point3D::new(0.0, 0.0, 5.0), tol);
+        assert!((axis.distance - (4.0 + 25.0f64).sqrt()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_circle3d_project_points_batch() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let points = [Point3D::new(2.0, 0.0, 0.0), Point3D::new(0.0, 3.0, 0.0)];
+        let projs = circle.project_points(&points, tol);
+        assert_eq!(projs.len(), 2);
+        assert_eq!(projs[0].distance, 0.0);
+        assert_eq!(projs[1].distance, 1.0);
+    }
+
+    #[test]
+    fn test_circle2d_project_point() {
+        let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let proj = circle.project_point(Point2D::new(3.0, 0.0), tol);
+        assert_eq!(proj.parameter, 0.0);
+        assert_eq!(proj.distance, 1.0);
     }
 }

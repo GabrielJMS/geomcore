@@ -476,6 +476,32 @@ impl PyPlane {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
+
+    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.u, proj.v, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the surface, returning a
+    /// `(u, v, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(
+        &self,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<(f64, f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
+    }
 }
 
 /// An infinite circular cylinder; u is the angle around the axis, v the
@@ -552,6 +578,32 @@ impl PyCylinder {
     fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.u, proj.v, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the surface, returning a
+    /// `(u, v, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(
+        &self,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<(f64, f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
     }
 }
 
@@ -638,6 +690,32 @@ impl PyCone {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
+
+    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.u, proj.v, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the surface, returning a
+    /// `(u, v, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(
+        &self,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<(f64, f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
+    }
 }
 
 /// A sphere; u is the longitude in [0, 2*pi), v the latitude in [-pi/2, pi/2].
@@ -701,6 +779,32 @@ impl PySphere {
     fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.u, proj.v, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the surface, returning a
+    /// `(u, v, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(
+        &self,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<(f64, f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
     }
 }
 
@@ -772,6 +876,32 @@ impl PyTorus {
     fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.u, proj.v, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the surface, returning a
+    /// `(u, v, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(
+        &self,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<(f64, f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
     }
 }
 
@@ -1000,6 +1130,28 @@ impl PyLine3D {
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
+    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
     /// Compute this line's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
@@ -1091,6 +1243,28 @@ impl PyCircle3D {
     fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
     }
 
     /// Compute this circle's 2D representation in a surface's (u, v) space.
@@ -1495,6 +1669,28 @@ impl PyLine2D {
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
+    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint2D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
     fn __repr__(&self) -> String {
         let o = self.0.origin();
         let d = self.0.direction();
@@ -1556,6 +1752,28 @@ impl PyCircle2D {
     fn contains(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> bool {
         self.0
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint2D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
     }
 
     fn __repr__(&self) -> String {

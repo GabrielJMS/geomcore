@@ -2,6 +2,7 @@
 //! construction from an apex angle or two circular sections, thin wrappers
 //! over [`crate::surface_math::analytic`].
 
+use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
 use crate::{Frame3D, Point3D, Tolerance, Vector3D};
@@ -342,6 +343,39 @@ impl Cone {
         let (u, v) = self.parameters_of(point);
         self.eval_point(u, v).distance(point) <= tol.confusion
     }
+
+    /// Projects `point` onto the cone, returning the `(u, v)` parameters
+    /// of the closest point and its distance. Distances within
+    /// `tol.confusion` snap to `0.0`, matching [`Cone::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Frame3D, Point3D, Tolerance};
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let p = cone.eval_point(1.0, 2.0);
+    /// let proj = cone.project_point(p, Tolerance::DEFAULT);
+    /// assert!((proj.u - 1.0).abs() < 1e-9);
+    /// assert!((proj.v - 2.0).abs() < 1e-9);
+    /// assert_eq!(proj.distance, 0.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        let (u, v) = self.parameters_of(point);
+        let distance = self.eval_point(u, v).distance(point);
+        SurfaceProjection {
+            u,
+            v,
+            distance: projection::snap_distance(distance, tol.confusion),
+        }
+    }
+
+    /// Projects each point in `points` onto the cone.
+    ///
+    /// Default-style batch wrapper over [`Cone::project_point`]: one
+    /// native call per batch, mirroring [`Cone::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
 }
 
 /// Checks that `semi_angle` is within the accepted range for a cone:
@@ -630,5 +664,16 @@ mod tests {
         assert!(cone.contains(cone.eval_point(1.0, 2.0), tol));
         assert!(!cone.contains(Point3D::ORIGIN, tol));
         assert!(!cone.contains(Point3D::new(0.0, 0.0, 10.0), tol));
+    }
+
+    #[test]
+    fn test_cone_project_point() {
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let p = cone.eval_point(1.0, 2.0);
+        let proj = cone.project_point(p, tol);
+        assert!((proj.u - 1.0).abs() < 1e-9);
+        assert!((proj.v - 2.0).abs() < 1e-9);
+        assert_eq!(proj.distance, 0.0);
     }
 }
