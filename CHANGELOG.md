@@ -9,6 +9,17 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-30
+
+### Added
+
+- Internal numerical toolbox (`src/math`, zero dependencies): real roots
+  of degree ≤ 4 polynomials (stable quadratic, Cardano/trigonometric
+  cubic, Ferrari quartic with biquadratic shortcut, Newton polish,
+  tolerance clustering with multiplicity so tangencies survive),
+  1D Newton, Gauss-Newton drivers for curve/surface projection, Brent
+  minimum, and 2x2 solves. Powers projection and extrema next.
+
 ## [0.10.0] - 2026-09-29
 
 ### Added
@@ -138,7 +149,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.11.0
 [0.10.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.10.0
 [0.9.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.9.0
 [0.8.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.8.0

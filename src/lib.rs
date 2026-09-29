@@ -68,6 +68,8 @@ pub mod curves;
 pub mod frame;
 /// Analytic intersection result types.
 pub mod intersect;
+/// Internal numerical toolbox (polynomial roots, Newton, Brent).
+pub(crate) mod math;
 /// Points in 2D and 3D space.
 pub mod point;
 /// Point-projection result types.
