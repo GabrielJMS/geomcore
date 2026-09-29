@@ -3,7 +3,7 @@
 
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
-use crate::{Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{Circle3D, Frame3D, Point3D, SphereSphereIntersection, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Sphere`] cannot be constructed from the given
@@ -252,6 +252,65 @@ impl Sphere {
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// Intersects this sphere with another sphere.
+    ///
+    /// Concentric spheres (center distance within `tol.confusion`) are
+    /// [`SphereSphereIntersection::Coincident`] when the radii agree within
+    /// tolerance, else [`SphereSphereIntersection::Empty`]. Otherwise the
+    /// radical plane cuts the center line at distance
+    /// `a = (r1^2 - r2^2 + d^2) / (2d)` from this center; a negative
+    /// `r1^2 - a^2` (beyond tolerance) misses
+    /// ([`SphereSphereIntersection::Empty`]), a near-zero one grazes in a
+    /// single [`SphereSphereIntersection::TangentPoint`], and the rest meet
+    /// in a [`Circle3D`] whose axis points from this center to the other.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, SphereSphereIntersection, Tolerance};
+    /// let s1 = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let s2 = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match s1.intersect_sphere(&s2, tol) {
+    ///     SphereSphereIntersection::Circle(circle) => {
+    ///         assert_eq!(circle.center(), Point3D::new(1.5, 0.0, 0.0));
+    ///     }
+    ///     _ => panic!("expected a circle"),
+    /// }
+    /// ```
+    pub fn intersect_sphere(&self, other: &Sphere, tol: Tolerance) -> SphereSphereIntersection {
+        let c1 = self.center();
+        let c2 = other.center();
+        let r1 = self.radius();
+        let r2 = other.radius();
+        let axis = c2 - c1;
+        let d = axis.magnitude();
+        if d <= tol.confusion {
+            if (r1 - r2).abs() <= tol.confusion {
+                SphereSphereIntersection::Coincident
+            } else {
+                SphereSphereIntersection::Empty
+            }
+        } else {
+            let dir = axis * (1.0 / d);
+            let a = (r1 * r1 - r2 * r2 + d * d) / (2.0 * d);
+            let center = c1 + dir * a;
+            let disc = r1 * r1 - a * a;
+            // Tangent band in length-squared units: |R - |h|| * |R + |h||.
+            let band = tol.confusion * 2.0 * (r1 + r2 + d).max(1.0);
+            if disc < -band {
+                SphereSphereIntersection::Empty
+            } else if disc <= band {
+                SphereSphereIntersection::TangentPoint(center)
+            } else {
+                // disc > 0, and dir is unit: construction cannot fail.
+                let circle = Circle3D::new(center, dir, disc.sqrt())
+                    .expect("section radius is positive by construction");
+                SphereSphereIntersection::Circle(circle)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -379,5 +438,49 @@ mod tests {
         // Center: every surface point is equidistant; distance is exact.
         let center = sphere.project_point(Point3D::ORIGIN, tol);
         assert_eq!(center.distance, 3.0);
+    }
+
+    #[test]
+    fn test_sphere_sphere_intersection_circle() {
+        let tol = Tolerance::DEFAULT;
+        let s1 = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let s2 = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 2.0).unwrap();
+        match s1.intersect_sphere(&s2, tol) {
+            SphereSphereIntersection::Circle(circle) => {
+                assert_eq!(circle.center(), Point3D::new(1.5, 0.0, 0.0));
+                assert!((circle.radius() - 1.75f64.sqrt()).abs() < 1e-12);
+                assert_eq!(circle.normal(), Vector3D::X);
+                // The circle lies on both spheres.
+                assert!(s1.contains(circle.eval_point(1.0), tol));
+                assert!(s2.contains(circle.eval_point(2.0), tol));
+            }
+            _ => panic!("expected a circle"),
+        }
+    }
+
+    #[test]
+    fn test_sphere_sphere_intersection_degenerate() {
+        let tol = Tolerance::DEFAULT;
+        let s1 = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        // External tangency.
+        match s1.intersect_sphere(&Sphere::new(Point3D::new(4.0, 0.0, 0.0), 2.0).unwrap(), tol) {
+            SphereSphereIntersection::TangentPoint(p) => assert_eq!(p, Point3D::new(2.0, 0.0, 0.0)),
+            _ => panic!("expected a tangent point"),
+        }
+        // Separate.
+        match s1.intersect_sphere(&Sphere::new(Point3D::new(5.0, 0.0, 0.0), 2.0).unwrap(), tol) {
+            SphereSphereIntersection::Empty => {}
+            _ => panic!("expected empty"),
+        }
+        // One inside the other without contact.
+        match s1.intersect_sphere(&Sphere::new(Point3D::ORIGIN, 1.0).unwrap(), tol) {
+            SphereSphereIntersection::Empty => {}
+            _ => panic!("expected empty"),
+        }
+        // Coincident.
+        match s1.intersect_sphere(&Sphere::new(Point3D::ORIGIN, 2.0).unwrap(), tol) {
+            SphereSphereIntersection::Coincident => {}
+            _ => panic!("expected coincident"),
+        }
     }
 }

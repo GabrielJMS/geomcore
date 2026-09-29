@@ -66,6 +66,8 @@ pub(crate) mod curve_math;
 pub mod curves;
 /// Axis and frame placement types.
 pub mod frame;
+/// Analytic intersection result types.
+pub mod intersect;
 /// Points in 2D and 3D space.
 pub mod point;
 /// Point-projection result types.
@@ -89,6 +91,7 @@ pub use curves::{
     ParametricCurve3D, ParametrizeError,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
+pub use intersect::{PlanePlaneIntersection, PlaneSphereIntersection, SphereSphereIntersection};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, SurfaceProjection};
 pub use surfaces::{

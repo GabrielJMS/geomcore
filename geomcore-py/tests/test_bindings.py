@@ -185,3 +185,50 @@ def test_project_point_surface():
     batch = plane.project_points([Point3D.origin(), Point3D(0.0, 0.0, 2.0)])
     assert batch[0][2] == 0.0
     assert batch[1][2] == pytest.approx(2.0)
+
+
+def test_intersect_plane_plane():
+    from geomcore.surfaces import Plane
+
+    xy = Plane(Point3D.origin(), Vector3D.z())
+    zy = Plane(Point3D.origin(), Vector3D.x())
+    kind, line = xy.intersect_plane(zy)
+    assert kind == "line"
+    assert line.origin().x == pytest.approx(0.0)
+    # Direction follows the ordered pair (n1 x n2 = Z x X = Y).
+    assert line.direction().components() == pytest.approx((0.0, 1.0, 0.0))
+
+    kind, payload = xy.intersect_plane(Plane(Point3D(0.0, 0.0, 1.0), Vector3D.z()))
+    assert (kind, payload) == ("parallel", None)
+
+    kind, payload = xy.intersect_plane(xy)
+    assert (kind, payload) == ("coincident", None)
+
+
+def test_intersect_plane_sphere():
+    from geomcore.surfaces import Plane
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    kind, circle = plane.intersect_sphere(Sphere(Point3D.origin(), 2.0))
+    assert kind == "circle"
+    assert circle.radius() == pytest.approx(2.0)
+
+    kind, point = plane.intersect_sphere(Sphere(Point3D(0.0, 0.0, 2.0), 2.0))
+    assert kind == "tangent_point"
+    assert (point.x, point.y, point.z) == pytest.approx((0.0, 0.0, 0.0))
+
+    assert plane.intersect_sphere(Sphere(Point3D(0.0, 0.0, 5.0), 2.0)) == ("empty", None)
+
+
+def test_intersect_sphere_sphere():
+    s1 = Sphere(Point3D.origin(), 2.0)
+    kind, circle = s1.intersect_sphere(Sphere(Point3D(3.0, 0.0, 0.0), 2.0))
+    assert kind == "circle"
+    assert circle.center().x == pytest.approx(1.5)
+
+    kind, point = s1.intersect_sphere(Sphere(Point3D(4.0, 0.0, 0.0), 2.0))
+    assert kind == "tangent_point"
+    assert point.x == pytest.approx(2.0)
+
+    assert s1.intersect_sphere(Sphere(Point3D(5.0, 0.0, 0.0), 2.0)) == ("empty", None)
+    assert s1.intersect_sphere(s1)[0] == "coincident"

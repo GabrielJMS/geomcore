@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-29
+
+### Added
+
+- Analytic intersections, Stream 2 batch 1: `Plane::intersect_plane`
+  (→ `Line3D`, direction = n1 × n2, with `Parallel`/`Coincident`
+  classification), `Plane::intersect_sphere` and
+  `Sphere::intersect_sphere` (→ `Circle3D`, with
+  `TangentPoint`/`Empty`/`Coincident` classification). Near-degenerate
+  configurations classify by `Tolerance` instead of collapsing to noise.
+  Python returns `(kind, payload)` tuples, e.g. `("line", Line3D)`,
+  `("tangent_point", Point3D)`, `("empty", None)`.
+
 ## [0.5.0] - 2026-09-29
 
 ### Added
@@ -76,7 +89,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.6.0
 [0.5.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.5.0
 [0.4.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.4.0
 [0.3.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.3.0

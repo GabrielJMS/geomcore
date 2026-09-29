@@ -13,7 +13,10 @@ use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Ellipse3D, Hyperbola3D, Line2D, Line3D, Parabola3D,
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
-use geomcore::{Axis3D, Frame3D, Point2D, Point3D, Tolerance, Transform, Vector2D, Vector3D};
+use geomcore::{
+    Axis3D, Frame3D, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
+    SphereSphereIntersection, Tolerance, Transform, Vector2D, Vector3D,
+};
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -502,6 +505,53 @@ impl PyPlane {
             .map(|p| (p.u, p.v, p.distance))
             .collect()
     }
+
+    /// Intersects this plane with another plane.
+    ///
+    /// Returns `("line", Line3D)`, `("parallel", None)` or
+    /// `("coincident", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        other: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_plane(&other.0, tol) {
+            PlanePlaneIntersection::Line(l) => Ok((
+                "line".to_string(),
+                PyLine3D(l).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlanePlaneIntersection::Parallel => Ok(("parallel".to_string(), py.None())),
+            PlanePlaneIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this plane with a sphere.
+    ///
+    /// Returns `("circle", Circle3D)`, `("tangent_point", Point3D)` or
+    /// `("empty", None)`.
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_sphere(&sphere.0, tol) {
+            PlaneSphereIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneSphereIntersection::TangentPoint(p) => Ok((
+                "tangent_point".to_string(),
+                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneSphereIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        }
+    }
 }
 
 /// An infinite circular cylinder; u is the angle around the axis, v the
@@ -805,6 +855,32 @@ impl PySphere {
             .iter()
             .map(|p| (p.u, p.v, p.distance))
             .collect()
+    }
+
+    /// Intersects this sphere with another sphere.
+    ///
+    /// Returns `("circle", Circle3D)`, `("tangent_point", Point3D)`,
+    /// `("empty", None)` or `("coincident", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        other: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_sphere(&other.0, tol) {
+            SphereSphereIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            SphereSphereIntersection::TangentPoint(p) => Ok((
+                "tangent_point".to_string(),
+                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            SphereSphereIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            SphereSphereIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        }
     }
 }
 

@@ -5,7 +5,10 @@
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
-use crate::{Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{
+    Circle3D, Frame3D, Line3D, PlanePlaneIntersection, PlaneSphereIntersection, Point3D, Sphere,
+    Tolerance, Vector3D,
+};
 use std::fmt;
 
 /// Error returned when a [`Plane`] cannot be constructed from the given
@@ -340,6 +343,121 @@ impl Plane {
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// Intersects this plane with another plane.
+    ///
+    /// Non-parallel planes meet in a [`Line3D`]: the direction is the
+    /// normalized cross product of the unit normals, and a point on the
+    /// line is found by solving the two plane equations in the coordinate
+    /// plane of the direction's largest component (whose 2x2 determinant
+    /// is that component, hence nonzero). Parallel planes report
+    /// [`PlanePlaneIntersection::Parallel`], or
+    /// [`PlanePlaneIntersection::Coincident`] when an origin point of one
+    /// lies on the other within `tol`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, PlanePlaneIntersection, Point3D, Tolerance, Vector3D};
+    /// let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match xy.intersect_plane(&zy, tol) {
+    ///     PlanePlaneIntersection::Line(line) => {
+    ///         assert_eq!(line.origin(), Point3D::ORIGIN);
+    ///         assert_eq!(line.direction(), Vector3D::Y);
+    ///     }
+    ///     _ => panic!("expected a line"),
+    /// }
+    /// ```
+    pub fn intersect_plane(&self, other: &Plane, tol: Tolerance) -> PlanePlaneIntersection {
+        let n1 = self.normal();
+        let n2 = other.normal();
+        let d = n1.cross(n2);
+        let sin = d.magnitude();
+        if sin <= tol.angular {
+            if other.contains(self.frame.origin(), tol) {
+                PlanePlaneIntersection::Coincident
+            } else {
+                PlanePlaneIntersection::Parallel
+            }
+        } else {
+            let dir = d * (1.0 / sin);
+            let o1 = self.frame.origin();
+            let o2 = other.frame.origin();
+            let e1 = n1.x * o1.x + n1.y * o1.y + n1.z * o1.z;
+            let e2 = n2.x * o2.x + n2.y * o2.y + n2.z * o2.z;
+            let a = [n1.x, n1.y, n1.z];
+            let b = [n2.x, n2.y, n2.z];
+            let ax = [d.x.abs(), d.y.abs(), d.z.abs()];
+            let k = if ax[0] >= ax[1] && ax[0] >= ax[2] {
+                0
+            } else if ax[1] >= ax[2] {
+                1
+            } else {
+                2
+            };
+            let (i, j) = match k {
+                0 => (1, 2),
+                1 => (0, 2),
+                _ => (0, 1),
+            };
+            // det == +-d[k], nonzero by the parallel guard above.
+            let det = a[i] * b[j] - a[j] * b[i];
+            let xi = (e1 * b[j] - e2 * a[j]) / det;
+            let xj = (a[i] * e2 - b[i] * e1) / det;
+            let mut p = [0.0, 0.0, 0.0];
+            p[i] = xi;
+            p[j] = xj;
+            let line = Line3D::new(Point3D::new(p[0], p[1], p[2]), dir)
+                .expect("intersection direction is nonzero by construction");
+            PlanePlaneIntersection::Line(line)
+        }
+    }
+
+    /// Intersects this plane with a sphere.
+    ///
+    /// The signed distance `h` from the sphere center to the plane decides:
+    /// `|h|` beyond `radius + tol.confusion` misses
+    /// ([`PlaneSphereIntersection::Empty`]); within `tol.confusion` of the
+    /// radius it grazes in the foot point
+    /// ([`PlaneSphereIntersection::TangentPoint`]); otherwise the section
+    /// is a [`Circle3D`] centered at the foot point with radius
+    /// `sqrt(radius^2 - h^2)` in the plane normal direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, PlaneSphereIntersection, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match plane.intersect_sphere(&sphere, tol) {
+    ///     PlaneSphereIntersection::Circle(circle) => {
+    ///         assert_eq!(circle.center(), Point3D::ORIGIN);
+    ///         assert_eq!(circle.radius(), 2.0);
+    ///     }
+    ///     _ => panic!("expected a circle"),
+    /// }
+    /// ```
+    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> PlaneSphereIntersection {
+        let n = self.normal();
+        let h = n.dot(sphere.center() - self.frame.origin());
+        let h_abs = h.abs();
+        let r = sphere.radius();
+        if h_abs > r + tol.confusion {
+            PlaneSphereIntersection::Empty
+        } else if h_abs >= r - tol.confusion {
+            PlaneSphereIntersection::TangentPoint(sphere.center() - n * h)
+        } else {
+            let center = sphere.center() - n * h;
+            // r - h_abs > tol.confusion > 0, so the radius is positive and
+            // the normal is unit: construction cannot fail.
+            let circle = Circle3D::new(center, n, (r * r - h * h).sqrt())
+                .expect("section radius is positive by construction");
+            PlaneSphereIntersection::Circle(circle)
+        }
+    }
 }
 
 /// Builds a frame at `origin` with `z_dir = normalize(normal)` and an
@@ -582,5 +700,76 @@ mod tests {
         assert_eq!(projs[1].distance, 2.0);
         assert_eq!((projs[2].u, projs[2].v), (1.0, 1.0));
         assert_eq!(projs[2].distance, 3.0);
+    }
+
+    #[test]
+    fn test_plane_plane_intersection_line() {
+        let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let tol = Tolerance::DEFAULT;
+        match xy.intersect_plane(&zy, tol) {
+            PlanePlaneIntersection::Line(line) => {
+                assert_eq!(line.origin(), Point3D::ORIGIN);
+                assert_eq!(line.direction(), Vector3D::Y);
+                // The line lies on both planes.
+                assert!(xy.contains(line.eval_point(2.0), tol));
+                assert!(zy.contains(line.eval_point(-1.0), tol));
+            }
+            _ => panic!("expected a line"),
+        }
+    }
+
+    #[test]
+    fn test_plane_plane_intersection_parallel_coincident() {
+        let tol = Tolerance::DEFAULT;
+        let p1 = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let p2 = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            p1.intersect_plane(&p2, tol),
+            PlanePlaneIntersection::Parallel
+        );
+        // Flipped normal is still the same plane.
+        let p3 = Plane::new(Point3D::ORIGIN, Vector3D::Z * -1.0).unwrap();
+        assert_eq!(
+            p1.intersect_plane(&p3, tol),
+            PlanePlaneIntersection::Coincident
+        );
+        assert_eq!(
+            p1.intersect_plane(&p1, tol),
+            PlanePlaneIntersection::Coincident
+        );
+    }
+
+    #[test]
+    fn test_plane_sphere_intersection() {
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        // Diametral section: great circle.
+        match plane.intersect_sphere(&Sphere::new(Point3D::ORIGIN, 2.0).unwrap(), tol) {
+            PlaneSphereIntersection::Circle(circle) => {
+                assert_eq!(circle.center(), Point3D::ORIGIN);
+                assert_eq!(circle.radius(), 2.0);
+                assert_eq!(circle.normal(), Vector3D::Z);
+            }
+            _ => panic!("expected a circle"),
+        }
+        // Offset section.
+        match plane.intersect_sphere(&Sphere::new(Point3D::new(0.0, 0.0, 1.0), 2.0).unwrap(), tol) {
+            PlaneSphereIntersection::Circle(circle) => {
+                assert_eq!(circle.center(), Point3D::ORIGIN);
+                assert!((circle.radius() - 3.0f64.sqrt()).abs() < 1e-12);
+            }
+            _ => panic!("expected a circle"),
+        }
+        // Grazing contact.
+        match plane.intersect_sphere(&Sphere::new(Point3D::new(0.0, 0.0, 2.0), 2.0).unwrap(), tol) {
+            PlaneSphereIntersection::TangentPoint(p) => assert_eq!(p, Point3D::ORIGIN),
+            _ => panic!("expected a tangent point"),
+        }
+        // Clear miss.
+        match plane.intersect_sphere(&Sphere::new(Point3D::new(0.0, 0.0, 5.0), 2.0).unwrap(), tol) {
+            PlaneSphereIntersection::Empty => {}
+            _ => panic!("expected empty"),
+        }
     }
 }
