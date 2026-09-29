@@ -5,7 +5,7 @@ import math
 import pytest
 
 import geomcore
-from geomcore import Axis3D, Frame3D, Point3D, Transform, Vector3D
+from geomcore import Axis3D, Frame3D, Point3D, Tolerance, Transform, Vector3D
 from geomcore.curves import BSplineCurve3D, Circle3D, Line2D
 from geomcore.surfaces import Cylinder, Sphere
 
@@ -120,3 +120,26 @@ def test_frame3_accessors():
 def test_docstrings_present():
     assert Circle3D.__doc__
     assert Circle3D.eval_point.__doc__
+
+
+def test_tolerance_defaults():
+    tol = Tolerance.default()
+    assert tol.confusion == 1e-7
+    assert tol.angular == 1e-12
+    assert tol.parametric == 1e-9
+    assert Tolerance().confusion == tol.confusion
+    custom = Tolerance(confusion=1e-3)
+    assert custom.confusion == 1e-3
+    assert custom.angular == tol.angular
+
+
+def test_contains_curve():
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    assert circle.contains(Point3D(2.0, 0.0, 0.0))
+    assert circle.contains(circle.eval_point(1.0))
+    assert not circle.contains(Point3D(3.0, 0.0, 0.0))
+    assert not circle.contains(Point3D.origin())
+    # Explicit tolerance widens the acceptance band.
+    near = Point3D(2.0 + 1e-6, 0.0, 0.0)
+    assert not circle.contains(near)
+    assert circle.contains(near, Tolerance(confusion=1e-5))

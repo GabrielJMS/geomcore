@@ -4,7 +4,7 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::surfaces::Surface;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Parabola3D`] cannot be constructed from the given
@@ -213,6 +213,25 @@ impl Parabola3D {
         analytic::parabola_parameter(&self.frame, point)
     }
 
+    /// Returns whether `point` lies on the parabola: the inverse parameter
+    /// is recovered with [`Parabola3D::parameter_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Parabola3D, Point3D, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(parabola.contains(parabola.eval_point(2.0), tol));
+    /// assert!(!parabola.contains(Point3D::new(0.0, 2.0, 5.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
+    }
+
     /// Computes the exact 2D representation of this parabola in a surface's
     /// parameter space.
     ///
@@ -240,7 +259,7 @@ impl Parabola3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Frame3D, Parabola3D, ParabolaConstructionError, Point3D, Vector3D};
+    use crate::{Frame3D, Parabola3D, ParabolaConstructionError, Point3D, Tolerance, Vector3D};
 
     // ---- construction ----
 
@@ -371,5 +390,14 @@ mod tests {
     fn test_parabola_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&ParabolaConstructionError::NegativeFocal);
+    }
+
+    #[test]
+    fn test_parabola3d_contains() {
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(p.contains(p.eval_point(2.0), tol));
+        assert!(p.contains(p.eval_point(-1.5), tol));
+        assert!(!p.contains(Point3D::new(0.0, 2.0, 5.0), tol));
     }
 }

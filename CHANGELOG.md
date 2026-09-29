@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-29
+
+### Added
+
+- Public `Tolerance` API (`confusion`, `angular`, `parametric`, with
+  `Tolerance::DEFAULT` matching the kernel's historical internal values);
+  internal tolerances now derive from it. Python: `geomcore.Tolerance`.
+- Point containment: `contains(point, tol)` on all analytic curves
+  (`Line3D`, `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`,
+  `Line2D`, `Circle2D`), verified by inverse-parameter re-evaluation
+  against `tol.confusion`. Python: `contains(point, tol=None)`.
+  (`BSplineCurve3D` containment arrives with numeric projection.)
+
 ## [0.2.0] - 2026-09-29
 
 ### Changed
@@ -40,6 +53,7 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.2.0
 [0.1.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.1.0

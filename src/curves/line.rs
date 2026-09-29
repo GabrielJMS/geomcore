@@ -5,7 +5,7 @@ use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::surfaces::Surface;
-use crate::{Axis2D, Axis3D, Point2D, Point3D, Vector2D, Vector3D};
+use crate::{Axis2D, Axis3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Line3D`] or [`Line2D`] cannot be constructed from
@@ -211,6 +211,25 @@ impl Line3D {
     /// ```
     pub fn parameter_of(&self, point: Point3D) -> f64 {
         analytic::line_parameter(&self.axis, point)
+    }
+
+    /// Returns whether `point` lies on the line: the inverse parameter is
+    /// recovered with [`Line3D::parameter_of`] and re-evaluated, and the
+    /// point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(line.contains(Point3D::new(2.5, 0.0, 0.0), tol));
+    /// assert!(!line.contains(Point3D::new(2.5, 1.0, 0.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
     }
 
     /// Computes the exact 2D representation of this line in a surface's
@@ -432,12 +451,32 @@ impl Line2D {
     pub fn parameter_of(&self, point: Point2D) -> f64 {
         analytic::line2d_parameter(&self.axis, point)
     }
+
+    /// Returns whether `point` lies on the line: the inverse parameter is
+    /// recovered with [`Line2D::parameter_of`] and re-evaluated, and the
+    /// point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line2D, Point2D, Tolerance, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(line.contains(Point2D::new(2.5, 0.0), tol));
+    /// assert!(!line.contains(Point2D::new(2.5, 1.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point2D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2D, Axis3D, Line2D, Line3D, LineConstructionError, Point2D, Point3D, Vector2D, Vector3D,
+        Axis2D, Axis3D, Line2D, Line3D, LineConstructionError, Point2D, Point3D, Tolerance,
+        Vector2D, Vector3D,
     };
 
     // ---- Line3D construction ----
@@ -640,5 +679,33 @@ mod tests {
     fn test_line_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&LineConstructionError::NullDirection);
+    }
+
+    #[test]
+    fn test_line3d_contains() {
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(line.contains(Point3D::new(2.5, 0.0, 0.0), tol));
+        assert!(line.contains(line.eval_point(-3.0), tol));
+        assert!(!line.contains(Point3D::new(2.5, 1.0, 0.0), tol));
+        // Tolerance boundary: 1e-6 off the line fails at default, passes loose.
+        let near = Point3D::new(0.0, 1e-6, 0.0);
+        assert!(!line.contains(near, tol));
+        assert!(line.contains(
+            near,
+            Tolerance {
+                confusion: 1e-5,
+                ..tol
+            }
+        ));
+    }
+
+    #[test]
+    fn test_line2d_contains() {
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(line.contains(Point2D::new(2.5, 0.0), tol));
+        assert!(line.contains(line.eval_point(-3.0), tol));
+        assert!(!line.contains(Point2D::new(2.5, 1.0), tol));
     }
 }

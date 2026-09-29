@@ -6,7 +6,7 @@ use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Hyperbola3D`] cannot be constructed from the
@@ -316,6 +316,25 @@ impl Hyperbola3D {
         analytic::hyperbola_parameter(&self.frame, self.minor_radius, point)
     }
 
+    /// Returns whether `point` lies on the hyperbola: the inverse parameter
+    /// is recovered with [`Hyperbola3D::parameter_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Hyperbola3D, Point3D, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(hyperbola.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+    /// assert!(!hyperbola.contains(Point3D::new(2.0, 0.0, 5.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
+    }
+
     /// Computes the exact 2D representation of this hyperbola in a surface's
     /// parameter space.
     ///
@@ -343,7 +362,7 @@ impl Hyperbola3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Frame3D, Hyperbola3D, HyperbolaConstructionError, Point3D, Vector3D};
+    use crate::{Frame3D, Hyperbola3D, HyperbolaConstructionError, Point3D, Tolerance, Vector3D};
 
     // ---- construction ----
 
@@ -530,5 +549,15 @@ mod tests {
     fn test_hyperbola_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&HyperbolaConstructionError::NegativeRadius);
+    }
+
+    #[test]
+    fn test_hyperbola3d_contains() {
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(h.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+        assert!(h.contains(h.eval_point(1.0), tol));
+        assert!(!h.contains(Point3D::ORIGIN, tol));
+        assert!(!h.contains(Point3D::new(2.0, 0.0, 5.0), tol));
     }
 }

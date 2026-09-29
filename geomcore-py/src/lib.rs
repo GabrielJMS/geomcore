@@ -13,7 +13,7 @@ use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Ellipse3D, Hyperbola3D, Line2D, Line3D, Parabola3D,
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
-use geomcore::{Axis3D, Frame3D, Point2D, Point3D, Transform, Vector2D, Vector3D};
+use geomcore::{Axis3D, Frame3D, Point2D, Point3D, Tolerance, Transform, Vector2D, Vector3D};
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -285,6 +285,56 @@ impl PyFrame3D {
         PyVector3D(self.0.z_direction())
     }
 }
+
+/// Distance and angle tolerances shared by all geometric queries
+/// (`contains`, and later projection and intersection).
+///
+/// `Tolerance()` with no arguments equals `Tolerance.default()`.
+#[pyclass(name = "Tolerance", module = "geomcore")]
+#[derive(Clone)]
+struct PyTolerance(Tolerance);
+
+#[pymethods]
+impl PyTolerance {
+    #[new]
+    #[pyo3(signature = (confusion = 1e-7, angular = 1e-12, parametric = 1e-9))]
+    /// Build tolerances from the three scales explicitly.
+    fn py_new(confusion: f64, angular: f64, parametric: f64) -> Self {
+        PyTolerance(Tolerance::new(confusion, angular, parametric))
+    }
+
+    /// The default tolerances (confusion 1e-7, angular 1e-12, parametric 1e-9).
+    #[staticmethod]
+    fn default() -> Self {
+        PyTolerance(Tolerance::DEFAULT)
+    }
+
+    /// Distance below which two points are considered coincident.
+    #[getter]
+    fn confusion(&self) -> f64 {
+        self.0.confusion
+    }
+
+    /// Angular tolerance for parallelism/orthogonality checks (radians).
+    #[getter]
+    fn angular(&self) -> f64 {
+        self.0.angular
+    }
+
+    /// Parametric-space tolerance.
+    #[getter]
+    fn parametric(&self) -> f64 {
+        self.0.parametric
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Tolerance(confusion={}, angular={}, parametric={})",
+            self.0.confusion, self.0.angular, self.0.parametric
+        )
+    }
+}
+
 /// A rigid (or mirrored/scaled) affine transformation.
 #[pyclass(name = "Transform", module = "geomcore")]
 #[derive(Clone)]
@@ -902,6 +952,14 @@ impl PyLine3D {
         self.0.parameter_of(point.0)
     }
 
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
     /// Compute this line's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
@@ -985,6 +1043,14 @@ impl PyCircle3D {
     /// Recover the parameter in [0, 2*pi) of a point lying on the circle.
     fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
+    }
+
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
     /// Compute this circle's 2D representation in a surface's (u, v) space.
@@ -1077,6 +1143,14 @@ impl PyEllipse3D {
         self.0.parameter_of(point.0)
     }
 
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
     /// Not available for ellipses in this release; always raises `ValueError`.
     fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
@@ -1135,6 +1209,14 @@ impl PyParabola3D {
     /// Recover the parameter of a point lying on the parabola.
     fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
+    }
+
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
     /// Not available for parabolas in this release; always raises `ValueError`.
@@ -1222,6 +1304,14 @@ impl PyHyperbola3D {
     /// Recover the parameter of a point lying on the hyperbola.
     fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
+    }
+
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
     /// Not available for hyperbolas in this release; always raises `ValueError`.
@@ -1357,6 +1447,14 @@ impl PyLine2D {
         self.0.parameter_of(point.0)
     }
 
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
     fn __repr__(&self) -> String {
         let o = self.0.origin();
         let d = self.0.direction();
@@ -1412,6 +1510,14 @@ impl PyCircle2D {
         self.0.parameter_of(point.0)
     }
 
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
     fn __repr__(&self) -> String {
         let c = self.0.center();
         format!(
@@ -1437,6 +1543,7 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyVector2D>()?;
     m.add_class::<PyAxis3D>()?;
     m.add_class::<PyFrame3D>()?;
+    m.add_class::<PyTolerance>()?;
     m.add_class::<PyTransform>()?;
 
     let curves = PyModule::new(py, "curves")?;

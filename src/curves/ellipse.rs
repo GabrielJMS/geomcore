@@ -6,7 +6,7 @@ use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when an [`Ellipse3D`] cannot be constructed from the given
@@ -314,6 +314,25 @@ impl Ellipse3D {
         analytic::ellipse_parameter(&self.frame, self.major_radius, self.minor_radius, point)
     }
 
+    /// Returns whether `point` lies on the ellipse: the inverse parameter is
+    /// recovered with [`Ellipse3D::parameter_of`] and re-evaluated, and the
+    /// point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Point3D, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(ellipse.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+    /// assert!(!ellipse.contains(Point3D::new(4.0, 0.0, 0.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
+    }
+
     /// Computes the exact 2D representation of this ellipse in a surface's
     /// parameter space.
     ///
@@ -341,7 +360,7 @@ impl Ellipse3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Ellipse3D, EllipseConstructionError, Frame3D, Point3D, Vector3D};
+    use crate::{Ellipse3D, EllipseConstructionError, Frame3D, Point3D, Tolerance, Vector3D};
 
     // ---- construction ----
 
@@ -540,5 +559,16 @@ mod tests {
     fn test_ellipse_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&EllipseConstructionError::NegativeRadius);
+    }
+
+    #[test]
+    fn test_ellipse3d_contains() {
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(e.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+        assert!(e.contains(Point3D::new(0.0, 1.5, 0.0), tol));
+        assert!(e.contains(e.eval_point(1.0), tol));
+        assert!(!e.contains(Point3D::ORIGIN, tol));
+        assert!(!e.contains(Point3D::new(4.0, 0.0, 0.0), tol));
     }
 }

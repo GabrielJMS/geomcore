@@ -53,11 +53,11 @@
 
 pub(crate) mod tol {
     /// Angular tolerance for parallelism/orthogonality checks (radians).
-    pub const ANGULAR: f64 = 1e-12;
+    pub const ANGULAR: f64 = crate::Tolerance::DEFAULT.angular;
     /// Distance below which two points are considered coincident.
-    pub const CONFUSION: f64 = 1e-7;
+    pub const CONFUSION: f64 = crate::Tolerance::DEFAULT.confusion;
     /// Parametric-space tolerance.
-    pub const P_CONFUSION: f64 = 1e-9;
+    pub const P_CONFUSION: f64 = crate::Tolerance::DEFAULT.parametric;
 }
 
 /// Internal analytic curve evaluation math.
@@ -73,6 +73,8 @@ pub(crate) mod surface_math;
 /// Public surface types: planes, cylinders, cones, spheres, tori, and
 /// B-spline surfaces.
 pub mod surfaces;
+/// Distance and angle tolerances shared by all geometric queries.
+pub mod tolerance;
 /// Rigid and affine transformations.
 pub mod transform;
 /// Vectors in 2D and 3D space.
@@ -91,5 +93,6 @@ pub use surfaces::{
     ParametricSurface, Plane, PlaneConstructionError, Sphere, SphereConstructionError, Surface,
     Torus, TorusConstructionError,
 };
+pub use tolerance::Tolerance;
 pub use transform::Transform;
 pub use vector::{Vector2D, Vector3D};

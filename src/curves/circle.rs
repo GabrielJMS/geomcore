@@ -7,7 +7,7 @@ use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Axis3D, Frame2D, Frame3D, Point2D, Point3D, Vector2D, Vector3D};
+use crate::{Axis3D, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Circle3D`] or [`Circle2D`] cannot be constructed
@@ -312,6 +312,25 @@ impl Circle3D {
         analytic::circle_parameter(&self.frame, point)
     }
 
+    /// Returns whether `point` lies on the circle: the inverse parameter is
+    /// recovered with [`Circle3D::parameter_of`] and re-evaluated, and the
+    /// point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Point3D, Tolerance, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(circle.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+    /// assert!(!circle.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
+    }
+
     /// Computes the exact 2D representation of this circle in a surface's
     /// parameter space: a [`Curve2D`] `q(t)` such that
     /// `surface.eval_point(q(t)) == self.eval_point(t)` for the same `t`.
@@ -517,13 +536,32 @@ impl Circle2D {
     pub fn parameter_of(&self, point: Point2D) -> f64 {
         analytic::circle2d_parameter(&self.frame, point)
     }
+
+    /// Returns whether `point` lies on the circle: the inverse parameter is
+    /// recovered with [`Circle2D::parameter_of`] and re-evaluated, and the
+    /// point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle2D, Point2D, Tolerance};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(circle.contains(Point2D::new(2.0, 0.0), tol));
+    /// assert!(!circle.contains(Point2D::new(3.0, 0.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point2D, tol: Tolerance) -> bool {
+        let u = self.parameter_of(point);
+        self.eval_point(u).distance(point) <= tol.confusion
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        Circle2D, Circle3D, CircleConstructionError, Frame2D, Frame3D, Point2D, Point3D, Vector2D,
-        Vector3D,
+        Circle2D, Circle3D, CircleConstructionError, Frame2D, Frame3D, Point2D, Point3D, Tolerance,
+        Vector2D, Vector3D,
     };
 
     // ---- Circle3D construction ----
@@ -790,5 +828,25 @@ mod tests {
             let p = c.eval_point(u);
             assert!((c.parameter_of(p) - u).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn test_circle3d_contains() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(circle.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+        assert!(circle.contains(circle.eval_point(1.0), tol));
+        assert!(!circle.contains(Point3D::ORIGIN, tol));
+        assert!(!circle.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+    }
+
+    #[test]
+    fn test_circle2d_contains() {
+        let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(circle.contains(Point2D::new(2.0, 0.0), tol));
+        assert!(circle.contains(circle.eval_point(1.0), tol));
+        assert!(!circle.contains(Point2D::ORIGIN, tol));
+        assert!(!circle.contains(Point2D::new(3.0, 0.0), tol));
     }
 }
