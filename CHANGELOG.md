@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-29
+
+### Added
+
+- Analytic intersections: `Cone::intersect_cone` for coaxial cones
+  (latitude ring, apex point, coincident, empty, `NotAnalytic`).
+- Analytic intersections, torus-symmetric batch:
+  `Torus::intersect_plane` (meridian/latitude rings),
+  `intersect_sphere/cylinder/cone` (coaxial latitude rings via axial
+  quadratics with nappe filtering) and `intersect_torus` (coaxial
+  rings, coincident). Non-symmetric pairs report `NotAnalytic`.
+  Python returns `(kind, payload)` tuples throughout.
+
 ## [0.9.0] - 2026-09-29
 
 ### Added
@@ -125,7 +138,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.10.0
 [0.9.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.9.0
 [0.8.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.8.0
 [0.7.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.7.0

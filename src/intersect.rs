@@ -186,6 +186,121 @@ pub enum ConeCylinderIntersection {
     NotAnalytic,
 }
 
+/// Result of intersecting a torus with a plane.
+///
+/// The analytic path needs the plane through the axis (two meridian
+/// circles) or perpendicular to it (latitude circles). Anything else is
+/// a quartic spiric section and reports
+/// [`TorusPlaneIntersection::NotAnalytic`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TorusPlaneIntersection {
+    /// Two meridian circles (axis-containing plane).
+    TwoCircles(Circle3D, Circle3D),
+    /// Grazing ring (perpendicular plane at tube top/bottom).
+    TangentCircle(Circle3D),
+    /// Single latitude ring (spindle case).
+    Circle(Circle3D),
+    /// The plane misses the torus.
+    Empty,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting a torus with a sphere.
+///
+/// The analytic path needs the sphere center on the torus axis, reducing
+/// to a quadratic in the axial coordinate. Anything else is high-degree
+/// and reports [`TorusSphereIntersection::NotAnalytic`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TorusSphereIntersection {
+    /// Latitude ring.
+    Circle(Circle3D),
+    /// Two latitude rings.
+    TwoCircles(Circle3D, Circle3D),
+    /// Grazing ring.
+    TangentCircle(Circle3D),
+    /// No ring.
+    Empty,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting a torus with a cylinder.
+///
+/// The analytic path needs coaxial axes. Anything else reports
+/// [`TorusCylinderIntersection::NotAnalytic`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TorusCylinderIntersection {
+    /// Two latitude rings symmetric about the equatorial plane.
+    TwoCircles(Circle3D, Circle3D),
+    /// Grazing ring in the equatorial plane.
+    TangentCircle(Circle3D),
+    /// The tube misses the torus.
+    Empty,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting a torus with a cone.
+///
+/// The analytic path needs coaxial axes, reducing to a quadratic in the
+/// axial coordinate with nappe filtering. Anything else reports
+/// [`TorusConeIntersection::NotAnalytic`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TorusConeIntersection {
+    /// Latitude ring on the nappe.
+    Circle(Circle3D),
+    /// Two latitude rings on the nappe.
+    TwoCircles(Circle3D, Circle3D),
+    /// Grazing ring on the nappe.
+    TangentCircle(Circle3D),
+    /// No ring on the single nappe.
+    Empty,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting two tori.
+///
+/// The analytic path needs collinear axes, reducing to quadratics in the
+/// axial coordinate. Anything else (up to degree 16) reports
+/// [`TorusTorusIntersection::NotAnalytic`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TorusTorusIntersection {
+    /// Latitude ring.
+    Circle(Circle3D),
+    /// Two latitude rings.
+    TwoCircles(Circle3D, Circle3D),
+    /// Grazing ring.
+    TangentCircle(Circle3D),
+    /// No rings.
+    Empty,
+    /// Same center and radii within tolerance.
+    Coincident,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting two cones.
+///
+/// The analytic path needs coaxial axes: equal latitude-ring radii give
+/// one axial position (or apex/coincident degenerates). Anything else is
+/// a space quartic and reports [`ConeConeIntersection::NotAnalytic`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConeConeIntersection {
+    /// Latitude ring on both nappes.
+    Circle(Circle3D),
+    /// The rings collapse to the shared apex.
+    ApexPoint(Point3D),
+    /// No ring on the nappes (parallel distinct nappes, or valid roots
+    /// behind an apex).
+    Empty,
+    /// Same apex, axis, and semi-angle within tolerance.
+    Coincident,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
 /// Solution classification for `a*t^2 + b*t + c = 0` with tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {

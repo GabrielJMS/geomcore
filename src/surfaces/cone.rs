@@ -5,7 +5,10 @@
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
-use crate::{Circle3D, ConeCylinderIntersection, Cylinder, Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{
+    Circle3D, ConeConeIntersection, ConeCylinderIntersection, Cylinder, Frame3D, Point3D,
+    Tolerance, Vector3D,
+};
 use std::fmt;
 
 /// Error returned when a [`Cone`] cannot be constructed from the given
@@ -375,6 +378,67 @@ impl Cone {
     /// native call per batch, mirroring [`Cone::eval_points`].
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// Intersects this cone with another cone.
+    ///
+    /// The analytic path needs coaxial axes: equal ring radii
+    /// `alpha*tan(phi)` give one axial position
+    /// `alpha* = -s*d*tan2 / (tan1 - s*tan2)` (`d` the signed apex
+    /// separation, `s` the axis alignment), kept when both nappes cover
+    /// it. Same apex, axis, and angle coincide; parallel distinct nappes
+    /// and behind-apex roots miss. Anything else is a space quartic and
+    /// reports [`ConeConeIntersection::NotAnalytic`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, ConeConeIntersection, Frame3D, Point3D, Tolerance, Vector3D};
+    /// let c1 = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let c2 = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert_eq!(
+    ///     c1.intersect_cone(&c2, tol),
+    ///     ConeConeIntersection::Coincident
+    /// );
+    /// ```
+    pub fn intersect_cone(&self, other: &Cone, tol: Tolerance) -> ConeConeIntersection {
+        let a1 = self.frame().z_direction();
+        let a2 = other.frame().z_direction();
+        if a1.cross(a2).magnitude() > tol.angular {
+            return ConeConeIntersection::NotAnalytic;
+        }
+        let w = other.apex() - self.apex();
+        if (w - a1 * w.dot(a1)).magnitude() > tol.confusion {
+            return ConeConeIntersection::NotAnalytic;
+        }
+        let s = a1.dot(a2);
+        let d = w.dot(a1);
+        let (t1, t2) = (self.semi_angle().tan(), other.semi_angle().tan());
+        if d.abs() <= tol.confusion
+            && (self.semi_angle() - other.semi_angle()).abs() <= tol.angular
+            && s > 0.0
+        {
+            return ConeConeIntersection::Coincident;
+        }
+        let denom = t1 - s * t2;
+        if denom.abs() <= tol.angular * (t1 + t2 + 1.0) {
+            return ConeConeIntersection::Empty;
+        }
+        let alpha = -s * d * t2 / denom;
+        let alpha2 = s * (alpha - d);
+        if alpha < -tol.confusion || alpha2 < -tol.confusion {
+            return ConeConeIntersection::Empty;
+        }
+        let center = self.apex() + a1 * alpha;
+        let radius = (alpha * t1).max(0.0);
+        if radius <= tol.confusion {
+            ConeConeIntersection::ApexPoint(center)
+        } else {
+            let circle =
+                Circle3D::new(center, a1, radius).expect("ring radius is positive by construction");
+            ConeConeIntersection::Circle(circle)
+        }
     }
 
     /// Intersects this cone with a cylinder.
@@ -764,6 +828,36 @@ mod tests {
         assert_eq!(
             cone.intersect_cylinder(&tilted, tol),
             ConeCylinderIntersection::NotAnalytic
+        );
+    }
+
+    #[test]
+    fn test_cone_cone_intersection() {
+        let tol = Tolerance::DEFAULT;
+        let c1 = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        // Second coaxial cone: shifted frame, wider angle.
+        let frame2 = Frame3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z, Vector3D::X).unwrap();
+        let c2 = Cone::from_frame(frame2, 0.6, 1.0).unwrap();
+        match c1.intersect_cone(&c2, tol) {
+            ConeConeIntersection::Circle(circle) => {
+                for p in circle.eval_points(&[0.0, 1.0, 3.0]) {
+                    assert!(c1.contains(p, tol));
+                    assert!(c2.contains(p, tol));
+                }
+            }
+            _ => panic!("expected a circle"),
+        }
+        // Parallel distinct nappes (same angle, offset apex): miss.
+        let shifted = Cone::from_frame(frame2, 0.4, 1.0).unwrap();
+        assert_eq!(
+            c1.intersect_cone(&shifted, tol),
+            ConeConeIntersection::Empty
+        );
+        // Tilted axis: space quartic, no closed form.
+        let tilted = Cone::new(Point3D::ORIGIN, Vector3D::X, 0.4, 2.0).unwrap();
+        assert_eq!(
+            c1.intersect_cone(&tilted, tol),
+            ConeConeIntersection::NotAnalytic
         );
     }
 }

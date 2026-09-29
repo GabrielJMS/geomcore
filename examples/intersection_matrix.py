@@ -212,6 +212,97 @@ def pair_cylinder_cone():
     return (s1, "Cylinder"), (s2, "Cone"), (curve, "circle")
 
 
+def pair_cone_cone():
+    s1 = canonical("Cone")
+    frame2 = Frame3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), Vector3D.x())
+    s2 = Cone.from_frame(frame2, 0.6, 1.0)
+    kind, payload = s1.intersect_cone(s2)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Cone"), (s2, "Cone"), (curve, "circle")
+
+
+def pair_torus_plane():
+    s1 = canonical("Torus")
+    s2 = canonical("Plane")
+    kind, payload = s1.intersect_plane(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Torus"), (s2, "Plane"), (curves, "two_circles")
+
+
+def pair_plane_torus():
+    s1 = canonical("Plane")
+    s2 = canonical("Torus")
+    kind, payload = s2.intersect_plane(s1)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Plane"), (s2, "Torus"), (curves, "two_circles")
+
+
+def pair_torus_sphere():
+    s1 = canonical("Torus")
+    s2 = Sphere(Point3D(0.0, 0.0, 1.0), 4.0)
+    kind, payload = s1.intersect_sphere(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Torus"), (s2, "Sphere"), (curves, "two_circles")
+
+
+def pair_sphere_torus():
+    s1 = Sphere(Point3D(0.0, 0.0, 1.0), 4.0)
+    s2 = canonical("Torus")
+    kind, payload = s2.intersect_sphere(s1)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Sphere"), (s2, "Torus"), (curves, "two_circles")
+
+
+def pair_torus_cylinder():
+    s1 = canonical("Torus")
+    s2 = Cylinder(Point3D.origin(), Vector3D.z(), 4.5)
+    kind, payload = s1.intersect_cylinder(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Torus"), (s2, "Cylinder"), (curves, "two_circles")
+
+
+def pair_cylinder_torus():
+    s1 = Cylinder(Point3D.origin(), Vector3D.z(), 4.5)
+    s2 = canonical("Torus")
+    kind, payload = s2.intersect_cylinder(s1)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Cylinder"), (s2, "Torus"), (curves, "two_circles")
+
+
+def pair_torus_cone():
+    s1 = canonical("Torus")
+    s2 = Cone.from_frame(Frame3D.world(), 1.1, 2.0)
+    kind, payload = s1.intersect_cone(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Torus"), (s2, "Cone"), (curves, "two_circles")
+
+
+def pair_cone_torus():
+    s1 = Cone.from_frame(Frame3D.world(), 1.1, 2.0)
+    s2 = canonical("Torus")
+    kind, payload = s2.intersect_cone(s1)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Cone"), (s2, "Torus"), (curves, "two_circles")
+
+
+def pair_torus_torus():
+    s1 = canonical("Torus")
+    s2 = Torus(Point3D(0.0, 0.0, 1.5), Vector3D.z(), 4.0, 1.0)
+    kind, payload = s1.intersect_torus(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Torus"), (s2, "Torus"), (curves, "two_circles")
+
+
 # Pair-specific builders returning ((surf1, kind1), (surf2, kind2),
 # (curve_points, curve_label) | None). Absent pairs fall back to two
 # canonical instances with no curve (pending analytic intersection).
@@ -220,17 +311,27 @@ PAIR_BUILDERS = {
     ("Plane", "Sphere"): pair_plane_sphere,
     ("Plane", "Cylinder"): pair_plane_cylinder,
     ("Plane", "Cone"): pair_plane_cone,
+    ("Plane", "Torus"): pair_plane_torus,
     ("Sphere", "Plane"): pair_sphere_plane,
     ("Sphere", "Sphere"): pair_sphere_sphere,
     ("Sphere", "Cylinder"): pair_sphere_cylinder,
     ("Sphere", "Cone"): pair_sphere_cone,
+    ("Sphere", "Torus"): pair_sphere_torus,
     ("Cylinder", "Plane"): pair_cylinder_plane,
     ("Cylinder", "Sphere"): pair_cylinder_sphere,
     ("Cylinder", "Cylinder"): pair_cylinder_cylinder,
     ("Cylinder", "Cone"): pair_cylinder_cone,
+    ("Cylinder", "Torus"): pair_cylinder_torus,
     ("Cone", "Plane"): pair_cone_plane,
     ("Cone", "Sphere"): pair_cone_sphere,
     ("Cone", "Cylinder"): pair_cone_cylinder,
+    ("Cone", "Cone"): pair_cone_cone,
+    ("Cone", "Torus"): pair_cone_torus,
+    ("Torus", "Plane"): pair_torus_plane,
+    ("Torus", "Sphere"): pair_torus_sphere,
+    ("Torus", "Cylinder"): pair_torus_cylinder,
+    ("Torus", "Cone"): pair_torus_cone,
+    ("Torus", "Torus"): pair_torus_torus,
 }
 
 

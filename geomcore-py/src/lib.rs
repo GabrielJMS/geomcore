@@ -14,10 +14,12 @@ use geomcore::curves::{
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D, LinePlaneIntersection,
-    LineQuadricIntersection, PlaneConeIntersection, PlaneCylinderIntersection,
-    PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection,
-    SphereCylinderIntersection, SphereSphereIntersection, Tolerance, Transform, Vector2D, Vector3D,
+    Axis3D, ConeConeIntersection, ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D,
+    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
+    SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection, Tolerance,
+    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
+    TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
@@ -924,6 +926,34 @@ impl PyCone {
             ConeCylinderIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
         }
     }
+
+    /// Intersects this cone with another cone.
+    ///
+    /// The analytic path needs coaxial axes. Returns `("circle", Circle3D)`,
+    /// `("apex_point", Point3D)`, `("empty", None)`,
+    /// `("coincident", None)` or `("not_analytic", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        other: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cone(&other.0, tol) {
+            ConeConeIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            ConeConeIntersection::ApexPoint(p) => Ok((
+                "apex_point".to_string(),
+                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            ConeConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            ConeConeIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+            ConeConeIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
 }
 
 /// A sphere; u is the longitude in [0, 2*pi), v the latitude in [-pi/2, pi/2].
@@ -1210,6 +1240,158 @@ impl PyTorus {
             .map(|p| (p.u, p.v, p.distance))
             .collect()
     }
+
+    /// Intersects this torus with a plane.
+    ///
+    /// Returns `("two_circles", (Circle3D, Circle3D))`,
+    /// `("tangent_circle", Circle3D)`, `("circle", Circle3D)`,
+    /// `("empty", None)` or `("not_analytic", None)`.
+    #[pyo3(signature = (plane, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        plane: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_plane(&plane.0, tol) {
+            TorusPlaneIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
+            TorusPlaneIntersection::TangentCircle(c) => Ok((
+                "tangent_circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusPlaneIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusPlaneIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            TorusPlaneIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this torus with a sphere.
+    ///
+    /// The analytic path needs the sphere center on the torus axis.
+    /// Returns `("circle", Circle3D)`,
+    /// `("two_circles", (Circle3D, Circle3D))`,
+    /// `("tangent_circle", Circle3D)`, `("empty", None)` or
+    /// `("not_analytic", None)`.
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_sphere(&sphere.0, tol) {
+            TorusSphereIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusSphereIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
+            TorusSphereIntersection::TangentCircle(c) => Ok((
+                "tangent_circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusSphereIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            TorusSphereIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this torus with a cylinder.
+    ///
+    /// The analytic path needs coaxial axes. Returns
+    /// `("two_circles", (Circle3D, Circle3D))`,
+    /// `("tangent_circle", Circle3D)`, `("empty", None)` or
+    /// `("not_analytic", None)`.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cylinder(&cylinder.0, tol) {
+            TorusCylinderIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
+            TorusCylinderIntersection::TangentCircle(c) => Ok((
+                "tangent_circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusCylinderIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            TorusCylinderIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this torus with a cone.
+    ///
+    /// The analytic path needs coaxial axes. Returns `("circle", Circle3D)`,
+    /// `("two_circles", (Circle3D, Circle3D))`,
+    /// `("tangent_circle", Circle3D)`, `("empty", None)` or
+    /// `("not_analytic", None)`.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cone(&cone.0, tol) {
+            TorusConeIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusConeIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
+            TorusConeIntersection::TangentCircle(c) => Ok((
+                "tangent_circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            TorusConeIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this torus with another torus.
+    ///
+    /// The analytic path needs collinear axes. Returns `("circle", Circle3D)`,
+    /// `("two_circles", (Circle3D, Circle3D))`,
+    /// `("tangent_circle", Circle3D)`, `("empty", None)`,
+    /// `("coincident", None)` or `("not_analytic", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_torus(
+        &self,
+        py: Python<'_>,
+        other: &PyTorus,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_torus(&other.0, tol) {
+            TorusTorusIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusTorusIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
+            TorusTorusIntersection::TangentCircle(c) => Ok((
+                "tangent_circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            TorusTorusIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            TorusTorusIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+            TorusTorusIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
 }
 
 /// A tensor-product B-spline (optionally rational, optionally periodic) surface.
@@ -1364,6 +1546,15 @@ fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny>> {
         Curve2D::Circle(c) => Ok(PyCircle2D(c).into_pyobject(py)?.into_any().unbind()),
         _ => Err(PyValueError::new_err("unsupported 2d curve variant")),
     }
+}
+
+fn circles_to_py(py: Python<'_>, c1: Circle3D, c2: Circle3D) -> PyResult<Py<PyAny>> {
+    (
+        PyCircle3D(c1).into_pyobject(py)?.into_any().unbind(),
+        PyCircle3D(c2).into_pyobject(py)?.into_any().unbind(),
+    )
+        .into_pyobject(py)
+        .map(|o| o.into_any().unbind())
 }
 
 fn quadric_hit_to_py(

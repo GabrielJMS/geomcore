@@ -352,3 +352,49 @@ def test_intersect_cone_cylinder():
 
     off = Cylinder(Point3D(1.0, 0.0, 0.0), Vector3D.z(), 2.0)
     assert cone.intersect_cylinder(off) == ("not_analytic", None)
+
+
+def test_intersect_cone_cone():
+    from geomcore import Frame3D
+    from geomcore.surfaces import Cone
+
+    c1 = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
+    frame2 = Frame3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), Vector3D.x())
+    c2 = Cone.from_frame(frame2, 0.6, 1.0)
+    kind, circle = c1.intersect_cone(c2)
+    assert kind == "circle"
+    assert circle.radius() == pytest.approx(4.7245, abs=1e-3)
+
+    assert c1.intersect_cone(c1)[0] == "coincident"
+    tilted = Cone(Point3D.origin(), Vector3D.x(), 0.4, 2.0)
+    assert c1.intersect_cone(tilted) == ("not_analytic", None)
+
+
+def test_intersect_torus_symmetric():
+    from geomcore.surfaces import Cone, Cylinder, Plane, Torus
+
+    torus = Torus(Point3D.origin(), Vector3D.z(), 4.0, 1.0)
+
+    kind, (c1, c2) = torus.intersect_plane(Plane(Point3D.origin(), Vector3D.z()))
+    assert kind == "two_circles"
+    assert sorted([c1.radius(), c2.radius()]) == pytest.approx([3.0, 5.0])
+
+    kind, _ = torus.intersect_plane(Plane(Point3D.origin(), Vector3D.x()))
+    assert kind == "two_circles"
+
+    kind, c = torus.intersect_sphere(Sphere(Point3D.origin(), 5.0))
+    assert kind == "tangent_circle"
+    assert c.radius() == pytest.approx(5.0)
+
+    kind, _ = torus.intersect_cylinder(Cylinder(Point3D.origin(), Vector3D.z(), 4.5))
+    assert kind == "two_circles"
+
+    kind, _ = torus.intersect_cone(Cone.from_frame(Frame3D.world(), 1.1, 2.0))
+    assert kind == "two_circles"
+
+    other = Torus(Point3D(0.0, 0.0, 1.5), Vector3D.z(), 4.0, 1.0)
+    kind, _ = torus.intersect_torus(other)
+    assert kind == "two_circles"
+    assert torus.intersect_torus(torus)[0] == "coincident"
+    tilted = Torus(Point3D.origin(), Vector3D.x(), 4.0, 1.0)
+    assert torus.intersect_torus(tilted) == ("not_analytic", None)
