@@ -15,9 +15,10 @@
 pub(crate) mod poly;
 pub(crate) mod solve;
 
-// Re-exported for the projection/extrema consumers landing in v0.12.0;
+// Re-exported for the B-spline projection consumers landing next;
 // the allows expire then.
 #[allow(dead_code, unused_imports)]
-pub(crate) use poly::{RealRoot, real_roots};
+pub(crate) use poly::RealRoot;
+pub(crate) use poly::real_roots;
 #[allow(dead_code, unused_imports)]
 pub(crate) use solve::{brent_minimum, gauss_newton_1d, gauss_newton_2d, newton_1d, solve_2x2};

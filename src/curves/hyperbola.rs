@@ -4,6 +4,8 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::math::real_roots;
+use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
 use crate::{Frame3D, Point3D, Tolerance, Vector3D};
@@ -316,10 +318,10 @@ impl Hyperbola3D {
         analytic::hyperbola_parameter(&self.frame, self.minor_radius, point)
     }
 
-    /// Returns whether `point` lies on the hyperbola: the inverse parameter
-    /// is recovered with [`Hyperbola3D::parameter_of`] and re-evaluated, and
-    /// the point counts as contained when the re-evaluated point is within
-    /// `tol.confusion` of it.
+    /// Returns whether `point` lies on the hyperbola: the inverse
+    /// parameter is recovered with [`Hyperbola3D::parameter_of`] and
+    /// re-evaluated, and the point counts as contained when the
+    /// re-evaluated point is within `tol.confusion` of it.
     ///
     /// # Examples
     ///
@@ -333,6 +335,79 @@ impl Hyperbola3D {
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+    }
+
+    /// All stationary points of the distance from `point` to the (single)
+    /// hyperbola branch, ordered by ascending distance.
+    ///
+    /// The stationarity condition becomes a quartic in `u = e^t` (solved
+    /// by [`real_roots`]; only positive roots give real parameters). The
+    /// first entry is the global closest point (see
+    /// [`Hyperbola3D::project_point`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Hyperbola3D, Point3D, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let extrema = hyperbola.extrema(Point3D::new(2.0, 0.0, 5.0), Tolerance::DEFAULT);
+    /// assert!(!extrema.is_empty());
+    /// ```
+    pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        let rel = point - self.center();
+        let px = rel.dot(self.frame.x_direction());
+        let py = rel.dot(self.frame.y_direction());
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let s2 = a * a + b * b;
+        let coeffs = [
+            -s2,
+            2.0 * (a * px - b * py),
+            0.0,
+            -2.0 * (a * px + b * py),
+            s2,
+        ];
+        let mut out: Vec<CurveProjection> = real_roots(&coeffs, tol.confusion)
+            .into_iter()
+            .filter(|r| r.value > 0.0)
+            .map(|r| {
+                let t = r.value.ln();
+                let distance = self.eval_point(t).distance(point);
+                CurveProjection {
+                    parameter: t,
+                    distance: projection::snap_distance(distance, tol.confusion),
+                }
+            })
+            .collect();
+        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out
+    }
+
+    /// Projects `point` onto the hyperbola: the nearest of
+    /// [`Hyperbola3D::extrema`]. Distances within `tol.confusion` snap to
+    /// `0.0`, matching [`Hyperbola3D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Hyperbola3D, Point3D, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let proj = hyperbola.project_point(Point3D::new(3.0, 0.0, 0.0), Tolerance::DEFAULT);
+    /// assert!((proj.parameter.abs() - 0.62236).abs() < 1e-4);
+    /// assert!((proj.distance - 0.8f64.sqrt()).abs() < 1e-9);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        self.extrema(point, tol)
+            .into_iter()
+            .next()
+            .expect("distance to a hyperbola branch attains its minimum")
+    }
+
+    /// Projects each point in `points` onto the hyperbola.
+    ///
+    /// Default-style batch wrapper over [`Hyperbola3D::project_point`]:
+    /// one native call per batch, mirroring [`Hyperbola3D::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
     /// Computes the exact 2D representation of this hyperbola in a surface's
@@ -559,5 +634,27 @@ mod tests {
         assert!(h.contains(h.eval_point(1.0), tol));
         assert!(!h.contains(Point3D::ORIGIN, tol));
         assert!(!h.contains(Point3D::new(2.0, 0.0, 5.0), tol));
+    }
+
+    #[test]
+    fn test_hyperbola3d_project_point() {
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        // On the transverse axis right of the vertex: the true minima are
+        // a symmetric pair off the vertex, closer than the vertex itself.
+        let proj = h.project_point(Point3D::new(3.0, 0.0, 0.0), tol);
+        assert!((proj.parameter.abs() - 0.62236).abs() < 1e-4);
+        assert!((proj.distance - 0.8f64.sqrt()).abs() < 1e-9);
+        // Off-curve: verify against brute-force sampling (which can only
+        // overestimate the true minimum).
+        let query = Point3D::new(2.0, 0.0, 5.0);
+        let off = h.project_point(query, tol);
+        let mut best = f64::INFINITY;
+        for i in -1000..=1000 {
+            let d = h.eval_point(i as f64 * 0.01).distance(query);
+            best = best.min(d);
+        }
+        assert!(off.distance <= best);
+        assert!(best - off.distance < 1e-3);
     }
 }

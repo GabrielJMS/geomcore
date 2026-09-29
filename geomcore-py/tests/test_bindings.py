@@ -398,3 +398,23 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(torus)[0] == "coincident"
     tilted = Torus(Point3D.origin(), Vector3D.x(), 4.0, 1.0)
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
+
+
+def test_conic_extrema_and_projection():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Parabola3D
+
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    ext = ellipse.extrema(Point3D(4.0, 0.0, 0.0))
+    assert len(ext) >= 2
+    assert ext[0][1] == pytest.approx(1.0)
+    u, dist = ellipse.project_point(Point3D(0.0, 3.0, 0.0))
+    assert dist == pytest.approx(1.5)
+
+    parabola = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0)
+    u, dist = parabola.project_point(Point3D(1.0, 2.0, 0.0))
+    assert u == pytest.approx(2.0)
+    assert dist == 0.0
+
+    hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
+    u, dist = hyperbola.project_point(Point3D(3.0, 0.0, 0.0))
+    assert dist == pytest.approx(math.sqrt(0.8))

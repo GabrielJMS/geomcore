@@ -9,6 +9,16 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-30
+
+### Added
+
+- Point projection and extrema on conics: `extrema(point, tol)` (all
+  stationary points by ascending distance, via quartic/cubic stationarity
+  solved with the `math` module) plus `project_point`/`project_points`
+  on `Ellipse3D`, `Parabola3D`, and `Hyperbola3D`. Python returns
+  `(parameter, distance)` tuples and lists thereof.
+
 ## [0.11.0] - 2026-09-30
 
 ### Added
@@ -149,7 +159,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.12.0
 [0.11.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.11.0
 [0.10.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.10.0
 [0.9.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.9.0

@@ -4,6 +4,8 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::math::real_roots;
+use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
 use crate::{Frame3D, Point3D, Tolerance, Vector3D};
@@ -314,9 +316,9 @@ impl Ellipse3D {
         analytic::ellipse_parameter(&self.frame, self.major_radius, self.minor_radius, point)
     }
 
-    /// Returns whether `point` lies on the ellipse: the inverse parameter is
-    /// recovered with [`Ellipse3D::parameter_of`] and re-evaluated, and the
-    /// point counts as contained when the re-evaluated point is within
+    /// Returns whether `point` lies on the ellipse: the inverse parameter
+    /// is recovered with [`Ellipse3D::parameter_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
     /// `tol.confusion` of it.
     ///
     /// # Examples
@@ -331,6 +333,94 @@ impl Ellipse3D {
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+    }
+
+    /// All stationary points of the distance from `point` to the ellipse,
+    /// ordered by ascending distance.
+    ///
+    /// The stationarity condition `(E(t) - P).E'(t) = 0` becomes a quartic
+    /// in `u = tan(t/2)` (solved by [`real_roots`]); `t = PI`, which the
+    /// substitution misses, is always added as a candidate. The first
+    /// entry is the global closest point (see [`Ellipse3D::project_point`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Point3D, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let extrema = ellipse.extrema(Point3D::new(4.0, 0.0, 0.0), Tolerance::DEFAULT);
+    /// assert!(!extrema.is_empty());
+    /// assert_eq!(extrema[0].distance, 1.0);
+    /// ```
+    pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        let rel = point - self.center();
+        let px = rel.dot(self.frame.x_direction());
+        let py = rel.dot(self.frame.y_direction());
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let c2 = a * a - b * b;
+        let coeffs = [
+            -b * py,
+            2.0 * (a * px - c2),
+            0.0,
+            2.0 * (a * px + c2),
+            b * py,
+        ];
+        let mut ts: Vec<f64> = real_roots(&coeffs, tol.confusion)
+            .into_iter()
+            .map(|r| 2.0 * r.value.atan())
+            .collect();
+        ts.push(std::f64::consts::PI);
+        ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        let mut params: Vec<f64> = Vec::with_capacity(ts.len());
+        for t in ts {
+            let fresh = match params.last() {
+                Some(&last) => (t - last).abs() > tol.parametric * (1.0 + t.abs()),
+                None => true,
+            };
+            if fresh {
+                params.push(t);
+            }
+        }
+        let mut out: Vec<CurveProjection> = params
+            .into_iter()
+            .map(|t| {
+                let distance = self.eval_point(t).distance(point);
+                CurveProjection {
+                    parameter: t,
+                    distance: projection::snap_distance(distance, tol.confusion),
+                }
+            })
+            .collect();
+        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out
+    }
+
+    /// Projects `point` onto the ellipse: the nearest of
+    /// [`Ellipse3D::extrema`]. Distances within `tol.confusion` snap to
+    /// `0.0`, matching [`Ellipse3D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Point3D, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let proj = ellipse.project_point(Point3D::new(4.0, 0.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(proj.parameter, 0.0);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        self.extrema(point, tol)
+            .into_iter()
+            .next()
+            .expect("a compact smooth curve attains its minimum distance")
+    }
+
+    /// Projects each point in `points` onto the ellipse.
+    ///
+    /// Default-style batch wrapper over [`Ellipse3D::project_point`]: one
+    /// native call per batch, mirroring [`Ellipse3D::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
     /// Computes the exact 2D representation of this ellipse in a surface's
@@ -570,5 +660,35 @@ mod tests {
         assert!(e.contains(e.eval_point(1.0), tol));
         assert!(!e.contains(Point3D::ORIGIN, tol));
         assert!(!e.contains(Point3D::new(4.0, 0.0, 0.0), tol));
+    }
+
+    #[test]
+    fn test_ellipse3d_extrema() {
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+        let tol = Tolerance::DEFAULT;
+        // Outside on the major axis: nearest (3,0,0), farthest (-3,0,0).
+        let ext = e.extrema(Point3D::new(4.0, 0.0, 0.0), tol);
+        assert!(ext.len() >= 2);
+        assert_eq!(ext[0].distance, 1.0);
+        assert!((ext[0].parameter - 0.0).abs() < 1e-9);
+        assert!((ext.last().unwrap().distance - 7.0).abs() < 1e-9);
+        // Center: all four axis endpoints equidistant in pairs.
+        let center_ext = e.extrema(Point3D::ORIGIN, tol);
+        assert_eq!(center_ext.len(), 4);
+        assert!((center_ext[0].distance - 1.5).abs() < 1e-9);
+        assert!((center_ext[3].distance - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_ellipse3d_project_point() {
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let proj = e.project_point(Point3D::new(0.0, 3.0, 0.0), tol);
+        assert!((proj.distance - 1.5).abs() < 1e-9);
+        assert!((proj.parameter - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+        // Batch agrees with scalar.
+        let batch = e.project_points(&[Point3D::new(4.0, 0.0, 0.0)], tol);
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].distance, 1.0);
     }
 }

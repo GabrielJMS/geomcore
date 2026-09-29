@@ -3,6 +3,8 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::math::real_roots;
+use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
@@ -213,10 +215,10 @@ impl Parabola3D {
         analytic::parabola_parameter(&self.frame, point)
     }
 
-    /// Returns whether `point` lies on the parabola: the inverse parameter
-    /// is recovered with [`Parabola3D::parameter_of`] and re-evaluated, and
-    /// the point counts as contained when the re-evaluated point is within
-    /// `tol.confusion` of it.
+    /// Returns whether `point` lies on the parabola: the inverse
+    /// parameter is recovered with [`Parabola3D::parameter_of`] and
+    /// re-evaluated, and the point counts as contained when the
+    /// re-evaluated point is within `tol.confusion` of it.
     ///
     /// # Examples
     ///
@@ -230,6 +232,69 @@ impl Parabola3D {
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+    }
+
+    /// All stationary points of the distance from `point` to the
+    /// parabola, ordered by ascending distance.
+    ///
+    /// The stationarity condition is the cubic
+    /// `t^3 + (8f^2 - 4f*px)t - 8f^2*py = 0` in the frame coordinates
+    /// (solved by [`real_roots`]). The first entry is the global closest
+    /// point (see [`Parabola3D::project_point`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Parabola3D, Point3D, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let extrema = parabola.extrema(Point3D::new(0.0, 2.0, 5.0), Tolerance::DEFAULT);
+    /// assert!(!extrema.is_empty());
+    /// ```
+    pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        let rel = point - self.apex();
+        let px = rel.dot(self.frame.x_direction());
+        let py = rel.dot(self.frame.y_direction());
+        let f = self.focal();
+        let coeffs = [-8.0 * f * f * py, 8.0 * f * f - 4.0 * f * px, 0.0, 1.0];
+        let mut out: Vec<CurveProjection> = real_roots(&coeffs, tol.confusion)
+            .into_iter()
+            .map(|r| {
+                let distance = self.eval_point(r.value).distance(point);
+                CurveProjection {
+                    parameter: r.value,
+                    distance: projection::snap_distance(distance, tol.confusion),
+                }
+            })
+            .collect();
+        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out
+    }
+
+    /// Projects `point` onto the parabola: the nearest of
+    /// [`Parabola3D::extrema`]. Distances within `tol.confusion` snap to
+    /// `0.0`, matching [`Parabola3D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Parabola3D, Point3D, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let proj = parabola.project_point(Point3D::new(1.0, 2.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(proj.parameter, 2.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        self.extrema(point, tol)
+            .into_iter()
+            .next()
+            .expect("distance to a parabola attains its minimum")
+    }
+
+    /// Projects each point in `points` onto the parabola.
+    ///
+    /// Default-style batch wrapper over [`Parabola3D::project_point`]:
+    /// one native call per batch, mirroring [`Parabola3D::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
     /// Computes the exact 2D representation of this parabola in a surface's
@@ -399,5 +464,27 @@ mod tests {
         assert!(p.contains(p.eval_point(2.0), tol));
         assert!(p.contains(p.eval_point(-1.5), tol));
         assert!(!p.contains(Point3D::new(0.0, 2.0, 5.0), tol));
+    }
+
+    #[test]
+    fn test_parabola3d_project_point() {
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        // (1,2,0) is on the curve (t = 2).
+        let on = p.project_point(Point3D::new(1.0, 2.0, 0.0), tol);
+        assert_eq!(on.parameter, 2.0);
+        assert_eq!(on.distance, 0.0);
+        // Off-curve: verify against brute-force sampling (which can only
+        // overestimate the true minimum).
+        let query = Point3D::new(0.0, 2.0, 5.0);
+        let proj = p.project_point(query, tol);
+        let mut best = f64::INFINITY;
+        for i in -1000..=1000 {
+            let d = p.eval_point(i as f64 * 0.01).distance(query);
+            best = best.min(d);
+        }
+        assert!(proj.distance <= best);
+        assert!(best - proj.distance < 1e-3);
+        assert!(p.contains(p.eval_point(proj.parameter), tol));
     }
 }
