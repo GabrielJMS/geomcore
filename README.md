@@ -38,10 +38,10 @@ See [ROADMAP.md](ROADMAP.md) for what's coming next and
 ## Rust
 
 ```rust
-use geomcore::{Point3, Vector3};
+use geomcore::{Point3D, Vector3D};
 use geomcore::curves::Circle3D;
 
-let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
 let point = circle.eval_point(std::f64::consts::PI / 4.0);
 ```
 
@@ -52,11 +52,11 @@ Not yet published to crates.io — coming with the first release.
 ## Python
 
 ```python
-from geomcore import Point3, Vector3
+from geomcore import Point3D, Vector3D
 from geomcore.curves import Circle3D
 import math
 
-circle = Circle3D.new(Point3.origin(), Vector3.z(), 2.0)
+circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
 point = circle.eval_point(math.pi / 4)
 ```
 

@@ -6,7 +6,7 @@ use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Frame3, Point3, Vector3};
+use crate::{Frame3D, Point3D, Vector3D};
 use std::fmt;
 
 /// Error returned when an [`Ellipse3D`] cannot be constructed from the given
@@ -46,7 +46,7 @@ impl fmt::Display for EllipseConstructionError {
 
 impl std::error::Error for EllipseConstructionError {}
 
-/// An ellipse in 3D: a plane [`Frame3`] (origin plus local x/y directions
+/// An ellipse in 3D: a plane [`Frame3D`] (origin plus local x/y directions
 /// defining the plane, the major axis, and the angular origin), a semi-major
 /// radius, and a semi-minor radius, evaluated as
 /// `origin + major*cos(u)*x_dir + minor*sin(u)*y_dir`.
@@ -54,13 +54,13 @@ impl std::error::Error for EllipseConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Ellipse3D, Point3, Vector3};
-/// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
-/// assert_eq!(ellipse.eval_point(0.0), Point3::new(3.0, 0.0, 0.0));
+/// use geomcore::{Ellipse3D, Point3D, Vector3D};
+/// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+/// assert_eq!(ellipse.eval_point(0.0), Point3D::new(3.0, 0.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ellipse3D {
-    frame: Frame3,
+    frame: Frame3D,
     major_radius: f64,
     minor_radius: f64,
 }
@@ -70,7 +70,7 @@ impl Ellipse3D {
     /// semi-major radius, and a semi-minor radius.
     ///
     /// The plane frame is derived from `normal` and `x_direction` via
-    /// [`Frame3::new`].
+    /// [`Frame3D::new`].
     ///
     /// # Errors
     ///
@@ -84,19 +84,19 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3, Vector3};
-    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.major_radius(), 3.0);
     /// assert_eq!(ellipse.minor_radius(), 1.5);
     /// ```
     pub fn new(
-        center: Point3,
-        normal: Vector3,
-        x_direction: Vector3,
+        center: Point3D,
+        normal: Vector3D,
+        x_direction: Vector3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Ellipse3D, EllipseConstructionError> {
-        let frame = Frame3::new(center, normal, x_direction)
+        let frame = Frame3D::new(center, normal, x_direction)
             .map_err(|_| EllipseConstructionError::NullNormal)?;
         Ellipse3D::from_frame(frame, major_radius, minor_radius)
     }
@@ -113,12 +113,12 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Frame3};
-    /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
-    /// assert_eq!(ellipse.frame(), Frame3::WORLD);
+    /// use geomcore::{Ellipse3D, Frame3D};
+    /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 1.5).unwrap();
+    /// assert_eq!(ellipse.frame(), Frame3D::WORLD);
     /// ```
     pub fn from_frame(
-        frame: Frame3,
+        frame: Frame3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Ellipse3D, EllipseConstructionError> {
@@ -142,7 +142,7 @@ impl Ellipse3D {
     /// semi-major radius `d1 = |s1 - center|`. The semi-minor radius `d2` is
     /// the distance from `s2` to the line `(center, x_axis)`. The plane
     /// normal is `normalize(x_axis × (s2 - center))`, and the resulting
-    /// frame is `Frame3::new(center, normal, x_axis)`.
+    /// frame is `Frame3D::new(center, normal, x_axis)`.
     ///
     /// # Errors
     ///
@@ -155,20 +155,20 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3};
+    /// use geomcore::{Ellipse3D, Point3D};
     /// let ellipse = Ellipse3D::from_center_and_points(
-    ///     Point3::ORIGIN,
-    ///     Point3::new(3.0, 0.0, 0.0),
-    ///     Point3::new(0.0, 1.5, 0.0),
+    ///     Point3D::ORIGIN,
+    ///     Point3D::new(3.0, 0.0, 0.0),
+    ///     Point3D::new(0.0, 1.5, 0.0),
     /// )
     /// .unwrap();
     /// assert_eq!(ellipse.major_radius(), 3.0);
     /// assert_eq!(ellipse.minor_radius(), 1.5);
     /// ```
     pub fn from_center_and_points(
-        center: Point3,
-        s1: Point3,
-        s2: Point3,
+        center: Point3D,
+        s1: Point3D,
+        s2: Point3D,
     ) -> Result<Ellipse3D, EllipseConstructionError> {
         let v1 = s1 - center;
         let d1 = v1.magnitude();
@@ -191,7 +191,7 @@ impl Ellipse3D {
             return Err(EllipseConstructionError::InvertedAxis);
         }
 
-        let frame = Frame3::new(center, normal, x_axis)
+        let frame = Frame3D::new(center, normal, x_axis)
             .map_err(|_| EllipseConstructionError::InvertedAxis)?;
         Ellipse3D::from_frame(frame, d1, d2)
     }
@@ -201,11 +201,11 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3, Vector3};
-    /// let ellipse = Ellipse3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
-    /// assert_eq!(ellipse.center(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// assert_eq!(ellipse.center(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn center(&self) -> Point3 {
+    pub fn center(&self) -> Point3D {
         self.frame.origin()
     }
 
@@ -214,11 +214,11 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Frame3};
-    /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
-    /// assert_eq!(ellipse.frame(), Frame3::WORLD);
+    /// use geomcore::{Ellipse3D, Frame3D};
+    /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 1.5).unwrap();
+    /// assert_eq!(ellipse.frame(), Frame3D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame3 {
+    pub fn frame(&self) -> Frame3D {
         self.frame
     }
 
@@ -227,8 +227,8 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Frame3};
-    /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
+    /// use geomcore::{Ellipse3D, Frame3D};
+    /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.major_radius(), 3.0);
     /// ```
     pub fn major_radius(&self) -> f64 {
@@ -240,8 +240,8 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Frame3};
-    /// let ellipse = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
+    /// use geomcore::{Ellipse3D, Frame3D};
+    /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.minor_radius(), 1.5);
     /// ```
     pub fn minor_radius(&self) -> f64 {
@@ -254,11 +254,11 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3, Vector3};
-    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
-    /// assert_eq!(ellipse.eval_point(0.0), Point3::new(3.0, 0.0, 0.0));
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// assert_eq!(ellipse.eval_point(0.0), Point3D::new(3.0, 0.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64) -> Point3D {
         analytic::ellipse_d0(&self.frame, self.major_radius, self.minor_radius, u)
     }
 
@@ -267,12 +267,12 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3, Vector3};
-    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// let points = ellipse.eval_points(&[0.0, 1.0]);
-    /// assert_eq!(points[0], Point3::new(3.0, 0.0, 0.0));
+    /// assert_eq!(points[0], Point3D::new(3.0, 0.0, 0.0));
     /// ```
-    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -289,11 +289,11 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3, Vector3};
-    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
-    /// assert_eq!(ellipse.eval_derivative(0.0, 1), Vector3::new(0.0, 1.5, 0.0));
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// assert_eq!(ellipse.eval_derivative(0.0, 1), Vector3D::new(0.0, 1.5, 0.0));
     /// ```
-    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
             _ => analytic::ellipse_dn(&self.frame, self.major_radius, self.minor_radius, u, order),
@@ -306,11 +306,11 @@ impl Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Ellipse3D, Point3, Vector3};
-    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
-    /// assert!((ellipse.parameter_of(Point3::new(0.0, 1.5, 0.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// assert!((ellipse.parameter_of(Point3D::new(0.0, 1.5, 0.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     /// ```
-    pub fn parameter_of(&self, point: Point3) -> f64 {
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
         analytic::ellipse_parameter(&self.frame, self.major_radius, self.minor_radius, point)
     }
 
@@ -327,10 +327,10 @@ impl Ellipse3D {
     ///
     /// ```
     /// use geomcore::curves::ParametrizeError;
-    /// use geomcore::{Ellipse3D, Plane, Point3, Vector3};
+    /// use geomcore::{Ellipse3D, Plane, Point3D, Vector3D};
     ///
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// let ellipse = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// assert_eq!(ellipse.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
     /// ```
     pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
@@ -341,14 +341,14 @@ impl Ellipse3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Ellipse3D, EllipseConstructionError, Frame3, Point3, Vector3};
+    use crate::{Ellipse3D, EllipseConstructionError, Frame3D, Point3D, Vector3D};
 
     // ---- construction ----
 
     #[test]
     fn test_ellipse3d_new_ok() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
-        assert_eq!(e.center(), Point3::ORIGIN);
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+        assert_eq!(e.center(), Point3D::ORIGIN);
         assert_eq!(e.major_radius(), 3.0);
         assert_eq!(e.minor_radius(), 1.5);
     }
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_ellipse3d_new_negative_minor_radius_errors() {
         assert_eq!(
-            Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, -1.0),
+            Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, -1.0),
             Err(EllipseConstructionError::NegativeRadius)
         );
     }
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn test_ellipse3d_new_inverted_radii_errors() {
         assert_eq!(
-            Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0, 2.0),
+            Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0, 2.0),
             Err(EllipseConstructionError::InvertedRadii)
         );
     }
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn test_ellipse3d_new_null_normal_errors() {
         assert_eq!(
-            Ellipse3D::new(Point3::ORIGIN, Vector3::ZERO, Vector3::X, 3.0, 1.5),
+            Ellipse3D::new(Point3D::ORIGIN, Vector3D::ZERO, Vector3D::X, 3.0, 1.5),
             Err(EllipseConstructionError::NullNormal)
         );
     }
@@ -380,15 +380,15 @@ mod tests {
     #[test]
     fn test_ellipse3d_new_parallel_x_direction_errors() {
         assert_eq!(
-            Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::Z, 3.0, 1.5),
+            Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Z, 3.0, 1.5),
             Err(EllipseConstructionError::NullNormal)
         );
     }
 
     #[test]
     fn test_ellipse3d_from_frame_ok() {
-        let e = Ellipse3D::from_frame(Frame3::WORLD, 3.0, 1.5).unwrap();
-        assert_eq!(e.frame(), Frame3::WORLD);
+        let e = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 1.5).unwrap();
+        assert_eq!(e.frame(), Frame3D::WORLD);
         assert_eq!(e.major_radius(), 3.0);
         assert_eq!(e.minor_radius(), 1.5);
     }
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn test_ellipse3d_from_frame_negative_radius_errors() {
         assert_eq!(
-            Ellipse3D::from_frame(Frame3::WORLD, 3.0, -1.0),
+            Ellipse3D::from_frame(Frame3D::WORLD, 3.0, -1.0),
             Err(EllipseConstructionError::NegativeRadius)
         );
     }
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn test_ellipse3d_from_frame_inverted_radii_errors() {
         assert_eq!(
-            Ellipse3D::from_frame(Frame3::WORLD, 1.0, 2.0),
+            Ellipse3D::from_frame(Frame3D::WORLD, 1.0, 2.0),
             Err(EllipseConstructionError::InvertedRadii)
         );
     }
@@ -412,9 +412,9 @@ mod tests {
     #[test]
     fn test_ellipse3d_from_center_and_points_ok() {
         let e = Ellipse3D::from_center_and_points(
-            Point3::ORIGIN,
-            Point3::new(3.0, 0.0, 0.0),
-            Point3::new(0.0, 1.5, 0.0),
+            Point3D::ORIGIN,
+            Point3D::new(3.0, 0.0, 0.0),
+            Point3D::new(0.0, 1.5, 0.0),
         )
         .unwrap();
         assert_eq!(e.major_radius(), 3.0);
@@ -425,9 +425,9 @@ mod tests {
     fn test_ellipse3d_from_center_and_points_null_axis_errors() {
         assert_eq!(
             Ellipse3D::from_center_and_points(
-                Point3::ORIGIN,
-                Point3::ORIGIN,
-                Point3::new(0.0, 1.5, 0.0),
+                Point3D::ORIGIN,
+                Point3D::ORIGIN,
+                Point3D::new(0.0, 1.5, 0.0),
             ),
             Err(EllipseConstructionError::NullAxis)
         );
@@ -437,9 +437,9 @@ mod tests {
     fn test_ellipse3d_from_center_and_points_inverted_axis_errors_when_minor_larger() {
         assert_eq!(
             Ellipse3D::from_center_and_points(
-                Point3::ORIGIN,
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 3.0, 0.0),
+                Point3D::ORIGIN,
+                Point3D::new(1.0, 0.0, 0.0),
+                Point3D::new(0.0, 3.0, 0.0),
             ),
             Err(EllipseConstructionError::InvertedAxis)
         );
@@ -449,9 +449,9 @@ mod tests {
     fn test_ellipse3d_from_center_and_points_inverted_axis_errors_when_collinear() {
         assert_eq!(
             Ellipse3D::from_center_and_points(
-                Point3::ORIGIN,
-                Point3::new(3.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
+                Point3D::ORIGIN,
+                Point3D::new(3.0, 0.0, 0.0),
+                Point3D::new(1.0, 0.0, 0.0),
             ),
             Err(EllipseConstructionError::InvertedAxis)
         );
@@ -461,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_ellipse3d_eval_point_zero() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         let p = e.eval_point(0.0);
         assert!((p.x - 3.0).abs() < 1e-9);
         assert!(p.y.abs() < 1e-9);
@@ -470,15 +470,15 @@ mod tests {
 
     #[test]
     fn test_ellipse3d_eval_points_matches_loop() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         let us = [0.0, 0.5, 1.5];
-        let expected: Vec<Point3> = us.iter().map(|&u| e.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| e.eval_point(u)).collect();
         assert_eq!(e.eval_points(&us), expected);
     }
 
     #[test]
     fn test_ellipse3d_eval_derivative_order1() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         let d1 = e.eval_derivative(0.0, 1);
         assert!(d1.x.abs() < 1e-9);
         assert!((d1.y - 1.5).abs() < 1e-9);
@@ -487,13 +487,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_ellipse3d_eval_derivative_order0_panics() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         e.eval_derivative(0.0, 0);
     }
 
     #[test]
     fn test_ellipse3d_parameter_of_round_trip() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         for u in [0.3, 2.0, 5.5] {
             let p = e.eval_point(u);
             assert!((e.parameter_of(p) - u).abs() < 1e-9);
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn test_ellipse3d_parameter_of_in_zero_to_tau() {
-        let e = Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap();
+        let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         for u in [-1.0, -0.1, 7.0] {
             let p = e.eval_point(u);
             let recovered = e.parameter_of(p);

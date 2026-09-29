@@ -2,15 +2,15 @@
 //! concrete 2D curve types.
 
 use crate::curves::{Circle2D, Line2D};
-use crate::{Point2, Vector2};
+use crate::{Point2D, Vector2D};
 use std::f64::consts::TAU;
 
 /// Common interface for 2D parametric curves. Implement this to add a new
 /// curve type that can be used generically (see [`Curve2D`] for a
 /// heterogeneous-collection adaptor built on top of it).
 ///
-/// Mirrors [`crate::curves::ParametricCurve3D`] with [`Point2`]/[`Vector2`]
-/// in place of `Point3`/`Vector3`. Concrete curve types (e.g. [`Line2D`],
+/// Mirrors [`crate::curves::ParametricCurve3D`] with [`Point2D`]/[`Vector2D`]
+/// in place of `Point3D`/`Vector3D`. Concrete curve types (e.g. [`Line2D`],
 /// [`Circle2D`]) already provide inherent methods with the same names; their
 /// trait impls simply delegate to those inherent methods, so calling code
 /// can use either form.
@@ -22,11 +22,11 @@ use std::f64::consts::TAU;
 ///
 /// ```
 /// use geomcore::curves::ParametricCurve2D;
-/// use geomcore::{Line2D, Point2, Vector2};
+/// use geomcore::{Line2D, Point2D, Vector2D};
 ///
-/// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
+/// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
 /// let us = [0.0, 1.0, 2.0];
-/// let expected: Vec<Point2> = us.iter().map(|&u| line.eval_point(u)).collect();
+/// let expected: Vec<Point2D> = us.iter().map(|&u| line.eval_point(u)).collect();
 /// assert_eq!(ParametricCurve2D::eval_points(&line, &us), expected);
 /// ```
 ///
@@ -35,20 +35,20 @@ use std::f64::consts::TAU;
 ///
 /// ```
 /// use geomcore::curves::ParametricCurve2D;
-/// use geomcore::{Circle2D, Line2D, Point2};
+/// use geomcore::{Circle2D, Line2D, Point2D};
 ///
-/// let line = Line2D::new(Point2::ORIGIN, geomcore::Vector2::X).unwrap();
+/// let line = Line2D::new(Point2D::ORIGIN, geomcore::Vector2D::X).unwrap();
 /// assert!(!ParametricCurve2D::is_periodic(&line));
 ///
-/// let circle = Circle2D::new(Point2::ORIGIN, 1.0).unwrap();
+/// let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
 /// assert!(ParametricCurve2D::is_periodic(&circle));
 /// ```
 pub trait ParametricCurve2D {
     /// Evaluates the point on the curve at parameter `u`.
-    fn eval_point(&self, u: f64) -> Point2;
+    fn eval_point(&self, u: f64) -> Point2D;
 
     /// Evaluates the derivative of the given `order` at parameter `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector2;
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector2D;
 
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
@@ -61,7 +61,7 @@ pub trait ParametricCurve2D {
     ///
     /// Default implementation: maps [`eval_point`](Self::eval_point) over
     /// `us`.
-    fn eval_points(&self, us: &[f64]) -> Vec<Point2> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point2D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -73,11 +73,11 @@ pub trait ParametricCurve2D {
 }
 
 impl ParametricCurve2D for Line2D {
-    fn eval_point(&self, u: f64) -> Point2 {
+    fn eval_point(&self, u: f64) -> Point2D {
         Line2D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector2 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         Line2D::eval_derivative(self, u, order)
     }
 
@@ -89,17 +89,17 @@ impl ParametricCurve2D for Line2D {
         None
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point2> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point2D> {
         Line2D::eval_points(self, us)
     }
 }
 
 impl ParametricCurve2D for Circle2D {
-    fn eval_point(&self, u: f64) -> Point2 {
+    fn eval_point(&self, u: f64) -> Point2D {
         Circle2D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector2 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         Circle2D::eval_derivative(self, u, order)
     }
 
@@ -111,7 +111,7 @@ impl ParametricCurve2D for Circle2D {
         Some(TAU)
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point2> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point2D> {
         Circle2D::eval_points(self, us)
     }
 }
@@ -127,15 +127,15 @@ impl ParametricCurve2D for Circle2D {
 ///
 /// ```
 /// use geomcore::curves::{Curve2D, ParametricCurve2D};
-/// use geomcore::{Circle2D, Line2D, Point2, Vector2};
+/// use geomcore::{Circle2D, Line2D, Point2D, Vector2D};
 ///
 /// let curves: Vec<Curve2D> = vec![
-///     Line2D::new(Point2::ORIGIN, Vector2::X).unwrap().into(),
-///     Circle2D::new(Point2::ORIGIN, 1.0).unwrap().into(),
+///     Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap().into(),
+///     Circle2D::new(Point2D::ORIGIN, 1.0).unwrap().into(),
 /// ];
-/// let points: Vec<Point2> = curves.iter().map(|c| c.eval_point(0.0)).collect();
-/// assert_eq!(points[0], Point2::ORIGIN);
-/// assert_eq!(points[1], Point2::new(1.0, 0.0));
+/// let points: Vec<Point2D> = curves.iter().map(|c| c.eval_point(0.0)).collect();
+/// assert_eq!(points[0], Point2D::ORIGIN);
+/// assert_eq!(points[1], Point2D::new(1.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
@@ -147,14 +147,14 @@ pub enum Curve2D {
 }
 
 impl ParametricCurve2D for Curve2D {
-    fn eval_point(&self, u: f64) -> Point2 {
+    fn eval_point(&self, u: f64) -> Point2D {
         match self {
             Curve2D::Line(c) => c.eval_point(u),
             Curve2D::Circle(c) => c.eval_point(u),
         }
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector2 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         match self {
             Curve2D::Line(c) => c.eval_derivative(u, order),
             Curve2D::Circle(c) => c.eval_derivative(u, order),
@@ -175,7 +175,7 @@ impl ParametricCurve2D for Curve2D {
         }
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point2> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point2D> {
         match self {
             Curve2D::Line(c) => c.eval_points(us),
             Curve2D::Circle(c) => c.eval_points(us),
@@ -201,16 +201,16 @@ impl From<Circle2D> for Curve2D {
 mod tests {
     use super::*;
 
-    fn sample<C: ParametricCurve2D>(c: &C) -> Point2 {
+    fn sample<C: ParametricCurve2D>(c: &C) -> Point2D {
         c.eval_point(0.5)
     }
 
     fn line() -> Line2D {
-        Line2D::new(Point2::ORIGIN, Vector2::X).unwrap()
+        Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap()
     }
 
     fn circle() -> Circle2D {
-        Circle2D::new(Point2::ORIGIN, 2.0).unwrap()
+        Circle2D::new(Point2D::ORIGIN, 2.0).unwrap()
     }
 
     // ---- generic fn agrees with inherent calls ----
@@ -241,7 +241,7 @@ mod tests {
         let l = line();
         let c = circle();
         let curves: Vec<Curve2D> = vec![l.into(), c.into()];
-        let points: Vec<Point2> = curves.iter().map(|curve| curve.eval_point(0.25)).collect();
+        let points: Vec<Point2D> = curves.iter().map(|curve| curve.eval_point(0.25)).collect();
         assert_eq!(points[0], l.eval_point(0.25));
         assert_eq!(points[1], c.eval_point(0.25));
     }
@@ -304,11 +304,11 @@ mod tests {
         let us = [0.0, 0.5, 1.0, -2.0];
 
         let l = line();
-        let expected: Vec<Point2> = us.iter().map(|&u| l.eval_point(u)).collect();
+        let expected: Vec<Point2D> = us.iter().map(|&u| l.eval_point(u)).collect();
         assert_eq!(ParametricCurve2D::eval_points(&l, &us), expected);
 
         let c = circle();
-        let expected: Vec<Point2> = us.iter().map(|&u| c.eval_point(u)).collect();
+        let expected: Vec<Point2D> = us.iter().map(|&u| c.eval_point(u)).collect();
         assert_eq!(ParametricCurve2D::eval_points(&c, &us), expected);
     }
 
@@ -317,7 +317,7 @@ mod tests {
         let us = [0.0, 0.5, 1.0, -2.0];
         let curves: Vec<Curve2D> = vec![line().into(), circle().into()];
         for curve in &curves {
-            let expected: Vec<Point2> = us.iter().map(|&u| curve.eval_point(u)).collect();
+            let expected: Vec<Point2D> = us.iter().map(|&u| curve.eval_point(u)).collect();
             assert_eq!(curve.eval_points(&us), expected);
         }
     }

@@ -10,8 +10,8 @@
 //! # Namespace layout
 //!
 //! - The crate root re-exports the placement and value types shared by
-//!   everything else: [`Point3`]/[`Point2`], [`Vector3`]/[`Vector2`],
-//!   [`Axis3`]/[`Axis2`], [`Frame3`]/[`Frame2`], and [`Transform`].
+//!   everything else: [`Point3D`]/[`Point2D`], [`Vector3D`]/[`Vector2D`],
+//!   [`Axis3D`]/[`Axis2D`], [`Frame3D`]/[`Frame2D`], and [`Transform`].
 //! - [`curves`] holds the 3D and 2D curve types ([`curves::Line3D`],
 //!   [`curves::Circle3D`], [`curves::Ellipse3D`], [`curves::Parabola3D`],
 //!   [`curves::Hyperbola3D`], [`curves::BSplineCurve3D`],
@@ -27,18 +27,18 @@
 //! # Quick start
 //!
 //! ```
-//! use geomcore::{Cylinder, Point3, Vector3};
+//! use geomcore::{Cylinder, Point3D, Vector3D};
 //! use geomcore::curves::Circle3D;
 //!
 //! // Evaluate a circle at a single parameter, and over a batch of parameters.
-//! let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+//! let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
 //! let point = circle.eval_point(std::f64::consts::PI / 4.0);
 //! let points = circle.eval_points(&[0.0, 1.0, 2.0]);
 //! assert_eq!(points[0], circle.eval_point(0.0));
 //!
 //! // Curve-on-surface parametrization: this circle is coaxial with the
 //! // cylinder, so it has an exact 2D image, a horizontal line in (u, v).
-//! let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+//! let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
 //! let pcurve = circle.parametrize_on(&cylinder).unwrap();
 //! # let _ = point;
 //! ```
@@ -84,12 +84,12 @@ pub use curves::{
     Line3D, LineConstructionError, Parabola3D, ParabolaConstructionError, ParametricCurve2D,
     ParametricCurve3D, ParametrizeError,
 };
-pub use frame::{Axis2, Axis3, Frame2, Frame3, FrameConstructionError};
-pub use point::{Point2, Point3};
+pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
+pub use point::{Point2D, Point3D};
 pub use surfaces::{
     BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
     ParametricSurface, Plane, PlaneConstructionError, Sphere, SphereConstructionError, Surface,
     Torus, TorusConstructionError,
 };
 pub use transform::Transform;
-pub use vector::{Vector2, Vector3};
+pub use vector::{Vector2D, Vector3D};

@@ -1,6 +1,6 @@
 //! Rigid and affine transformations of points and vectors.
 
-use crate::{Axis3, Frame3, Point3, Vector3};
+use crate::{Axis3D, Frame3D, Point3D, Vector3D};
 
 /// An affine transformation of 3D space: a linear map plus a translation.
 ///
@@ -12,20 +12,20 @@ use crate::{Axis3, Frame3, Point3, Vector3};
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Point3, Transform, Vector3};
-/// let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
-/// assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 2.0, 3.0));
+/// use geomcore::{Point3D, Transform, Vector3D};
+/// let t = Transform::translation(Vector3D::new(1.0, 2.0, 3.0));
+/// assert_eq!(t.apply_point(Point3D::ORIGIN), Point3D::new(1.0, 2.0, 3.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
     linear: [[f64; 3]; 3],
-    translation: Vector3,
+    translation: Vector3D,
 }
 
 const IDENTITY_LINEAR: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
-fn mat_vec(m: [[f64; 3]; 3], v: Vector3) -> Vector3 {
-    Vector3::new(
+fn mat_vec(m: [[f64; 3]; 3], v: Vector3D) -> Vector3D {
+    Vector3D::new(
         m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
         m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
         m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
@@ -73,7 +73,7 @@ fn mat_add(a: [[f64; 3]; 3], b: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
 }
 
 /// Outer product `d ⊗ d` of a vector with itself, as a 3x3 matrix.
-fn outer(d: Vector3) -> [[f64; 3]; 3] {
+fn outer(d: Vector3D) -> [[f64; 3]; 3] {
     [
         [d.x * d.x, d.x * d.y, d.x * d.z],
         [d.y * d.x, d.y * d.y, d.y * d.z],
@@ -82,14 +82,14 @@ fn outer(d: Vector3) -> [[f64; 3]; 3] {
 }
 
 /// Cross-product matrix `[d]×` such that `[d]× * v == d.cross(v)`.
-fn cross_matrix(d: Vector3) -> [[f64; 3]; 3] {
+fn cross_matrix(d: Vector3D) -> [[f64; 3]; 3] {
     [[0.0, -d.z, d.y], [d.z, 0.0, -d.x], [-d.y, d.x, 0.0]]
 }
 
 /// Translation `t = P - L·P` that keeps point `p_fixed` fixed under the
 /// linear part `linear`.
-fn translation_fixing(linear: [[f64; 3]; 3], p_fixed: Point3) -> Vector3 {
-    let p = Vector3::new(p_fixed.x, p_fixed.y, p_fixed.z);
+fn translation_fixing(linear: [[f64; 3]; 3], p_fixed: Point3D) -> Vector3D {
+    let p = Vector3D::new(p_fixed.x, p_fixed.y, p_fixed.z);
     p - mat_vec(linear, p)
 }
 
@@ -99,12 +99,12 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Transform};
-    /// assert_eq!(Transform::IDENTITY.apply_point(Point3::new(1.0, 2.0, 3.0)), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Point3D, Transform};
+    /// assert_eq!(Transform::IDENTITY.apply_point(Point3D::new(1.0, 2.0, 3.0)), Point3D::new(1.0, 2.0, 3.0));
     /// ```
     pub const IDENTITY: Transform = Transform {
         linear: IDENTITY_LINEAR,
-        translation: Vector3::ZERO,
+        translation: Vector3D::ZERO,
     };
 
     /// A pure translation by `offset`.
@@ -112,11 +112,11 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Transform, Vector3};
-    /// let t = Transform::translation(Vector3::new(1.0, 0.0, 0.0));
-    /// assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 0.0, 0.0));
+    /// use geomcore::{Point3D, Transform, Vector3D};
+    /// let t = Transform::translation(Vector3D::new(1.0, 0.0, 0.0));
+    /// assert_eq!(t.apply_point(Point3D::ORIGIN), Point3D::new(1.0, 0.0, 0.0));
     /// ```
-    pub fn translation(offset: Vector3) -> Transform {
+    pub fn translation(offset: Vector3D) -> Transform {
         Transform {
             linear: IDENTITY_LINEAR,
             translation: offset,
@@ -132,15 +132,15 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Point3, Transform, Vector3};
+    /// use geomcore::{Axis3D, Point3D, Transform, Vector3D};
     /// use std::f64::consts::PI;
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let r = Transform::rotation(axis, PI / 2.0);
-    /// let p = r.apply_point(Point3::new(1.0, 0.0, 0.0));
+    /// let p = r.apply_point(Point3D::new(1.0, 0.0, 0.0));
     /// assert!((p.x - 0.0).abs() < 1e-10);
     /// assert!((p.y - 1.0).abs() < 1e-10);
     /// ```
-    pub fn rotation(axis: Axis3, angle: f64) -> Transform {
+    pub fn rotation(axis: Axis3D, angle: f64) -> Transform {
         let d = axis.direction();
         let c = angle.cos();
         let s = angle.sin();
@@ -165,12 +165,12 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Transform};
-    /// let s = Transform::scaling(Point3::new(1.0, 1.0, 1.0), 2.0);
-    /// let p = s.apply_point(Point3::new(2.0, 2.0, 2.0));
+    /// use geomcore::{Point3D, Transform};
+    /// let s = Transform::scaling(Point3D::new(1.0, 1.0, 1.0), 2.0);
+    /// let p = s.apply_point(Point3D::new(2.0, 2.0, 2.0));
     /// assert!((p.x - 3.0).abs() < 1e-10);
     /// ```
-    pub fn scaling(center: Point3, factor: f64) -> Transform {
+    pub fn scaling(center: Point3D, factor: f64) -> Transform {
         let linear = scalar_mul(factor, IDENTITY_LINEAR);
         let translation = translation_fixing(linear, center);
         Transform {
@@ -184,16 +184,16 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Transform};
-    /// let m = Transform::mirror_point(Point3::new(1.0, 1.0, 1.0));
-    /// let p = m.apply_point(Point3::ORIGIN);
+    /// use geomcore::{Point3D, Transform};
+    /// let m = Transform::mirror_point(Point3D::new(1.0, 1.0, 1.0));
+    /// let p = m.apply_point(Point3D::ORIGIN);
     /// assert!((p.x - 2.0).abs() < 1e-10);
     /// assert!((p.y - 2.0).abs() < 1e-10);
     /// assert!((p.z - 2.0).abs() < 1e-10);
     /// ```
-    pub fn mirror_point(center: Point3) -> Transform {
+    pub fn mirror_point(center: Point3D) -> Transform {
         let linear = scalar_mul(-1.0, IDENTITY_LINEAR);
-        let translation = 2.0 * Vector3::new(center.x, center.y, center.z);
+        let translation = 2.0 * Vector3D::new(center.x, center.y, center.z);
         Transform {
             linear,
             translation,
@@ -205,13 +205,13 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Point3, Transform, Vector3};
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
+    /// use geomcore::{Axis3D, Point3D, Transform, Vector3D};
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
     /// let m = Transform::mirror_axis(axis);
-    /// let p = m.apply_point(Point3::new(0.0, 1.0, 0.0));
+    /// let p = m.apply_point(Point3D::new(0.0, 1.0, 0.0));
     /// assert!((p.y - (-1.0)).abs() < 1e-10);
     /// ```
-    pub fn mirror_axis(axis: Axis3) -> Transform {
+    pub fn mirror_axis(axis: Axis3D) -> Transform {
         let d = axis.direction();
         let linear = mat_sub(scalar_mul(2.0, outer(d)), IDENTITY_LINEAR);
         let translation = translation_fixing(linear, axis.origin());
@@ -227,12 +227,12 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3, Transform};
-    /// let m = Transform::mirror_plane(Frame3::WORLD);
-    /// let p = m.apply_point(Point3::new(0.0, 0.0, 5.0));
+    /// use geomcore::{Frame3D, Point3D, Transform};
+    /// let m = Transform::mirror_plane(Frame3D::WORLD);
+    /// let p = m.apply_point(Point3D::new(0.0, 0.0, 5.0));
     /// assert!((p.z - (-5.0)).abs() < 1e-10);
     /// ```
-    pub fn mirror_plane(frame: Frame3) -> Transform {
+    pub fn mirror_plane(frame: Frame3D) -> Transform {
         let n = frame.z_direction();
         let linear = mat_sub(IDENTITY_LINEAR, scalar_mul(2.0, outer(n)));
         let translation = translation_fixing(linear, frame.origin());
@@ -247,13 +247,13 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Point3, Transform, Vector3};
+    /// use geomcore::{Axis3D, Point3D, Transform, Vector3D};
     /// use std::f64::consts::PI;
-    /// let translate = Transform::translation(Vector3::new(1.0, 0.0, 0.0));
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// let translate = Transform::translation(Vector3D::new(1.0, 0.0, 0.0));
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let rotate = Transform::rotation(axis, PI / 2.0);
     /// let composed = translate.then(rotate);
-    /// let p = composed.apply_point(Point3::ORIGIN);
+    /// let p = composed.apply_point(Point3D::ORIGIN);
     /// assert!((p.x - 0.0).abs() < 1e-10);
     /// assert!((p.y - 1.0).abs() < 1e-10);
     /// ```
@@ -271,13 +271,13 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Transform, Vector3};
-    /// let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
-    /// assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Point3D, Transform, Vector3D};
+    /// let t = Transform::translation(Vector3D::new(1.0, 2.0, 3.0));
+    /// assert_eq!(t.apply_point(Point3D::ORIGIN), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn apply_point(self, p: Point3) -> Point3 {
-        let v = mat_vec(self.linear, Vector3::new(p.x, p.y, p.z)) + self.translation;
-        Point3::new(v.x, v.y, v.z)
+    pub fn apply_point(self, p: Point3D) -> Point3D {
+        let v = mat_vec(self.linear, Vector3D::new(p.x, p.y, p.z)) + self.translation;
+        Point3D::new(v.x, v.y, v.z)
     }
 
     /// Applies this transformation to a vector (translation-invariant):
@@ -286,51 +286,51 @@ impl Transform {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Transform, Vector3};
-    /// let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
-    /// let v = Vector3::new(4.0, 5.0, 6.0);
+    /// use geomcore::{Transform, Vector3D};
+    /// let t = Transform::translation(Vector3D::new(1.0, 2.0, 3.0));
+    /// let v = Vector3D::new(4.0, 5.0, 6.0);
     /// assert_eq!(t.apply_vector(v), v);
     /// ```
-    pub fn apply_vector(self, v: Vector3) -> Vector3 {
+    pub fn apply_vector(self, v: Vector3D) -> Vector3D {
         mat_vec(self.linear, v)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Axis3, Frame3, Point3, Transform, Vector3};
+    use crate::{Axis3D, Frame3D, Point3D, Transform, Vector3D};
     use std::f64::consts::PI;
 
     #[test]
     fn test_identity_leaves_point_unchanged() {
-        let p = Point3::new(1.0, 2.0, 3.0);
+        let p = Point3D::new(1.0, 2.0, 3.0);
         assert_eq!(Transform::IDENTITY.apply_point(p), p);
     }
 
     #[test]
     fn test_identity_leaves_vector_unchanged() {
-        let v = Vector3::new(1.0, 2.0, 3.0);
+        let v = Vector3D::new(1.0, 2.0, 3.0);
         assert_eq!(Transform::IDENTITY.apply_vector(v), v);
     }
 
     #[test]
     fn test_translation_moves_point_by_offset() {
-        let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
-        assert_eq!(t.apply_point(Point3::ORIGIN), Point3::new(1.0, 2.0, 3.0));
+        let t = Transform::translation(Vector3D::new(1.0, 2.0, 3.0));
+        assert_eq!(t.apply_point(Point3D::ORIGIN), Point3D::new(1.0, 2.0, 3.0));
     }
 
     #[test]
     fn test_translation_leaves_vector_unchanged() {
-        let t = Transform::translation(Vector3::new(1.0, 2.0, 3.0));
-        let v = Vector3::new(4.0, 5.0, 6.0);
+        let t = Transform::translation(Vector3D::new(1.0, 2.0, 3.0));
+        let v = Vector3D::new(4.0, 5.0, 6.0);
         assert_eq!(t.apply_vector(v), v);
     }
 
     #[test]
     fn test_rotation_of_x_about_z_by_half_pi_is_y() {
-        let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         let r = Transform::rotation(axis, PI / 2.0);
-        let rotated = r.apply_point(Point3::new(1.0, 0.0, 0.0));
+        let rotated = r.apply_point(Point3D::new(1.0, 0.0, 0.0));
         assert!((rotated.x - 0.0).abs() < 1e-10, "x = {}", rotated.x);
         assert!((rotated.y - 1.0).abs() < 1e-10, "y = {}", rotated.y);
         assert!((rotated.z - 0.0).abs() < 1e-10, "z = {}", rotated.z);
@@ -338,9 +338,9 @@ mod tests {
 
     #[test]
     fn test_rotation_about_off_origin_axis_fixes_axis_points() {
-        let axis = Axis3::new(Point3::new(1.0, 0.0, 0.0), Vector3::Z).unwrap();
+        let axis = Axis3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z).unwrap();
         let r = Transform::rotation(axis, PI / 2.0);
-        let fixed = r.apply_point(Point3::new(1.0, 0.0, 5.0));
+        let fixed = r.apply_point(Point3D::new(1.0, 0.0, 5.0));
         assert!((fixed.x - 1.0).abs() < 1e-10);
         assert!((fixed.y - 0.0).abs() < 1e-10);
         assert!((fixed.z - 5.0).abs() < 1e-10);
@@ -348,8 +348,8 @@ mod tests {
 
     #[test]
     fn test_scaling_about_center() {
-        let s = Transform::scaling(Point3::new(1.0, 1.0, 1.0), 2.0);
-        let scaled = s.apply_point(Point3::new(2.0, 2.0, 2.0));
+        let s = Transform::scaling(Point3D::new(1.0, 1.0, 1.0), 2.0);
+        let scaled = s.apply_point(Point3D::new(2.0, 2.0, 2.0));
         assert!((scaled.x - 3.0).abs() < 1e-10);
         assert!((scaled.y - 3.0).abs() < 1e-10);
         assert!((scaled.z - 3.0).abs() < 1e-10);
@@ -357,8 +357,8 @@ mod tests {
 
     #[test]
     fn test_mirror_point_is_involution() {
-        let m = Transform::mirror_point(Point3::new(1.0, 2.0, 3.0));
-        let p = Point3::new(4.0, -1.0, 2.5);
+        let m = Transform::mirror_point(Point3D::new(1.0, 2.0, 3.0));
+        let p = Point3D::new(4.0, -1.0, 2.5);
         let twice = m.apply_point(m.apply_point(p));
         assert!((twice.x - p.x).abs() < 1e-10);
         assert!((twice.y - p.y).abs() < 1e-10);
@@ -367,9 +367,9 @@ mod tests {
 
     #[test]
     fn test_mirror_axis_is_involution() {
-        let axis = Axis3::new(Point3::new(0.0, 1.0, 0.0), Vector3::X).unwrap();
+        let axis = Axis3D::new(Point3D::new(0.0, 1.0, 0.0), Vector3D::X).unwrap();
         let m = Transform::mirror_axis(axis);
-        let p = Point3::new(4.0, -1.0, 2.5);
+        let p = Point3D::new(4.0, -1.0, 2.5);
         let twice = m.apply_point(m.apply_point(p));
         assert!((twice.x - p.x).abs() < 1e-10);
         assert!((twice.y - p.y).abs() < 1e-10);
@@ -378,9 +378,9 @@ mod tests {
 
     #[test]
     fn test_mirror_plane_is_involution() {
-        let frame = Frame3::new(Point3::new(0.0, 0.0, 2.0), Vector3::Z, Vector3::X).unwrap();
+        let frame = Frame3D::new(Point3D::new(0.0, 0.0, 2.0), Vector3D::Z, Vector3D::X).unwrap();
         let m = Transform::mirror_plane(frame);
-        let p = Point3::new(4.0, -1.0, 2.5);
+        let p = Point3D::new(4.0, -1.0, 2.5);
         let twice = m.apply_point(m.apply_point(p));
         assert!((twice.x - p.x).abs() < 1e-10);
         assert!((twice.y - p.y).abs() < 1e-10);
@@ -390,11 +390,11 @@ mod tests {
     #[test]
     fn test_then_applies_self_before_next() {
         // translate(1,0,0) then rotate about Z by pi/2 at origin: ORIGIN -> (1,0,0) -> (0,1,0)
-        let translate = Transform::translation(Vector3::new(1.0, 0.0, 0.0));
-        let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let translate = Transform::translation(Vector3D::new(1.0, 0.0, 0.0));
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         let rotate = Transform::rotation(axis, PI / 2.0);
         let composed = translate.then(rotate);
-        let result = composed.apply_point(Point3::ORIGIN);
+        let result = composed.apply_point(Point3D::ORIGIN);
         assert!((result.x - 0.0).abs() < 1e-10, "x = {}", result.x);
         assert!((result.y - 1.0).abs() < 1e-10, "y = {}", result.y);
         assert!((result.z - 0.0).abs() < 1e-10, "z = {}", result.z);

@@ -1,6 +1,6 @@
 //! Public curve types: parametric curves in 2D and 3D built on top of the
-//! crate's placement types ([`crate::Axis3`]/[`crate::Axis2`],
-//! [`crate::Frame3`]/[`crate::Frame2`]).
+//! crate's placement types ([`crate::Axis3D`]/[`crate::Axis2D`],
+//! [`crate::Frame3D`]/[`crate::Frame2D`]).
 
 mod bspline;
 mod circle;

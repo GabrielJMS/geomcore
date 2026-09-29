@@ -2,7 +2,7 @@
 //! over [`crate::surface_math::analytic`].
 
 use crate::surface_math::analytic;
-use crate::{Frame3, Point3, Vector3};
+use crate::{Frame3D, Point3D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Torus`] cannot be constructed from the given
@@ -32,20 +32,20 @@ impl fmt::Display for TorusConstructionError {
 
 impl std::error::Error for TorusConstructionError {}
 
-/// A torus in 3D: a [`Frame3`] (origin plus local x/y/z directions) plus a
+/// A torus in 3D: a [`Frame3D`] (origin plus local x/y/z directions) plus a
 /// major and a minor radius, evaluated as `R = major + minor*cos(v)`,
 /// `origin + R*cos(u)*x_dir + R*sin(u)*y_dir + minor*sin(v)*z_dir`.
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Point3, Torus, Vector3};
-/// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
-/// assert_eq!(torus.eval_point(0.0, 0.0), Point3::new(6.5, 0.0, 0.0));
+/// use geomcore::{Point3D, Torus, Vector3D};
+/// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+/// assert_eq!(torus.eval_point(0.0, 0.0), Point3D::new(6.5, 0.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Torus {
-    frame: Frame3,
+    frame: Frame3D,
     major_radius: f64,
     minor_radius: f64,
 }
@@ -54,7 +54,7 @@ impl Torus {
     /// Creates a torus from a center, a normal, a major radius, and a
     /// minor radius.
     ///
-    /// The frame is derived from `normal` via [`Frame3::from_z`].
+    /// The frame is derived from `normal` via [`Frame3D::from_z`].
     ///
     /// # Errors
     ///
@@ -66,19 +66,19 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Torus, Vector3};
-    /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.major_radius(), 5.0);
     /// assert_eq!(torus.minor_radius(), 1.5);
     /// ```
     pub fn new(
-        center: Point3,
-        normal: Vector3,
+        center: Point3D,
+        normal: Vector3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Torus, TorusConstructionError> {
         let frame =
-            Frame3::from_z(center, normal).map_err(|_| TorusConstructionError::NullNormal)?;
+            Frame3D::from_z(center, normal).map_err(|_| TorusConstructionError::NullNormal)?;
         Torus::from_frame(frame, major_radius, minor_radius)
     }
 
@@ -93,12 +93,12 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Torus};
-    /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
-    /// assert_eq!(torus.frame(), Frame3::WORLD);
+    /// use geomcore::{Frame3D, Torus};
+    /// let torus = Torus::from_frame(Frame3D::WORLD, 5.0, 1.5).unwrap();
+    /// assert_eq!(torus.frame(), Frame3D::WORLD);
     /// ```
     pub fn from_frame(
-        frame: Frame3,
+        frame: Frame3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Torus, TorusConstructionError> {
@@ -117,11 +117,11 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Torus, Vector3};
-    /// let torus = Torus::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, 5.0, 1.5).unwrap();
-    /// assert_eq!(torus.center(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Z, 5.0, 1.5).unwrap();
+    /// assert_eq!(torus.center(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn center(&self) -> Point3 {
+    pub fn center(&self) -> Point3D {
         self.frame.origin()
     }
 
@@ -130,11 +130,11 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Torus};
-    /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
-    /// assert_eq!(torus.frame(), Frame3::WORLD);
+    /// use geomcore::{Frame3D, Torus};
+    /// let torus = Torus::from_frame(Frame3D::WORLD, 5.0, 1.5).unwrap();
+    /// assert_eq!(torus.frame(), Frame3D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame3 {
+    pub fn frame(&self) -> Frame3D {
         self.frame
     }
 
@@ -144,8 +144,8 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Torus};
-    /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
+    /// use geomcore::{Frame3D, Torus};
+    /// let torus = Torus::from_frame(Frame3D::WORLD, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.major_radius(), 5.0);
     /// ```
     pub fn major_radius(&self) -> f64 {
@@ -157,8 +157,8 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Torus};
-    /// let torus = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
+    /// use geomcore::{Frame3D, Torus};
+    /// let torus = Torus::from_frame(Frame3D::WORLD, 5.0, 1.5).unwrap();
     /// assert_eq!(torus.minor_radius(), 1.5);
     /// ```
     pub fn minor_radius(&self) -> f64 {
@@ -171,11 +171,11 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Torus, Vector3};
-    /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
-    /// assert_eq!(torus.eval_point(0.0, 0.0), Point3::new(6.5, 0.0, 0.0));
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// assert_eq!(torus.eval_point(0.0, 0.0), Point3D::new(6.5, 0.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64, v: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64, v: f64) -> Point3D {
         analytic::torus_d0(&self.frame, self.major_radius, self.minor_radius, u, v)
     }
 
@@ -184,12 +184,12 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Torus, Vector3};
-    /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
     /// let points = torus.eval_points(&[(0.0, 0.0)]);
-    /// assert_eq!(points[0], Point3::new(6.5, 0.0, 0.0));
+    /// assert_eq!(points[0], Point3D::new(6.5, 0.0, 0.0));
     /// ```
-    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3> {
+    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         uvs.iter().map(|&(u, v)| self.eval_point(u, v)).collect()
     }
 
@@ -205,11 +205,11 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Torus, Vector3};
-    /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
-    /// assert_eq!(torus.eval_derivative(0.0, 0.0, 0, 1), Vector3::Z * 1.5);
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// assert_eq!(torus.eval_derivative(0.0, 0.0, 0, 1), Vector3D::Z * 1.5);
     /// ```
-    pub fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         match du + dv {
             0 => panic!(
                 "eval_derivative: du + dv must be >= 1 (use eval_point for the (0, 0) order)"
@@ -237,12 +237,12 @@ impl Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Torus, Vector3};
-    /// let torus = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
-    /// let (u, v) = torus.parameters_of(Point3::new(6.5, 0.0, 0.0));
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let (u, v) = torus.parameters_of(Point3D::new(6.5, 0.0, 0.0));
     /// assert_eq!((u, v), (0.0, 0.0));
     /// ```
-    pub fn parameters_of(&self, point: Point3) -> (f64, f64) {
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::torus_parameters(&self.frame, self.major_radius, self.minor_radius, point)
     }
 }
@@ -255,16 +255,16 @@ mod tests {
 
     #[test]
     fn test_new_ok() {
-        let t = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
+        let t = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
         assert_eq!(t.major_radius(), 5.0);
         assert_eq!(t.minor_radius(), 1.5);
-        assert_eq!(t.center(), Point3::ORIGIN);
+        assert_eq!(t.center(), Point3D::ORIGIN);
     }
 
     #[test]
     fn test_new_null_normal_errors() {
         assert_eq!(
-            Torus::new(Point3::ORIGIN, Vector3::ZERO, 5.0, 1.5),
+            Torus::new(Point3D::ORIGIN, Vector3D::ZERO, 5.0, 1.5),
             Err(TorusConstructionError::NullNormal)
         );
     }
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn test_new_negative_major_radius_errors() {
         assert_eq!(
-            Torus::new(Point3::ORIGIN, Vector3::Z, -5.0, 1.5),
+            Torus::new(Point3D::ORIGIN, Vector3D::Z, -5.0, 1.5),
             Err(TorusConstructionError::NegativeRadius)
         );
     }
@@ -280,25 +280,25 @@ mod tests {
     #[test]
     fn test_new_negative_minor_radius_errors() {
         assert_eq!(
-            Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, -1.5),
+            Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, -1.5),
             Err(TorusConstructionError::NegativeRadius)
         );
     }
 
     #[test]
     fn test_from_frame_ok() {
-        let t = Torus::from_frame(Frame3::WORLD, 5.0, 1.5).unwrap();
-        assert_eq!(t.frame(), Frame3::WORLD);
+        let t = Torus::from_frame(Frame3D::WORLD, 5.0, 1.5).unwrap();
+        assert_eq!(t.frame(), Frame3D::WORLD);
     }
 
     #[test]
     fn test_from_frame_negative_radius_errors() {
         assert_eq!(
-            Torus::from_frame(Frame3::WORLD, -5.0, 1.5),
+            Torus::from_frame(Frame3D::WORLD, -5.0, 1.5),
             Err(TorusConstructionError::NegativeRadius)
         );
         assert_eq!(
-            Torus::from_frame(Frame3::WORLD, 5.0, -1.5),
+            Torus::from_frame(Frame3D::WORLD, 5.0, -1.5),
             Err(TorusConstructionError::NegativeRadius)
         );
     }
@@ -307,36 +307,36 @@ mod tests {
 
     #[test]
     fn test_eval_point() {
-        let t = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
-        assert_eq!(t.eval_point(0.0, 0.0), Point3::new(6.5, 0.0, 0.0));
+        let t = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+        assert_eq!(t.eval_point(0.0, 0.0), Point3D::new(6.5, 0.0, 0.0));
     }
 
     #[test]
     fn test_eval_points_matches_loop() {
-        let t = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
+        let t = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
         let uvs = [(0.0, 0.0), (0.5, 1.0)];
-        let expected: Vec<Point3> = uvs.iter().map(|&(u, v)| t.eval_point(u, v)).collect();
+        let expected: Vec<Point3D> = uvs.iter().map(|&(u, v)| t.eval_point(u, v)).collect();
         assert_eq!(t.eval_points(&uvs), expected);
     }
 
     #[test]
     #[should_panic(expected = "du + dv must be >= 1")]
     fn test_eval_derivative_zero_order_panics() {
-        let t = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
+        let t = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
         t.eval_derivative(0.0, 0.0, 0, 0);
     }
 
     #[test]
     #[should_panic(expected = "du + dv must be <= 2")]
     fn test_eval_derivative_order_too_high_panics() {
-        let t = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
+        let t = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
         t.eval_derivative(0.0, 0.0, 2, 1);
     }
 
     #[test]
     fn test_parameters_of_round_trip() {
-        let t = Torus::new(Point3::ORIGIN, Vector3::Z, 5.0, 1.5).unwrap();
-        let (u, v) = t.parameters_of(Point3::new(6.5, 0.0, 0.0));
+        let t = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+        let (u, v) = t.parameters_of(Point3D::new(6.5, 0.0, 0.0));
         assert_eq!((u, v), (0.0, 0.0));
     }
 

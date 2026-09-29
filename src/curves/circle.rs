@@ -7,7 +7,7 @@ use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Axis3, Frame2, Frame3, Point2, Point3, Vector2, Vector3};
+use crate::{Axis3D, Frame2D, Frame3D, Point2D, Point3D, Vector2D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Circle3D`] or [`Circle2D`] cannot be constructed
@@ -40,27 +40,27 @@ impl fmt::Display for CircleConstructionError {
 
 impl std::error::Error for CircleConstructionError {}
 
-/// A circle in 3D: a plane [`Frame3`] (origin plus local x/y directions
+/// A circle in 3D: a plane [`Frame3D`] (origin plus local x/y directions
 /// defining the plane and the angular origin) and a radius, evaluated as
 /// `origin + radius*cos(u)*x_dir + radius*sin(u)*y_dir`.
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Circle3D, Point3, Vector3};
-/// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-/// assert_eq!(circle.eval_point(0.0), Point3::new(2.0, 0.0, 0.0));
+/// use geomcore::{Circle3D, Point3D, Vector3D};
+/// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+/// assert_eq!(circle.eval_point(0.0), Point3D::new(2.0, 0.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Circle3D {
-    frame: Frame3,
+    frame: Frame3D,
     radius: f64,
 }
 
 impl Circle3D {
     /// Creates a circle from a center, a normal, and a radius.
     ///
-    /// The plane frame is derived from `normal` via [`Frame3::from_z`].
+    /// The plane frame is derived from `normal` via [`Frame3D::from_z`].
     ///
     /// # Errors
     ///
@@ -71,18 +71,18 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// assert_eq!(circle.radius(), 2.0);
-    /// assert_eq!(circle.normal(), Vector3::Z);
+    /// assert_eq!(circle.normal(), Vector3D::Z);
     /// ```
     pub fn new(
-        center: Point3,
-        normal: Vector3,
+        center: Point3D,
+        normal: Vector3D,
         radius: f64,
     ) -> Result<Circle3D, CircleConstructionError> {
         let frame =
-            Frame3::from_z(center, normal).map_err(|_| CircleConstructionError::NullNormal)?;
+            Frame3D::from_z(center, normal).map_err(|_| CircleConstructionError::NullNormal)?;
         Circle3D::from_frame(frame, radius)
     }
 
@@ -95,13 +95,13 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Circle3D, Point3, Vector3};
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// use geomcore::{Axis3D, Circle3D, Point3D, Vector3D};
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let circle = Circle3D::from_axis(axis, 2.0).unwrap();
-    /// assert_eq!(circle.center(), Point3::ORIGIN);
+    /// assert_eq!(circle.center(), Point3D::ORIGIN);
     /// ```
-    pub fn from_axis(axis: Axis3, radius: f64) -> Result<Circle3D, CircleConstructionError> {
-        let frame = Frame3::from_z(axis.origin(), axis.direction())
+    pub fn from_axis(axis: Axis3D, radius: f64) -> Result<Circle3D, CircleConstructionError> {
+        let frame = Frame3D::from_z(axis.origin(), axis.direction())
             .map_err(|_| CircleConstructionError::NullNormal)?;
         Circle3D::from_frame(frame, radius)
     }
@@ -115,11 +115,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Frame3};
-    /// let circle = Circle3D::from_frame(Frame3::WORLD, 2.0).unwrap();
-    /// assert_eq!(circle.frame(), Frame3::WORLD);
+    /// use geomcore::{Circle3D, Frame3D};
+    /// let circle = Circle3D::from_frame(Frame3D::WORLD, 2.0).unwrap();
+    /// assert_eq!(circle.frame(), Frame3D::WORLD);
     /// ```
-    pub fn from_frame(frame: Frame3, radius: f64) -> Result<Circle3D, CircleConstructionError> {
+    pub fn from_frame(frame: Frame3D, radius: f64) -> Result<Circle3D, CircleConstructionError> {
         if radius < 0.0 {
             return Err(CircleConstructionError::NegativeRadius);
         }
@@ -151,19 +151,19 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3};
+    /// use geomcore::{Circle3D, Point3D};
     /// let circle = Circle3D::from_three_points(
-    ///     Point3::new(1.0, 0.0, 0.0),
-    ///     Point3::new(0.0, 1.0, 0.0),
-    ///     Point3::new(-1.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(0.0, 1.0, 0.0),
+    ///     Point3D::new(-1.0, 0.0, 0.0),
     /// )
     /// .unwrap();
     /// assert!((circle.radius() - 1.0).abs() < 1e-9);
     /// ```
     pub fn from_three_points(
-        p1: Point3,
-        p2: Point3,
-        p3: Point3,
+        p1: Point3D,
+        p2: Point3D,
+        p3: Point3D,
     ) -> Result<Circle3D, CircleConstructionError> {
         if p1.distance(p2) < tol::CONFUSION
             || p2.distance(p3) < tol::CONFUSION
@@ -188,7 +188,7 @@ impl Circle3D {
         let radius = center.distance(p1);
 
         let normal = (p2 - p1).cross(p3 - p2);
-        let frame = Frame3::new(center, normal, p1 - center)
+        let frame = Frame3D::new(center, normal, p1 - center)
             .map_err(|_| CircleConstructionError::CollinearPoints)?;
 
         Circle3D::from_frame(frame, radius)
@@ -199,11 +199,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, 2.0).unwrap();
-    /// assert_eq!(circle.center(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.center(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn center(&self) -> Point3 {
+    pub fn center(&self) -> Point3D {
         self.frame.origin()
     }
 
@@ -212,8 +212,8 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// assert_eq!(circle.radius(), 2.0);
     /// ```
     pub fn radius(&self) -> f64 {
@@ -225,11 +225,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Frame3};
-    /// let circle = Circle3D::from_frame(Frame3::WORLD, 2.0).unwrap();
-    /// assert_eq!(circle.frame(), Frame3::WORLD);
+    /// use geomcore::{Circle3D, Frame3D};
+    /// let circle = Circle3D::from_frame(Frame3D::WORLD, 2.0).unwrap();
+    /// assert_eq!(circle.frame(), Frame3D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame3 {
+    pub fn frame(&self) -> Frame3D {
         self.frame
     }
 
@@ -238,11 +238,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-    /// assert_eq!(circle.normal(), Vector3::Z);
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.normal(), Vector3D::Z);
     /// ```
-    pub fn normal(&self) -> Vector3 {
+    pub fn normal(&self) -> Vector3D {
         self.frame.z_direction()
     }
 
@@ -252,11 +252,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-    /// assert_eq!(circle.eval_point(0.0), Point3::new(2.0, 0.0, 0.0));
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.eval_point(0.0), Point3D::new(2.0, 0.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64) -> Point3D {
         analytic::circle_d0(&self.frame, self.radius, u)
     }
 
@@ -265,12 +265,12 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let points = circle.eval_points(&[0.0, 1.0]);
-    /// assert_eq!(points[0], Point3::new(2.0, 0.0, 0.0));
+    /// assert_eq!(points[0], Point3D::new(2.0, 0.0, 0.0));
     /// ```
-    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -287,11 +287,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-    /// assert_eq!(circle.eval_derivative(0.0, 1), Vector3::new(0.0, 2.0, 0.0));
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.eval_derivative(0.0, 1), Vector3D::new(0.0, 2.0, 0.0));
     /// ```
-    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
             _ => analytic::circle_dn(&self.frame, self.radius, u, order),
@@ -304,11 +304,11 @@ impl Circle3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3, Vector3};
-    /// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-    /// assert!((circle.parameter_of(Point3::new(0.0, 2.0, 0.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert!((circle.parameter_of(Point3D::new(0.0, 2.0, 0.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     /// ```
-    pub fn parameter_of(&self, point: Point3) -> f64 {
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
         analytic::circle_parameter(&self.frame, point)
     }
 
@@ -338,10 +338,10 @@ impl Circle3D {
     ///
     /// ```
     /// use geomcore::curves::{Curve2D, ParametricCurve2D};
-    /// use geomcore::{Circle3D, Cylinder, Point3, Vector3};
+    /// use geomcore::{Circle3D, Cylinder, Point3D, Vector3D};
     ///
-    /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-    /// let circle = Circle3D::new(Point3::new(0.0, 0.0, 3.0), Vector3::Z, 2.0).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let circle = Circle3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::Z, 2.0).unwrap();
     /// let pcurve = circle.parametrize_on(&cylinder).unwrap();
     /// // q(t) = (t, 3): the angular parameter runs in u, the height v is fixed.
     /// let q = pcurve.eval_point(1.0);
@@ -354,26 +354,26 @@ impl Circle3D {
     }
 }
 
-/// A circle in 2D: a [`Frame2`] (origin plus local x/y directions defining
+/// A circle in 2D: a [`Frame2D`] (origin plus local x/y directions defining
 /// the angular origin) and a radius, evaluated as
 /// `origin + radius*cos(u)*x_dir + radius*sin(u)*y_dir`.
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Circle2D, Point2};
-/// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
-/// assert_eq!(circle.eval_point(0.0), Point2::new(2.0, 0.0));
+/// use geomcore::{Circle2D, Point2D};
+/// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+/// assert_eq!(circle.eval_point(0.0), Point2D::new(2.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Circle2D {
-    frame: Frame2,
+    frame: Frame2D,
     radius: f64,
 }
 
 impl Circle2D {
     /// Creates a circle from a center and a radius, using a world-aligned
-    /// frame (x/y directions matching [`Vector2::X`]/[`Vector2::Y`]) at
+    /// frame (x/y directions matching [`Vector2D::X`]/[`Vector2D::Y`]) at
     /// `center`.
     ///
     /// # Errors
@@ -383,13 +383,13 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2};
-    /// let circle = Circle2D::new(Point2::new(1.0, 2.0), 3.0).unwrap();
-    /// assert_eq!(circle.center(), Point2::new(1.0, 2.0));
+    /// use geomcore::{Circle2D, Point2D};
+    /// let circle = Circle2D::new(Point2D::new(1.0, 2.0), 3.0).unwrap();
+    /// assert_eq!(circle.center(), Point2D::new(1.0, 2.0));
     /// ```
-    pub fn new(center: Point2, radius: f64) -> Result<Circle2D, CircleConstructionError> {
-        let frame = Frame2::new(center, Vector2::X, Vector2::Y)
-            .expect("Vector2::X and Vector2::Y are orthonormal by construction");
+    pub fn new(center: Point2D, radius: f64) -> Result<Circle2D, CircleConstructionError> {
+        let frame = Frame2D::new(center, Vector2D::X, Vector2D::Y)
+            .expect("Vector2D::X and Vector2D::Y are orthonormal by construction");
         Circle2D::from_frame(frame, radius)
     }
 
@@ -402,11 +402,11 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Frame2};
-    /// let circle = Circle2D::from_frame(Frame2::WORLD, 2.0).unwrap();
-    /// assert_eq!(circle.frame(), Frame2::WORLD);
+    /// use geomcore::{Circle2D, Frame2D};
+    /// let circle = Circle2D::from_frame(Frame2D::WORLD, 2.0).unwrap();
+    /// assert_eq!(circle.frame(), Frame2D::WORLD);
     /// ```
-    pub fn from_frame(frame: Frame2, radius: f64) -> Result<Circle2D, CircleConstructionError> {
+    pub fn from_frame(frame: Frame2D, radius: f64) -> Result<Circle2D, CircleConstructionError> {
         if radius < 0.0 {
             return Err(CircleConstructionError::NegativeRadius);
         }
@@ -418,11 +418,11 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2};
-    /// let circle = Circle2D::new(Point2::new(1.0, 2.0), 2.0).unwrap();
-    /// assert_eq!(circle.center(), Point2::new(1.0, 2.0));
+    /// use geomcore::{Circle2D, Point2D};
+    /// let circle = Circle2D::new(Point2D::new(1.0, 2.0), 2.0).unwrap();
+    /// assert_eq!(circle.center(), Point2D::new(1.0, 2.0));
     /// ```
-    pub fn center(&self) -> Point2 {
+    pub fn center(&self) -> Point2D {
         self.frame.origin()
     }
 
@@ -431,8 +431,8 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2};
-    /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+    /// use geomcore::{Circle2D, Point2D};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
     /// assert_eq!(circle.radius(), 2.0);
     /// ```
     pub fn radius(&self) -> f64 {
@@ -444,11 +444,11 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Frame2};
-    /// let circle = Circle2D::from_frame(Frame2::WORLD, 2.0).unwrap();
-    /// assert_eq!(circle.frame(), Frame2::WORLD);
+    /// use geomcore::{Circle2D, Frame2D};
+    /// let circle = Circle2D::from_frame(Frame2D::WORLD, 2.0).unwrap();
+    /// assert_eq!(circle.frame(), Frame2D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame2 {
+    pub fn frame(&self) -> Frame2D {
         self.frame
     }
 
@@ -458,11 +458,11 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2};
-    /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
-    /// assert_eq!(circle.eval_point(0.0), Point2::new(2.0, 0.0));
+    /// use geomcore::{Circle2D, Point2D};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// assert_eq!(circle.eval_point(0.0), Point2D::new(2.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64) -> Point2 {
+    pub fn eval_point(&self, u: f64) -> Point2D {
         analytic::circle2d_d0(&self.frame, self.radius, u)
     }
 
@@ -471,12 +471,12 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2};
-    /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+    /// use geomcore::{Circle2D, Point2D};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
     /// let points = circle.eval_points(&[0.0, 1.0]);
-    /// assert_eq!(points[0], Point2::new(2.0, 0.0));
+    /// assert_eq!(points[0], Point2D::new(2.0, 0.0));
     /// ```
-    pub fn eval_points(&self, us: &[f64]) -> Vec<Point2> {
+    pub fn eval_points(&self, us: &[f64]) -> Vec<Point2D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -493,11 +493,11 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2, Vector2};
-    /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
-    /// assert_eq!(circle.eval_derivative(0.0, 1), Vector2::new(0.0, 2.0));
+    /// use geomcore::{Circle2D, Point2D, Vector2D};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// assert_eq!(circle.eval_derivative(0.0, 1), Vector2D::new(0.0, 2.0));
     /// ```
-    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector2 {
+    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
             _ => analytic::circle2d_dn(&self.frame, self.radius, u, order),
@@ -510,11 +510,11 @@ impl Circle2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle2D, Point2};
-    /// let circle = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
-    /// assert!((circle.parameter_of(Point2::new(0.0, 2.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    /// use geomcore::{Circle2D, Point2D};
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// assert!((circle.parameter_of(Point2D::new(0.0, 2.0)) - std::f64::consts::FRAC_PI_2).abs() < 1e-9);
     /// ```
-    pub fn parameter_of(&self, point: Point2) -> f64 {
+    pub fn parameter_of(&self, point: Point2D) -> f64 {
         analytic::circle2d_parameter(&self.frame, point)
     }
 }
@@ -522,24 +522,24 @@ impl Circle2D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Circle2D, Circle3D, CircleConstructionError, Frame2, Frame3, Point2, Point3, Vector2,
-        Vector3,
+        Circle2D, Circle3D, CircleConstructionError, Frame2D, Frame3D, Point2D, Point3D, Vector2D,
+        Vector3D,
     };
 
     // ---- Circle3D construction ----
 
     #[test]
     fn test_circle3d_new_ok() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-        assert_eq!(c.center(), Point3::ORIGIN);
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        assert_eq!(c.center(), Point3D::ORIGIN);
         assert_eq!(c.radius(), 2.0);
-        assert_eq!(c.normal(), Vector3::Z);
+        assert_eq!(c.normal(), Vector3D::Z);
     }
 
     #[test]
     fn test_circle3d_new_negative_radius_errors() {
         assert_eq!(
-            Circle3D::new(Point3::ORIGIN, Vector3::Z, -1.0),
+            Circle3D::new(Point3D::ORIGIN, Vector3D::Z, -1.0),
             Err(CircleConstructionError::NegativeRadius)
         );
     }
@@ -547,23 +547,23 @@ mod tests {
     #[test]
     fn test_circle3d_new_null_normal_errors() {
         assert_eq!(
-            Circle3D::new(Point3::ORIGIN, Vector3::ZERO, 1.0),
+            Circle3D::new(Point3D::ORIGIN, Vector3D::ZERO, 1.0),
             Err(CircleConstructionError::NullNormal)
         );
     }
 
     #[test]
     fn test_circle3d_from_axis_ok() {
-        let axis = crate::Axis3::new(Point3::new(1.0, 2.0, 3.0), Vector3::Y).unwrap();
+        let axis = crate::Axis3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Y).unwrap();
         let c = Circle3D::from_axis(axis, 3.0).unwrap();
-        assert_eq!(c.center(), Point3::new(1.0, 2.0, 3.0));
-        assert_eq!(c.normal(), Vector3::Y);
+        assert_eq!(c.center(), Point3D::new(1.0, 2.0, 3.0));
+        assert_eq!(c.normal(), Vector3D::Y);
         assert_eq!(c.radius(), 3.0);
     }
 
     #[test]
     fn test_circle3d_from_axis_negative_radius_errors() {
-        let axis = crate::Axis3::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let axis = crate::Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         assert_eq!(
             Circle3D::from_axis(axis, -1.0),
             Err(CircleConstructionError::NegativeRadius)
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn test_circle3d_from_frame_ok() {
-        let frame = Frame3::WORLD;
+        let frame = Frame3D::WORLD;
         let c = Circle3D::from_frame(frame, 5.0).unwrap();
         assert_eq!(c.frame(), frame);
         assert_eq!(c.radius(), 5.0);
@@ -581,24 +581,24 @@ mod tests {
     #[test]
     fn test_circle3d_from_frame_negative_radius_errors() {
         assert_eq!(
-            Circle3D::from_frame(Frame3::WORLD, -0.1),
+            Circle3D::from_frame(Frame3D::WORLD, -0.1),
             Err(CircleConstructionError::NegativeRadius)
         );
     }
 
     #[test]
     fn test_circle3d_from_three_points_ok() {
-        let p1 = Point3::new(1.0, 0.0, 0.0);
-        let p2 = Point3::new(0.0, 1.0, 0.0);
-        let p3 = Point3::new(-1.0, 0.0, 0.0);
+        let p1 = Point3D::new(1.0, 0.0, 0.0);
+        let p2 = Point3D::new(0.0, 1.0, 0.0);
+        let p3 = Point3D::new(-1.0, 0.0, 0.0);
         let c = Circle3D::from_three_points(p1, p2, p3).unwrap();
         assert!((c.radius() - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_circle3d_from_three_points_two_coincident_errors() {
-        let p = Point3::new(1.0, 2.0, 3.0);
-        let p2 = Point3::new(4.0, 5.0, 6.0);
+        let p = Point3D::new(1.0, 2.0, 3.0);
+        let p2 = Point3D::new(4.0, 5.0, 6.0);
         assert_eq!(
             Circle3D::from_three_points(p, p, p2),
             Err(CircleConstructionError::ConfusedPoints)
@@ -607,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_circle3d_from_three_points_all_coincident_errors() {
-        let p = Point3::new(1.0, 2.0, 3.0);
+        let p = Point3D::new(1.0, 2.0, 3.0);
         assert_eq!(
             Circle3D::from_three_points(p, p, p),
             Err(CircleConstructionError::ConfusedPoints)
@@ -616,9 +616,9 @@ mod tests {
 
     #[test]
     fn test_circle3d_from_three_points_collinear_errors() {
-        let p1 = Point3::new(0.0, 0.0, 0.0);
-        let p2 = Point3::new(1.0, 0.0, 0.0);
-        let p3 = Point3::new(2.0, 0.0, 0.0);
+        let p1 = Point3D::new(0.0, 0.0, 0.0);
+        let p2 = Point3D::new(1.0, 0.0, 0.0);
+        let p3 = Point3D::new(2.0, 0.0, 0.0);
         assert_eq!(
             Circle3D::from_three_points(p1, p2, p3),
             Err(CircleConstructionError::CollinearPoints)
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn test_circle3d_eval_point_zero() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let p = c.eval_point(0.0);
         assert!((p.x - 2.0).abs() < 1e-9);
         assert!(p.y.abs() < 1e-9);
@@ -638,15 +638,15 @@ mod tests {
 
     #[test]
     fn test_circle3d_eval_points_matches_loop() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let us = [0.0, 0.5, 1.5];
-        let expected: Vec<Point3> = us.iter().map(|&u| c.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| c.eval_point(u)).collect();
         assert_eq!(c.eval_points(&us), expected);
     }
 
     #[test]
     fn test_circle3d_eval_derivative_order1() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let d1 = c.eval_derivative(0.0, 1);
         assert!(d1.x.abs() < 1e-9);
         assert!((d1.y - 2.0).abs() < 1e-9);
@@ -655,13 +655,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_circle3d_eval_derivative_order0_panics() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         c.eval_derivative(0.0, 0);
     }
 
     #[test]
     fn test_circle3d_parameter_of_round_trip() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         for u in [0.3, 2.0, 5.5] {
             let p = c.eval_point(u);
             assert!((c.parameter_of(p) - u).abs() < 1e-9);
@@ -670,7 +670,7 @@ mod tests {
 
     #[test]
     fn test_circle3d_parameter_of_in_zero_to_tau() {
-        let c = Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
+        let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         for u in [-1.0, -0.1, 7.0] {
             let p = c.eval_point(u);
             let recovered = c.parameter_of(p);
@@ -710,23 +710,23 @@ mod tests {
 
     #[test]
     fn test_circle2d_new_ok() {
-        let c = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
-        assert_eq!(c.center(), Point2::ORIGIN);
+        let c = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+        assert_eq!(c.center(), Point2D::ORIGIN);
         assert_eq!(c.radius(), 2.0);
-        assert_eq!(c.frame(), Frame2::WORLD);
+        assert_eq!(c.frame(), Frame2D::WORLD);
     }
 
     #[test]
     fn test_circle2d_new_negative_radius_errors() {
         assert_eq!(
-            Circle2D::new(Point2::ORIGIN, -1.0),
+            Circle2D::new(Point2D::ORIGIN, -1.0),
             Err(CircleConstructionError::NegativeRadius)
         );
     }
 
     #[test]
     fn test_circle2d_from_frame_ok() {
-        let frame = Frame2::WORLD;
+        let frame = Frame2D::WORLD;
         let c = Circle2D::from_frame(frame, 3.0).unwrap();
         assert_eq!(c.frame(), frame);
         assert_eq!(c.radius(), 3.0);
@@ -735,7 +735,7 @@ mod tests {
     #[test]
     fn test_circle2d_from_frame_negative_radius_errors() {
         assert_eq!(
-            Circle2D::from_frame(Frame2::WORLD, -1.0),
+            Circle2D::from_frame(Frame2D::WORLD, -1.0),
             Err(CircleConstructionError::NegativeRadius)
         );
     }
@@ -744,7 +744,7 @@ mod tests {
 
     #[test]
     fn test_circle2d_eval_point_zero() {
-        let c = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+        let c = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
         let p = c.eval_point(0.0);
         assert!((p.x - 2.0).abs() < 1e-9);
         assert!(p.y.abs() < 1e-9);
@@ -752,15 +752,15 @@ mod tests {
 
     #[test]
     fn test_circle2d_eval_points_matches_loop() {
-        let c = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+        let c = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
         let us = [0.0, 0.5, 1.5];
-        let expected: Vec<Point2> = us.iter().map(|&u| c.eval_point(u)).collect();
+        let expected: Vec<Point2D> = us.iter().map(|&u| c.eval_point(u)).collect();
         assert_eq!(c.eval_points(&us), expected);
     }
 
     #[test]
     fn test_circle2d_eval_derivative_order1() {
-        let c = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+        let c = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
         let d1 = c.eval_derivative(0.0, 1);
         assert!(d1.x.abs() < 1e-9);
         assert!((d1.y - 2.0).abs() < 1e-9);
@@ -769,13 +769,13 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_circle2d_eval_derivative_order0_panics() {
-        let c = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+        let c = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
         c.eval_derivative(0.0, 0);
     }
 
     #[test]
     fn test_circle2d_parameter_of_round_trip() {
-        let c = Circle2D::new(Point2::ORIGIN, 2.0).unwrap();
+        let c = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
         for u in [0.3, 2.0, 5.5] {
             let p = c.eval_point(u);
             assert!((c.parameter_of(p) - u).abs() < 1e-9);
@@ -784,7 +784,7 @@ mod tests {
 
     #[test]
     fn test_circle2d_from_frame_arbitrary() {
-        let frame = Frame2::from_x(Point2::new(1.0, -2.0), Vector2::new(3.0, 4.0)).unwrap();
+        let frame = Frame2D::from_x(Point2D::new(1.0, -2.0), Vector2D::new(3.0, 4.0)).unwrap();
         let c = Circle2D::from_frame(frame, 2.5).unwrap();
         for u in [0.3, 2.0, 5.5] {
             let p = c.eval_point(u);

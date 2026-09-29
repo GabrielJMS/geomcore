@@ -2,7 +2,7 @@
 //! concrete 3D curve types.
 
 use crate::curves::{BSplineCurve3D, Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D};
-use crate::{Point3, Vector3};
+use crate::{Point3D, Vector3D};
 use std::f64::consts::TAU;
 
 /// Common interface for 3D parametric curves. Implement this to add a new
@@ -20,11 +20,11 @@ use std::f64::consts::TAU;
 ///
 /// ```
 /// use geomcore::curves::ParametricCurve3D;
-/// use geomcore::{Line3D, Point3, Vector3};
+/// use geomcore::{Line3D, Point3D, Vector3D};
 ///
-/// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
 /// let us = [0.0, 1.0, 2.0];
-/// let expected: Vec<Point3> = us.iter().map(|&u| line.eval_point(u)).collect();
+/// let expected: Vec<Point3D> = us.iter().map(|&u| line.eval_point(u)).collect();
 /// assert_eq!(ParametricCurve3D::eval_points(&line, &us), expected);
 /// ```
 ///
@@ -33,20 +33,20 @@ use std::f64::consts::TAU;
 ///
 /// ```
 /// use geomcore::curves::ParametricCurve3D;
-/// use geomcore::{Circle3D, Line3D, Point3, Vector3};
+/// use geomcore::{Circle3D, Line3D, Point3D, Vector3D};
 ///
-/// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
 /// assert!(!ParametricCurve3D::is_periodic(&line));
 ///
-/// let circle = Circle3D::new(Point3::ORIGIN, Vector3::Z, 1.0).unwrap();
+/// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
 /// assert!(ParametricCurve3D::is_periodic(&circle));
 /// ```
 pub trait ParametricCurve3D {
     /// Evaluates the point on the curve at parameter `u`.
-    fn eval_point(&self, u: f64) -> Point3;
+    fn eval_point(&self, u: f64) -> Point3D;
 
     /// Evaluates the derivative of the given `order` at parameter `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3;
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D;
 
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
@@ -59,7 +59,7 @@ pub trait ParametricCurve3D {
     ///
     /// Default implementation: maps [`eval_point`](Self::eval_point) over
     /// `us`.
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -71,11 +71,11 @@ pub trait ParametricCurve3D {
 }
 
 impl ParametricCurve3D for Line3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         Line3D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         Line3D::eval_derivative(self, u, order)
     }
 
@@ -87,17 +87,17 @@ impl ParametricCurve3D for Line3D {
         None
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Line3D::eval_points(self, us)
     }
 }
 
 impl ParametricCurve3D for Circle3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         Circle3D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         Circle3D::eval_derivative(self, u, order)
     }
 
@@ -109,17 +109,17 @@ impl ParametricCurve3D for Circle3D {
         Some(TAU)
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Circle3D::eval_points(self, us)
     }
 }
 
 impl ParametricCurve3D for Ellipse3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         Ellipse3D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         Ellipse3D::eval_derivative(self, u, order)
     }
 
@@ -131,17 +131,17 @@ impl ParametricCurve3D for Ellipse3D {
         Some(TAU)
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Ellipse3D::eval_points(self, us)
     }
 }
 
 impl ParametricCurve3D for Parabola3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         Parabola3D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         Parabola3D::eval_derivative(self, u, order)
     }
 
@@ -153,17 +153,17 @@ impl ParametricCurve3D for Parabola3D {
         None
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Parabola3D::eval_points(self, us)
     }
 }
 
 impl ParametricCurve3D for Hyperbola3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         Hyperbola3D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         Hyperbola3D::eval_derivative(self, u, order)
     }
 
@@ -175,17 +175,17 @@ impl ParametricCurve3D for Hyperbola3D {
         None
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Hyperbola3D::eval_points(self, us)
     }
 }
 
 impl ParametricCurve3D for BSplineCurve3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         BSplineCurve3D::eval_point(self, u)
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         BSplineCurve3D::eval_derivative(self, u, order)
     }
 
@@ -202,7 +202,7 @@ impl ParametricCurve3D for BSplineCurve3D {
         }
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         BSplineCurve3D::eval_points(self, us)
     }
 }
@@ -218,15 +218,15 @@ impl ParametricCurve3D for BSplineCurve3D {
 ///
 /// ```
 /// use geomcore::curves::{Curve3D, ParametricCurve3D};
-/// use geomcore::{Circle3D, Line3D, Point3, Vector3};
+/// use geomcore::{Circle3D, Line3D, Point3D, Vector3D};
 ///
 /// let curves: Vec<Curve3D> = vec![
-///     Line3D::new(Point3::ORIGIN, Vector3::X).unwrap().into(),
-///     Circle3D::new(Point3::ORIGIN, Vector3::Z, 1.0).unwrap().into(),
+///     Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap().into(),
+///     Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap().into(),
 /// ];
-/// let points: Vec<Point3> = curves.iter().map(|c| c.eval_point(0.0)).collect();
-/// assert_eq!(points[0], Point3::ORIGIN);
-/// assert_eq!(points[1], Point3::new(1.0, 0.0, 0.0));
+/// let points: Vec<Point3D> = curves.iter().map(|c| c.eval_point(0.0)).collect();
+/// assert_eq!(points[0], Point3D::ORIGIN);
+/// assert_eq!(points[1], Point3D::new(1.0, 0.0, 0.0));
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
@@ -246,7 +246,7 @@ pub enum Curve3D {
 }
 
 impl ParametricCurve3D for Curve3D {
-    fn eval_point(&self, u: f64) -> Point3 {
+    fn eval_point(&self, u: f64) -> Point3D {
         match self {
             Curve3D::Line(c) => c.eval_point(u),
             Curve3D::Circle(c) => c.eval_point(u),
@@ -257,7 +257,7 @@ impl ParametricCurve3D for Curve3D {
         }
     }
 
-    fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         match self {
             Curve3D::Line(c) => c.eval_derivative(u, order),
             Curve3D::Circle(c) => c.eval_derivative(u, order),
@@ -290,7 +290,7 @@ impl ParametricCurve3D for Curve3D {
         }
     }
 
-    fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         match self {
             Curve3D::Line(c) => c.eval_points(us),
             Curve3D::Circle(c) => c.eval_points(us),
@@ -348,42 +348,42 @@ impl From<BSplineCurve3D> for Curve3D {
 mod tests {
     use super::*;
 
-    fn sample<C: ParametricCurve3D>(c: &C) -> Point3 {
+    fn sample<C: ParametricCurve3D>(c: &C) -> Point3D {
         c.eval_point(0.5)
     }
 
     fn line() -> Line3D {
-        Line3D::new(Point3::ORIGIN, Vector3::X).unwrap()
+        Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap()
     }
 
     fn circle() -> Circle3D {
-        Circle3D::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap()
+        Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap()
     }
 
     fn ellipse() -> Ellipse3D {
-        Ellipse3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 3.0, 1.5).unwrap()
+        Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap()
     }
 
     fn parabola() -> Parabola3D {
-        Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap()
+        Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap()
     }
 
     fn hyperbola() -> Hyperbola3D {
-        Hyperbola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 2.0, 1.0).unwrap()
+        Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap()
     }
 
     fn bspline() -> BSplineCurve3D {
         // Clamped degree-1 curve: straight segment (0,0,0) -> (2,0,0).
-        let poles = vec![Point3::ORIGIN, Point3::new(2.0, 0.0, 0.0)];
+        let poles = vec![Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)];
         BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap()
     }
 
     fn bspline_periodic() -> BSplineCurve3D {
         // Periodic degree-1 triangle, knots [0,1,2,3] period 3.
         let poles = vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(0.0, 1.0, 0.0),
         ];
         BSplineCurve3D::new(1, poles, vec![0.0, 1.0, 2.0, 3.0], vec![1, 1, 1, 1], true).unwrap()
     }
@@ -451,7 +451,7 @@ mod tests {
             h.into(),
             b.clone().into(),
         ];
-        let points: Vec<Point3> = curves.iter().map(|curve| curve.eval_point(0.25)).collect();
+        let points: Vec<Point3D> = curves.iter().map(|curve| curve.eval_point(0.25)).collect();
         assert_eq!(points[0], l.eval_point(0.25));
         assert_eq!(points[1], c.eval_point(0.25));
         assert_eq!(points[2], e.eval_point(0.25));
@@ -625,27 +625,27 @@ mod tests {
         let us = [0.0, 0.5, 1.0, -2.0];
 
         let l = line();
-        let expected: Vec<Point3> = us.iter().map(|&u| l.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| l.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&l, &us), expected);
 
         let c = circle();
-        let expected: Vec<Point3> = us.iter().map(|&u| c.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| c.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&c, &us), expected);
 
         let e = ellipse();
-        let expected: Vec<Point3> = us.iter().map(|&u| e.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| e.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&e, &us), expected);
 
         let p = parabola();
-        let expected: Vec<Point3> = us.iter().map(|&u| p.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| p.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&p, &us), expected);
 
         let h = hyperbola();
-        let expected: Vec<Point3> = us.iter().map(|&u| h.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| h.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&h, &us), expected);
 
         let b = bspline();
-        let expected: Vec<Point3> = us.iter().map(|&u| b.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| b.eval_point(u)).collect();
         assert_eq!(ParametricCurve3D::eval_points(&b, &us), expected);
     }
 
@@ -661,7 +661,7 @@ mod tests {
             bspline().into(),
         ];
         for curve in &curves {
-            let expected: Vec<Point3> = us.iter().map(|&u| curve.eval_point(u)).collect();
+            let expected: Vec<Point3D> = us.iter().map(|&u| curve.eval_point(u)).collect();
             assert_eq!(curve.eval_points(&us), expected);
         }
     }

@@ -16,7 +16,7 @@ use crate::curve_math::analytic::{in_period, wrap_to_turn};
 use crate::curves::{Circle2D, Circle3D, Curve2D, Line2D, Line3D};
 use crate::surfaces::{ParametricSurface, Surface};
 use crate::tol;
-use crate::{Frame2, Point2, Point3, Vector2, Vector3};
+use crate::{Frame2D, Point2D, Point3D, Vector2D, Vector3D};
 
 /// Error returned when a 3D curve cannot be given an analytic 2D
 /// representation on a surface.
@@ -112,7 +112,7 @@ pub(crate) fn circle_on_surface(
 fn finish_line(
     surface: &Surface,
     pcurve: Line2D,
-    curve_point: impl Fn(f64) -> Point3,
+    curve_point: impl Fn(f64) -> Point3D,
 ) -> Result<Curve2D, ParametrizeError> {
     verify_on_surface(surface, &Curve2D::Line(pcurve), curve_point)?;
     Ok(Curve2D::Line(normalize_line2d_at_zero(pcurve, surface)))
@@ -130,13 +130,13 @@ fn finish_line(
 fn verify_on_surface(
     surface: &Surface,
     pcurve: &Curve2D,
-    curve_point: impl Fn(f64) -> Point3,
+    curve_point: impl Fn(f64) -> Point3D,
 ) -> Result<(), ParametrizeError> {
     use crate::curves::ParametricCurve2D;
 
     let mut scale: f64 = 1.0;
     for &t in &CHECK_PARAMS {
-        scale = scale.max((curve_point(t) - Point3::ORIGIN).magnitude());
+        scale = scale.max((curve_point(t) - Point3D::ORIGIN).magnitude());
     }
     let tolerance = 1e-6 * scale;
 
@@ -154,10 +154,10 @@ fn verify_on_surface(
 
 /// 2D image of a line lying in a plane: local x/y coordinates of the origin
 /// and the projected (renormalized) direction.
-fn line_on_plane(line: &Line3D, frame: crate::Frame3) -> Result<Line2D, ParametrizeError> {
+fn line_on_plane(line: &Line3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let origin = eval_point2d_plane(frame, line.origin());
     let d = line.direction();
-    let dir = Vector2::new(d.dot(frame.x_direction()), d.dot(frame.y_direction()));
+    let dir = Vector2D::new(d.dot(frame.x_direction()), d.dot(frame.y_direction()));
     // A near-zero projected direction means the line points out of the plane,
     // i.e. it is not on the surface.
     let dir = dir
@@ -168,33 +168,33 @@ fn line_on_plane(line: &Line3D, frame: crate::Frame3) -> Result<Line2D, Parametr
 
 /// 2D image of a circle lying in a plane: the circle's frame mapped to local
 /// plane coordinates, radius preserved.
-fn circle_on_plane(circle: &Circle3D, frame: crate::Frame3) -> Circle2D {
+fn circle_on_plane(circle: &Circle3D, frame: crate::Frame3D) -> Circle2D {
     let center = eval_point2d_plane(frame, circle.center());
     let cf = circle.frame();
     let x_dir = eval_dir2d_plane(frame, cf.x_direction());
     let y_dir = eval_dir2d_plane(frame, cf.y_direction());
-    let frame2 = Frame2::new(center, x_dir, y_dir)
+    let frame2 = Frame2D::new(center, x_dir, y_dir)
         .expect("circle frame axes stay orthonormal under a plane projection");
     Circle2D::from_frame(frame2, circle.radius())
         .expect("circle radius is non-negative by construction")
 }
 
 /// Local (x, y) coordinates of `p` in the plane `frame`.
-fn eval_point2d_plane(frame: crate::Frame3, p: Point3) -> Point2 {
+fn eval_point2d_plane(frame: crate::Frame3D, p: Point3D) -> Point2D {
     let d = p - frame.origin();
-    Point2::new(d.dot(frame.x_direction()), d.dot(frame.y_direction()))
+    Point2D::new(d.dot(frame.x_direction()), d.dot(frame.y_direction()))
 }
 
 /// Local (x, y) components of the direction `d` in the plane `frame`.
-fn eval_dir2d_plane(frame: crate::Frame3, d: Vector3) -> Vector2 {
-    Vector2::new(d.dot(frame.x_direction()), d.dot(frame.y_direction()))
+fn eval_dir2d_plane(frame: crate::Frame3D, d: Vector3D) -> Vector2D {
+    Vector2D::new(d.dot(frame.x_direction()), d.dot(frame.y_direction()))
 }
 
 // ---- cylinder ----
 
 /// 2D image of a line on a cylinder: succeeds only when the line is parallel
 /// to the cylinder axis (a vertical iso-`u` line in `(u, v)`).
-fn line_on_cylinder(line: &Line3D, frame: crate::Frame3) -> Result<Line2D, ParametrizeError> {
+fn line_on_cylinder(line: &Line3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
     if line.direction().cross(axis).square_magnitude() > tol::ANGULAR * tol::ANGULAR {
         return Err(ParametrizeError::NotAnalytic);
@@ -207,13 +207,16 @@ fn line_on_cylinder(line: &Line3D, frame: crate::Frame3) -> Result<Line2D, Param
     } else {
         -1.0
     };
-    Line2D::new(Point2::new(u, v), Vector2::new(0.0, sign))
+    Line2D::new(Point2D::new(u, v), Vector2D::new(0.0, sign))
         .map_err(|_| ParametrizeError::NotAnalytic)
 }
 
 /// 2D image of a circle on a cylinder: succeeds only when the circle's normal
 /// is parallel to the cylinder axis (a horizontal iso-`v` line in `(u, v)`).
-fn circle_on_cylinder(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, ParametrizeError> {
+fn circle_on_cylinder(
+    circle: &Circle3D,
+    frame: crate::Frame3D,
+) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
     let normal = circle.normal();
     if axis.cross(normal).square_magnitude() > tol::ANGULAR * tol::ANGULAR {
@@ -226,7 +229,8 @@ fn circle_on_cylinder(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D,
     );
     let v = (circle.center() - frame.origin()).dot(axis);
     let du = if normal.dot(axis) > 0.0 { 1.0 } else { -1.0 };
-    Line2D::new(Point2::new(u, v), Vector2::new(du, 0.0)).map_err(|_| ParametrizeError::NotAnalytic)
+    Line2D::new(Point2D::new(u, v), Vector2D::new(du, 0.0))
+        .map_err(|_| ParametrizeError::NotAnalytic)
 }
 
 // ---- cone ----
@@ -235,7 +239,7 @@ fn circle_on_cylinder(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D,
 /// (parallel to the `v`-isoline through its own foot point).
 fn line_on_cone(
     line: &Line3D,
-    frame: crate::Frame3,
+    frame: crate::Frame3D,
     ref_r: f64,
     semi_angle: f64,
 ) -> Result<Line2D, ParametrizeError> {
@@ -258,15 +262,18 @@ fn line_on_cone(
     } else {
         -1.0
     };
-    Line2D::new(Point2::new(u, v - delta_v * sign), Vector2::new(0.0, sign))
-        .map_err(|_| ParametrizeError::NotAnalytic)
+    Line2D::new(
+        Point2D::new(u, v - delta_v * sign),
+        Vector2D::new(0.0, sign),
+    )
+    .map_err(|_| ParametrizeError::NotAnalytic)
 }
 
 /// 2D image of a circle on a cone: succeeds only when the circle's normal is
 /// parallel to the cone axis (a horizontal iso-`v` line in `(u, v)`).
 fn circle_on_cone(
     circle: &Circle3D,
-    frame: crate::Frame3,
+    frame: crate::Frame3D,
     ref_r: f64,
     semi_angle: f64,
 ) -> Result<Line2D, ParametrizeError> {
@@ -290,12 +297,13 @@ fn circle_on_cone(
     };
     let v = z / semi_angle.cos();
     let du = if normal.dot(axis) > 0.0 { 1.0 } else { -1.0 };
-    Line2D::new(Point2::new(u, v), Vector2::new(du, 0.0)).map_err(|_| ParametrizeError::NotAnalytic)
+    Line2D::new(Point2D::new(u, v), Vector2D::new(du, 0.0))
+        .map_err(|_| ParametrizeError::NotAnalytic)
 }
 
 /// The cone's apex point in world coordinates: the axis point where the
 /// section radius shrinks to zero.
-fn cone_apex(frame: crate::Frame3, ref_r: f64, semi_angle: f64) -> Point3 {
+fn cone_apex(frame: crate::Frame3D, ref_r: f64, semi_angle: f64) -> Point3D {
     let v_apex = -ref_r / semi_angle.sin();
     frame.origin() + (v_apex * semi_angle.cos()) * frame.z_direction()
 }
@@ -304,7 +312,7 @@ fn cone_apex(frame: crate::Frame3, ref_r: f64, semi_angle: f64) -> Point3 {
 
 /// 2D image of a circle on a sphere: succeeds only for a meridian (great
 /// circle through the poles) or a parallel (horizontal circle).
-fn circle_on_sphere(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, ParametrizeError> {
+fn circle_on_sphere(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let cf = circle.frame();
     let normal = circle.normal();
@@ -325,7 +333,7 @@ fn circle_on_sphere(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, P
 
 /// Meridian (iso-`u`) image: a vertical line in `(u, v)` derived from the 2D
 /// images of the circle's x and y axis endpoints, with seam/pole handling.
-fn sphere_meridian(circle: &Circle3D, frame: crate::Frame3) -> Line2D {
+fn sphere_meridian(circle: &Circle3D, frame: crate::Frame3D) -> Line2D {
     let cf = circle.frame();
     let mut p1 = eval_point2d_sphere(frame, cf.x_direction());
     let mut p2 = eval_point2d_sphere(frame, cf.y_direction());
@@ -349,7 +357,7 @@ fn sphere_meridian(circle: &Circle3D, frame: crate::Frame3) -> Line2D {
 
 /// Parallel (iso-`v`) image: a horizontal line in `(u, v)` at constant
 /// latitude, running in `+u` or `-u` by the circle's orientation.
-fn sphere_parallel(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, ParametrizeError> {
+fn sphere_parallel(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let cf = circle.frame();
     let u = wrap_to_turn(frame.x_direction().angle_with_ref(cf.x_direction(), z));
@@ -363,17 +371,18 @@ fn sphere_parallel(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, Pa
     } else {
         -1.0
     };
-    Line2D::new(Point2::new(u, v), Vector2::new(du, 0.0)).map_err(|_| ParametrizeError::NotAnalytic)
+    Line2D::new(Point2D::new(u, v), Vector2D::new(du, 0.0))
+        .map_err(|_| ParametrizeError::NotAnalytic)
 }
 
 /// Local sphere `(u, v)` of a unit direction `dir` seen from the sphere frame.
-fn eval_point2d_sphere(frame: crate::Frame3, dir: Vector3) -> Point2 {
+fn eval_point2d_sphere(frame: crate::Frame3D, dir: Vector3D) -> Point2D {
     let x = dir.dot(frame.x_direction());
     let y = dir.dot(frame.y_direction());
     let z = dir.dot(frame.z_direction());
     let u = angle_or_zero(y, x);
     let v = z.clamp(-1.0, 1.0).asin();
-    Point2::new(u, v)
+    Point2D::new(u, v)
 }
 
 /// Canonicalizes a sphere pcurve's value at `t = 0` into the parameter window,
@@ -415,7 +424,7 @@ fn sphere_set_in_bounds(line: Line2D) -> Line2D {
 fn mirror_about_horizontal(line: Line2D, c: f64) -> Line2D {
     let o = line.origin();
     let d = line.direction();
-    Line2D::new(Point2::new(o.x, 2.0 * c - o.y), Vector2::new(d.x, -d.y))
+    Line2D::new(Point2D::new(o.x, 2.0 * c - o.y), Vector2D::new(d.x, -d.y))
         .expect("mirrored direction keeps unit length")
 }
 
@@ -427,7 +436,7 @@ fn mirror_about_horizontal(line: Line2D, c: f64) -> Line2D {
 /// `u`).
 fn circle_on_torus(
     circle: &Circle3D,
-    frame: crate::Frame3,
+    frame: crate::Frame3D,
     maj: f64,
     min: f64,
 ) -> Result<Line2D, ParametrizeError> {
@@ -451,7 +460,7 @@ fn circle_on_torus(
 /// depending on whether the circle radius is below the major radius.
 fn torus_toroidal(
     circle: &Circle3D,
-    frame: crate::Frame3,
+    frame: crate::Frame3D,
     maj: f64,
     min: f64,
 ) -> Result<Line2D, ParametrizeError> {
@@ -484,7 +493,7 @@ fn torus_toroidal(
 
 /// Poloidal image (meridian circle at fixed toroidal angle `u`): a vertical
 /// line in `(u, v)`.
-fn torus_poloidal(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, ParametrizeError> {
+fn torus_poloidal(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let oc = circle.center() - frame.origin();
     let cf = circle.frame();
@@ -493,19 +502,19 @@ fn torus_poloidal(circle: &Circle3D, frame: crate::Frame3) -> Result<Line2D, Par
     if v1 < 0.0 {
         v1 += TAU;
     }
-    let mut dir = Vector2::Y;
+    let mut dir = Vector2D::Y;
     if oc.cross(z).dot(cf.x_direction().cross(cf.y_direction())) < 0.0 {
         dir = -dir;
     }
-    Line2D::new(Point2::new(u, v1), dir).map_err(|_| ParametrizeError::NotAnalytic)
+    Line2D::new(Point2D::new(u, v1), dir).map_err(|_| ParametrizeError::NotAnalytic)
 }
 
 /// Toroidal `u` of a unit direction: the angle of its projection into the
 /// torus's equatorial plane, with the `v` slot left at zero for the caller.
-fn torus_eval_u(frame: crate::Frame3, dir: Vector3) -> Point2 {
+fn torus_eval_u(frame: crate::Frame3D, dir: Vector3D) -> Point2D {
     let x = dir.dot(frame.x_direction());
     let y = dir.dot(frame.y_direction());
-    Point2::new(angle_or_zero(y, x), 0.0)
+    Point2D::new(angle_or_zero(y, x), 0.0)
 }
 
 // ---- normalization ----
@@ -540,7 +549,7 @@ fn wrap_v(line: Line2D) -> Line2D {
 /// Translates a 2D line's origin by `(du, dv)`, keeping its direction.
 fn translate_line(line: Line2D, du: f64, dv: f64) -> Line2D {
     let o = line.origin();
-    Line2D::new(Point2::new(o.x + du, o.y + dv), line.direction())
+    Line2D::new(Point2D::new(o.x + du, o.y + dv), line.direction())
         .expect("translation preserves the unit direction")
 }
 
@@ -565,7 +574,8 @@ mod tests {
     use crate::curves::{Curve2D, ParametricCurve2D, ParametrizeError};
     use crate::tol;
     use crate::{
-        Circle3D, Cylinder, Frame3, Line2D, Line3D, Plane, Point2, Point3, Sphere, Vector2, Vector3,
+        Circle3D, Cylinder, Frame3D, Line2D, Line3D, Plane, Point2D, Point3D, Sphere, Vector2D,
+        Vector3D,
     };
 
     #[test]
@@ -573,8 +583,8 @@ mod tests {
         // A radius-1 circle cannot lie on a radius-2 cylinder even though its
         // axis is coaxial: the projection would be geometrically consistent
         // (normal parallel to axis) but off-surface.
-        let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-        let circle = Circle3D::new(Point3::new(0.0, 0.0, 1.0), Vector3::Z, 1.0).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let circle = Circle3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z, 1.0).unwrap();
         assert_eq!(
             circle.parametrize_on(cylinder),
             Err(ParametrizeError::CurveNotOnSurface)
@@ -585,8 +595,8 @@ mod tests {
     fn test_line_skew_to_cylinder_axis_is_not_analytic() {
         // A line not parallel to the axis has no straight-line 2D image: the
         // geometric failure condition fires first, before any on-surface test.
-        let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-        let line = Line3D::new(Point3::new(2.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 1.0)).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let line = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::new(1.0, 0.0, 1.0)).unwrap();
         assert_eq!(
             line.parametrize_on(cylinder),
             Err(ParametrizeError::NotAnalytic)
@@ -599,8 +609,8 @@ mod tests {
         // The public method takes `impl Into<Surface>`, which `&Cylinder`
         // satisfies via `From<&Cylinder>` (Cylinder is Copy, so clippy would
         // rather drop the borrow; pinning the borrowed form is the point).
-        let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-        let circle = Circle3D::new(Point3::new(0.0, 0.0, 3.0), Vector3::Z, 2.0).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let circle = Circle3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::Z, 2.0).unwrap();
         assert!(circle.parametrize_on(&cylinder).is_ok());
     }
 
@@ -609,8 +619,8 @@ mod tests {
         // A line pointing out of the plane projects to a zero-length 2D
         // direction, which is reported as off-surface rather than a garbage
         // parametrization.
-        let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-        let line = Line3D::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         assert_eq!(
             line.parametrize_on(plane),
             Err(ParametrizeError::CurveNotOnSurface)
@@ -649,7 +659,7 @@ mod tests {
     // exactly the condition on lines 393-396.
     #[test]
     fn test_sphere_meridian_pole_mirror_north() {
-        let sphere = Sphere::new(Point3::ORIGIN, 2.0).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
 
         // circle normal = +X (perpendicular to the sphere's z-axis, so this
         // is a meridian); x_hint tilts x_direction() a hair off the north
@@ -658,8 +668,8 @@ mod tests {
         // sub-case) instead of snapping p1 to it (the pole sub-case).
         let eps = 2e-7_f64;
         let phi = 15.0_f64.to_radians();
-        let x_hint = Vector3::new(phi.cos() * eps.sin(), phi.sin() * eps.sin(), eps.cos());
-        let frame = Frame3::new(Point3::ORIGIN, Vector3::X, x_hint).unwrap();
+        let x_hint = Vector3D::new(phi.cos() * eps.sin(), phi.sin() * eps.sin(), eps.cos());
+        let frame = Frame3D::new(Point3D::ORIGIN, Vector3D::X, x_hint).unwrap();
         let circle = Circle3D::from_frame(frame, 2.0).unwrap();
 
         let sf = sphere.frame();
@@ -700,15 +710,15 @@ mod tests {
 
     #[test]
     fn test_sphere_meridian_pole_mirror_south() {
-        let sphere = Sphere::new(Point3::ORIGIN, 2.0).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
 
         // South twin: negating the whole north x_hint reflects the
         // construction through the sphere's center, landing x_direction()
         // just short of the south pole with the matching seam-fold geometry.
         let eps = 2e-7_f64;
         let phi = 15.0_f64.to_radians();
-        let x_hint = -Vector3::new(phi.cos() * eps.sin(), phi.sin() * eps.sin(), eps.cos());
-        let frame = Frame3::new(Point3::ORIGIN, Vector3::X, x_hint).unwrap();
+        let x_hint = -Vector3D::new(phi.cos() * eps.sin(), phi.sin() * eps.sin(), eps.cos());
+        let frame = Frame3D::new(Point3D::ORIGIN, Vector3D::X, x_hint).unwrap();
         let circle = Circle3D::from_frame(frame, 2.0).unwrap();
 
         let sf = sphere.frame();
@@ -749,7 +759,7 @@ mod tests {
     /// helper.
     #[test]
     fn test_mirror_about_horizontal() {
-        let line = Line2D::new(Point2::new(1.0, 1.7), Vector2::new(0.0, 1.0)).unwrap();
+        let line = Line2D::new(Point2D::new(1.0, 1.7), Vector2D::new(0.0, 1.0)).unwrap();
         let mirrored = mirror_about_horizontal(line, FRAC_PI_2);
         assert_close(mirrored.origin().x, 1.0);
         assert_close(mirrored.origin().y, 2.0 * FRAC_PI_2 - 1.7);
@@ -760,7 +770,7 @@ mod tests {
     #[test]
     fn test_mirror_about_horizontal_is_involution() {
         // Mirroring twice about the same axis returns the original line.
-        let line = Line2D::new(Point2::new(-2.3, 0.4), Vector2::new(0.0, -1.0)).unwrap();
+        let line = Line2D::new(Point2D::new(-2.3, 0.4), Vector2D::new(0.0, -1.0)).unwrap();
         let once = mirror_about_horizontal(line, FRAC_PI_2);
         let twice = mirror_about_horizontal(once, FRAC_PI_2);
         assert_close(twice.origin().x, line.origin().x);

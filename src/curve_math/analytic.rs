@@ -1,28 +1,28 @@
 //! Evaluation and parameter-inversion formulas for elementary analytic
 //! curves (line, circle, ellipse, parabola, hyperbola), in both 3D and 2D.
 //!
-//! Every curve is evaluated relative to a placement (an [`Axis3`]/[`Axis2`]
-//! for the line, a [`Frame3`]/[`Frame2`] for the conics): a local origin and
+//! Every curve is evaluated relative to a placement (an [`Axis3D`]/[`Axis2D`]
+//! for the line, a [`Frame3D`]/[`Frame2D`] for the conics): a local origin and
 //! one or more unit directions that the parametric formulas are expressed
 //! in terms of.
 
 use std::f64::consts::TAU;
 
-use crate::{Axis2, Axis3, Frame2, Frame3, Point2, Point3, Vector2, Vector3};
+use crate::{Axis2D, Axis3D, Frame2D, Frame3D, Point2D, Point3D, Vector2D, Vector3D};
 
 /// Evaluates the line through `axis` at parameter `u`: `origin + u * direction`.
-pub(crate) fn line_d0(axis: &Axis3, u: f64) -> Point3 {
+pub(crate) fn line_d0(axis: &Axis3D, u: f64) -> Point3D {
     axis.origin() + u * axis.direction()
 }
 
 /// First derivative of the line: the constant direction vector.
-pub(crate) fn line_d1(axis: &Axis3) -> Vector3 {
+pub(crate) fn line_d1(axis: &Axis3D) -> Vector3D {
     axis.direction()
 }
 
 /// Evaluates the circle of radius `r` in `frame`'s plane at angle `u`:
 /// `origin + r*cos(u)*x_dir + r*sin(u)*y_dir`.
-pub(crate) fn circle_d0(frame: &Frame3, r: f64, u: f64) -> Point3 {
+pub(crate) fn circle_d0(frame: &Frame3D, r: f64, u: f64) -> Point3D {
     let a1 = r * u.cos();
     let a2 = r * u.sin();
     frame.origin() + a1 * frame.x_direction() + a2 * frame.y_direction()
@@ -33,7 +33,7 @@ pub(crate) fn circle_d0(frame: &Frame3, r: f64, u: f64) -> Point3 {
 /// The derivatives cycle with period 4 in `order`: d1 leads the position by
 /// a quarter turn, d2 is the negated position vector, d3 is the negated d1,
 /// and d4 (== d0's linear part) repeats the cycle.
-pub(crate) fn circle_dn(frame: &Frame3, r: f64, u: f64, order: u32) -> Vector3 {
+pub(crate) fn circle_dn(frame: &Frame3D, r: f64, u: f64, order: u32) -> Vector3D {
     debug_assert!(order >= 1, "derivative order must be >= 1");
     let a1 = r * u.cos();
     let a2 = r * u.sin();
@@ -50,7 +50,7 @@ pub(crate) fn circle_dn(frame: &Frame3, r: f64, u: f64, order: u32) -> Vector3 {
 /// Evaluates the ellipse with semi-major `maj` (along x) and semi-minor
 /// `min` (along y) in `frame`'s plane at angle `u`:
 /// `origin + maj*cos(u)*x_dir + min*sin(u)*y_dir`.
-pub(crate) fn ellipse_d0(frame: &Frame3, maj: f64, min: f64, u: f64) -> Point3 {
+pub(crate) fn ellipse_d0(frame: &Frame3D, maj: f64, min: f64, u: f64) -> Point3D {
     frame.origin() + maj * u.cos() * frame.x_direction() + min * u.sin() * frame.y_direction()
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn ellipse_d0(frame: &Frame3, maj: f64, min: f64, u: f64) -> Point3 {
 ///
 /// Cycles with period 4 in `order`, mirroring [`circle_dn`] but with
 /// independent major/minor scaling on the x/y components.
-pub(crate) fn ellipse_dn(frame: &Frame3, maj: f64, min: f64, u: f64, order: u32) -> Vector3 {
+pub(crate) fn ellipse_dn(frame: &Frame3D, maj: f64, min: f64, u: f64, order: u32) -> Vector3D {
     debug_assert!(order >= 1, "derivative order must be >= 1");
     let x = frame.x_direction();
     let y = frame.y_direction();
@@ -73,7 +73,7 @@ pub(crate) fn ellipse_dn(frame: &Frame3, maj: f64, min: f64, u: f64, order: u32)
 
 /// Evaluates the parabola with focal distance `focal` in `frame`'s plane at
 /// parameter `u`: `origin + (u^2 / (4*focal))*x_dir + u*y_dir`.
-pub(crate) fn parabola_d0(frame: &Frame3, focal: f64, u: f64) -> Point3 {
+pub(crate) fn parabola_d0(frame: &Frame3D, focal: f64, u: f64) -> Point3D {
     frame.origin() + (u * u / (4.0 * focal)) * frame.x_direction() + u * frame.y_direction()
 }
 
@@ -82,19 +82,19 @@ pub(crate) fn parabola_d0(frame: &Frame3, focal: f64, u: f64) -> Point3 {
 /// The parabola is a degree-2 polynomial curve: the first derivative is
 /// linear in `u`, the second is the constant `x_dir / (2*focal)`, and every
 /// derivative of order above 2 vanishes.
-pub(crate) fn parabola_dn(frame: &Frame3, focal: f64, u: f64, order: u32) -> Vector3 {
+pub(crate) fn parabola_dn(frame: &Frame3D, focal: f64, u: f64, order: u32) -> Vector3D {
     debug_assert!(order >= 1, "derivative order must be >= 1");
     match order {
         1 => (u / (2.0 * focal)) * frame.x_direction() + frame.y_direction(),
         2 => frame.x_direction() * (1.0 / (2.0 * focal)),
-        _ => Vector3::ZERO,
+        _ => Vector3D::ZERO,
     }
 }
 
 /// Evaluates the hyperbola with semi-major `maj` (along x) and semi-minor
 /// `min` (along y) in `frame`'s plane at parameter `u`:
 /// `origin + maj*cosh(u)*x_dir + min*sinh(u)*y_dir`.
-pub(crate) fn hyperbola_d0(frame: &Frame3, maj: f64, min: f64, u: f64) -> Point3 {
+pub(crate) fn hyperbola_d0(frame: &Frame3D, maj: f64, min: f64, u: f64) -> Point3D {
     frame.origin() + maj * u.cosh() * frame.x_direction() + min * u.sinh() * frame.y_direction()
 }
 
@@ -105,7 +105,7 @@ pub(crate) fn hyperbola_d0(frame: &Frame3, maj: f64, min: f64, u: f64) -> Point3
 /// orders follow the `cosh`/`sinh` pattern of the second derivative (which
 /// then repeats for every higher even/odd order, since d/du of sinh is cosh
 /// and d/du of cosh is sinh).
-pub(crate) fn hyperbola_dn(frame: &Frame3, maj: f64, min: f64, u: f64, order: u32) -> Vector3 {
+pub(crate) fn hyperbola_dn(frame: &Frame3D, maj: f64, min: f64, u: f64, order: u32) -> Vector3D {
     debug_assert!(order >= 1, "derivative order must be >= 1");
     let x = frame.x_direction();
     let y = frame.y_direction();
@@ -119,7 +119,7 @@ pub(crate) fn hyperbola_dn(frame: &Frame3, maj: f64, min: f64, u: f64, order: u3
 
 /// Recovers the parameter `u` of a point on (or near) the line: the signed
 /// projection `(p - origin) . direction`.
-pub(crate) fn line_parameter(axis: &Axis3, p: Point3) -> f64 {
+pub(crate) fn line_parameter(axis: &Axis3D, p: Point3D) -> f64 {
     (p - axis.origin()).dot(axis.direction())
 }
 
@@ -128,7 +128,7 @@ pub(crate) fn line_parameter(axis: &Axis3, p: Point3) -> f64 {
 ///
 /// Projects `p - origin` onto the circle's plane implicitly by taking the
 /// signed angle from `x_dir` to `p - origin`, referenced against `z_dir`.
-pub(crate) fn circle_parameter(frame: &Frame3, p: Point3) -> f64 {
+pub(crate) fn circle_parameter(frame: &Frame3D, p: Point3D) -> f64 {
     let op = p - frame.origin();
     wrap_to_turn(frame.x_direction().angle_with_ref(op, frame.z_direction()))
 }
@@ -140,7 +140,7 @@ pub(crate) fn circle_parameter(frame: &Frame3, p: Point3) -> f64 {
 /// coordinate is rescaled by `maj/min` to undo the ellipse's anisotropic
 /// scaling (mapping the ellipse back onto a circle of radius `maj`), and the
 /// angle is then measured the same way as [`circle_parameter`].
-pub(crate) fn ellipse_parameter(frame: &Frame3, maj: f64, min: f64, p: Point3) -> f64 {
+pub(crate) fn ellipse_parameter(frame: &Frame3D, maj: f64, min: f64, p: Point3D) -> f64 {
     let op = p - frame.origin();
     let nx = op.dot(frame.x_direction());
     let ny = op.dot(frame.y_direction());
@@ -150,13 +150,13 @@ pub(crate) fn ellipse_parameter(frame: &Frame3, maj: f64, min: f64, p: Point3) -
 
 /// Recovers the parameter of a point on (or near) the parabola: the
 /// projection `(p - origin) . y_dir`.
-pub(crate) fn parabola_parameter(frame: &Frame3, p: Point3) -> f64 {
+pub(crate) fn parabola_parameter(frame: &Frame3D, p: Point3D) -> f64 {
     (p - frame.origin()).dot(frame.y_direction())
 }
 
 /// Recovers the parameter of a point on (or near) the hyperbola:
 /// `asinh(((p - origin) . y_dir) / min)`.
-pub(crate) fn hyperbola_parameter(frame: &Frame3, min: f64, p: Point3) -> f64 {
+pub(crate) fn hyperbola_parameter(frame: &Frame3D, min: f64, p: Point3D) -> f64 {
     (((p - frame.origin()).dot(frame.y_direction())) / min).asinh()
 }
 
@@ -182,13 +182,13 @@ pub(crate) fn wrap_to_turn(angle: f64) -> f64 {
 }
 
 /// Evaluates the 2D line through `axis` at parameter `u`: `origin + u * direction`.
-pub(crate) fn line2d_d0(axis: &Axis2, u: f64) -> Point2 {
+pub(crate) fn line2d_d0(axis: &Axis2D, u: f64) -> Point2D {
     axis.origin() + u * axis.direction()
 }
 
 /// Evaluates the 2D circle of radius `r` in `frame` at angle `u`:
 /// `origin + r*cos(u)*x_dir + r*sin(u)*y_dir`.
-pub(crate) fn circle2d_d0(frame: &Frame2, r: f64, u: f64) -> Point2 {
+pub(crate) fn circle2d_d0(frame: &Frame2D, r: f64, u: f64) -> Point2D {
     let a1 = r * u.cos();
     let a2 = r * u.sin();
     frame.origin() + a1 * frame.x_direction() + a2 * frame.y_direction()
@@ -199,7 +199,7 @@ pub(crate) fn circle2d_d0(frame: &Frame2, r: f64, u: f64) -> Point2 {
 /// Cycles with period 4 in `order`, exactly as [`circle_dn`] but with the
 /// frame's 2D x/y directions (no z component, and no handedness
 /// special-casing: the formula uses `x_dir`/`y_dir` as stored).
-pub(crate) fn circle2d_dn(frame: &Frame2, r: f64, u: f64, order: u32) -> Vector2 {
+pub(crate) fn circle2d_dn(frame: &Frame2D, r: f64, u: f64, order: u32) -> Vector2D {
     debug_assert!(order >= 1, "derivative order must be >= 1");
     let a1 = r * u.cos();
     let a2 = r * u.sin();
@@ -215,7 +215,7 @@ pub(crate) fn circle2d_dn(frame: &Frame2, r: f64, u: f64, order: u32) -> Vector2
 
 /// Recovers the parameter `u` of a point on (or near) the 2D line: the
 /// signed projection `(p - origin) . direction`.
-pub(crate) fn line2d_parameter(axis: &Axis2, p: Point2) -> f64 {
+pub(crate) fn line2d_parameter(axis: &Axis2D, p: Point2D) -> f64 {
     (p - axis.origin()).dot(axis.direction())
 }
 
@@ -223,10 +223,10 @@ pub(crate) fn line2d_parameter(axis: &Axis2, p: Point2) -> f64 {
 /// wrapped into `[0, 2*PI)`.
 ///
 /// Uses `atan2` of the point's local coordinates (`p - origin` dotted with
-/// `x_dir` and `y_dir` respectively) since [`Vector2`] has no 3D-style
+/// `x_dir` and `y_dir` respectively) since [`Vector2D`] has no 3D-style
 /// signed-angle-with-reference helper; the frame may be direct or indirect
 /// (left-handed) and the formula applies unchanged either way.
-pub(crate) fn circle2d_parameter(frame: &Frame2, p: Point2) -> f64 {
+pub(crate) fn circle2d_parameter(frame: &Frame2D, p: Point2D) -> f64 {
     let op = p - frame.origin();
     let x = op.dot(frame.x_direction());
     let y = op.dot(frame.y_direction());
@@ -238,18 +238,18 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
-    fn skewed_frame3() -> Frame3 {
-        let z = Vector3::Z;
-        let x_hint = Vector3::new(1.0, 2.0, 2.0).normalized().unwrap();
-        Frame3::new(Point3::new(1.0, -2.0, 0.5), z, x_hint).unwrap()
+    fn skewed_frame3() -> Frame3D {
+        let z = Vector3D::Z;
+        let x_hint = Vector3D::new(1.0, 2.0, 2.0).normalized().unwrap();
+        Frame3D::new(Point3D::new(1.0, -2.0, 0.5), z, x_hint).unwrap()
     }
 
-    fn skewed_frame2() -> Frame2 {
-        let x_dir = Vector2::new(3.0, 4.0).normalized().unwrap();
-        Frame2::from_x(Point2::new(1.0, -2.0), x_dir).unwrap()
+    fn skewed_frame2() -> Frame2D {
+        let x_dir = Vector2D::new(3.0, 4.0).normalized().unwrap();
+        Frame2D::from_x(Point2D::new(1.0, -2.0), x_dir).unwrap()
     }
 
-    fn assert_point3_close(actual: Point3, expected: Point3) {
+    fn assert_point3_close(actual: Point3D, expected: Point3D) {
         assert!(
             (actual.x - expected.x).abs() < 1e-9,
             "x: {actual:?} vs {expected:?}"
@@ -264,7 +264,7 @@ mod tests {
         );
     }
 
-    fn assert_vector3_close(actual: Vector3, expected: Vector3) {
+    fn assert_vector3_close(actual: Vector3D, expected: Vector3D) {
         assert!(
             (actual.x - expected.x).abs() < 1e-9,
             "x: {actual:?} vs {expected:?}"
@@ -283,19 +283,19 @@ mod tests {
 
     #[test]
     fn test_line_d0_world() {
-        let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
-        assert_point3_close(line_d0(&axis, 3.0), Point3::new(3.0, 0.0, 0.0));
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        assert_point3_close(line_d0(&axis, 3.0), Point3D::new(3.0, 0.0, 0.0));
     }
 
     #[test]
     fn test_line_d1_is_constant_direction() {
-        let axis = Axis3::new(Point3::new(1.0, 2.0, 3.0), Vector3::Y).unwrap();
-        assert_eq!(line_d1(&axis), Vector3::Y);
+        let axis = Axis3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Y).unwrap();
+        assert_eq!(line_d1(&axis), Vector3D::Y);
     }
 
     #[test]
     fn test_line_parameter_round_trip_world() {
-        let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         for u in [0.3, 2.0, -5.5] {
             let p = line_d0(&axis, u);
             assert!((line_parameter(&axis, p) - u).abs() < 1e-9);
@@ -304,9 +304,9 @@ mod tests {
 
     #[test]
     fn test_line_parameter_round_trip_skewed() {
-        let axis = Axis3::new(
-            Point3::new(1.0, -2.0, 0.5),
-            Vector3::new(1.0, 2.0, 2.0).normalized().unwrap(),
+        let axis = Axis3D::new(
+            Point3D::new(1.0, -2.0, 0.5),
+            Vector3D::new(1.0, 2.0, 2.0).normalized().unwrap(),
         )
         .unwrap();
         for u in [0.3, 2.0, 5.5] {
@@ -320,32 +320,32 @@ mod tests {
     #[test]
     fn test_circle_d0_world_zero() {
         assert_point3_close(
-            circle_d0(&Frame3::WORLD, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
+            circle_d0(&Frame3D::WORLD, 1.0, 0.0),
+            Point3D::new(1.0, 0.0, 0.0),
         );
     }
 
     #[test]
     fn test_circle_d0_world_quarter_turn() {
         assert_point3_close(
-            circle_d0(&Frame3::WORLD, 1.0, PI / 2.0),
-            Point3::new(0.0, 1.0, 0.0),
+            circle_d0(&Frame3D::WORLD, 1.0, PI / 2.0),
+            Point3D::new(0.0, 1.0, 0.0),
         );
     }
 
     #[test]
     fn test_circle_dn_order1_at_zero() {
         assert_vector3_close(
-            circle_dn(&Frame3::WORLD, 1.0, 0.0, 1),
-            Vector3::new(0.0, 1.0, 0.0),
+            circle_dn(&Frame3D::WORLD, 1.0, 0.0, 1),
+            Vector3D::new(0.0, 1.0, 0.0),
         );
     }
 
     #[test]
     fn test_circle_dn_order2_at_zero() {
         assert_vector3_close(
-            circle_dn(&Frame3::WORLD, 1.0, 0.0, 2),
-            Vector3::new(-1.0, 0.0, 0.0),
+            circle_dn(&Frame3D::WORLD, 1.0, 0.0, 2),
+            Vector3D::new(-1.0, 0.0, 0.0),
         );
     }
 
@@ -362,8 +362,8 @@ mod tests {
     #[test]
     fn test_circle_parameter_round_trip_world() {
         for u in [0.3, 2.0, 5.5] {
-            let p = circle_d0(&Frame3::WORLD, 2.5, u);
-            let recovered = circle_parameter(&Frame3::WORLD, p);
+            let p = circle_d0(&Frame3D::WORLD, 2.5, u);
+            let recovered = circle_parameter(&Frame3D::WORLD, p);
             assert!((recovered - u).abs() < 1e-9);
         }
     }
@@ -393,16 +393,16 @@ mod tests {
     #[test]
     fn test_ellipse_d0_quarter_turn() {
         assert_point3_close(
-            ellipse_d0(&Frame3::WORLD, 2.0, 1.0, PI / 2.0),
-            Point3::new(0.0, 1.0, 0.0),
+            ellipse_d0(&Frame3D::WORLD, 2.0, 1.0, PI / 2.0),
+            Point3D::new(0.0, 1.0, 0.0),
         );
     }
 
     #[test]
     fn test_ellipse_dn_order1_at_zero() {
         assert_vector3_close(
-            ellipse_dn(&Frame3::WORLD, 2.0, 1.0, 0.0, 1),
-            Vector3::new(0.0, 1.0, 0.0),
+            ellipse_dn(&Frame3D::WORLD, 2.0, 1.0, 0.0, 1),
+            Vector3D::new(0.0, 1.0, 0.0),
         );
     }
 
@@ -419,8 +419,8 @@ mod tests {
     #[test]
     fn test_ellipse_parameter_round_trip_world() {
         for u in [0.3, 2.0, 5.5] {
-            let p = ellipse_d0(&Frame3::WORLD, 2.0, 1.0, u);
-            let recovered = ellipse_parameter(&Frame3::WORLD, 2.0, 1.0, p);
+            let p = ellipse_d0(&Frame3D::WORLD, 2.0, 1.0, u);
+            let recovered = ellipse_parameter(&Frame3D::WORLD, 2.0, 1.0, p);
             assert!((recovered - u).abs() < 1e-9);
         }
     }
@@ -440,28 +440,31 @@ mod tests {
     #[test]
     fn test_parabola_d0_focal_one() {
         assert_point3_close(
-            parabola_d0(&Frame3::WORLD, 1.0, 2.0),
-            Point3::new(1.0, 2.0, 0.0),
+            parabola_d0(&Frame3D::WORLD, 1.0, 2.0),
+            Point3D::new(1.0, 2.0, 0.0),
         );
     }
 
     #[test]
     fn test_parabola_dn_order3_is_zero() {
-        assert_vector3_close(parabola_dn(&Frame3::WORLD, 1.0, 2.0, 3), Vector3::ZERO);
+        assert_vector3_close(parabola_dn(&Frame3D::WORLD, 1.0, 2.0, 3), Vector3D::ZERO);
     }
 
     #[test]
     fn test_parabola_dn_order_above_two_is_zero() {
         for order in [3u32, 4, 10] {
-            assert_vector3_close(parabola_dn(&Frame3::WORLD, 1.0, 2.0, order), Vector3::ZERO);
+            assert_vector3_close(
+                parabola_dn(&Frame3D::WORLD, 1.0, 2.0, order),
+                Vector3D::ZERO,
+            );
         }
     }
 
     #[test]
     fn test_parabola_parameter_round_trip_world() {
         for u in [0.3, 2.0, -5.5] {
-            let p = parabola_d0(&Frame3::WORLD, 1.5, u);
-            let recovered = parabola_parameter(&Frame3::WORLD, p);
+            let p = parabola_d0(&Frame3D::WORLD, 1.5, u);
+            let recovered = parabola_parameter(&Frame3D::WORLD, p);
             assert!((recovered - u).abs() < 1e-9);
         }
     }
@@ -481,25 +484,25 @@ mod tests {
     #[test]
     fn test_hyperbola_d0_at_zero() {
         assert_point3_close(
-            hyperbola_d0(&Frame3::WORLD, 2.0, 1.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
+            hyperbola_d0(&Frame3D::WORLD, 2.0, 1.0, 0.0),
+            Point3D::new(2.0, 0.0, 0.0),
         );
     }
 
     #[test]
     fn test_hyperbola_dn_odd_order_pattern() {
-        let frame = Frame3::WORLD;
+        let frame = Frame3D::WORLD;
         let u: f64 = 0.8;
-        let expected = 2.0 * u.sinh() * Vector3::X + 1.0 * u.cosh() * Vector3::Y;
+        let expected = 2.0 * u.sinh() * Vector3D::X + 1.0 * u.cosh() * Vector3D::Y;
         assert_vector3_close(hyperbola_dn(&frame, 2.0, 1.0, u, 1), expected);
         assert_vector3_close(hyperbola_dn(&frame, 2.0, 1.0, u, 3), expected);
     }
 
     #[test]
     fn test_hyperbola_dn_even_order_pattern() {
-        let frame = Frame3::WORLD;
+        let frame = Frame3D::WORLD;
         let u: f64 = 0.8;
-        let expected = 2.0 * u.cosh() * Vector3::X + 1.0 * u.sinh() * Vector3::Y;
+        let expected = 2.0 * u.cosh() * Vector3D::X + 1.0 * u.sinh() * Vector3D::Y;
         assert_vector3_close(hyperbola_dn(&frame, 2.0, 1.0, u, 2), expected);
         assert_vector3_close(hyperbola_dn(&frame, 2.0, 1.0, u, 4), expected);
     }
@@ -507,8 +510,8 @@ mod tests {
     #[test]
     fn test_hyperbola_parameter_round_trip_world() {
         for u in [0.3, 2.0, -1.5] {
-            let p = hyperbola_d0(&Frame3::WORLD, 2.0, 1.0, u);
-            let recovered = hyperbola_parameter(&Frame3::WORLD, 1.0, p);
+            let p = hyperbola_d0(&Frame3D::WORLD, 2.0, 1.0, u);
+            let recovered = hyperbola_parameter(&Frame3D::WORLD, 1.0, p);
             assert!((recovered - u).abs() < 1e-9);
         }
     }
@@ -552,7 +555,7 @@ mod tests {
 
     #[test]
     fn test_line2d_d0_world() {
-        let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
+        let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
         let p = line2d_d0(&axis, 3.0);
         assert!((p.x - 3.0).abs() < 1e-9);
         assert!((p.y - 0.0).abs() < 1e-9);
@@ -560,7 +563,7 @@ mod tests {
 
     #[test]
     fn test_line2d_parameter_round_trip_world() {
-        let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
+        let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
         for u in [0.3, 2.0, -5.5] {
             let p = line2d_d0(&axis, u);
             assert!((line2d_parameter(&axis, p) - u).abs() < 1e-9);
@@ -569,9 +572,9 @@ mod tests {
 
     #[test]
     fn test_line2d_parameter_round_trip_skewed() {
-        let axis = Axis2::new(
-            Point2::new(1.0, -2.0),
-            Vector2::new(3.0, 4.0).normalized().unwrap(),
+        let axis = Axis2D::new(
+            Point2D::new(1.0, -2.0),
+            Vector2D::new(3.0, 4.0).normalized().unwrap(),
         )
         .unwrap();
         for u in [0.3, 2.0, 5.5] {
@@ -582,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_circle2d_d0_world_quarter_turn() {
-        let p = circle2d_d0(&Frame2::WORLD, 1.0, PI / 2.0);
+        let p = circle2d_d0(&Frame2D::WORLD, 1.0, PI / 2.0);
         assert!((p.x - 0.0).abs() < 1e-9);
         assert!((p.y - 1.0).abs() < 1e-9);
     }
@@ -601,8 +604,8 @@ mod tests {
     #[test]
     fn test_circle2d_parameter_round_trip_world() {
         for u in [0.3, 2.0, 5.5] {
-            let p = circle2d_d0(&Frame2::WORLD, 2.5, u);
-            let recovered = circle2d_parameter(&Frame2::WORLD, p);
+            let p = circle2d_d0(&Frame2D::WORLD, 2.5, u);
+            let recovered = circle2d_parameter(&Frame2D::WORLD, p);
             assert!((recovered - u).abs() < 1e-9);
         }
     }
@@ -620,8 +623,8 @@ mod tests {
     #[test]
     fn test_circle2d_parameter_round_trip_indirect_frame() {
         // Left-handed (indirect) frame: y_dir is the clockwise perpendicular.
-        let x_dir = Vector2::new(1.0, 0.0);
-        let frame = Frame2::new(Point2::new(0.5, -1.0), x_dir, -x_dir.perp()).unwrap();
+        let x_dir = Vector2D::new(1.0, 0.0);
+        let frame = Frame2D::new(Point2D::new(0.5, -1.0), x_dir, -x_dir.perp()).unwrap();
         assert!(!frame.is_direct());
         for u in [0.3, 2.0, 5.5] {
             let p = circle2d_d0(&frame, 1.7, u);

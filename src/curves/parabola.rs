@@ -4,7 +4,7 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::surfaces::Surface;
-use crate::{Frame3, Point3, Vector3};
+use crate::{Frame3D, Point3D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Parabola3D`] cannot be constructed from the given
@@ -30,7 +30,7 @@ impl fmt::Display for ParabolaConstructionError {
 
 impl std::error::Error for ParabolaConstructionError {}
 
-/// A parabola in 3D: a plane [`Frame3`] (origin at the apex, plus local x/y
+/// A parabola in 3D: a plane [`Frame3D`] (origin at the apex, plus local x/y
 /// directions defining the plane and the axis of symmetry) and a focal
 /// distance, evaluated as
 /// `apex + (u^2 / (4*focal))*x_dir + u*y_dir`.
@@ -38,13 +38,13 @@ impl std::error::Error for ParabolaConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Parabola3D, Point3, Vector3};
-/// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
-/// assert_eq!(parabola.eval_point(2.0), Point3::new(1.0, 2.0, 0.0));
+/// use geomcore::{Parabola3D, Point3D, Vector3D};
+/// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+/// assert_eq!(parabola.eval_point(2.0), Point3D::new(1.0, 2.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Parabola3D {
-    frame: Frame3,
+    frame: Frame3D,
     focal: f64,
 }
 
@@ -53,7 +53,7 @@ impl Parabola3D {
     /// focal distance.
     ///
     /// The plane frame is derived from `normal` and `x_direction` via
-    /// [`Frame3::new`].
+    /// [`Frame3D::new`].
     ///
     /// # Errors
     ///
@@ -65,17 +65,17 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Point3, Vector3};
-    /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+    /// use geomcore::{Parabola3D, Point3D, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
     /// assert_eq!(parabola.focal(), 1.0);
     /// ```
     pub fn new(
-        apex: Point3,
-        normal: Vector3,
-        x_direction: Vector3,
+        apex: Point3D,
+        normal: Vector3D,
+        x_direction: Vector3D,
         focal: f64,
     ) -> Result<Parabola3D, ParabolaConstructionError> {
-        let frame = Frame3::new(apex, normal, x_direction)
+        let frame = Frame3D::new(apex, normal, x_direction)
             .map_err(|_| ParabolaConstructionError::NullNormal)?;
         Parabola3D::from_frame(frame, focal)
     }
@@ -89,11 +89,11 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Frame3};
-    /// let parabola = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
-    /// assert_eq!(parabola.frame(), Frame3::WORLD);
+    /// use geomcore::{Parabola3D, Frame3D};
+    /// let parabola = Parabola3D::from_frame(Frame3D::WORLD, 1.7).unwrap();
+    /// assert_eq!(parabola.frame(), Frame3D::WORLD);
     /// ```
-    pub fn from_frame(frame: Frame3, focal: f64) -> Result<Parabola3D, ParabolaConstructionError> {
+    pub fn from_frame(frame: Frame3D, focal: f64) -> Result<Parabola3D, ParabolaConstructionError> {
         if focal < 0.0 {
             return Err(ParabolaConstructionError::NegativeFocal);
         }
@@ -105,11 +105,11 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Point3, Vector3};
-    /// let parabola = Parabola3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, Vector3::X, 1.0).unwrap();
-    /// assert_eq!(parabola.apex(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Parabola3D, Point3D, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// assert_eq!(parabola.apex(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn apex(&self) -> Point3 {
+    pub fn apex(&self) -> Point3D {
         self.frame.origin()
     }
 
@@ -118,11 +118,11 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Frame3};
-    /// let parabola = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
-    /// assert_eq!(parabola.frame(), Frame3::WORLD);
+    /// use geomcore::{Parabola3D, Frame3D};
+    /// let parabola = Parabola3D::from_frame(Frame3D::WORLD, 1.7).unwrap();
+    /// assert_eq!(parabola.frame(), Frame3D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame3 {
+    pub fn frame(&self) -> Frame3D {
         self.frame
     }
 
@@ -131,8 +131,8 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Frame3};
-    /// let parabola = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
+    /// use geomcore::{Parabola3D, Frame3D};
+    /// let parabola = Parabola3D::from_frame(Frame3D::WORLD, 1.7).unwrap();
     /// assert_eq!(parabola.focal(), 1.7);
     /// ```
     pub fn focal(&self) -> f64 {
@@ -148,11 +148,11 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Point3, Vector3};
-    /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
-    /// assert_eq!(parabola.eval_point(2.0), Point3::new(1.0, 2.0, 0.0));
+    /// use geomcore::{Parabola3D, Point3D, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// assert_eq!(parabola.eval_point(2.0), Point3D::new(1.0, 2.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64) -> Point3D {
         analytic::parabola_d0(&self.frame, self.focal, u)
     }
 
@@ -161,12 +161,12 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Point3, Vector3};
-    /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+    /// use geomcore::{Parabola3D, Point3D, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
     /// let points = parabola.eval_points(&[0.0, 2.0]);
-    /// assert_eq!(points[0], Point3::ORIGIN);
+    /// assert_eq!(points[0], Point3D::ORIGIN);
     /// ```
-    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -188,11 +188,11 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Point3, Vector3};
-    /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
-    /// assert_eq!(parabola.eval_derivative(0.0, 1), Vector3::Y);
+    /// use geomcore::{Parabola3D, Point3D, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// assert_eq!(parabola.eval_derivative(0.0, 1), Vector3D::Y);
     /// ```
-    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
             _ => analytic::parabola_dn(&self.frame, self.focal, u, order),
@@ -205,11 +205,11 @@ impl Parabola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Parabola3D, Point3, Vector3};
-    /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
-    /// assert_eq!(parabola.parameter_of(Point3::new(1.0, 2.0, 0.0)), 2.0);
+    /// use geomcore::{Parabola3D, Point3D, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// assert_eq!(parabola.parameter_of(Point3D::new(1.0, 2.0, 0.0)), 2.0);
     /// ```
-    pub fn parameter_of(&self, point: Point3) -> f64 {
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
         analytic::parabola_parameter(&self.frame, point)
     }
 
@@ -226,10 +226,10 @@ impl Parabola3D {
     ///
     /// ```
     /// use geomcore::curves::ParametrizeError;
-    /// use geomcore::{Parabola3D, Plane, Point3, Vector3};
+    /// use geomcore::{Parabola3D, Plane, Point3D, Vector3D};
     ///
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// let parabola = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
     /// assert_eq!(parabola.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
     /// ```
     pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
@@ -240,35 +240,35 @@ impl Parabola3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Frame3, Parabola3D, ParabolaConstructionError, Point3, Vector3};
+    use crate::{Frame3D, Parabola3D, ParabolaConstructionError, Point3D, Vector3D};
 
     // ---- construction ----
 
     #[test]
     fn test_parabola3d_new_ok() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.7).unwrap();
-        assert_eq!(p.apex(), Point3::ORIGIN);
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.7).unwrap();
+        assert_eq!(p.apex(), Point3D::ORIGIN);
         assert_eq!(p.focal(), 1.7);
     }
 
     #[test]
     fn test_parabola3d_new_negative_focal_errors() {
         assert_eq!(
-            Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, -1.0),
+            Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, -1.0),
             Err(ParabolaConstructionError::NegativeFocal)
         );
     }
 
     #[test]
     fn test_parabola3d_new_zero_focal_allowed() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 0.0).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 0.0).unwrap();
         assert_eq!(p.focal(), 0.0);
     }
 
     #[test]
     fn test_parabola3d_new_null_normal_errors() {
         assert_eq!(
-            Parabola3D::new(Point3::ORIGIN, Vector3::ZERO, Vector3::X, 1.0),
+            Parabola3D::new(Point3D::ORIGIN, Vector3D::ZERO, Vector3D::X, 1.0),
             Err(ParabolaConstructionError::NullNormal)
         );
     }
@@ -276,22 +276,22 @@ mod tests {
     #[test]
     fn test_parabola3d_new_parallel_x_direction_errors() {
         assert_eq!(
-            Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::Z, 1.0),
+            Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Z, 1.0),
             Err(ParabolaConstructionError::NullNormal)
         );
     }
 
     #[test]
     fn test_parabola3d_from_frame_ok() {
-        let p = Parabola3D::from_frame(Frame3::WORLD, 1.7).unwrap();
-        assert_eq!(p.frame(), Frame3::WORLD);
+        let p = Parabola3D::from_frame(Frame3D::WORLD, 1.7).unwrap();
+        assert_eq!(p.frame(), Frame3D::WORLD);
         assert_eq!(p.focal(), 1.7);
     }
 
     #[test]
     fn test_parabola3d_from_frame_negative_focal_errors() {
         assert_eq!(
-            Parabola3D::from_frame(Frame3::WORLD, -0.1),
+            Parabola3D::from_frame(Frame3D::WORLD, -0.1),
             Err(ParabolaConstructionError::NegativeFocal)
         );
     }
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_parabola3d_eval_point_zero() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
         let pt = p.eval_point(0.0);
         assert!(pt.x.abs() < 1e-9);
         assert!(pt.y.abs() < 1e-9);
@@ -309,15 +309,15 @@ mod tests {
 
     #[test]
     fn test_parabola3d_eval_points_matches_loop() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.7).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.7).unwrap();
         let us = [0.0, 0.5, 1.5];
-        let expected: Vec<Point3> = us.iter().map(|&u| p.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| p.eval_point(u)).collect();
         assert_eq!(p.eval_points(&us), expected);
     }
 
     #[test]
     fn test_parabola3d_eval_derivative_order1() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
         let d1 = p.eval_derivative(0.0, 1);
         assert!(d1.x.abs() < 1e-9);
         assert!((d1.y - 1.0).abs() < 1e-9);
@@ -325,21 +325,21 @@ mod tests {
 
     #[test]
     fn test_parabola3d_eval_derivative_order3_is_zero() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
         let d3 = p.eval_derivative(0.5, 3);
-        assert_eq!(d3, Vector3::ZERO);
+        assert_eq!(d3, Vector3D::ZERO);
     }
 
     #[test]
     #[should_panic]
     fn test_parabola3d_eval_derivative_order0_panics() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.0).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
         p.eval_derivative(0.0, 0);
     }
 
     #[test]
     fn test_parabola3d_parameter_of_round_trip() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.7).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.7).unwrap();
         for u in [0.3, 2.0, -5.5] {
             let pt = p.eval_point(u);
             assert!((p.parameter_of(pt) - u).abs() < 1e-9);
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_parabola3d_parameter_of_is_unbounded() {
-        let p = Parabola3D::new(Point3::ORIGIN, Vector3::Z, Vector3::X, 1.7).unwrap();
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.7).unwrap();
         let pt = p.eval_point(100.0);
         assert!((p.parameter_of(pt) - 100.0).abs() < 1e-6);
     }

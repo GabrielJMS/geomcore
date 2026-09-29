@@ -2,7 +2,7 @@
 //! surfaces are positioned in.
 
 use crate::tol;
-use crate::{Point2, Point3, Vector2, Vector3};
+use crate::{Point2D, Point3D, Vector2D, Vector3D};
 use std::fmt;
 
 /// Error returned when an axis or frame cannot be constructed from the
@@ -35,17 +35,17 @@ impl std::error::Error for FrameConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Axis3, Point3, Vector3};
-/// let axis = Axis3::new(Point3::ORIGIN, Vector3::new(0.0, 0.0, 2.0)).unwrap();
-/// assert_eq!(axis.direction(), Vector3::Z);
+/// use geomcore::{Axis3D, Point3D, Vector3D};
+/// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::new(0.0, 0.0, 2.0)).unwrap();
+/// assert_eq!(axis.direction(), Vector3D::Z);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Axis3 {
-    origin: Point3,
-    direction: Vector3,
+pub struct Axis3D {
+    origin: Point3D,
+    direction: Vector3D,
 }
 
-impl Axis3 {
+impl Axis3D {
     /// Creates a new axis from an origin and a direction.
     ///
     /// The direction is normalized. Returns
@@ -55,16 +55,16 @@ impl Axis3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Point3, Vector3};
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
-    /// assert_eq!(axis.origin(), Point3::ORIGIN);
-    /// assert_eq!(axis.direction(), Vector3::X);
+    /// use geomcore::{Axis3D, Point3D, Vector3D};
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(axis.origin(), Point3D::ORIGIN);
+    /// assert_eq!(axis.direction(), Vector3D::X);
     /// ```
-    pub fn new(origin: Point3, direction: Vector3) -> Result<Axis3, FrameConstructionError> {
+    pub fn new(origin: Point3D, direction: Vector3D) -> Result<Axis3D, FrameConstructionError> {
         let direction = direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
-        Ok(Axis3 { origin, direction })
+        Ok(Axis3D { origin, direction })
     }
 
     /// Returns the origin point of the axis.
@@ -72,11 +72,11 @@ impl Axis3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Point3, Vector3};
-    /// let axis = Axis3::new(Point3::new(1.0, 2.0, 3.0), Vector3::X).unwrap();
-    /// assert_eq!(axis.origin(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Axis3D, Point3D, Vector3D};
+    /// let axis = Axis3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::X).unwrap();
+    /// assert_eq!(axis.origin(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn origin(self) -> Point3 {
+    pub fn origin(self) -> Point3D {
         self.origin
     }
 
@@ -85,11 +85,11 @@ impl Axis3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Point3, Vector3};
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::new(0.0, 5.0, 0.0)).unwrap();
-    /// assert_eq!(axis.direction(), Vector3::Y);
+    /// use geomcore::{Axis3D, Point3D, Vector3D};
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::new(0.0, 5.0, 0.0)).unwrap();
+    /// assert_eq!(axis.direction(), Vector3D::Y);
     /// ```
-    pub fn direction(self) -> Vector3 {
+    pub fn direction(self) -> Vector3D {
         self.direction
     }
 }
@@ -100,34 +100,34 @@ impl Axis3 {
 /// # Examples
 ///
 /// ```
-/// use geomcore::Frame3;
-/// let f = Frame3::WORLD;
-/// assert_eq!(f.z_direction(), geomcore::Vector3::Z);
+/// use geomcore::Frame3D;
+/// let f = Frame3D::WORLD;
+/// assert_eq!(f.z_direction(), geomcore::Vector3D::Z);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Frame3 {
-    origin: Point3,
-    x_dir: Vector3,
-    y_dir: Vector3,
-    z_dir: Vector3,
+pub struct Frame3D {
+    origin: Point3D,
+    x_dir: Vector3D,
+    y_dir: Vector3D,
+    z_dir: Vector3D,
 }
 
-impl Frame3 {
-    /// The world frame: origin at [`Point3::ORIGIN`], axes aligned with
-    /// [`Vector3::X`], [`Vector3::Y`], [`Vector3::Z`].
+impl Frame3D {
+    /// The world frame: origin at [`Point3D::ORIGIN`], axes aligned with
+    /// [`Vector3D::X`], [`Vector3D::Y`], [`Vector3D::Z`].
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3, Vector3};
-    /// assert_eq!(Frame3::WORLD.origin(), Point3::ORIGIN);
-    /// assert_eq!(Frame3::WORLD.x_direction(), Vector3::X);
+    /// use geomcore::{Frame3D, Point3D, Vector3D};
+    /// assert_eq!(Frame3D::WORLD.origin(), Point3D::ORIGIN);
+    /// assert_eq!(Frame3D::WORLD.x_direction(), Vector3D::X);
     /// ```
-    pub const WORLD: Frame3 = Frame3 {
-        origin: Point3::ORIGIN,
-        x_dir: Vector3::X,
-        y_dir: Vector3::Y,
-        z_dir: Vector3::Z,
+    pub const WORLD: Frame3D = Frame3D {
+        origin: Point3D::ORIGIN,
+        x_dir: Vector3D::X,
+        y_dir: Vector3D::Y,
+        z_dir: Vector3D::Z,
     };
 
     /// Creates a frame from an origin, a main (z) direction, and a hint
@@ -150,17 +150,17 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3, Vector3};
-    /// let f = Frame3::new(Point3::ORIGIN, Vector3::Z, Vector3::X).unwrap();
-    /// assert_eq!(f.x_direction(), Vector3::X);
-    /// assert_eq!(f.y_direction(), Vector3::Y);
-    /// assert_eq!(f.z_direction(), Vector3::Z);
+    /// use geomcore::{Frame3D, Point3D, Vector3D};
+    /// let f = Frame3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X).unwrap();
+    /// assert_eq!(f.x_direction(), Vector3D::X);
+    /// assert_eq!(f.y_direction(), Vector3D::Y);
+    /// assert_eq!(f.z_direction(), Vector3D::Z);
     /// ```
     pub fn new(
-        origin: Point3,
-        z_direction: Vector3,
-        x_hint: Vector3,
-    ) -> Result<Frame3, FrameConstructionError> {
+        origin: Point3D,
+        z_direction: Vector3D,
+        x_hint: Vector3D,
+    ) -> Result<Frame3D, FrameConstructionError> {
         let z_dir = z_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -173,7 +173,7 @@ impl Frame3 {
             .normalized()
             .ok_or(FrameConstructionError::ParallelDirections)?;
         let y_dir = z_dir.cross(x_dir);
-        Ok(Frame3 {
+        Ok(Frame3D {
             origin,
             x_dir,
             y_dir,
@@ -186,9 +186,9 @@ impl Frame3 {
     ///
     /// The hint used is the world axis (X, Y, or Z) whose component along
     /// `z_direction` has the smallest absolute value (ties broken in favor
-    /// of X, then Y), which keeps the projection in [`Frame3::new`]
+    /// of X, then Y), which keeps the projection in [`Frame3D::new`]
     /// numerically well-conditioned. Construction then delegates to
-    /// [`Frame3::new`].
+    /// [`Frame3D::new`].
     ///
     /// # Errors
     ///
@@ -198,16 +198,19 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3, Vector3};
-    /// let f = Frame3::from_z(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// use geomcore::{Frame3D, Point3D, Vector3D};
+    /// let f = Frame3D::from_z(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// assert!((f.x_direction().dot(f.y_direction())).abs() < 1e-10);
     /// assert!((f.x_direction().cross(f.y_direction()) - f.z_direction()).magnitude() < 1e-10);
     /// ```
-    pub fn from_z(origin: Point3, z_direction: Vector3) -> Result<Frame3, FrameConstructionError> {
+    pub fn from_z(
+        origin: Point3D,
+        z_direction: Vector3D,
+    ) -> Result<Frame3D, FrameConstructionError> {
         let z_dir = z_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
-        let candidates = [Vector3::X, Vector3::Y, Vector3::Z];
+        let candidates = [Vector3D::X, Vector3D::Y, Vector3D::Z];
         let hint = candidates
             .into_iter()
             .min_by(|a, b| {
@@ -218,7 +221,7 @@ impl Frame3 {
                     .unwrap()
             })
             .unwrap();
-        Frame3::new(origin, z_dir, hint)
+        Frame3D::new(origin, z_dir, hint)
     }
 
     /// Returns the origin point of the frame.
@@ -226,10 +229,10 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3};
-    /// assert_eq!(Frame3::WORLD.origin(), Point3::ORIGIN);
+    /// use geomcore::{Frame3D, Point3D};
+    /// assert_eq!(Frame3D::WORLD.origin(), Point3D::ORIGIN);
     /// ```
-    pub fn origin(self) -> Point3 {
+    pub fn origin(self) -> Point3D {
         self.origin
     }
 
@@ -238,10 +241,10 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Vector3};
-    /// assert_eq!(Frame3::WORLD.x_direction(), Vector3::X);
+    /// use geomcore::{Frame3D, Vector3D};
+    /// assert_eq!(Frame3D::WORLD.x_direction(), Vector3D::X);
     /// ```
-    pub fn x_direction(self) -> Vector3 {
+    pub fn x_direction(self) -> Vector3D {
         self.x_dir
     }
 
@@ -250,10 +253,10 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Vector3};
-    /// assert_eq!(Frame3::WORLD.y_direction(), Vector3::Y);
+    /// use geomcore::{Frame3D, Vector3D};
+    /// assert_eq!(Frame3D::WORLD.y_direction(), Vector3D::Y);
     /// ```
-    pub fn y_direction(self) -> Vector3 {
+    pub fn y_direction(self) -> Vector3D {
         self.y_dir
     }
 
@@ -262,10 +265,10 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Vector3};
-    /// assert_eq!(Frame3::WORLD.z_direction(), Vector3::Z);
+    /// use geomcore::{Frame3D, Vector3D};
+    /// assert_eq!(Frame3D::WORLD.z_direction(), Vector3D::Z);
     /// ```
-    pub fn z_direction(self) -> Vector3 {
+    pub fn z_direction(self) -> Vector3D {
         self.z_dir
     }
 
@@ -274,13 +277,13 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3, Vector3};
-    /// let axis = Frame3::WORLD.axis();
-    /// assert_eq!(axis.origin(), Point3::ORIGIN);
-    /// assert_eq!(axis.direction(), Vector3::Z);
+    /// use geomcore::{Frame3D, Point3D, Vector3D};
+    /// let axis = Frame3D::WORLD.axis();
+    /// assert_eq!(axis.origin(), Point3D::ORIGIN);
+    /// assert_eq!(axis.direction(), Vector3D::Z);
     /// ```
-    pub fn axis(self) -> Axis3 {
-        Axis3 {
+    pub fn axis(self) -> Axis3D {
+        Axis3D {
             origin: self.origin,
             direction: self.z_dir,
         }
@@ -292,11 +295,11 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3};
-    /// let (u, v, w) = Frame3::WORLD.local_coordinates(Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Frame3D, Point3D};
+    /// let (u, v, w) = Frame3D::WORLD.local_coordinates(Point3D::new(1.0, 2.0, 3.0));
     /// assert_eq!((u, v, w), (1.0, 2.0, 3.0));
     /// ```
-    pub fn local_coordinates(self, p: Point3) -> (f64, f64, f64) {
+    pub fn local_coordinates(self, p: Point3D) -> (f64, f64, f64) {
         let d = p - self.origin;
         (d.dot(self.x_dir), d.dot(self.y_dir), d.dot(self.z_dir))
     }
@@ -306,11 +309,11 @@ impl Frame3 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Point3};
-    /// let p = Frame3::WORLD.point_at(1.0, 2.0, 3.0);
-    /// assert_eq!(p, Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Frame3D, Point3D};
+    /// let p = Frame3D::WORLD.point_at(1.0, 2.0, 3.0);
+    /// assert_eq!(p, Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn point_at(self, u: f64, v: f64, w: f64) -> Point3 {
+    pub fn point_at(self, u: f64, v: f64, w: f64) -> Point3D {
         self.origin + u * self.x_dir + v * self.y_dir + w * self.z_dir
     }
 }
@@ -320,17 +323,17 @@ impl Frame3 {
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Axis2, Point2, Vector2};
-/// let axis = Axis2::new(Point2::ORIGIN, Vector2::new(0.0, 3.0)).unwrap();
-/// assert_eq!(axis.direction(), Vector2::Y);
+/// use geomcore::{Axis2D, Point2D, Vector2D};
+/// let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 3.0)).unwrap();
+/// assert_eq!(axis.direction(), Vector2D::Y);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Axis2 {
-    origin: Point2,
-    direction: Vector2,
+pub struct Axis2D {
+    origin: Point2D,
+    direction: Vector2D,
 }
 
-impl Axis2 {
+impl Axis2D {
     /// Creates a new axis from an origin and a direction.
     ///
     /// The direction is normalized. Returns
@@ -340,16 +343,16 @@ impl Axis2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis2, Point2, Vector2};
-    /// let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
-    /// assert_eq!(axis.origin(), Point2::ORIGIN);
-    /// assert_eq!(axis.direction(), Vector2::X);
+    /// use geomcore::{Axis2D, Point2D, Vector2D};
+    /// let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// assert_eq!(axis.origin(), Point2D::ORIGIN);
+    /// assert_eq!(axis.direction(), Vector2D::X);
     /// ```
-    pub fn new(origin: Point2, direction: Vector2) -> Result<Axis2, FrameConstructionError> {
+    pub fn new(origin: Point2D, direction: Vector2D) -> Result<Axis2D, FrameConstructionError> {
         let direction = direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
-        Ok(Axis2 { origin, direction })
+        Ok(Axis2D { origin, direction })
     }
 
     /// Returns the origin point of the axis.
@@ -357,11 +360,11 @@ impl Axis2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis2, Point2, Vector2};
-    /// let axis = Axis2::new(Point2::new(1.0, 2.0), Vector2::X).unwrap();
-    /// assert_eq!(axis.origin(), Point2::new(1.0, 2.0));
+    /// use geomcore::{Axis2D, Point2D, Vector2D};
+    /// let axis = Axis2D::new(Point2D::new(1.0, 2.0), Vector2D::X).unwrap();
+    /// assert_eq!(axis.origin(), Point2D::new(1.0, 2.0));
     /// ```
-    pub fn origin(self) -> Point2 {
+    pub fn origin(self) -> Point2D {
         self.origin
     }
 
@@ -370,48 +373,48 @@ impl Axis2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis2, Point2, Vector2};
-    /// let axis = Axis2::new(Point2::ORIGIN, Vector2::new(5.0, 0.0)).unwrap();
-    /// assert_eq!(axis.direction(), Vector2::X);
+    /// use geomcore::{Axis2D, Point2D, Vector2D};
+    /// let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::new(5.0, 0.0)).unwrap();
+    /// assert_eq!(axis.direction(), Vector2D::X);
     /// ```
-    pub fn direction(self) -> Vector2 {
+    pub fn direction(self) -> Vector2D {
         self.direction
     }
 }
 
 /// A 2D coordinate frame: an origin and two orthogonal unit directions
 /// (x, y). The pair may be either direct (counterclockwise, `x × y > 0`) or
-/// indirect (clockwise); see [`Frame2::is_direct`].
+/// indirect (clockwise); see [`Frame2D::is_direct`].
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::Frame2;
-/// let f = Frame2::WORLD;
+/// use geomcore::Frame2D;
+/// let f = Frame2D::WORLD;
 /// assert!(f.is_direct());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Frame2 {
-    origin: Point2,
-    x_dir: Vector2,
-    y_dir: Vector2,
+pub struct Frame2D {
+    origin: Point2D,
+    x_dir: Vector2D,
+    y_dir: Vector2D,
 }
 
-impl Frame2 {
-    /// The world frame: origin at [`Point2::ORIGIN`], axes aligned with
-    /// [`Vector2::X`], [`Vector2::Y`].
+impl Frame2D {
+    /// The world frame: origin at [`Point2D::ORIGIN`], axes aligned with
+    /// [`Vector2D::X`], [`Vector2D::Y`].
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame2, Point2, Vector2};
-    /// assert_eq!(Frame2::WORLD.origin(), Point2::ORIGIN);
-    /// assert_eq!(Frame2::WORLD.x_direction(), Vector2::X);
+    /// use geomcore::{Frame2D, Point2D, Vector2D};
+    /// assert_eq!(Frame2D::WORLD.origin(), Point2D::ORIGIN);
+    /// assert_eq!(Frame2D::WORLD.x_direction(), Vector2D::X);
     /// ```
-    pub const WORLD: Frame2 = Frame2 {
-        origin: Point2::ORIGIN,
-        x_dir: Vector2::X,
-        y_dir: Vector2::Y,
+    pub const WORLD: Frame2D = Frame2D {
+        origin: Point2D::ORIGIN,
+        x_dir: Vector2D::X,
+        y_dir: Vector2D::Y,
     };
 
     /// Creates a frame from an origin and two directions.
@@ -429,16 +432,16 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame2, Point2, Vector2};
-    /// let f = Frame2::new(Point2::ORIGIN, Vector2::X, Vector2::Y).unwrap();
-    /// assert_eq!(f.x_direction(), Vector2::X);
-    /// assert_eq!(f.y_direction(), Vector2::Y);
+    /// use geomcore::{Frame2D, Point2D, Vector2D};
+    /// let f = Frame2D::new(Point2D::ORIGIN, Vector2D::X, Vector2D::Y).unwrap();
+    /// assert_eq!(f.x_direction(), Vector2D::X);
+    /// assert_eq!(f.y_direction(), Vector2D::Y);
     /// ```
     pub fn new(
-        origin: Point2,
-        x_direction: Vector2,
-        y_direction: Vector2,
-    ) -> Result<Frame2, FrameConstructionError> {
+        origin: Point2D,
+        x_direction: Vector2D,
+        y_direction: Vector2D,
+    ) -> Result<Frame2D, FrameConstructionError> {
         let x_dir = x_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -448,7 +451,7 @@ impl Frame2 {
         if x_dir.dot(y_dir).abs() > tol::P_CONFUSION {
             return Err(FrameConstructionError::NotOrthogonal);
         }
-        Ok(Frame2 {
+        Ok(Frame2D {
             origin,
             x_dir,
             y_dir,
@@ -466,16 +469,19 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame2, Point2, Vector2};
-    /// let f = Frame2::from_x(Point2::ORIGIN, Vector2::new(0.6, 0.8)).unwrap();
-    /// assert_eq!(f.y_direction(), Vector2::new(-0.8, 0.6));
+    /// use geomcore::{Frame2D, Point2D, Vector2D};
+    /// let f = Frame2D::from_x(Point2D::ORIGIN, Vector2D::new(0.6, 0.8)).unwrap();
+    /// assert_eq!(f.y_direction(), Vector2D::new(-0.8, 0.6));
     /// assert!(f.is_direct());
     /// ```
-    pub fn from_x(origin: Point2, x_direction: Vector2) -> Result<Frame2, FrameConstructionError> {
+    pub fn from_x(
+        origin: Point2D,
+        x_direction: Vector2D,
+    ) -> Result<Frame2D, FrameConstructionError> {
         let x_dir = x_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
-        Ok(Frame2 {
+        Ok(Frame2D {
             origin,
             x_dir,
             y_dir: x_dir.perp(),
@@ -487,10 +493,10 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame2, Point2};
-    /// assert_eq!(Frame2::WORLD.origin(), Point2::ORIGIN);
+    /// use geomcore::{Frame2D, Point2D};
+    /// assert_eq!(Frame2D::WORLD.origin(), Point2D::ORIGIN);
     /// ```
-    pub fn origin(self) -> Point2 {
+    pub fn origin(self) -> Point2D {
         self.origin
     }
 
@@ -499,10 +505,10 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame2, Vector2};
-    /// assert_eq!(Frame2::WORLD.x_direction(), Vector2::X);
+    /// use geomcore::{Frame2D, Vector2D};
+    /// assert_eq!(Frame2D::WORLD.x_direction(), Vector2D::X);
     /// ```
-    pub fn x_direction(self) -> Vector2 {
+    pub fn x_direction(self) -> Vector2D {
         self.x_dir
     }
 
@@ -511,10 +517,10 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame2, Vector2};
-    /// assert_eq!(Frame2::WORLD.y_direction(), Vector2::Y);
+    /// use geomcore::{Frame2D, Vector2D};
+    /// assert_eq!(Frame2D::WORLD.y_direction(), Vector2D::Y);
     /// ```
-    pub fn y_direction(self) -> Vector2 {
+    pub fn y_direction(self) -> Vector2D {
         self.y_dir
     }
 
@@ -523,8 +529,8 @@ impl Frame2 {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Frame2;
-    /// assert!(Frame2::WORLD.is_direct());
+    /// use geomcore::Frame2D;
+    /// assert!(Frame2D::WORLD.is_direct());
     /// ```
     pub fn is_direct(self) -> bool {
         self.x_dir.cross(self.y_dir) > 0.0
@@ -534,49 +540,50 @@ impl Frame2 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2, Axis3, Frame2, Frame3, FrameConstructionError, Point2, Point3, Vector2, Vector3,
+        Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError, Point2D, Point3D, Vector2D,
+        Vector3D,
     };
 
     #[test]
     fn test_axis3_new_unit_direction() {
-        let axis = Axis3::new(Point3::ORIGIN, Vector3::new(2.0, 0.0, 0.0)).unwrap();
-        assert_eq!(axis.origin(), Point3::ORIGIN);
-        assert_eq!(axis.direction(), Vector3::X);
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::new(2.0, 0.0, 0.0)).unwrap();
+        assert_eq!(axis.origin(), Point3D::ORIGIN);
+        assert_eq!(axis.direction(), Vector3D::X);
     }
 
     #[test]
     fn test_axis3_new_zero_direction_errors() {
         assert_eq!(
-            Axis3::new(Point3::ORIGIN, Vector3::ZERO),
+            Axis3D::new(Point3D::ORIGIN, Vector3D::ZERO),
             Err(FrameConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_frame3_world_const() {
-        let f = Frame3::WORLD;
-        assert_eq!(f.origin(), Point3::ORIGIN);
-        assert_eq!(f.x_direction(), Vector3::X);
-        assert_eq!(f.y_direction(), Vector3::Y);
-        assert_eq!(f.z_direction(), Vector3::Z);
+        let f = Frame3D::WORLD;
+        assert_eq!(f.origin(), Point3D::ORIGIN);
+        assert_eq!(f.x_direction(), Vector3D::X);
+        assert_eq!(f.y_direction(), Vector3D::Y);
+        assert_eq!(f.z_direction(), Vector3D::Z);
     }
 
     #[test]
     fn test_frame3_new_axis_aligned_hint() {
-        let f = Frame3::new(Point3::ORIGIN, Vector3::Z, Vector3::X).unwrap();
-        assert_eq!(f.x_direction(), Vector3::X);
-        assert_eq!(f.y_direction(), Vector3::Y);
-        assert_eq!(f.z_direction(), Vector3::Z);
+        let f = Frame3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X).unwrap();
+        assert_eq!(f.x_direction(), Vector3D::X);
+        assert_eq!(f.y_direction(), Vector3D::Y);
+        assert_eq!(f.z_direction(), Vector3D::Z);
     }
 
     #[test]
     fn test_frame3_new_diagonal_hint_projects_perpendicular() {
-        let f = Frame3::new(Point3::ORIGIN, Vector3::Z, Vector3::new(1.0, 1.0, 0.0)).unwrap();
-        let expected_x = Vector3::new(1.0, 1.0, 0.0).normalized().unwrap();
+        let f = Frame3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::new(1.0, 1.0, 0.0)).unwrap();
+        let expected_x = Vector3D::new(1.0, 1.0, 0.0).normalized().unwrap();
         assert!((f.x_direction().x - expected_x.x).abs() < 1e-10);
         assert!((f.x_direction().y - expected_x.y).abs() < 1e-10);
         assert!((f.x_direction().z - expected_x.z).abs() < 1e-10);
-        let expected_y = Vector3::Z.cross(f.x_direction());
+        let expected_y = Vector3D::Z.cross(f.x_direction());
         assert!((f.y_direction().x - expected_y.x).abs() < 1e-10);
         assert!((f.y_direction().y - expected_y.y).abs() < 1e-10);
         assert!((f.y_direction().z - expected_y.z).abs() < 1e-10);
@@ -585,11 +592,11 @@ mod tests {
     #[test]
     fn test_frame3_new_parallel_hint_errors() {
         assert_eq!(
-            Frame3::new(Point3::ORIGIN, Vector3::Z, Vector3::Z),
+            Frame3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Z),
             Err(FrameConstructionError::ParallelDirections)
         );
         assert_eq!(
-            Frame3::new(Point3::ORIGIN, Vector3::Z, -Vector3::Z),
+            Frame3D::new(Point3D::ORIGIN, Vector3D::Z, -Vector3D::Z),
             Err(FrameConstructionError::ParallelDirections)
         );
     }
@@ -597,7 +604,7 @@ mod tests {
     #[test]
     fn test_frame3_new_null_z_errors() {
         assert_eq!(
-            Frame3::new(Point3::ORIGIN, Vector3::ZERO, Vector3::X),
+            Frame3D::new(Point3D::ORIGIN, Vector3D::ZERO, Vector3D::X),
             Err(FrameConstructionError::NullDirection)
         );
     }
@@ -605,12 +612,12 @@ mod tests {
     #[test]
     fn test_frame3_new_null_hint_errors() {
         assert_eq!(
-            Frame3::new(Point3::ORIGIN, Vector3::Z, Vector3::ZERO),
+            Frame3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::ZERO),
             Err(FrameConstructionError::NullDirection)
         );
     }
 
-    fn assert_orthonormal_right_handed(f: Frame3) {
+    fn assert_orthonormal_right_handed(f: Frame3D) {
         let x = f.x_direction();
         let y = f.y_direction();
         let z = f.z_direction();
@@ -628,49 +635,49 @@ mod tests {
 
     #[test]
     fn test_frame3_from_z_axis_aligned() {
-        let f = Frame3::from_z(Point3::ORIGIN, Vector3::Z).unwrap();
+        let f = Frame3D::from_z(Point3D::ORIGIN, Vector3D::Z).unwrap();
         assert_orthonormal_right_handed(f);
     }
 
     #[test]
     fn test_frame3_from_z_x_axis_aligned() {
-        let f = Frame3::from_z(Point3::ORIGIN, Vector3::X).unwrap();
+        let f = Frame3D::from_z(Point3D::ORIGIN, Vector3D::X).unwrap();
         assert_orthonormal_right_handed(f);
     }
 
     #[test]
     fn test_frame3_from_z_diagonal() {
-        let z = Vector3::new(1.0, 1.0, 1.0).normalized().unwrap();
-        let f = Frame3::from_z(Point3::ORIGIN, z).unwrap();
+        let z = Vector3D::new(1.0, 1.0, 1.0).normalized().unwrap();
+        let f = Frame3D::from_z(Point3D::ORIGIN, z).unwrap();
         assert_orthonormal_right_handed(f);
     }
 
     #[test]
     fn test_frame3_from_z_null_errors() {
         assert_eq!(
-            Frame3::from_z(Point3::ORIGIN, Vector3::ZERO),
+            Frame3D::from_z(Point3D::ORIGIN, Vector3D::ZERO),
             Err(FrameConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_frame3_axis() {
-        let f = Frame3::WORLD;
+        let f = Frame3D::WORLD;
         let axis = f.axis();
-        assert_eq!(axis.origin(), Point3::ORIGIN);
-        assert_eq!(axis.direction(), Vector3::Z);
+        assert_eq!(axis.origin(), Point3D::ORIGIN);
+        assert_eq!(axis.direction(), Vector3D::Z);
     }
 
     #[test]
     fn test_frame3_local_coordinates_and_point_at_round_trip() {
-        let origin = Point3::new(1.0, 2.0, 3.0);
-        let f = Frame3::new(
+        let origin = Point3D::new(1.0, 2.0, 3.0);
+        let f = Frame3D::new(
             origin,
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 1.0, 0.0),
+            Vector3D::new(0.0, 0.0, 1.0),
+            Vector3D::new(1.0, 1.0, 0.0),
         )
         .unwrap();
-        let p = Point3::new(5.0, -4.0, 7.0);
+        let p = Point3D::new(5.0, -4.0, 7.0);
         let (u, v, w) = f.local_coordinates(p);
         let round_tripped = f.point_at(u, v, w);
         assert!((round_tripped.x - p.x).abs() < 1e-10);
@@ -680,45 +687,45 @@ mod tests {
 
     #[test]
     fn test_frame3_local_coordinates_of_origin_is_zero() {
-        let f = Frame3::new(Point3::new(1.0, 2.0, 3.0), Vector3::Z, Vector3::X).unwrap();
+        let f = Frame3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Z, Vector3D::X).unwrap();
         let (u, v, w) = f.local_coordinates(f.origin());
         assert_eq!((u, v, w), (0.0, 0.0, 0.0));
     }
 
     #[test]
     fn test_axis2_new_unit_direction() {
-        let axis = Axis2::new(Point2::ORIGIN, Vector2::new(0.0, 3.0)).unwrap();
-        assert_eq!(axis.origin(), Point2::ORIGIN);
-        assert_eq!(axis.direction(), Vector2::Y);
+        let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 3.0)).unwrap();
+        assert_eq!(axis.origin(), Point2D::ORIGIN);
+        assert_eq!(axis.direction(), Vector2D::Y);
     }
 
     #[test]
     fn test_axis2_new_zero_direction_errors() {
         assert_eq!(
-            Axis2::new(Point2::ORIGIN, Vector2::ZERO),
+            Axis2D::new(Point2D::ORIGIN, Vector2D::ZERO),
             Err(FrameConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_frame2_world_const() {
-        let f = Frame2::WORLD;
-        assert_eq!(f.origin(), Point2::ORIGIN);
-        assert_eq!(f.x_direction(), Vector2::X);
-        assert_eq!(f.y_direction(), Vector2::Y);
+        let f = Frame2D::WORLD;
+        assert_eq!(f.origin(), Point2D::ORIGIN);
+        assert_eq!(f.x_direction(), Vector2D::X);
+        assert_eq!(f.y_direction(), Vector2D::Y);
     }
 
     #[test]
     fn test_frame2_new_orthogonal_ok() {
-        let f = Frame2::new(Point2::ORIGIN, Vector2::X, Vector2::Y).unwrap();
-        assert_eq!(f.x_direction(), Vector2::X);
-        assert_eq!(f.y_direction(), Vector2::Y);
+        let f = Frame2D::new(Point2D::ORIGIN, Vector2D::X, Vector2D::Y).unwrap();
+        assert_eq!(f.x_direction(), Vector2D::X);
+        assert_eq!(f.y_direction(), Vector2D::Y);
     }
 
     #[test]
     fn test_frame2_new_non_orthogonal_errors() {
         assert_eq!(
-            Frame2::new(Point2::ORIGIN, Vector2::X, Vector2::new(1.0, 1.0)),
+            Frame2D::new(Point2D::ORIGIN, Vector2D::X, Vector2D::new(1.0, 1.0)),
             Err(FrameConstructionError::NotOrthogonal)
         );
     }
@@ -726,18 +733,18 @@ mod tests {
     #[test]
     fn test_frame2_new_null_direction_errors() {
         assert_eq!(
-            Frame2::new(Point2::ORIGIN, Vector2::ZERO, Vector2::Y),
+            Frame2D::new(Point2D::ORIGIN, Vector2D::ZERO, Vector2D::Y),
             Err(FrameConstructionError::NullDirection)
         );
         assert_eq!(
-            Frame2::new(Point2::ORIGIN, Vector2::X, Vector2::ZERO),
+            Frame2D::new(Point2D::ORIGIN, Vector2D::X, Vector2D::ZERO),
             Err(FrameConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_frame2_from_x() {
-        let f = Frame2::from_x(Point2::ORIGIN, Vector2::new(0.6, 0.8)).unwrap();
+        let f = Frame2D::from_x(Point2D::ORIGIN, Vector2D::new(0.6, 0.8)).unwrap();
         assert!((f.x_direction().x - 0.6).abs() < 1e-10);
         assert!((f.x_direction().y - 0.8).abs() < 1e-10);
         assert!((f.y_direction().x - (-0.8)).abs() < 1e-10);
@@ -747,19 +754,19 @@ mod tests {
     #[test]
     fn test_frame2_from_x_null_errors() {
         assert_eq!(
-            Frame2::from_x(Point2::ORIGIN, Vector2::ZERO),
+            Frame2D::from_x(Point2D::ORIGIN, Vector2D::ZERO),
             Err(FrameConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_frame2_is_direct_true_for_world() {
-        assert!(Frame2::WORLD.is_direct());
+        assert!(Frame2D::WORLD.is_direct());
     }
 
     #[test]
     fn test_frame2_is_direct_false_for_left_handed() {
-        let f = Frame2::new(Point2::ORIGIN, Vector2::X, -Vector2::Y).unwrap();
+        let f = Frame2D::new(Point2D::ORIGIN, Vector2D::X, -Vector2D::Y).unwrap();
         assert!(!f.is_direct());
     }
 

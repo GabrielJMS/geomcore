@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
+### Changed
+
+- **Breaking:** renamed value and placement types for `2D`/`3D` consistency
+  with the curve names: `Point2` → `Point2D`, `Point3` → `Point3D`,
+  `Vector2` → `Vector2D`, `Vector3` → `Vector3D`, `Axis2` → `Axis2D`,
+  `Axis3` → `Axis3D`, `Frame2` → `Frame2D`, `Frame3` → `Frame3D`
+  (Rust and Python).
+- **Breaking (Python):** geometric objects are now constructed with
+  `__init__` only (e.g. `Circle3D(Point3D.origin(), Vector3D.z(), 2.0)`);
+  the duplicate `.new()` staticmethods were removed.
+
 ## [0.1.0] - 2026-07-02
 
 ### Added
@@ -27,5 +40,6 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.2.0
 [0.1.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.1.0

@@ -13,7 +13,7 @@ use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Ellipse3D, Hyperbola3D, Line2D, Line3D, Parabola3D,
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
-use geomcore::{Axis3, Frame3, Point2, Point3, Transform, Vector2, Vector3};
+use geomcore::{Axis3D, Frame3D, Point2D, Point3D, Transform, Vector2D, Vector3D};
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -24,27 +24,22 @@ fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
 // ---------------------------------------------------------------------------
 
 /// A point in 3D space with `x`, `y` and `z` coordinates.
-#[pyclass(name = "Point3", module = "geomcore")]
+#[pyclass(name = "Point3D", module = "geomcore")]
 #[derive(Clone)]
-struct PyPoint3(Point3);
+struct PyPoint3D(Point3D);
 
 #[pymethods]
-impl PyPoint3 {
+impl PyPoint3D {
     #[new]
-    fn py_new(x: f64, y: f64, z: f64) -> Self {
-        PyPoint3(Point3::new(x, y, z))
-    }
-
     /// Build a point from its three coordinates.
-    #[staticmethod]
-    fn new(x: f64, y: f64, z: f64) -> Self {
-        PyPoint3(Point3::new(x, y, z))
+    fn py_new(x: f64, y: f64, z: f64) -> Self {
+        PyPoint3D(Point3D::new(x, y, z))
     }
 
     /// The origin (0, 0, 0).
     #[staticmethod]
     fn origin() -> Self {
-        PyPoint3(Point3::ORIGIN)
+        PyPoint3D(Point3D::ORIGIN)
     }
 
     #[getter]
@@ -63,12 +58,12 @@ impl PyPoint3 {
     }
 
     /// Euclidean distance to another point.
-    fn distance(&self, other: &PyPoint3) -> f64 {
+    fn distance(&self, other: &PyPoint3D) -> f64 {
         self.0.distance(other.0)
     }
 
     fn __repr__(&self) -> String {
-        format!("Point3({}, {}, {})", self.0.x, self.0.y, self.0.z)
+        format!("Point3D({}, {}, {})", self.0.x, self.0.y, self.0.z)
     }
 }
 
@@ -76,45 +71,40 @@ impl PyPoint3 {
 ///
 /// Components are read with `components()`; the unit vectors along the world
 /// axes are available as the static methods `x()`, `y()` and `z()`.
-#[pyclass(name = "Vector3", module = "geomcore")]
+#[pyclass(name = "Vector3D", module = "geomcore")]
 #[derive(Clone)]
-struct PyVector3(Vector3);
+struct PyVector3D(Vector3D);
 
 #[pymethods]
-impl PyVector3 {
+impl PyVector3D {
     #[new]
-    fn py_new(x: f64, y: f64, z: f64) -> Self {
-        PyVector3(Vector3::new(x, y, z))
-    }
-
     /// Build a vector from its three components.
-    #[staticmethod]
-    fn new(x: f64, y: f64, z: f64) -> Self {
-        PyVector3(Vector3::new(x, y, z))
+    fn py_new(x: f64, y: f64, z: f64) -> Self {
+        PyVector3D(Vector3D::new(x, y, z))
     }
 
     /// The zero vector.
     #[staticmethod]
     fn zero() -> Self {
-        PyVector3(Vector3::ZERO)
+        PyVector3D(Vector3D::ZERO)
     }
 
     /// The unit vector along the world x axis.
     #[staticmethod]
     fn x() -> Self {
-        PyVector3(Vector3::X)
+        PyVector3D(Vector3D::X)
     }
 
     /// The unit vector along the world y axis.
     #[staticmethod]
     fn y() -> Self {
-        PyVector3(Vector3::Y)
+        PyVector3D(Vector3D::Y)
     }
 
     /// The unit vector along the world z axis.
     #[staticmethod]
     fn z() -> Self {
-        PyVector3(Vector3::Z)
+        PyVector3D(Vector3D::Z)
     }
 
     /// The `(x, y, z)` components as a tuple.
@@ -123,13 +113,13 @@ impl PyVector3 {
     }
 
     /// Dot product with another vector.
-    fn dot(&self, other: &PyVector3) -> f64 {
+    fn dot(&self, other: &PyVector3D) -> f64 {
         self.0.dot(other.0)
     }
 
     /// Cross product with another vector.
-    fn cross(&self, other: &PyVector3) -> PyVector3 {
-        PyVector3(self.0.cross(other.0))
+    fn cross(&self, other: &PyVector3D) -> PyVector3D {
+        PyVector3D(self.0.cross(other.0))
     }
 
     /// Euclidean length of the vector.
@@ -138,32 +128,27 @@ impl PyVector3 {
     }
 
     fn __repr__(&self) -> String {
-        format!("Vector3({}, {}, {})", self.0.x, self.0.y, self.0.z)
+        format!("Vector3D({}, {}, {})", self.0.x, self.0.y, self.0.z)
     }
 }
 
 /// A point in 2D space (used by curves living in a surface's (u, v) domain).
-#[pyclass(name = "Point2", module = "geomcore")]
+#[pyclass(name = "Point2D", module = "geomcore")]
 #[derive(Clone)]
-struct PyPoint2(Point2);
+struct PyPoint2D(Point2D);
 
 #[pymethods]
-impl PyPoint2 {
+impl PyPoint2D {
     #[new]
-    fn py_new(x: f64, y: f64) -> Self {
-        PyPoint2(Point2::new(x, y))
-    }
-
     /// Build a point from its two coordinates.
-    #[staticmethod]
-    fn new(x: f64, y: f64) -> Self {
-        PyPoint2(Point2::new(x, y))
+    fn py_new(x: f64, y: f64) -> Self {
+        PyPoint2D(Point2D::new(x, y))
     }
 
     /// The origin (0, 0).
     #[staticmethod]
     fn origin() -> Self {
-        PyPoint2(Point2::ORIGIN)
+        PyPoint2D(Point2D::ORIGIN)
     }
 
     #[getter]
@@ -177,31 +162,26 @@ impl PyPoint2 {
     }
 
     /// Euclidean distance to another point.
-    fn distance(&self, other: &PyPoint2) -> f64 {
+    fn distance(&self, other: &PyPoint2D) -> f64 {
         self.0.distance(other.0)
     }
 
     fn __repr__(&self) -> String {
-        format!("Point2({}, {})", self.0.x, self.0.y)
+        format!("Point2D({}, {})", self.0.x, self.0.y)
     }
 }
 
 /// A vector in 2D space.
-#[pyclass(name = "Vector2", module = "geomcore")]
+#[pyclass(name = "Vector2D", module = "geomcore")]
 #[derive(Clone)]
-struct PyVector2(Vector2);
+struct PyVector2D(Vector2D);
 
 #[pymethods]
-impl PyVector2 {
+impl PyVector2D {
     #[new]
-    fn py_new(x: f64, y: f64) -> Self {
-        PyVector2(Vector2::new(x, y))
-    }
-
     /// Build a vector from its two components.
-    #[staticmethod]
-    fn new(x: f64, y: f64) -> Self {
-        PyVector2(Vector2::new(x, y))
+    fn py_new(x: f64, y: f64) -> Self {
+        PyVector2D(Vector2D::new(x, y))
     }
 
     #[getter]
@@ -215,7 +195,7 @@ impl PyVector2 {
     }
 
     /// Dot product with another vector.
-    fn dot(&self, other: &PyVector2) -> f64 {
+    fn dot(&self, other: &PyVector2D) -> f64 {
         self.0.dot(other.0)
     }
 
@@ -225,102 +205,86 @@ impl PyVector2 {
     }
 
     fn __repr__(&self) -> String {
-        format!("Vector2({}, {})", self.0.x, self.0.y)
+        format!("Vector2D({}, {})", self.0.x, self.0.y)
     }
 }
 
 /// An axis: a point plus a unit direction.
-#[pyclass(name = "Axis3", module = "geomcore")]
+#[pyclass(name = "Axis3D", module = "geomcore")]
 #[derive(Clone)]
-struct PyAxis3(Axis3);
+struct PyAxis3D(Axis3D);
 
 #[pymethods]
-impl PyAxis3 {
+impl PyAxis3D {
     #[new]
-    fn py_new(origin: PyPoint3, direction: PyVector3) -> PyResult<Self> {
-        Ok(PyAxis3(Axis3::new(origin.0, direction.0).map_err(val_err)?))
-    }
-
     /// Build an axis from an origin and a direction (normalized internally).
-    ///
-    /// Raises `ValueError` if the direction has zero length.
-    #[staticmethod]
-    fn new(origin: PyPoint3, direction: PyVector3) -> PyResult<Self> {
-        Ok(PyAxis3(Axis3::new(origin.0, direction.0).map_err(val_err)?))
+    fn py_new(origin: PyPoint3D, direction: PyVector3D) -> PyResult<Self> {
+        Ok(PyAxis3D(
+            Axis3D::new(origin.0, direction.0).map_err(val_err)?,
+        ))
     }
 
     /// The axis origin.
-    fn origin(&self) -> PyPoint3 {
-        PyPoint3(self.0.origin())
+    fn origin(&self) -> PyPoint3D {
+        PyPoint3D(self.0.origin())
     }
 
     /// The unit direction of the axis.
-    fn direction(&self) -> PyVector3 {
-        PyVector3(self.0.direction())
+    fn direction(&self) -> PyVector3D {
+        PyVector3D(self.0.direction())
     }
 }
 
 /// A right-handed orthonormal placement frame (origin + x/y/z directions).
-#[pyclass(name = "Frame3", module = "geomcore")]
+#[pyclass(name = "Frame3D", module = "geomcore")]
 #[derive(Clone)]
-struct PyFrame3(Frame3);
+struct PyFrame3D(Frame3D);
 
 #[pymethods]
-impl PyFrame3 {
+impl PyFrame3D {
     #[new]
-    fn py_new(origin: PyPoint3, z_direction: PyVector3, x_hint: PyVector3) -> PyResult<Self> {
-        Ok(PyFrame3(
-            Frame3::new(origin.0, z_direction.0, x_hint.0).map_err(val_err)?,
-        ))
-    }
-
-    /// Build a frame from an origin, main (z) direction, and an x hint that
-    /// is projected perpendicular to z.
-    ///
-    /// Raises `ValueError` on zero-length or parallel directions.
-    #[staticmethod]
-    fn new(origin: PyPoint3, z_direction: PyVector3, x_hint: PyVector3) -> PyResult<Self> {
-        Ok(PyFrame3(
-            Frame3::new(origin.0, z_direction.0, x_hint.0).map_err(val_err)?,
+    /// Build a frame from an origin, main (z) direction, and an x hint.
+    fn py_new(origin: PyPoint3D, z_direction: PyVector3D, x_hint: PyVector3D) -> PyResult<Self> {
+        Ok(PyFrame3D(
+            Frame3D::new(origin.0, z_direction.0, x_hint.0).map_err(val_err)?,
         ))
     }
 
     /// Build a frame from an origin and main (z) direction, deriving an
     /// arbitrary perpendicular x direction.
     #[staticmethod]
-    fn from_z(origin: PyPoint3, z_direction: PyVector3) -> PyResult<Self> {
-        Ok(PyFrame3(
-            Frame3::from_z(origin.0, z_direction.0).map_err(val_err)?,
+    fn from_z(origin: PyPoint3D, z_direction: PyVector3D) -> PyResult<Self> {
+        Ok(PyFrame3D(
+            Frame3D::from_z(origin.0, z_direction.0).map_err(val_err)?,
         ))
     }
 
     /// The world frame at the origin.
     #[staticmethod]
     fn world() -> Self {
-        PyFrame3(Frame3::WORLD)
+        PyFrame3D(Frame3D::WORLD)
     }
 
     /// The frame origin.
-    fn origin(&self) -> PyPoint3 {
-        PyPoint3(self.0.origin())
+    fn origin(&self) -> PyPoint3D {
+        PyPoint3D(self.0.origin())
     }
 
     /// The unit x direction.
-    fn x_direction(&self) -> PyVector3 {
-        PyVector3(self.0.x_direction())
+    fn x_direction(&self) -> PyVector3D {
+        PyVector3D(self.0.x_direction())
     }
 
     /// The unit y direction.
-    fn y_direction(&self) -> PyVector3 {
-        PyVector3(self.0.y_direction())
+    fn y_direction(&self) -> PyVector3D {
+        PyVector3D(self.0.y_direction())
     }
 
     /// The unit z direction.
-    fn z_direction(&self) -> PyVector3 {
-        PyVector3(self.0.z_direction())
+    fn z_direction(&self) -> PyVector3D {
+        PyVector3D(self.0.z_direction())
     }
 }
-
 /// A rigid (or mirrored/scaled) affine transformation.
 #[pyclass(name = "Transform", module = "geomcore")]
 #[derive(Clone)]
@@ -336,38 +300,38 @@ impl PyTransform {
 
     /// Translation by an offset vector.
     #[staticmethod]
-    fn translation(offset: PyVector3) -> Self {
+    fn translation(offset: PyVector3D) -> Self {
         PyTransform(Transform::translation(offset.0))
     }
 
     /// Rotation by `angle` radians about `axis` (right-hand rule).
     #[staticmethod]
-    fn rotation(axis: PyAxis3, angle: f64) -> Self {
+    fn rotation(axis: PyAxis3D, angle: f64) -> Self {
         PyTransform(Transform::rotation(axis.0, angle))
     }
 
     /// Uniform scaling about `center`.
     #[staticmethod]
-    fn scaling(center: PyPoint3, factor: f64) -> Self {
+    fn scaling(center: PyPoint3D, factor: f64) -> Self {
         PyTransform(Transform::scaling(center.0, factor))
     }
 
     /// Point reflection through `center`.
     #[staticmethod]
-    fn mirror_point(center: PyPoint3) -> Self {
+    fn mirror_point(center: PyPoint3D) -> Self {
         PyTransform(Transform::mirror_point(center.0))
     }
 
     /// Reflection about an axis (rotation by pi around the line).
     #[staticmethod]
-    fn mirror_axis(axis: PyAxis3) -> Self {
+    fn mirror_axis(axis: PyAxis3D) -> Self {
         PyTransform(Transform::mirror_axis(axis.0))
     }
 
     /// Reflection across the plane through the frame origin with normal
     /// equal to the frame's z direction.
     #[staticmethod]
-    fn mirror_plane(frame: PyFrame3) -> Self {
+    fn mirror_plane(frame: PyFrame3D) -> Self {
         PyTransform(Transform::mirror_plane(frame.0))
     }
 
@@ -377,13 +341,13 @@ impl PyTransform {
     }
 
     /// Apply the transformation to a point.
-    fn apply_point(&self, p: PyPoint3) -> PyPoint3 {
-        PyPoint3(self.0.apply_point(p.0))
+    fn apply_point(&self, p: PyPoint3D) -> PyPoint3D {
+        PyPoint3D(self.0.apply_point(p.0))
     }
 
     /// Apply the transformation to a vector (ignores the translation part).
-    fn apply_vector(&self, v: PyVector3) -> PyVector3 {
-        PyVector3(self.0.apply_vector(v.0))
+    fn apply_vector(&self, v: PyVector3D) -> PyVector3D {
+        PyVector3D(self.0.apply_vector(v.0))
     }
 }
 
@@ -399,25 +363,20 @@ struct PyPlane(Plane);
 #[pymethods]
 impl PyPlane {
     #[new]
-    fn py_new(point: PyPoint3, normal: PyVector3) -> PyResult<Self> {
-        Ok(PyPlane(Plane::new(point.0, normal.0).map_err(val_err)?))
-    }
-
     /// Build a plane from a point and a normal direction.
-    #[staticmethod]
-    fn new(point: PyPoint3, normal: PyVector3) -> PyResult<Self> {
+    fn py_new(point: PyPoint3D, normal: PyVector3D) -> PyResult<Self> {
         Ok(PyPlane(Plane::new(point.0, normal.0).map_err(val_err)?))
     }
 
     /// Build a plane from a placement frame (normal = frame z direction).
     #[staticmethod]
-    fn from_frame(frame: PyFrame3) -> Self {
+    fn from_frame(frame: PyFrame3D) -> Self {
         PyPlane(Plane::from_frame(frame.0))
     }
 
     /// Build a plane through three non-collinear points.
     #[staticmethod]
-    fn from_three_points(p1: PyPoint3, p2: PyPoint3, p3: PyPoint3) -> PyResult<Self> {
+    fn from_three_points(p1: PyPoint3D, p2: PyPoint3D, p3: PyPoint3D) -> PyResult<Self> {
         Ok(PyPlane(
             Plane::from_three_points(p1.0, p2.0, p3.0).map_err(val_err)?,
         ))
@@ -432,27 +391,31 @@ impl PyPlane {
     }
 
     /// The unit normal of the plane.
-    fn normal(&self) -> PyVector3 {
-        PyVector3(self.0.normal())
+    fn normal(&self) -> PyVector3D {
+        PyVector3D(self.0.normal())
     }
 
     /// Evaluate the point at surface parameters (u, v).
-    fn eval_point(&self, u: f64, v: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u, v))
+    fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u, v))
     }
 
     /// Evaluate many (u, v) pairs at once.
-    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3> {
-        self.0.eval_points(&uvs).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3D> {
+        self.0
+            .eval_points(&uvs)
+            .into_iter()
+            .map(PyPoint3D)
+            .collect()
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
 
     /// Recover the (u, v) parameters of a point lying on the plane.
-    fn parameters_of(&self, point: PyPoint3) -> (f64, f64) {
+    fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
 }
@@ -466,15 +429,8 @@ struct PyCylinder(Cylinder);
 #[pymethods]
 impl PyCylinder {
     #[new]
-    fn py_new(center: PyPoint3, axis_direction: PyVector3, radius: f64) -> PyResult<Self> {
-        Ok(PyCylinder(
-            Cylinder::new(center.0, axis_direction.0, radius).map_err(val_err)?,
-        ))
-    }
-
     /// Build a cylinder from a point on its axis, the axis direction and a radius.
-    #[staticmethod]
-    fn new(center: PyPoint3, axis_direction: PyVector3, radius: f64) -> PyResult<Self> {
+    fn py_new(center: PyPoint3D, axis_direction: PyVector3D, radius: f64) -> PyResult<Self> {
         Ok(PyCylinder(
             Cylinder::new(center.0, axis_direction.0, radius).map_err(val_err)?,
         ))
@@ -482,7 +438,7 @@ impl PyCylinder {
 
     /// Build a cylinder from a placement frame (axis = frame z direction).
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, radius: f64) -> PyResult<Self> {
         Ok(PyCylinder(
             Cylinder::from_frame(frame.0, radius).map_err(val_err)?,
         ))
@@ -490,7 +446,7 @@ impl PyCylinder {
 
     /// Build a cylinder from an axis and a radius.
     #[staticmethod]
-    fn from_axis(axis: PyAxis3, radius: f64) -> PyResult<Self> {
+    fn from_axis(axis: PyAxis3D, radius: f64) -> PyResult<Self> {
         Ok(PyCylinder(
             Cylinder::from_axis(axis.0, radius).map_err(val_err)?,
         ))
@@ -509,22 +465,26 @@ impl PyCylinder {
     }
 
     /// Evaluate the point at surface parameters (u, v).
-    fn eval_point(&self, u: f64, v: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u, v))
+    fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u, v))
     }
 
     /// Evaluate many (u, v) pairs at once.
-    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3> {
-        self.0.eval_points(&uvs).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3D> {
+        self.0
+            .eval_points(&uvs)
+            .into_iter()
+            .map(PyPoint3D)
+            .collect()
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
 
     /// Recover the (u, v) parameters of a point lying on the cylinder.
-    fn parameters_of(&self, point: PyPoint3) -> (f64, f64) {
+    fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
 }
@@ -538,23 +498,10 @@ struct PyCone(Cone);
 #[pymethods]
 impl PyCone {
     #[new]
+    /// Build a cone from a reference-circle center, axis direction, half-angle and reference radius.
     fn py_new(
-        center: PyPoint3,
-        axis_direction: PyVector3,
-        semi_angle: f64,
-        ref_radius: f64,
-    ) -> PyResult<Self> {
-        Ok(PyCone(
-            Cone::new(center.0, axis_direction.0, semi_angle, ref_radius).map_err(val_err)?,
-        ))
-    }
-
-    /// Build a cone from a reference-circle center, axis direction,
-    /// half-angle (radians) and reference radius.
-    #[staticmethod]
-    fn new(
-        center: PyPoint3,
-        axis_direction: PyVector3,
+        center: PyPoint3D,
+        axis_direction: PyVector3D,
         semi_angle: f64,
         ref_radius: f64,
     ) -> PyResult<Self> {
@@ -565,7 +512,7 @@ impl PyCone {
 
     /// Build a cone from a placement frame, half-angle and reference radius.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, semi_angle: f64, ref_radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, semi_angle: f64, ref_radius: f64) -> PyResult<Self> {
         Ok(PyCone(
             Cone::from_frame(frame.0, semi_angle, ref_radius).map_err(val_err)?,
         ))
@@ -573,15 +520,15 @@ impl PyCone {
 
     /// Build a cone through two circular sections given by axis points and radii.
     #[staticmethod]
-    fn from_two_points_and_radii(p1: PyPoint3, p2: PyPoint3, r1: f64, r2: f64) -> PyResult<Self> {
+    fn from_two_points_and_radii(p1: PyPoint3D, p2: PyPoint3D, r1: f64, r2: f64) -> PyResult<Self> {
         Ok(PyCone(
             Cone::from_two_points_and_radii(p1.0, p2.0, r1, r2).map_err(val_err)?,
         ))
     }
 
     /// The cone apex.
-    fn apex(&self) -> PyPoint3 {
-        PyPoint3(self.0.apex())
+    fn apex(&self) -> PyPoint3D {
+        PyPoint3D(self.0.apex())
     }
 
     /// The half-angle in radians.
@@ -595,22 +542,26 @@ impl PyCone {
     }
 
     /// Evaluate the point at surface parameters (u, v).
-    fn eval_point(&self, u: f64, v: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u, v))
+    fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u, v))
     }
 
     /// Evaluate many (u, v) pairs at once.
-    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3> {
-        self.0.eval_points(&uvs).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3D> {
+        self.0
+            .eval_points(&uvs)
+            .into_iter()
+            .map(PyPoint3D)
+            .collect()
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
 
     /// Recover the (u, v) parameters of a point lying on the cone.
-    fn parameters_of(&self, point: PyPoint3) -> (f64, f64) {
+    fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
 }
@@ -623,27 +574,22 @@ struct PySphere(Sphere);
 #[pymethods]
 impl PySphere {
     #[new]
-    fn py_new(center: PyPoint3, radius: f64) -> PyResult<Self> {
-        Ok(PySphere(Sphere::new(center.0, radius).map_err(val_err)?))
-    }
-
     /// Build a sphere from its center and radius (world-aligned frame).
-    #[staticmethod]
-    fn new(center: PyPoint3, radius: f64) -> PyResult<Self> {
+    fn py_new(center: PyPoint3D, radius: f64) -> PyResult<Self> {
         Ok(PySphere(Sphere::new(center.0, radius).map_err(val_err)?))
     }
 
     /// Build a sphere from a placement frame and radius.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, radius: f64) -> PyResult<Self> {
         Ok(PySphere(
             Sphere::from_frame(frame.0, radius).map_err(val_err)?,
         ))
     }
 
     /// The sphere center.
-    fn center(&self) -> PyPoint3 {
-        PyPoint3(self.0.center())
+    fn center(&self) -> PyPoint3D {
+        PyPoint3D(self.0.center())
     }
 
     /// The sphere radius.
@@ -652,22 +598,26 @@ impl PySphere {
     }
 
     /// Evaluate the point at surface parameters (u, v).
-    fn eval_point(&self, u: f64, v: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u, v))
+    fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u, v))
     }
 
     /// Evaluate many (u, v) pairs at once.
-    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3> {
-        self.0.eval_points(&uvs).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3D> {
+        self.0
+            .eval_points(&uvs)
+            .into_iter()
+            .map(PyPoint3D)
+            .collect()
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
 
     /// Recover the (u, v) parameters of a point lying on the sphere.
-    fn parameters_of(&self, point: PyPoint3) -> (f64, f64) {
+    fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
 }
@@ -680,22 +630,10 @@ struct PyTorus(Torus);
 #[pymethods]
 impl PyTorus {
     #[new]
-    fn py_new(
-        center: PyPoint3,
-        normal: PyVector3,
-        major_radius: f64,
-        minor_radius: f64,
-    ) -> PyResult<Self> {
-        Ok(PyTorus(
-            Torus::new(center.0, normal.0, major_radius, minor_radius).map_err(val_err)?,
-        ))
-    }
-
     /// Build a torus from its center, main-axis direction and the two radii.
-    #[staticmethod]
-    fn new(
-        center: PyPoint3,
-        normal: PyVector3,
+    fn py_new(
+        center: PyPoint3D,
+        normal: PyVector3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> PyResult<Self> {
@@ -706,7 +644,7 @@ impl PyTorus {
 
     /// Build a torus from a placement frame and the two radii.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
         Ok(PyTorus(
             Torus::from_frame(frame.0, major_radius, minor_radius).map_err(val_err)?,
         ))
@@ -723,22 +661,26 @@ impl PyTorus {
     }
 
     /// Evaluate the point at surface parameters (u, v).
-    fn eval_point(&self, u: f64, v: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u, v))
+    fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u, v))
     }
 
     /// Evaluate many (u, v) pairs at once.
-    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3> {
-        self.0.eval_points(&uvs).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3D> {
+        self.0
+            .eval_points(&uvs)
+            .into_iter()
+            .map(PyPoint3D)
+            .collect()
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
 
     /// Recover the (u, v) parameters of a point lying on the torus.
-    fn parameters_of(&self, point: PyPoint3) -> (f64, f64) {
+    fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
 }
@@ -752,37 +694,11 @@ struct PyBSplineSurface(BSplineSurface);
 impl PyBSplineSurface {
     #[new]
     #[allow(clippy::too_many_arguments)]
+    /// Build a non-rational B-spline surface from a rectangular pole grid.
     fn py_new(
         u_degree: usize,
         v_degree: usize,
-        poles: Vec<Vec<PyPoint3>>,
-        u_knots: Vec<f64>,
-        u_multiplicities: Vec<u32>,
-        v_knots: Vec<f64>,
-        v_multiplicities: Vec<u32>,
-        u_periodic: bool,
-        v_periodic: bool,
-    ) -> PyResult<Self> {
-        Self::new(
-            u_degree,
-            v_degree,
-            poles,
-            u_knots,
-            u_multiplicities,
-            v_knots,
-            v_multiplicities,
-            u_periodic,
-            v_periodic,
-        )
-    }
-
-    /// Build a non-rational B-spline surface from a rectangular pole grid.
-    #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        u_degree: usize,
-        v_degree: usize,
-        poles: Vec<Vec<PyPoint3>>,
+        poles: Vec<Vec<PyPoint3D>>,
         u_knots: Vec<f64>,
         u_multiplicities: Vec<u32>,
         v_knots: Vec<f64>,
@@ -816,7 +732,7 @@ impl PyBSplineSurface {
     fn new_rational(
         u_degree: usize,
         v_degree: usize,
-        poles: Vec<Vec<PyPoint3>>,
+        poles: Vec<Vec<PyPoint3D>>,
         weights: Vec<Vec<f64>>,
         u_knots: Vec<f64>,
         u_multiplicities: Vec<u32>,
@@ -872,18 +788,22 @@ impl PyBSplineSurface {
     }
 
     /// Evaluate the point at surface parameters (u, v).
-    fn eval_point(&self, u: f64, v: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u, v))
+    fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u, v))
     }
 
     /// Evaluate many (u, v) pairs at once.
-    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3> {
-        self.0.eval_points(&uvs).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, uvs: Vec<(f64, f64)>) -> Vec<PyPoint3D> {
+        self.0
+            .eval_points(&uvs)
+            .into_iter()
+            .map(PyPoint3D)
+            .collect()
     }
 
     /// Evaluate the first partial derivative: (du, dv) must be (1, 0) or (0, 1).
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
 }
 
@@ -931,15 +851,8 @@ struct PyLine3D(Line3D);
 #[pymethods]
 impl PyLine3D {
     #[new]
-    fn py_new(origin: PyPoint3, direction: PyVector3) -> PyResult<Self> {
-        Ok(PyLine3D(
-            Line3D::new(origin.0, direction.0).map_err(val_err)?,
-        ))
-    }
-
     /// Build a line from an origin and a direction (normalized internally).
-    #[staticmethod]
-    fn new(origin: PyPoint3, direction: PyVector3) -> PyResult<Self> {
+    fn py_new(origin: PyPoint3D, direction: PyVector3D) -> PyResult<Self> {
         Ok(PyLine3D(
             Line3D::new(origin.0, direction.0).map_err(val_err)?,
         ))
@@ -947,45 +860,45 @@ impl PyLine3D {
 
     /// Build a line from an axis.
     #[staticmethod]
-    fn from_axis(axis: PyAxis3) -> Self {
+    fn from_axis(axis: PyAxis3D) -> Self {
         PyLine3D(Line3D::from_axis(axis.0))
     }
 
     /// Build a line through two distinct points.
     #[staticmethod]
-    fn from_two_points(p1: PyPoint3, p2: PyPoint3) -> PyResult<Self> {
+    fn from_two_points(p1: PyPoint3D, p2: PyPoint3D) -> PyResult<Self> {
         Ok(PyLine3D(
             Line3D::from_two_points(p1.0, p2.0).map_err(val_err)?,
         ))
     }
 
     /// The line origin (point at parameter 0).
-    fn origin(&self) -> PyPoint3 {
-        PyPoint3(self.0.origin())
+    fn origin(&self) -> PyPoint3D {
+        PyPoint3D(self.0.origin())
     }
 
     /// The unit direction of the line.
-    fn direction(&self) -> PyVector3 {
-        PyVector3(self.0.direction())
+    fn direction(&self) -> PyVector3D {
+        PyVector3D(self.0.direction())
     }
 
     /// Evaluate the point at parameter `u`.
-    fn eval_point(&self, u: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3> {
-        self.0.eval_points(&us).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter of a point lying on the line.
-    fn parameter_of(&self, point: PyPoint3) -> f64 {
+    fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1007,17 +920,8 @@ struct PyCircle3D(Circle3D);
 #[pymethods]
 impl PyCircle3D {
     #[new]
-    fn py_new(center: PyPoint3, normal: PyVector3, radius: f64) -> PyResult<Self> {
-        Ok(PyCircle3D(
-            Circle3D::new(center.0, normal.0, radius).map_err(val_err)?,
-        ))
-    }
-
     /// Build a circle from its center, plane normal and radius.
-    ///
-    /// Raises `ValueError` for a negative radius or zero-length normal.
-    #[staticmethod]
-    fn new(center: PyPoint3, normal: PyVector3, radius: f64) -> PyResult<Self> {
+    fn py_new(center: PyPoint3D, normal: PyVector3D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle3D(
             Circle3D::new(center.0, normal.0, radius).map_err(val_err)?,
         ))
@@ -1025,7 +929,7 @@ impl PyCircle3D {
 
     /// Build a circle from an axis (center + normal) and a radius.
     #[staticmethod]
-    fn from_axis(axis: PyAxis3, radius: f64) -> PyResult<Self> {
+    fn from_axis(axis: PyAxis3D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle3D(
             Circle3D::from_axis(axis.0, radius).map_err(val_err)?,
         ))
@@ -1033,7 +937,7 @@ impl PyCircle3D {
 
     /// Build a circle from a placement frame and a radius.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle3D(
             Circle3D::from_frame(frame.0, radius).map_err(val_err)?,
         ))
@@ -1042,15 +946,15 @@ impl PyCircle3D {
     /// Build the circle through three non-collinear points; the curve starts
     /// at the first point.
     #[staticmethod]
-    fn from_three_points(p1: PyPoint3, p2: PyPoint3, p3: PyPoint3) -> PyResult<Self> {
+    fn from_three_points(p1: PyPoint3D, p2: PyPoint3D, p3: PyPoint3D) -> PyResult<Self> {
         Ok(PyCircle3D(
             Circle3D::from_three_points(p1.0, p2.0, p3.0).map_err(val_err)?,
         ))
     }
 
     /// The circle center.
-    fn center(&self) -> PyPoint3 {
-        PyPoint3(self.0.center())
+    fn center(&self) -> PyPoint3D {
+        PyPoint3D(self.0.center())
     }
 
     /// The circle radius.
@@ -1059,27 +963,27 @@ impl PyCircle3D {
     }
 
     /// The unit normal of the circle's plane.
-    fn normal(&self) -> PyVector3 {
-        PyVector3(self.0.normal())
+    fn normal(&self) -> PyVector3D {
+        PyVector3D(self.0.normal())
     }
 
     /// Evaluate the point at angle `u` (radians).
-    fn eval_point(&self, u: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3> {
-        self.0.eval_points(&us).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter in [0, 2*pi) of a point lying on the circle.
-    fn parameter_of(&self, point: PyPoint3) -> f64 {
+    fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1101,31 +1005,11 @@ struct PyEllipse3D(Ellipse3D);
 #[pymethods]
 impl PyEllipse3D {
     #[new]
-    fn py_new(
-        center: PyPoint3,
-        normal: PyVector3,
-        x_direction: PyVector3,
-        major_radius: f64,
-        minor_radius: f64,
-    ) -> PyResult<Self> {
-        Ok(PyEllipse3D(
-            Ellipse3D::new(
-                center.0,
-                normal.0,
-                x_direction.0,
-                major_radius,
-                minor_radius,
-            )
-            .map_err(val_err)?,
-        ))
-    }
-
     /// Build an ellipse from center, normal, major-axis direction and radii.
-    #[staticmethod]
-    fn new(
-        center: PyPoint3,
-        normal: PyVector3,
-        x_direction: PyVector3,
+    fn py_new(
+        center: PyPoint3D,
+        normal: PyVector3D,
+        x_direction: PyVector3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> PyResult<Self> {
@@ -1143,7 +1027,7 @@ impl PyEllipse3D {
 
     /// Build an ellipse from a placement frame and the two radii.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
         Ok(PyEllipse3D(
             Ellipse3D::from_frame(frame.0, major_radius, minor_radius).map_err(val_err)?,
         ))
@@ -1152,15 +1036,15 @@ impl PyEllipse3D {
     /// Build an ellipse from its center, the major-axis end point and a
     /// second point on the curve.
     #[staticmethod]
-    fn from_center_and_points(center: PyPoint3, s1: PyPoint3, s2: PyPoint3) -> PyResult<Self> {
+    fn from_center_and_points(center: PyPoint3D, s1: PyPoint3D, s2: PyPoint3D) -> PyResult<Self> {
         Ok(PyEllipse3D(
             Ellipse3D::from_center_and_points(center.0, s1.0, s2.0).map_err(val_err)?,
         ))
     }
 
     /// The ellipse center.
-    fn center(&self) -> PyPoint3 {
-        PyPoint3(self.0.center())
+    fn center(&self) -> PyPoint3D {
+        PyPoint3D(self.0.center())
     }
 
     /// The semi-major radius.
@@ -1174,22 +1058,22 @@ impl PyEllipse3D {
     }
 
     /// Evaluate the point at angle `u` (radians).
-    fn eval_point(&self, u: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3> {
-        self.0.eval_points(&us).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter in [0, 2*pi) of a point lying on the ellipse.
-    fn parameter_of(&self, point: PyPoint3) -> f64 {
+    fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1208,23 +1092,11 @@ struct PyParabola3D(Parabola3D);
 #[pymethods]
 impl PyParabola3D {
     #[new]
-    fn py_new(
-        apex: PyPoint3,
-        normal: PyVector3,
-        x_direction: PyVector3,
-        focal: f64,
-    ) -> PyResult<Self> {
-        Ok(PyParabola3D(
-            Parabola3D::new(apex.0, normal.0, x_direction.0, focal).map_err(val_err)?,
-        ))
-    }
-
     /// Build a parabola from apex, plane normal, axis direction and focal distance.
-    #[staticmethod]
-    fn new(
-        apex: PyPoint3,
-        normal: PyVector3,
-        x_direction: PyVector3,
+    fn py_new(
+        apex: PyPoint3D,
+        normal: PyVector3D,
+        x_direction: PyVector3D,
         focal: f64,
     ) -> PyResult<Self> {
         Ok(PyParabola3D(
@@ -1234,7 +1106,7 @@ impl PyParabola3D {
 
     /// Build a parabola from a placement frame and focal distance.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, focal: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, focal: f64) -> PyResult<Self> {
         Ok(PyParabola3D(
             Parabola3D::from_frame(frame.0, focal).map_err(val_err)?,
         ))
@@ -1246,22 +1118,22 @@ impl PyParabola3D {
     }
 
     /// Evaluate the point at parameter `u`.
-    fn eval_point(&self, u: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3> {
-        self.0.eval_points(&us).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter of a point lying on the parabola.
-    fn parameter_of(&self, point: PyPoint3) -> f64 {
+    fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1280,31 +1152,11 @@ struct PyHyperbola3D(Hyperbola3D);
 #[pymethods]
 impl PyHyperbola3D {
     #[new]
-    fn py_new(
-        center: PyPoint3,
-        normal: PyVector3,
-        x_direction: PyVector3,
-        major_radius: f64,
-        minor_radius: f64,
-    ) -> PyResult<Self> {
-        Ok(PyHyperbola3D(
-            Hyperbola3D::new(
-                center.0,
-                normal.0,
-                x_direction.0,
-                major_radius,
-                minor_radius,
-            )
-            .map_err(val_err)?,
-        ))
-    }
-
     /// Build a hyperbola from center, normal, major-axis direction and radii.
-    #[staticmethod]
-    fn new(
-        center: PyPoint3,
-        normal: PyVector3,
-        x_direction: PyVector3,
+    fn py_new(
+        center: PyPoint3D,
+        normal: PyVector3D,
+        x_direction: PyVector3D,
         major_radius: f64,
         minor_radius: f64,
     ) -> PyResult<Self> {
@@ -1322,7 +1174,7 @@ impl PyHyperbola3D {
 
     /// Build a hyperbola from a placement frame and the two radii.
     #[staticmethod]
-    fn from_frame(frame: PyFrame3, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
+    fn from_frame(frame: PyFrame3D, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
         Ok(PyHyperbola3D(
             Hyperbola3D::from_frame(frame.0, major_radius, minor_radius).map_err(val_err)?,
         ))
@@ -1331,15 +1183,15 @@ impl PyHyperbola3D {
     /// Build a hyperbola from its center, the vertex point and a second
     /// point on the curve.
     #[staticmethod]
-    fn from_center_and_points(center: PyPoint3, s1: PyPoint3, s2: PyPoint3) -> PyResult<Self> {
+    fn from_center_and_points(center: PyPoint3D, s1: PyPoint3D, s2: PyPoint3D) -> PyResult<Self> {
         Ok(PyHyperbola3D(
             Hyperbola3D::from_center_and_points(center.0, s1.0, s2.0).map_err(val_err)?,
         ))
     }
 
     /// The hyperbola center.
-    fn center(&self) -> PyPoint3 {
-        PyPoint3(self.0.center())
+    fn center(&self) -> PyPoint3D {
+        PyPoint3D(self.0.center())
     }
 
     /// The semi-major (transverse) radius.
@@ -1353,22 +1205,22 @@ impl PyHyperbola3D {
     }
 
     /// Evaluate the point at parameter `u`.
-    fn eval_point(&self, u: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3> {
-        self.0.eval_points(&us).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter of a point lying on the hyperbola.
-    fn parameter_of(&self, point: PyPoint3) -> f64 {
+    fn parameter_of(&self, point: PyPoint3D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1387,21 +1239,10 @@ struct PyBSplineCurve3D(BSplineCurve3D);
 #[pymethods]
 impl PyBSplineCurve3D {
     #[new]
+    /// Build a non-rational B-spline curve.
     fn py_new(
         degree: usize,
-        poles: Vec<PyPoint3>,
-        knots: Vec<f64>,
-        multiplicities: Vec<u32>,
-        periodic: bool,
-    ) -> PyResult<Self> {
-        Self::new(degree, poles, knots, multiplicities, periodic)
-    }
-
-    /// Build a non-rational B-spline curve.
-    #[staticmethod]
-    fn new(
-        degree: usize,
-        poles: Vec<PyPoint3>,
+        poles: Vec<PyPoint3D>,
         knots: Vec<f64>,
         multiplicities: Vec<u32>,
         periodic: bool,
@@ -1416,7 +1257,7 @@ impl PyBSplineCurve3D {
     #[staticmethod]
     fn new_rational(
         degree: usize,
-        poles: Vec<PyPoint3>,
+        poles: Vec<PyPoint3D>,
         weights: Vec<f64>,
         knots: Vec<f64>,
         multiplicities: Vec<u32>,
@@ -1450,18 +1291,18 @@ impl PyBSplineCurve3D {
     }
 
     /// Evaluate the point at parameter `u`.
-    fn eval_point(&self, u: f64) -> PyPoint3 {
-        PyPoint3(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3> {
-        self.0.eval_points(&us).into_iter().map(PyPoint3).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
     /// Evaluate the derivative at `u`; orders 1 and 2 are supported.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3 {
-        PyVector3(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
+        PyVector3D(self.0.eval_derivative(u, order))
     }
 
     /// Not available for B-spline curves in this release; always raises `ValueError`.
@@ -1479,47 +1320,40 @@ struct PyLine2D(Line2D);
 #[pymethods]
 impl PyLine2D {
     #[new]
-    fn py_new(origin: PyPoint2, direction: PyVector2) -> PyResult<Self> {
-        Ok(PyLine2D(
-            Line2D::new(origin.0, direction.0).map_err(val_err)?,
-        ))
-    }
-
     /// Build a 2D line from an origin and a direction (normalized internally).
-    #[staticmethod]
-    fn new(origin: PyPoint2, direction: PyVector2) -> PyResult<Self> {
+    fn py_new(origin: PyPoint2D, direction: PyVector2D) -> PyResult<Self> {
         Ok(PyLine2D(
             Line2D::new(origin.0, direction.0).map_err(val_err)?,
         ))
     }
 
     /// The line origin (point at parameter 0).
-    fn origin(&self) -> PyPoint2 {
-        PyPoint2(self.0.origin())
+    fn origin(&self) -> PyPoint2D {
+        PyPoint2D(self.0.origin())
     }
 
     /// The unit direction of the line.
-    fn direction(&self) -> PyVector2 {
-        PyVector2(self.0.direction())
+    fn direction(&self) -> PyVector2D {
+        PyVector2D(self.0.direction())
     }
 
     /// Evaluate the point at parameter `u`.
-    fn eval_point(&self, u: f64) -> PyPoint2 {
-        PyPoint2(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint2D {
+        PyPoint2D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint2> {
-        self.0.eval_points(&us).into_iter().map(PyPoint2).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint2D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint2D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector2 {
-        PyVector2(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector2D {
+        PyVector2D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter of a point lying on the line.
-    fn parameter_of(&self, point: PyPoint2) -> f64 {
+    fn parameter_of(&self, point: PyPoint2D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1541,23 +1375,16 @@ struct PyCircle2D(Circle2D);
 #[pymethods]
 impl PyCircle2D {
     #[new]
-    fn py_new(center: PyPoint2, radius: f64) -> PyResult<Self> {
-        Ok(PyCircle2D(
-            Circle2D::new(center.0, radius).map_err(val_err)?,
-        ))
-    }
-
     /// Build a 2D circle from its center and radius.
-    #[staticmethod]
-    fn new(center: PyPoint2, radius: f64) -> PyResult<Self> {
+    fn py_new(center: PyPoint2D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle2D(
             Circle2D::new(center.0, radius).map_err(val_err)?,
         ))
     }
 
     /// The circle center.
-    fn center(&self) -> PyPoint2 {
-        PyPoint2(self.0.center())
+    fn center(&self) -> PyPoint2D {
+        PyPoint2D(self.0.center())
     }
 
     /// The circle radius.
@@ -1566,22 +1393,22 @@ impl PyCircle2D {
     }
 
     /// Evaluate the point at angle `u` (radians).
-    fn eval_point(&self, u: f64) -> PyPoint2 {
-        PyPoint2(self.0.eval_point(u))
+    fn eval_point(&self, u: f64) -> PyPoint2D {
+        PyPoint2D(self.0.eval_point(u))
     }
 
     /// Evaluate many parameters at once.
-    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint2> {
-        self.0.eval_points(&us).into_iter().map(PyPoint2).collect()
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint2D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint2D).collect()
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector2 {
-        PyVector2(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyVector2D {
+        PyVector2D(self.0.eval_derivative(u, order))
     }
 
     /// Recover the parameter in [0, 2*pi) of a point lying on the circle.
-    fn parameter_of(&self, point: PyPoint2) -> f64 {
+    fn parameter_of(&self, point: PyPoint2D) -> f64 {
         self.0.parameter_of(point.0)
     }
 
@@ -1604,12 +1431,12 @@ impl PyCircle2D {
 fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
 
-    m.add_class::<PyPoint3>()?;
-    m.add_class::<PyPoint2>()?;
-    m.add_class::<PyVector3>()?;
-    m.add_class::<PyVector2>()?;
-    m.add_class::<PyAxis3>()?;
-    m.add_class::<PyFrame3>()?;
+    m.add_class::<PyPoint3D>()?;
+    m.add_class::<PyPoint2D>()?;
+    m.add_class::<PyVector3D>()?;
+    m.add_class::<PyVector2D>()?;
+    m.add_class::<PyAxis3D>()?;
+    m.add_class::<PyFrame3D>()?;
     m.add_class::<PyTransform>()?;
 
     let curves = PyModule::new(py, "curves")?;

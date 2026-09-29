@@ -2,7 +2,7 @@
 //! wrappers over [`crate::surface_math::analytic`].
 
 use crate::surface_math::analytic;
-use crate::{Frame3, Point3, Vector3};
+use crate::{Frame3D, Point3D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Sphere`] cannot be constructed from the given
@@ -30,27 +30,27 @@ impl fmt::Display for SphereConstructionError {
 
 impl std::error::Error for SphereConstructionError {}
 
-/// A sphere in 3D: a [`Frame3`] (origin plus local x/y/z directions) and a
+/// A sphere in 3D: a [`Frame3D`] (origin plus local x/y/z directions) and a
 /// radius, evaluated as `Rcv = r*cos(v)`,
 /// `origin + Rcv*cos(u)*x_dir + Rcv*sin(u)*y_dir + r*sin(v)*z_dir`.
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Sphere, Point3};
-/// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
-/// assert_eq!(sphere.eval_point(0.0, 0.0), Point3::new(3.0, 0.0, 0.0));
+/// use geomcore::{Sphere, Point3D};
+/// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+/// assert_eq!(sphere.eval_point(0.0, 0.0), Point3D::new(3.0, 0.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sphere {
-    frame: Frame3,
+    frame: Frame3D,
     radius: f64,
 }
 
 impl Sphere {
     /// Creates a sphere from a center and a radius, using a world-aligned
-    /// frame (x/y/z directions matching [`Vector3::X`]/[`Vector3::Y`]/
-    /// [`Vector3::Z`]) at `center`.
+    /// frame (x/y/z directions matching [`Vector3D::X`]/[`Vector3D::Y`]/
+    /// [`Vector3D::Z`]) at `center`.
     ///
     /// # Errors
     ///
@@ -60,13 +60,13 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere};
-    /// let sphere = Sphere::new(Point3::new(1.0, 2.0, 3.0), 2.0).unwrap();
-    /// assert_eq!(sphere.center(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::new(1.0, 2.0, 3.0), 2.0).unwrap();
+    /// assert_eq!(sphere.center(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn new(center: Point3, radius: f64) -> Result<Sphere, SphereConstructionError> {
-        let frame = Frame3::new(center, Vector3::Z, Vector3::X)
-            .expect("Vector3::Z and Vector3::X are orthonormal by construction");
+    pub fn new(center: Point3D, radius: f64) -> Result<Sphere, SphereConstructionError> {
+        let frame = Frame3D::new(center, Vector3D::Z, Vector3D::X)
+            .expect("Vector3D::Z and Vector3D::X are orthonormal by construction");
         Sphere::from_frame(frame, radius)
     }
 
@@ -80,11 +80,11 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Sphere};
-    /// let sphere = Sphere::from_frame(Frame3::WORLD, 2.0).unwrap();
-    /// assert_eq!(sphere.frame(), Frame3::WORLD);
+    /// use geomcore::{Frame3D, Sphere};
+    /// let sphere = Sphere::from_frame(Frame3D::WORLD, 2.0).unwrap();
+    /// assert_eq!(sphere.frame(), Frame3D::WORLD);
     /// ```
-    pub fn from_frame(frame: Frame3, radius: f64) -> Result<Sphere, SphereConstructionError> {
+    pub fn from_frame(frame: Frame3D, radius: f64) -> Result<Sphere, SphereConstructionError> {
         if radius < 0.0 {
             return Err(SphereConstructionError::NegativeRadius);
         }
@@ -96,11 +96,11 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere};
-    /// let sphere = Sphere::new(Point3::new(1.0, 2.0, 3.0), 2.0).unwrap();
-    /// assert_eq!(sphere.center(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::new(1.0, 2.0, 3.0), 2.0).unwrap();
+    /// assert_eq!(sphere.center(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn center(&self) -> Point3 {
+    pub fn center(&self) -> Point3D {
         self.frame.origin()
     }
 
@@ -109,11 +109,11 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Sphere};
-    /// let sphere = Sphere::from_frame(Frame3::WORLD, 2.0).unwrap();
-    /// assert_eq!(sphere.frame(), Frame3::WORLD);
+    /// use geomcore::{Frame3D, Sphere};
+    /// let sphere = Sphere::from_frame(Frame3D::WORLD, 2.0).unwrap();
+    /// assert_eq!(sphere.frame(), Frame3D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame3 {
+    pub fn frame(&self) -> Frame3D {
         self.frame
     }
 
@@ -122,8 +122,8 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere};
-    /// let sphere = Sphere::new(Point3::ORIGIN, 2.0).unwrap();
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     /// assert_eq!(sphere.radius(), 2.0);
     /// ```
     pub fn radius(&self) -> f64 {
@@ -136,11 +136,11 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere};
-    /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
-    /// assert_eq!(sphere.eval_point(0.0, 0.0), Point3::new(3.0, 0.0, 0.0));
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// assert_eq!(sphere.eval_point(0.0, 0.0), Point3D::new(3.0, 0.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64, v: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64, v: f64) -> Point3D {
         analytic::sphere_d0(&self.frame, self.radius, u, v)
     }
 
@@ -149,12 +149,12 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere};
-    /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
     /// let points = sphere.eval_points(&[(0.0, 0.0)]);
-    /// assert_eq!(points[0], Point3::new(3.0, 0.0, 0.0));
+    /// assert_eq!(points[0], Point3D::new(3.0, 0.0, 0.0));
     /// ```
-    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3> {
+    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         uvs.iter().map(|&(u, v)| self.eval_point(u, v)).collect()
     }
 
@@ -170,11 +170,11 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere, Vector3};
-    /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
-    /// assert_eq!(sphere.eval_derivative(0.0, 0.0, 0, 1), Vector3::Z * 3.0);
+    /// use geomcore::{Point3D, Sphere, Vector3D};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// assert_eq!(sphere.eval_derivative(0.0, 0.0, 0, 1), Vector3D::Z * 3.0);
     /// ```
-    pub fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         match du + dv {
             0 => panic!(
                 "eval_derivative: du + dv must be >= 1 (use eval_point for the (0, 0) order)"
@@ -193,12 +193,12 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Point3, Sphere};
-    /// let sphere = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
-    /// let (u, v) = sphere.parameters_of(Point3::new(3.0, 0.0, 0.0));
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// let (u, v) = sphere.parameters_of(Point3D::new(3.0, 0.0, 0.0));
     /// assert_eq!((u, v), (0.0, 0.0));
     /// ```
-    pub fn parameters_of(&self, point: Point3) -> (f64, f64) {
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::sphere_parameters(&self.frame, self.radius, point)
     }
 }
@@ -212,32 +212,32 @@ mod tests {
 
     #[test]
     fn test_new_ok_world_aligned() {
-        let s = Sphere::new(Point3::new(1.0, 2.0, 3.0), 2.0).unwrap();
-        assert_eq!(s.center(), Point3::new(1.0, 2.0, 3.0));
-        assert_eq!(s.frame().x_direction(), Vector3::X);
-        assert_eq!(s.frame().y_direction(), Vector3::Y);
-        assert_eq!(s.frame().z_direction(), Vector3::Z);
+        let s = Sphere::new(Point3D::new(1.0, 2.0, 3.0), 2.0).unwrap();
+        assert_eq!(s.center(), Point3D::new(1.0, 2.0, 3.0));
+        assert_eq!(s.frame().x_direction(), Vector3D::X);
+        assert_eq!(s.frame().y_direction(), Vector3D::Y);
+        assert_eq!(s.frame().z_direction(), Vector3D::Z);
     }
 
     #[test]
     fn test_new_negative_radius_errors() {
         assert_eq!(
-            Sphere::new(Point3::ORIGIN, -1.0),
+            Sphere::new(Point3D::ORIGIN, -1.0),
             Err(SphereConstructionError::NegativeRadius)
         );
     }
 
     #[test]
     fn test_from_frame_ok() {
-        let s = Sphere::from_frame(Frame3::WORLD, 5.0).unwrap();
-        assert_eq!(s.frame(), Frame3::WORLD);
+        let s = Sphere::from_frame(Frame3D::WORLD, 5.0).unwrap();
+        assert_eq!(s.frame(), Frame3D::WORLD);
         assert_eq!(s.radius(), 5.0);
     }
 
     #[test]
     fn test_from_frame_negative_radius_errors() {
         assert_eq!(
-            Sphere::from_frame(Frame3::WORLD, -0.1),
+            Sphere::from_frame(Frame3D::WORLD, -0.1),
             Err(SphereConstructionError::NegativeRadius)
         );
     }
@@ -246,13 +246,13 @@ mod tests {
 
     #[test]
     fn test_eval_point() {
-        let s = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
-        assert_eq!(s.eval_point(0.0, 0.0), Point3::new(3.0, 0.0, 0.0));
+        let s = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+        assert_eq!(s.eval_point(0.0, 0.0), Point3D::new(3.0, 0.0, 0.0));
     }
 
     #[test]
     fn test_eval_point_pole() {
-        let s = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
+        let s = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
         let p = s.eval_point(0.0, FRAC_PI_2);
         assert!(p.x.abs() < 1e-9);
         assert!(p.y.abs() < 1e-9);
@@ -261,30 +261,30 @@ mod tests {
 
     #[test]
     fn test_eval_points_matches_loop() {
-        let s = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
+        let s = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
         let uvs = [(0.0, 0.0), (0.5, 1.0)];
-        let expected: Vec<Point3> = uvs.iter().map(|&(u, v)| s.eval_point(u, v)).collect();
+        let expected: Vec<Point3D> = uvs.iter().map(|&(u, v)| s.eval_point(u, v)).collect();
         assert_eq!(s.eval_points(&uvs), expected);
     }
 
     #[test]
     #[should_panic(expected = "du + dv must be >= 1")]
     fn test_eval_derivative_zero_order_panics() {
-        let s = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
+        let s = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
         s.eval_derivative(0.0, 0.0, 0, 0);
     }
 
     #[test]
     #[should_panic(expected = "du + dv must be <= 2")]
     fn test_eval_derivative_order_too_high_panics() {
-        let s = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
+        let s = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
         s.eval_derivative(0.0, 0.0, 2, 1);
     }
 
     #[test]
     fn test_parameters_of_round_trip() {
-        let s = Sphere::new(Point3::ORIGIN, 3.0).unwrap();
-        let (u, v) = s.parameters_of(Point3::new(3.0, 0.0, 0.0));
+        let s = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+        let (u, v) = s.parameters_of(Point3D::new(3.0, 0.0, 0.0));
         assert_eq!((u, v), (0.0, 0.0));
     }
 

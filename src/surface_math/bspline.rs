@@ -30,7 +30,7 @@
 //! very end: `S = H/w`, `Su = (Hu_xyz - S*Hu_w)/w`, `Sv = (Hv_xyz - S*Hv_w)/w`.
 
 use super::super::curve_math::bspline as curve;
-use crate::{Point3, Vector3};
+use crate::{Point3D, Vector3D};
 
 /// Evaluates the surface point `S(u, v)`.
 ///
@@ -52,7 +52,7 @@ pub(crate) fn surface_d0(
     n_u: usize,
     n_v: usize,
     h: usize,
-) -> Point3 {
+) -> Point3D {
     debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
     // u-pass, order 0: collapse the u direction into one v-curve of homogeneous
     // poles.
@@ -75,9 +75,9 @@ pub(crate) fn surface_d0(
 
     if h == 4 {
         let w = homog[3];
-        Point3::new(homog[0] / w, homog[1] / w, homog[2] / w)
+        Point3D::new(homog[0] / w, homog[1] / w, homog[2] / w)
     } else {
-        Point3::new(homog[0], homog[1], homog[2])
+        Point3D::new(homog[0], homog[1], homog[2])
     }
 }
 
@@ -103,7 +103,7 @@ pub(crate) fn surface_d1(
     n_u: usize,
     n_v: usize,
     h: usize,
-) -> (Point3, Vector3, Vector3) {
+) -> (Point3D, Vector3D, Vector3D) {
     debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
     let mega = n_v * h;
 
@@ -138,22 +138,22 @@ pub(crate) fn surface_d1(
         //   Su = (Hu_xyz - S * Hu_w) / w
         //   Sv = (Hv_xyz - S * Hv_w) / w
         let w = h_s[3];
-        let s = Point3::new(h_s[0] / w, h_s[1] / w, h_s[2] / w);
-        let su = Vector3::new(
+        let s = Point3D::new(h_s[0] / w, h_s[1] / w, h_s[2] / w);
+        let su = Vector3D::new(
             (h_su[0] - s.x * h_su[3]) / w,
             (h_su[1] - s.y * h_su[3]) / w,
             (h_su[2] - s.z * h_su[3]) / w,
         );
-        let sv = Vector3::new(
+        let sv = Vector3D::new(
             (h_sv[0] - s.x * h_sv[3]) / w,
             (h_sv[1] - s.y * h_sv[3]) / w,
             (h_sv[2] - s.z * h_sv[3]) / w,
         );
         (s, su, sv)
     } else {
-        let s = Point3::new(h_s[0], h_s[1], h_s[2]);
-        let su = Vector3::new(h_su[0], h_su[1], h_su[2]);
-        let sv = Vector3::new(h_sv[0], h_sv[1], h_sv[2]);
+        let s = Point3D::new(h_s[0], h_s[1], h_s[2]);
+        let su = Vector3D::new(h_su[0], h_su[1], h_su[2]);
+        let sv = Vector3D::new(h_sv[0], h_sv[1], h_sv[2]);
         (s, su, sv)
     }
 }

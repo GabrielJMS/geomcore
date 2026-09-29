@@ -10,7 +10,7 @@ use common::{
 use geomcore::curves::ParametricCurve2D;
 use geomcore::surfaces::{BSplineSurface, ParametricSurface};
 use geomcore::{
-    Axis3, BSplineCurve3D, Circle3D, Cone, Curve2D, Cylinder, Ellipse3D, Hyperbola3D, Line3D,
+    Axis3D, BSplineCurve3D, Circle3D, Cone, Curve2D, Cylinder, Ellipse3D, Hyperbola3D, Line3D,
     Parabola3D, ParametrizeError, Plane, Sphere, Torus, Transform,
 };
 use serde::Deserialize;
@@ -60,7 +60,7 @@ fn build_transform(cases: &[TransformCase], index: usize) -> Transform {
                 angle: f64,
             }
             let spec: Spec = serde_json::from_value(case.spec.clone()).unwrap();
-            let axis = Axis3::new(point3(spec.axis_origin), vector3(spec.axis_dir)).unwrap();
+            let axis = Axis3D::new(point3(spec.axis_origin), vector3(spec.axis_dir)).unwrap();
             Transform::rotation(axis, spec.angle)
         }
         "scale" => {
@@ -82,7 +82,7 @@ fn build_transform(cases: &[TransformCase], index: usize) -> Transform {
         }
         "mirror_axis" => {
             let spec: MirrorAxisSpec = serde_json::from_value(case.spec.clone()).unwrap();
-            let axis = Axis3::new(point3(spec.origin), vector3(spec.dir)).unwrap();
+            let axis = Axis3D::new(point3(spec.origin), vector3(spec.dir)).unwrap();
             Transform::mirror_axis(axis)
         }
         "mirror_plane" => {
@@ -539,7 +539,7 @@ struct BSplineFixture {
 }
 
 fn build_bspline(case: &BSplineCase) -> BSplineCurve3D {
-    let poles: Vec<geomcore::Point3> = case.poles.iter().map(|&p| point3(p)).collect();
+    let poles: Vec<geomcore::Point3D> = case.poles.iter().map(|&p| point3(p)).collect();
     let result = match &case.weights {
         Some(weights) => BSplineCurve3D::new_rational(
             case.degree,
@@ -654,11 +654,11 @@ struct SurfacesAnalyticFixture {
 fn assert_surface_samples_and_parameters<F>(
     samples: &[SurfaceSample],
     parameters_of: &[SurfaceParametersOf],
-    eval_point: impl Fn(f64, f64) -> geomcore::Point3,
-    eval_derivative: impl Fn(f64, f64, u32, u32) -> geomcore::Vector3,
+    eval_point: impl Fn(f64, f64) -> geomcore::Point3D,
+    eval_derivative: impl Fn(f64, f64, u32, u32) -> geomcore::Vector3D,
     parameters: F,
 ) where
-    F: Fn(geomcore::Point3) -> (f64, f64),
+    F: Fn(geomcore::Point3D) -> (f64, f64),
 {
     for sample in samples {
         let (u, v) = (sample.u, sample.v);
@@ -817,7 +817,7 @@ struct SurfaceConstructionFixture {
     cylinders_from_circle: Vec<CylinderFromCircleCase>,
 }
 
-fn assert_frame_matches(frame: geomcore::Frame3, expected: &FrameJson) {
+fn assert_frame_matches(frame: geomcore::Frame3D, expected: &FrameJson) {
     assert_point3(frame.origin(), expected.origin);
     assert_vector3(frame.x_direction(), expected.x_dir);
     assert_vector3(frame.y_direction(), expected.y_dir);
@@ -909,7 +909,7 @@ struct BSplineSurfaceFixture {
 }
 
 fn build_bspline_surface(case: &BSplineSurfaceCase) -> BSplineSurface {
-    let poles: Vec<Vec<geomcore::Point3>> = case
+    let poles: Vec<Vec<geomcore::Point3D>> = case
         .poles
         .iter()
         .map(|row| row.iter().map(|&p| point3(p)).collect())

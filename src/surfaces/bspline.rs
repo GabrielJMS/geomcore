@@ -10,7 +10,7 @@
 use crate::curve_math::bspline as curve;
 use crate::surface_math::bspline as math;
 use crate::surfaces::ParametricSurface;
-use crate::{Point3, Vector3};
+use crate::{Point3D, Vector3D};
 
 pub use crate::curves::BSplineConstructionError;
 
@@ -34,11 +34,11 @@ pub use crate::curves::BSplineConstructionError;
 ///
 /// ```
 /// use geomcore::surfaces::BSplineSurface;
-/// use geomcore::Point3;
+/// use geomcore::Point3D;
 ///
 /// let poles = vec![
-///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-///     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+///     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
 /// ];
 /// let surface = BSplineSurface::new(
 ///     1,
@@ -53,7 +53,7 @@ pub use crate::curves::BSplineConstructionError;
 /// )
 /// .unwrap();
 ///
-/// assert_eq!(surface.eval_point(0.5, 0.5), Point3::new(0.5, 0.5, 0.25));
+/// assert_eq!(surface.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 0.25));
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct BSplineSurface {
@@ -61,7 +61,7 @@ pub struct BSplineSurface {
     v_degree: usize,
     u_periodic: bool,
     v_periodic: bool,
-    poles: Vec<Vec<Point3>>,
+    poles: Vec<Vec<Point3D>>,
     weights: Option<Vec<Vec<f64>>>,
     u_knots: Vec<f64>,
     u_mults: Vec<u32>,
@@ -100,11 +100,11 @@ impl BSplineSurface {
     ///
     /// ```
     /// use geomcore::surfaces::BSplineSurface;
-    /// use geomcore::Point3;
+    /// use geomcore::Point3D;
     ///
     /// let poles = vec![
-    ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    ///     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    ///     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// ];
     /// let surface = BSplineSurface::new(
     ///     1, 1, poles,
@@ -113,13 +113,13 @@ impl BSplineSurface {
     ///     false, false,
     /// )
     /// .unwrap();
-    /// assert_eq!(surface.eval_point(0.0, 0.0), Point3::new(0.0, 0.0, 0.0));
+    /// assert_eq!(surface.eval_point(0.0, 0.0), Point3D::new(0.0, 0.0, 0.0));
     /// ```
     #[allow(clippy::too_many_arguments)] // mirrors the two-direction knot/degree data model
     pub fn new(
         u_degree: usize,
         v_degree: usize,
-        poles: Vec<Vec<Point3>>,
+        poles: Vec<Vec<Point3D>>,
         u_knots: Vec<f64>,
         u_multiplicities: Vec<u32>,
         v_knots: Vec<f64>,
@@ -156,11 +156,11 @@ impl BSplineSurface {
     ///
     /// ```
     /// use geomcore::surfaces::BSplineSurface;
-    /// use geomcore::Point3;
+    /// use geomcore::Point3D;
     ///
     /// let poles = vec![
-    ///     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    ///     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    ///     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// ];
     /// let weights = vec![vec![1.0, 1.0], vec![1.0, 1.0]];
     /// let surface = BSplineSurface::new_rational(
@@ -171,13 +171,13 @@ impl BSplineSurface {
     /// )
     /// .unwrap();
     /// // All-unit weights reproduce the polynomial patch.
-    /// assert_eq!(surface.eval_point(0.5, 0.5), Point3::new(0.5, 0.5, 0.25));
+    /// assert_eq!(surface.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 0.25));
     /// ```
     #[allow(clippy::too_many_arguments)] // mirrors the two-direction knot/degree data model
     pub fn new_rational(
         u_degree: usize,
         v_degree: usize,
-        poles: Vec<Vec<Point3>>,
+        poles: Vec<Vec<Point3D>>,
         weights: Vec<Vec<f64>>,
         u_knots: Vec<f64>,
         u_multiplicities: Vec<u32>,
@@ -204,7 +204,7 @@ impl BSplineSurface {
     fn build(
         u_degree: usize,
         v_degree: usize,
-        poles: Vec<Vec<Point3>>,
+        poles: Vec<Vec<Point3D>>,
         weights: Option<Vec<Vec<f64>>>,
         u_knots: Vec<f64>,
         u_multiplicities: Vec<u32>,
@@ -270,10 +270,10 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// assert_eq!(surface.u_degree(), 1);
@@ -288,10 +288,10 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// assert_eq!(surface.v_degree(), 1);
@@ -306,10 +306,10 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// assert!(!surface.is_u_periodic());
@@ -324,10 +324,10 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// assert!(!surface.is_v_periodic());
@@ -342,10 +342,10 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// assert!(!surface.is_rational());
@@ -363,15 +363,15 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
-    /// assert_eq!(surface.eval_point(0.5, 0.5), Point3::new(0.5, 0.5, 0.25));
+    /// assert_eq!(surface.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 0.25));
     /// ```
-    pub fn eval_point(&self, u: f64, v: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64, v: f64) -> Point3D {
         math::surface_d0(
             u,
             v,
@@ -394,16 +394,16 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::Point3;
+    /// # use geomcore::Point3D;
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// let points = surface.eval_points(&[(0.0, 0.0), (0.5, 0.5)]);
-    /// assert_eq!(points[1], Point3::new(0.5, 0.5, 0.25));
+    /// assert_eq!(points[1], Point3D::new(0.5, 0.5, 0.25));
     /// ```
-    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3> {
+    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         uvs.iter().map(|&(u, v)| self.eval_point(u, v)).collect()
     }
 
@@ -422,17 +422,17 @@ impl BSplineSurface {
     ///
     /// ```
     /// # use geomcore::surfaces::BSplineSurface;
-    /// # use geomcore::{Point3, Vector3};
+    /// # use geomcore::{Point3D, Vector3D};
     /// # let poles = vec![
-    /// #     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-    /// #     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
     /// # ];
     /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     /// // Bilinear patch: Su = (1, 0, v), Sv = (0, 1, u).
-    /// assert_eq!(surface.eval_derivative(0.3, 0.7, 1, 0), Vector3::new(1.0, 0.0, 0.7));
-    /// assert_eq!(surface.eval_derivative(0.3, 0.7, 0, 1), Vector3::new(0.0, 1.0, 0.3));
+    /// assert_eq!(surface.eval_derivative(0.3, 0.7, 1, 0), Vector3D::new(1.0, 0.0, 0.7));
+    /// assert_eq!(surface.eval_derivative(0.3, 0.7, 0, 1), Vector3D::new(0.0, 1.0, 0.3));
     /// ```
-    pub fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         match (du, dv) {
             (0, 0) => panic!(
                 "eval_derivative: du + dv must be >= 1 (use eval_point for the (0, 0) order)"
@@ -448,7 +448,7 @@ impl BSplineSurface {
     }
 
     /// Shared first-derivative evaluation, returning `(S, Su, Sv)`.
-    fn eval_surface_d1(&self, u: f64, v: f64) -> (Point3, Vector3, Vector3) {
+    fn eval_surface_d1(&self, u: f64, v: f64) -> (Point3D, Vector3D, Vector3D) {
         math::surface_d1(
             u,
             v,
@@ -491,13 +491,13 @@ impl BSplineSurface {
 }
 
 impl ParametricSurface for BSplineSurface {
-    fn eval_point(&self, u: f64, v: f64) -> Point3 {
+    fn eval_point(&self, u: f64, v: f64) -> Point3D {
         BSplineSurface::eval_point(self, u, v)
     }
 
     /// See [`BSplineSurface::eval_derivative`] for the supported orders and the
     /// panic conditions (only first derivatives are supported).
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3 {
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         BSplineSurface::eval_derivative(self, u, v, du, dv)
     }
 
@@ -527,7 +527,7 @@ impl ParametricSurface for BSplineSurface {
         }
     }
 
-    fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3> {
+    fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         BSplineSurface::eval_points(self, uvs)
     }
 }
@@ -535,7 +535,7 @@ impl ParametricSurface for BSplineSurface {
 /// Packs the pole grid (and, if rational, weights) into a flat, row-major
 /// `[i_u][i_v][h]` coordinate buffer: `(x, y, z)` per pole if `weights` is
 /// `None`, else the homogeneous `(x*w, y*w, z*w, w)`.
-fn pack_flat_poles(poles: &[Vec<Point3>], weights: Option<&Vec<Vec<f64>>>, h: usize) -> Vec<f64> {
+fn pack_flat_poles(poles: &[Vec<Point3D>], weights: Option<&Vec<Vec<f64>>>, h: usize) -> Vec<f64> {
     let mut out = Vec::with_capacity(poles.len() * poles[0].len() * h);
     for (iu, row) in poles.iter().enumerate() {
         for (iv, p) in row.iter().enumerate() {
@@ -563,8 +563,8 @@ mod tests {
         //   P10=(1,0,0) P11=(1,1,1)
         // S(u,v) = (u, v, u*v).
         let poles = vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+            vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+            vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
         ];
         BSplineSurface::new(
             1,
@@ -593,10 +593,10 @@ mod tests {
     #[test]
     fn test_bilinear_point_by_hand() {
         let s = bilinear();
-        assert_eq!(s.eval_point(0.5, 0.5), Point3::new(0.5, 0.5, 0.25));
-        assert_eq!(s.eval_point(0.0, 0.0), Point3::new(0.0, 0.0, 0.0));
-        assert_eq!(s.eval_point(1.0, 1.0), Point3::new(1.0, 1.0, 1.0));
-        assert_eq!(s.eval_point(0.3, 0.7), Point3::new(0.3, 0.7, 0.3 * 0.7));
+        assert_eq!(s.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 0.25));
+        assert_eq!(s.eval_point(0.0, 0.0), Point3D::new(0.0, 0.0, 0.0));
+        assert_eq!(s.eval_point(1.0, 1.0), Point3D::new(1.0, 1.0, 1.0));
+        assert_eq!(s.eval_point(0.3, 0.7), Point3D::new(0.3, 0.7, 0.3 * 0.7));
     }
 
     #[test]
@@ -605,11 +605,11 @@ mod tests {
         // Su = (1, 0, v), Sv = (0, 1, u).
         assert_eq!(
             s.eval_derivative(0.3, 0.7, 1, 0),
-            Vector3::new(1.0, 0.0, 0.7)
+            Vector3D::new(1.0, 0.0, 0.7)
         );
         assert_eq!(
             s.eval_derivative(0.3, 0.7, 0, 1),
-            Vector3::new(0.0, 1.0, 0.3)
+            Vector3D::new(0.0, 1.0, 0.3)
         );
     }
 
@@ -617,7 +617,7 @@ mod tests {
     fn test_eval_points_matches_mapped_eval_point() {
         let s = bilinear();
         let uvs = [(0.0, 0.0), (0.2, 0.4), (0.5, 0.5), (1.0, 1.0)];
-        let expected: Vec<Point3> = uvs.iter().map(|&(u, v)| s.eval_point(u, v)).collect();
+        let expected: Vec<Point3D> = uvs.iter().map(|&(u, v)| s.eval_point(u, v)).collect();
         assert_eq!(s.eval_points(&uvs), expected);
     }
 
@@ -652,10 +652,10 @@ mod tests {
 
     // ---- validation error variants ----
 
-    fn ok_grid() -> Vec<Vec<Point3>> {
+    fn ok_grid() -> Vec<Vec<Point3D>> {
         vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)],
+            vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+            vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
         ]
     }
 
@@ -679,8 +679,8 @@ mod tests {
     #[test]
     fn test_ragged_grid_is_pole_count_mismatch() {
         let poles = vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0)], // short row
+            vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+            vec![Point3D::new(1.0, 0.0, 0.0)], // short row
         ];
         let err = BSplineSurface::new(
             1,
@@ -826,26 +826,26 @@ mod tests {
         // Fixture uperiodic_tube: u_degree 2 periodic (6 pole rows), v_degree 1
         // clamped (2 columns).
         let poles = vec![
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.2, 0.0, 3.0)],
+            vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.2, 0.0, 3.0)],
             vec![
-                Point3::new(1.0000000000000002, 1.7320508075688772, 0.0),
-                Point3::new(1.1000000000000003, 1.905255888325765, 3.0),
+                Point3D::new(1.0000000000000002, 1.7320508075688772, 0.0),
+                Point3D::new(1.1000000000000003, 1.905255888325765, 3.0),
             ],
             vec![
-                Point3::new(-0.9999999999999996, 1.7320508075688774, 0.0),
-                Point3::new(-1.0999999999999996, 1.9052558883257653, 3.0),
+                Point3D::new(-0.9999999999999996, 1.7320508075688774, 0.0),
+                Point3D::new(-1.0999999999999996, 1.9052558883257653, 3.0),
             ],
             vec![
-                Point3::new(-2.0, 2.4492935982947064e-16, 0.0),
-                Point3::new(-2.2, 2.6942229581241775e-16, 3.0),
+                Point3D::new(-2.0, 2.4492935982947064e-16, 0.0),
+                Point3D::new(-2.2, 2.6942229581241775e-16, 3.0),
             ],
             vec![
-                Point3::new(-1.0000000000000009, -1.7320508075688767, 0.0),
-                Point3::new(-1.100000000000001, -1.9052558883257646, 3.0),
+                Point3D::new(-1.0000000000000009, -1.7320508075688767, 0.0),
+                Point3D::new(-1.100000000000001, -1.9052558883257646, 3.0),
             ],
             vec![
-                Point3::new(1.0000000000000002, -1.7320508075688772, 0.0),
-                Point3::new(1.1000000000000003, -1.905255888325765, 3.0),
+                Point3D::new(1.0000000000000002, -1.7320508075688772, 0.0),
+                Point3D::new(1.1000000000000003, -1.905255888325765, 3.0),
             ],
         ];
         BSplineSurface::new(

@@ -5,7 +5,7 @@ use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::surfaces::Surface;
-use crate::{Axis2, Axis3, Point2, Point3, Vector2, Vector3};
+use crate::{Axis2D, Axis3D, Point2D, Point3D, Vector2D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Line3D`] or [`Line2D`] cannot be constructed from
@@ -37,13 +37,13 @@ impl std::error::Error for LineConstructionError {}
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Line3D, Point3, Vector3};
-/// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
-/// assert_eq!(line.eval_point(3.0), Point3::new(3.0, 0.0, 0.0));
+/// use geomcore::{Line3D, Point3D, Vector3D};
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// assert_eq!(line.eval_point(3.0), Point3D::new(3.0, 0.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Line3D {
-    axis: Axis3,
+    axis: Axis3D,
 }
 
 impl Line3D {
@@ -56,13 +56,13 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::ORIGIN, Vector3::new(2.0, 0.0, 0.0)).unwrap();
-    /// assert_eq!(line.direction(), Vector3::X);
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::new(2.0, 0.0, 0.0)).unwrap();
+    /// assert_eq!(line.direction(), Vector3D::X);
     /// ```
-    pub fn new(origin: Point3, direction: Vector3) -> Result<Line3D, LineConstructionError> {
+    pub fn new(origin: Point3D, direction: Vector3D) -> Result<Line3D, LineConstructionError> {
         let axis =
-            Axis3::new(origin, direction).map_err(|_| LineConstructionError::NullDirection)?;
+            Axis3D::new(origin, direction).map_err(|_| LineConstructionError::NullDirection)?;
         Ok(Line3D { axis })
     }
 
@@ -71,12 +71,12 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Line3D, Point3, Vector3};
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::Y).unwrap();
+    /// use geomcore::{Axis3D, Line3D, Point3D, Vector3D};
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Y).unwrap();
     /// let line = Line3D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
     /// ```
-    pub fn from_axis(axis: Axis3) -> Line3D {
+    pub fn from_axis(axis: Axis3D) -> Line3D {
         Line3D { axis }
     }
 
@@ -90,16 +90,16 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3};
-    /// let line = Line3D::from_two_points(Point3::ORIGIN, Point3::new(2.0, 0.0, 0.0)).unwrap();
-    /// assert_eq!(line.origin(), Point3::ORIGIN);
+    /// use geomcore::{Line3D, Point3D};
+    /// let line = Line3D::from_two_points(Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)).unwrap();
+    /// assert_eq!(line.origin(), Point3D::ORIGIN);
     /// ```
-    pub fn from_two_points(p1: Point3, p2: Point3) -> Result<Line3D, LineConstructionError> {
+    pub fn from_two_points(p1: Point3D, p2: Point3D) -> Result<Line3D, LineConstructionError> {
         let direction = (p2 - p1)
             .normalized()
             .ok_or(LineConstructionError::ConfusedPoints)?;
         Ok(Line3D {
-            axis: Axis3::new(p1, direction).map_err(|_| LineConstructionError::ConfusedPoints)?,
+            axis: Axis3D::new(p1, direction).map_err(|_| LineConstructionError::ConfusedPoints)?,
         })
     }
 
@@ -108,11 +108,11 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::new(1.0, 2.0, 3.0), Vector3::X).unwrap();
-    /// assert_eq!(line.origin(), Point3::new(1.0, 2.0, 3.0));
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::X).unwrap();
+    /// assert_eq!(line.origin(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
-    pub fn origin(&self) -> Point3 {
+    pub fn origin(&self) -> Point3D {
         self.axis.origin()
     }
 
@@ -121,11 +121,11 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::ORIGIN, Vector3::new(0.0, 5.0, 0.0)).unwrap();
-    /// assert_eq!(line.direction(), Vector3::Y);
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::new(0.0, 5.0, 0.0)).unwrap();
+    /// assert_eq!(line.direction(), Vector3D::Y);
     /// ```
-    pub fn direction(&self) -> Vector3 {
+    pub fn direction(&self) -> Vector3D {
         self.axis.direction()
     }
 
@@ -134,12 +134,12 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis3, Line3D, Point3, Vector3};
-    /// let axis = Axis3::new(Point3::ORIGIN, Vector3::X).unwrap();
+    /// use geomcore::{Axis3D, Line3D, Point3D, Vector3D};
+    /// let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
     /// let line = Line3D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
     /// ```
-    pub fn axis(&self) -> Axis3 {
+    pub fn axis(&self) -> Axis3D {
         self.axis
     }
 
@@ -148,11 +148,11 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
-    /// assert_eq!(line.eval_point(3.0), Point3::new(3.0, 0.0, 0.0));
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.eval_point(3.0), Point3D::new(3.0, 0.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64) -> Point3D {
         analytic::line_d0(&self.axis, u)
     }
 
@@ -161,12 +161,12 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
     /// let points = line.eval_points(&[0.0, 1.0, 2.0]);
-    /// assert_eq!(points, vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]);
+    /// assert_eq!(points, vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(1.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)]);
     /// ```
-    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3> {
+    pub fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -185,17 +185,17 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::ORIGIN, Vector3::new(0.0, 3.0, 0.0)).unwrap();
-    /// assert_eq!(line.eval_derivative(1.5, 1), Vector3::Y);
-    /// assert_eq!(line.eval_derivative(1.5, 2), Vector3::ZERO);
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::new(0.0, 3.0, 0.0)).unwrap();
+    /// assert_eq!(line.eval_derivative(1.5, 1), Vector3D::Y);
+    /// assert_eq!(line.eval_derivative(1.5, 2), Vector3D::ZERO);
     /// ```
-    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3 {
+    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         let _ = u;
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
             1 => analytic::line_d1(&self.axis),
-            _ => Vector3::ZERO,
+            _ => Vector3D::ZERO,
         }
     }
 
@@ -205,11 +205,11 @@ impl Line3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line3D, Point3, Vector3};
-    /// let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
-    /// assert_eq!(line.parameter_of(Point3::new(2.5, 0.0, 0.0)), 2.5);
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.parameter_of(Point3D::new(2.5, 0.0, 0.0)), 2.5);
     /// ```
-    pub fn parameter_of(&self, point: Point3) -> f64 {
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
         analytic::line_parameter(&self.axis, point)
     }
 
@@ -236,10 +236,10 @@ impl Line3D {
     ///
     /// ```
     /// use geomcore::curves::{Curve2D, ParametricCurve2D};
-    /// use geomcore::{Cylinder, Line3D, Point3, Vector3};
+    /// use geomcore::{Cylinder, Line3D, Point3D, Vector3D};
     ///
-    /// let cylinder = Cylinder::new(Point3::ORIGIN, Vector3::Z, 2.0).unwrap();
-    /// let line = Line3D::new(Point3::new(2.0, 0.0, 0.0), Vector3::Z).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let line = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z).unwrap();
     /// let pcurve = line.parametrize_on(&cylinder).unwrap();
     /// // q(0) sits at u = 0 (angle of x-axis), v = 0 (height of the origin).
     /// let q0 = pcurve.eval_point(0.0);
@@ -257,13 +257,13 @@ impl Line3D {
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Line2D, Point2, Vector2};
-/// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
-/// assert_eq!(line.eval_point(3.0), Point2::new(3.0, 0.0));
+/// use geomcore::{Line2D, Point2D, Vector2D};
+/// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+/// assert_eq!(line.eval_point(3.0), Point2D::new(3.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Line2D {
-    axis: Axis2,
+    axis: Axis2D,
 }
 
 impl Line2D {
@@ -276,13 +276,13 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 5.0)).unwrap();
-    /// assert_eq!(line.direction(), Vector2::Y);
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 5.0)).unwrap();
+    /// assert_eq!(line.direction(), Vector2D::Y);
     /// ```
-    pub fn new(origin: Point2, direction: Vector2) -> Result<Line2D, LineConstructionError> {
+    pub fn new(origin: Point2D, direction: Vector2D) -> Result<Line2D, LineConstructionError> {
         let axis =
-            Axis2::new(origin, direction).map_err(|_| LineConstructionError::NullDirection)?;
+            Axis2D::new(origin, direction).map_err(|_| LineConstructionError::NullDirection)?;
         Ok(Line2D { axis })
     }
 
@@ -291,12 +291,12 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis2, Line2D, Point2, Vector2};
-    /// let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
+    /// use geomcore::{Axis2D, Line2D, Point2D, Vector2D};
+    /// let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
     /// let line = Line2D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
     /// ```
-    pub fn from_axis(axis: Axis2) -> Line2D {
+    pub fn from_axis(axis: Axis2D) -> Line2D {
         Line2D { axis }
     }
 
@@ -310,16 +310,16 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2};
-    /// let line = Line2D::from_two_points(Point2::ORIGIN, Point2::new(0.0, 4.0)).unwrap();
-    /// assert_eq!(line.origin(), Point2::ORIGIN);
+    /// use geomcore::{Line2D, Point2D};
+    /// let line = Line2D::from_two_points(Point2D::ORIGIN, Point2D::new(0.0, 4.0)).unwrap();
+    /// assert_eq!(line.origin(), Point2D::ORIGIN);
     /// ```
-    pub fn from_two_points(p1: Point2, p2: Point2) -> Result<Line2D, LineConstructionError> {
+    pub fn from_two_points(p1: Point2D, p2: Point2D) -> Result<Line2D, LineConstructionError> {
         let direction = (p2 - p1)
             .normalized()
             .ok_or(LineConstructionError::ConfusedPoints)?;
         Ok(Line2D {
-            axis: Axis2::new(p1, direction).map_err(|_| LineConstructionError::ConfusedPoints)?,
+            axis: Axis2D::new(p1, direction).map_err(|_| LineConstructionError::ConfusedPoints)?,
         })
     }
 
@@ -328,11 +328,11 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::new(1.0, 2.0), Vector2::X).unwrap();
-    /// assert_eq!(line.origin(), Point2::new(1.0, 2.0));
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::new(1.0, 2.0), Vector2D::X).unwrap();
+    /// assert_eq!(line.origin(), Point2D::new(1.0, 2.0));
     /// ```
-    pub fn origin(&self) -> Point2 {
+    pub fn origin(&self) -> Point2D {
         self.axis.origin()
     }
 
@@ -341,11 +341,11 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 5.0)).unwrap();
-    /// assert_eq!(line.direction(), Vector2::Y);
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 5.0)).unwrap();
+    /// assert_eq!(line.direction(), Vector2D::Y);
     /// ```
-    pub fn direction(&self) -> Vector2 {
+    pub fn direction(&self) -> Vector2D {
         self.axis.direction()
     }
 
@@ -354,12 +354,12 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Axis2, Line2D, Point2, Vector2};
-    /// let axis = Axis2::new(Point2::ORIGIN, Vector2::X).unwrap();
+    /// use geomcore::{Axis2D, Line2D, Point2D, Vector2D};
+    /// let axis = Axis2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
     /// let line = Line2D::from_axis(axis);
     /// assert_eq!(line.axis(), axis);
     /// ```
-    pub fn axis(&self) -> Axis2 {
+    pub fn axis(&self) -> Axis2D {
         self.axis
     }
 
@@ -368,11 +368,11 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
-    /// assert_eq!(line.eval_point(3.0), Point2::new(3.0, 0.0));
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// assert_eq!(line.eval_point(3.0), Point2D::new(3.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64) -> Point2 {
+    pub fn eval_point(&self, u: f64) -> Point2D {
         analytic::line2d_d0(&self.axis, u)
     }
 
@@ -381,12 +381,12 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
     /// let points = line.eval_points(&[0.0, 1.0, 2.0]);
-    /// assert_eq!(points, vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)]);
+    /// assert_eq!(points, vec![Point2D::new(0.0, 0.0), Point2D::new(1.0, 0.0), Point2D::new(2.0, 0.0)]);
     /// ```
-    pub fn eval_points(&self, us: &[f64]) -> Vec<Point2> {
+    pub fn eval_points(&self, us: &[f64]) -> Vec<Point2D> {
         us.iter().map(|&u| self.eval_point(u)).collect()
     }
 
@@ -405,17 +405,17 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 3.0)).unwrap();
-    /// assert_eq!(line.eval_derivative(1.5, 1), Vector2::Y);
-    /// assert_eq!(line.eval_derivative(1.5, 2), Vector2::ZERO);
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 3.0)).unwrap();
+    /// assert_eq!(line.eval_derivative(1.5, 1), Vector2D::Y);
+    /// assert_eq!(line.eval_derivative(1.5, 2), Vector2D::ZERO);
     /// ```
-    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector2 {
+    pub fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         let _ = u;
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
             1 => self.axis.direction(),
-            _ => Vector2::ZERO,
+            _ => Vector2D::ZERO,
         }
     }
 
@@ -425,11 +425,11 @@ impl Line2D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Line2D, Point2, Vector2};
-    /// let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
-    /// assert_eq!(line.parameter_of(Point2::new(2.5, 0.0)), 2.5);
+    /// use geomcore::{Line2D, Point2D, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// assert_eq!(line.parameter_of(Point2D::new(2.5, 0.0)), 2.5);
     /// ```
-    pub fn parameter_of(&self, point: Point2) -> f64 {
+    pub fn parameter_of(&self, point: Point2D) -> f64 {
         analytic::line2d_parameter(&self.axis, point)
     }
 }
@@ -437,47 +437,47 @@ impl Line2D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2, Axis3, Line2D, Line3D, LineConstructionError, Point2, Point3, Vector2, Vector3,
+        Axis2D, Axis3D, Line2D, Line3D, LineConstructionError, Point2D, Point3D, Vector2D, Vector3D,
     };
 
     // ---- Line3D construction ----
 
     #[test]
     fn test_line3d_new_normalizes_direction() {
-        let line = Line3D::new(Point3::ORIGIN, Vector3::new(2.0, 0.0, 0.0)).unwrap();
-        assert_eq!(line.origin(), Point3::ORIGIN);
-        assert_eq!(line.direction(), Vector3::X);
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::new(2.0, 0.0, 0.0)).unwrap();
+        assert_eq!(line.origin(), Point3D::ORIGIN);
+        assert_eq!(line.direction(), Vector3D::X);
     }
 
     #[test]
     fn test_line3d_new_null_direction_errors() {
         assert_eq!(
-            Line3D::new(Point3::ORIGIN, Vector3::ZERO),
+            Line3D::new(Point3D::ORIGIN, Vector3D::ZERO),
             Err(LineConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_line3d_from_axis() {
-        let axis = Axis3::new(Point3::new(1.0, 2.0, 3.0), Vector3::Y).unwrap();
+        let axis = Axis3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::Y).unwrap();
         let line = Line3D::from_axis(axis);
-        assert_eq!(line.origin(), Point3::new(1.0, 2.0, 3.0));
-        assert_eq!(line.direction(), Vector3::Y);
+        assert_eq!(line.origin(), Point3D::new(1.0, 2.0, 3.0));
+        assert_eq!(line.direction(), Vector3D::Y);
         assert_eq!(line.axis(), axis);
     }
 
     #[test]
     fn test_line3d_from_two_points() {
-        let p1 = Point3::new(0.0, 0.0, 0.0);
-        let p2 = Point3::new(2.0, 0.0, 0.0);
+        let p1 = Point3D::new(0.0, 0.0, 0.0);
+        let p2 = Point3D::new(2.0, 0.0, 0.0);
         let line = Line3D::from_two_points(p1, p2).unwrap();
         assert_eq!(line.origin(), p1);
-        assert_eq!(line.direction(), Vector3::X);
+        assert_eq!(line.direction(), Vector3D::X);
     }
 
     #[test]
     fn test_line3d_from_two_points_confused_errors() {
-        let p = Point3::new(1.0, 2.0, 3.0);
+        let p = Point3D::new(1.0, 2.0, 3.0);
         assert_eq!(
             Line3D::from_two_points(p, p),
             Err(LineConstructionError::ConfusedPoints)
@@ -488,46 +488,46 @@ mod tests {
 
     #[test]
     fn test_line3d_eval_point() {
-        let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
-        assert_eq!(line.eval_point(3.0), Point3::new(3.0, 0.0, 0.0));
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        assert_eq!(line.eval_point(3.0), Point3D::new(3.0, 0.0, 0.0));
     }
 
     #[test]
     fn test_line3d_eval_points_matches_loop() {
-        let line = Line3D::new(Point3::new(1.0, -2.0, 0.5), Vector3::Y).unwrap();
+        let line = Line3D::new(Point3D::new(1.0, -2.0, 0.5), Vector3D::Y).unwrap();
         let us = [0.0, 1.5, -3.0];
-        let expected: Vec<Point3> = us.iter().map(|&u| line.eval_point(u)).collect();
+        let expected: Vec<Point3D> = us.iter().map(|&u| line.eval_point(u)).collect();
         assert_eq!(line.eval_points(&us), expected);
     }
 
     #[test]
     fn test_line3d_eval_derivative_order1_is_direction() {
-        let line = Line3D::new(Point3::ORIGIN, Vector3::new(0.0, 3.0, 0.0)).unwrap();
-        assert_eq!(line.eval_derivative(1.5, 1), Vector3::Y);
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::new(0.0, 3.0, 0.0)).unwrap();
+        assert_eq!(line.eval_derivative(1.5, 1), Vector3D::Y);
     }
 
     #[test]
     fn test_line3d_eval_derivative_order2_is_zero() {
-        let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
-        assert_eq!(line.eval_derivative(1.5, 2), Vector3::ZERO);
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        assert_eq!(line.eval_derivative(1.5, 2), Vector3D::ZERO);
     }
 
     #[test]
     fn test_line3d_eval_derivative_order3_is_zero() {
-        let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
-        assert_eq!(line.eval_derivative(1.5, 3), Vector3::ZERO);
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        assert_eq!(line.eval_derivative(1.5, 3), Vector3D::ZERO);
     }
 
     #[test]
     #[should_panic]
     fn test_line3d_eval_derivative_order0_panics() {
-        let line = Line3D::new(Point3::ORIGIN, Vector3::X).unwrap();
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         line.eval_derivative(1.5, 0);
     }
 
     #[test]
     fn test_line3d_parameter_of_round_trip() {
-        let line = Line3D::new(Point3::new(1.0, -2.0, 0.5), Vector3::new(1.0, 2.0, 2.0)).unwrap();
+        let line = Line3D::new(Point3D::new(1.0, -2.0, 0.5), Vector3D::new(1.0, 2.0, 2.0)).unwrap();
         for u in [0.3, 2.0, -5.5] {
             let p = line.eval_point(u);
             assert!((line.parameter_of(p) - u).abs() < 1e-9);
@@ -538,40 +538,40 @@ mod tests {
 
     #[test]
     fn test_line2d_new_normalizes_direction() {
-        let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 5.0)).unwrap();
-        assert_eq!(line.origin(), Point2::ORIGIN);
-        assert_eq!(line.direction(), Vector2::Y);
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 5.0)).unwrap();
+        assert_eq!(line.origin(), Point2D::ORIGIN);
+        assert_eq!(line.direction(), Vector2D::Y);
     }
 
     #[test]
     fn test_line2d_new_null_direction_errors() {
         assert_eq!(
-            Line2D::new(Point2::ORIGIN, Vector2::ZERO),
+            Line2D::new(Point2D::ORIGIN, Vector2D::ZERO),
             Err(LineConstructionError::NullDirection)
         );
     }
 
     #[test]
     fn test_line2d_from_axis() {
-        let axis = Axis2::new(Point2::new(1.0, 2.0), Vector2::X).unwrap();
+        let axis = Axis2D::new(Point2D::new(1.0, 2.0), Vector2D::X).unwrap();
         let line = Line2D::from_axis(axis);
-        assert_eq!(line.origin(), Point2::new(1.0, 2.0));
-        assert_eq!(line.direction(), Vector2::X);
+        assert_eq!(line.origin(), Point2D::new(1.0, 2.0));
+        assert_eq!(line.direction(), Vector2D::X);
         assert_eq!(line.axis(), axis);
     }
 
     #[test]
     fn test_line2d_from_two_points() {
-        let p1 = Point2::new(0.0, 0.0);
-        let p2 = Point2::new(0.0, 4.0);
+        let p1 = Point2D::new(0.0, 0.0);
+        let p2 = Point2D::new(0.0, 4.0);
         let line = Line2D::from_two_points(p1, p2).unwrap();
         assert_eq!(line.origin(), p1);
-        assert_eq!(line.direction(), Vector2::Y);
+        assert_eq!(line.direction(), Vector2D::Y);
     }
 
     #[test]
     fn test_line2d_from_two_points_confused_errors() {
-        let p = Point2::new(1.0, 2.0);
+        let p = Point2D::new(1.0, 2.0);
         assert_eq!(
             Line2D::from_two_points(p, p),
             Err(LineConstructionError::ConfusedPoints)
@@ -582,40 +582,40 @@ mod tests {
 
     #[test]
     fn test_line2d_eval_point() {
-        let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
-        assert_eq!(line.eval_point(3.0), Point2::new(3.0, 0.0));
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+        assert_eq!(line.eval_point(3.0), Point2D::new(3.0, 0.0));
     }
 
     #[test]
     fn test_line2d_eval_points_matches_loop() {
-        let line = Line2D::new(Point2::new(1.0, -2.0), Vector2::Y).unwrap();
+        let line = Line2D::new(Point2D::new(1.0, -2.0), Vector2D::Y).unwrap();
         let us = [0.0, 1.5, -3.0];
-        let expected: Vec<Point2> = us.iter().map(|&u| line.eval_point(u)).collect();
+        let expected: Vec<Point2D> = us.iter().map(|&u| line.eval_point(u)).collect();
         assert_eq!(line.eval_points(&us), expected);
     }
 
     #[test]
     fn test_line2d_eval_derivative_order1_is_direction() {
-        let line = Line2D::new(Point2::ORIGIN, Vector2::new(0.0, 3.0)).unwrap();
-        assert_eq!(line.eval_derivative(1.5, 1), Vector2::Y);
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::new(0.0, 3.0)).unwrap();
+        assert_eq!(line.eval_derivative(1.5, 1), Vector2D::Y);
     }
 
     #[test]
     fn test_line2d_eval_derivative_order2_is_zero() {
-        let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
-        assert_eq!(line.eval_derivative(1.5, 2), Vector2::ZERO);
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+        assert_eq!(line.eval_derivative(1.5, 2), Vector2D::ZERO);
     }
 
     #[test]
     #[should_panic]
     fn test_line2d_eval_derivative_order0_panics() {
-        let line = Line2D::new(Point2::ORIGIN, Vector2::X).unwrap();
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
         line.eval_derivative(1.5, 0);
     }
 
     #[test]
     fn test_line2d_parameter_of_round_trip() {
-        let line = Line2D::new(Point2::new(1.0, -2.0), Vector2::new(3.0, 4.0)).unwrap();
+        let line = Line2D::new(Point2D::new(1.0, -2.0), Vector2D::new(3.0, 4.0)).unwrap();
         for u in [0.3, 2.0, 5.5] {
             let p = line.eval_point(u);
             assert!((line.parameter_of(p) - u).abs() < 1e-9);

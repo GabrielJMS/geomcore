@@ -18,19 +18,19 @@ pub struct FrameJson {
     pub z_dir: [f64; 3],
 }
 
-/// Converts a `[x, y, z]` array into a [`geomcore::Point3`].
-pub fn point3(a: [f64; 3]) -> geomcore::Point3 {
-    geomcore::Point3::new(a[0], a[1], a[2])
+/// Converts a `[x, y, z]` array into a [`geomcore::Point3D`].
+pub fn point3(a: [f64; 3]) -> geomcore::Point3D {
+    geomcore::Point3D::new(a[0], a[1], a[2])
 }
 
-/// Converts a `[x, y, z]` array into a [`geomcore::Vector3`].
-pub fn vector3(a: [f64; 3]) -> geomcore::Vector3 {
-    geomcore::Vector3::new(a[0], a[1], a[2])
+/// Converts a `[x, y, z]` array into a [`geomcore::Vector3D`].
+pub fn vector3(a: [f64; 3]) -> geomcore::Vector3D {
+    geomcore::Vector3D::new(a[0], a[1], a[2])
 }
 
-/// Converts a [`FrameJson`] into a [`geomcore::Frame3`].
-pub fn frame3(f: &FrameJson) -> geomcore::Frame3 {
-    geomcore::Frame3::new(point3(f.origin), vector3(f.z_dir), vector3(f.x_dir)).unwrap()
+/// Converts a [`FrameJson`] into a [`geomcore::Frame3D`].
+pub fn frame3(f: &FrameJson) -> geomcore::Frame3D {
+    geomcore::Frame3D::new(point3(f.origin), vector3(f.z_dir), vector3(f.x_dir)).unwrap()
 }
 
 /// Loads and parses a fixture file by name from `tests/fixtures/`.
@@ -59,7 +59,7 @@ pub fn assert_close(actual: f64, expected: f64) {
 /// Asserts that `actual` matches the `[x, y, z]` array `expected`,
 /// component-wise, within [`assert_close`]'s tolerance.
 #[track_caller]
-pub fn assert_point3(actual: geomcore::Point3, expected: [f64; 3]) {
+pub fn assert_point3(actual: geomcore::Point3D, expected: [f64; 3]) {
     assert_close(actual.x, expected[0]);
     assert_close(actual.y, expected[1]);
     assert_close(actual.z, expected[2]);
@@ -68,7 +68,7 @@ pub fn assert_point3(actual: geomcore::Point3, expected: [f64; 3]) {
 /// Asserts that `actual` matches the `[x, y, z]` array `expected`,
 /// component-wise, within [`assert_close`]'s tolerance.
 #[track_caller]
-pub fn assert_vector3(actual: geomcore::Vector3, expected: [f64; 3]) {
+pub fn assert_vector3(actual: geomcore::Vector3D, expected: [f64; 3]) {
     assert_close(actual.x, expected[0]);
     assert_close(actual.y, expected[1]);
     assert_close(actual.z, expected[2]);

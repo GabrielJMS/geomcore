@@ -4,7 +4,7 @@
 
 use crate::surface_math::analytic;
 use crate::tol;
-use crate::{Frame3, Point3, Vector3};
+use crate::{Frame3D, Point3D, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Plane`] cannot be constructed from the given
@@ -38,25 +38,25 @@ impl fmt::Display for PlaneConstructionError {
 
 impl std::error::Error for PlaneConstructionError {}
 
-/// A plane in 3D: a [`Frame3`] (origin plus local x/y directions spanning
+/// A plane in 3D: a [`Frame3D`] (origin plus local x/y directions spanning
 /// the plane), evaluated as `origin + u*x_dir + v*y_dir`.
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Plane, Point3, Vector3};
-/// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-/// assert_eq!(plane.eval_point(2.0, 3.0), Point3::new(2.0, 3.0, 0.0));
+/// use geomcore::{Plane, Point3D, Vector3D};
+/// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+/// assert_eq!(plane.eval_point(2.0, 3.0), Point3D::new(2.0, 3.0, 0.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Plane {
-    frame: Frame3,
+    frame: Frame3D,
 }
 
 impl Plane {
     /// Creates a plane from a point and a normal.
     ///
-    /// The plane frame is derived from `normal` via [`Frame3::from_z`].
+    /// The plane frame is derived from `normal` via [`Frame3D::from_z`].
     ///
     /// # Errors
     ///
@@ -66,13 +66,13 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// assert_eq!(plane.normal(), Vector3::Z);
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(plane.normal(), Vector3D::Z);
     /// ```
-    pub fn new(point: Point3, normal: Vector3) -> Result<Plane, PlaneConstructionError> {
+    pub fn new(point: Point3D, normal: Vector3D) -> Result<Plane, PlaneConstructionError> {
         let frame =
-            Frame3::from_z(point, normal).map_err(|_| PlaneConstructionError::NullNormal)?;
+            Frame3D::from_z(point, normal).map_err(|_| PlaneConstructionError::NullNormal)?;
         Ok(Plane::from_frame(frame))
     }
 
@@ -82,11 +82,11 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Plane};
-    /// let plane = Plane::from_frame(Frame3::WORLD);
-    /// assert_eq!(plane.frame(), Frame3::WORLD);
+    /// use geomcore::{Frame3D, Plane};
+    /// let plane = Plane::from_frame(Frame3D::WORLD);
+    /// assert_eq!(plane.frame(), Frame3D::WORLD);
     /// ```
-    pub fn from_frame(frame: Frame3) -> Plane {
+    pub fn from_frame(frame: Frame3D) -> Plane {
         Plane { frame }
     }
 
@@ -110,19 +110,19 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
+    /// use geomcore::{Plane, Point3D, Vector3D};
     /// let plane = Plane::from_three_points(
-    ///     Point3::ORIGIN,
-    ///     Point3::new(1.0, 0.0, 0.0),
-    ///     Point3::new(0.0, 1.0, 0.0),
+    ///     Point3D::ORIGIN,
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(0.0, 1.0, 0.0),
     /// )
     /// .unwrap();
-    /// assert_eq!(plane.normal(), Vector3::Z);
+    /// assert_eq!(plane.normal(), Vector3D::Z);
     /// ```
     pub fn from_three_points(
-        p1: Point3,
-        p2: Point3,
-        p3: Point3,
+        p1: Point3D,
+        p2: Point3D,
+        p3: Point3D,
     ) -> Result<Plane, PlaneConstructionError> {
         if p1.distance(p2) < tol::CONFUSION {
             return Err(PlaneConstructionError::ConfusedPoints);
@@ -136,7 +136,7 @@ impl Plane {
         }
 
         let frame =
-            Frame3::new(p1, normal, v12).map_err(|_| PlaneConstructionError::CollinearPoints)?;
+            Frame3D::new(p1, normal, v12).map_err(|_| PlaneConstructionError::CollinearPoints)?;
         Ok(Plane::from_frame(frame))
     }
 
@@ -166,7 +166,7 @@ impl Plane {
     /// ```
     /// use geomcore::Plane;
     /// let plane = Plane::from_coefficients(0.0, 0.0, 1.0, -2.0).unwrap();
-    /// assert_eq!(plane.frame().origin(), geomcore::Point3::new(0.0, 0.0, 2.0));
+    /// assert_eq!(plane.frame().origin(), geomcore::Point3D::new(0.0, 0.0, 2.0));
     /// ```
     pub fn from_coefficients(
         a: f64,
@@ -180,14 +180,14 @@ impl Plane {
 
         let (aa, ab, ac) = (a.abs(), b.abs(), c.abs());
         let origin = if ac >= aa && ac >= ab {
-            Point3::new(0.0, 0.0, -d / c)
+            Point3D::new(0.0, 0.0, -d / c)
         } else if ab >= aa && ab >= ac {
-            Point3::new(0.0, -d / b, 0.0)
+            Point3D::new(0.0, -d / b, 0.0)
         } else {
-            Point3::new(-d / a, 0.0, 0.0)
+            Point3D::new(-d / a, 0.0, 0.0)
         };
 
-        let normal = Vector3::new(a, b, c);
+        let normal = Vector3D::new(a, b, c);
         let frame = arbitrary_perpendicular_frame(origin, normal);
         Ok(Plane::from_frame(frame))
     }
@@ -197,11 +197,11 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3, Plane};
-    /// let plane = Plane::from_frame(Frame3::WORLD);
-    /// assert_eq!(plane.frame(), Frame3::WORLD);
+    /// use geomcore::{Frame3D, Plane};
+    /// let plane = Plane::from_frame(Frame3D::WORLD);
+    /// assert_eq!(plane.frame(), Frame3D::WORLD);
     /// ```
-    pub fn frame(&self) -> Frame3 {
+    pub fn frame(&self) -> Frame3D {
         self.frame
     }
 
@@ -210,11 +210,11 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// assert_eq!(plane.normal(), Vector3::Z);
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(plane.normal(), Vector3D::Z);
     /// ```
-    pub fn normal(&self) -> Vector3 {
+    pub fn normal(&self) -> Vector3D {
         self.frame.z_direction()
     }
 
@@ -224,11 +224,11 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// assert_eq!(plane.eval_point(2.0, 3.0), Point3::new(2.0, 3.0, 0.0));
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(plane.eval_point(2.0, 3.0), Point3D::new(2.0, 3.0, 0.0));
     /// ```
-    pub fn eval_point(&self, u: f64, v: f64) -> Point3 {
+    pub fn eval_point(&self, u: f64, v: f64) -> Point3D {
         analytic::plane_d0(&self.frame, u, v)
     }
 
@@ -237,12 +237,12 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let points = plane.eval_points(&[(1.0, 0.0), (0.0, 1.0)]);
-    /// assert_eq!(points[0], Point3::new(1.0, 0.0, 0.0));
+    /// assert_eq!(points[0], Point3D::new(1.0, 0.0, 0.0));
     /// ```
-    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3> {
+    pub fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         uvs.iter().map(|&(u, v)| self.eval_point(u, v)).collect()
     }
 
@@ -259,11 +259,11 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// assert_eq!(plane.eval_derivative(0.0, 0.0, 1, 0), Vector3::X);
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(plane.eval_derivative(0.0, 0.0, 1, 0), Vector3D::X);
     /// ```
-    pub fn eval_derivative(&self, _u: f64, _v: f64, du: u32, dv: u32) -> Vector3 {
+    pub fn eval_derivative(&self, _u: f64, _v: f64, du: u32, dv: u32) -> Vector3D {
         match du + dv {
             0 => panic!(
                 "eval_derivative: du + dv must be >= 1 (use eval_point for the (0, 0) order)"
@@ -281,11 +281,11 @@ impl Plane {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Plane, Point3, Vector3};
-    /// let plane = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-    /// assert_eq!(plane.parameters_of(Point3::new(2.0, 3.0, 0.0)), (2.0, 3.0));
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(plane.parameters_of(Point3D::new(2.0, 3.0, 0.0)), (2.0, 3.0));
     /// ```
-    pub fn parameters_of(&self, point: Point3) -> (f64, f64) {
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::plane_parameters(&self.frame, point)
     }
 }
@@ -297,75 +297,75 @@ impl Plane {
 /// the other two (with a sign that reproduces the golden fixture).
 ///
 /// `normal` must be non-zero (checked by the caller).
-fn arbitrary_perpendicular_frame(origin: Point3, normal: Vector3) -> Frame3 {
+fn arbitrary_perpendicular_frame(origin: Point3D, normal: Vector3D) -> Frame3D {
     let z = normal.normalized().expect("normal is non-zero (checked)");
     let (ax, ay, az) = (z.x.abs(), z.y.abs(), z.z.abs());
     let x_dir = if ax <= ay && ax <= az {
-        Vector3::new(0.0, z.z, -z.y)
+        Vector3D::new(0.0, z.z, -z.y)
     } else if ay <= ax && ay <= az {
-        Vector3::new(z.z, 0.0, -z.x)
+        Vector3D::new(z.z, 0.0, -z.x)
     } else {
-        Vector3::new(z.y, -z.x, 0.0)
+        Vector3D::new(z.y, -z.x, 0.0)
     }
     .normalized()
     .expect("z has unit length and is nonzero on at least two axes, so the swap is nonzero");
-    Frame3::new(origin, z, x_dir).expect("x_dir constructed perpendicular to z by design")
+    Frame3D::new(origin, z, x_dir).expect("x_dir constructed perpendicular to z by design")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Vector3;
+    use crate::Vector3D;
 
     // ---- construction ----
 
     #[test]
     fn test_new_ok() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-        assert_eq!(p.normal(), Vector3::Z);
-        assert_eq!(p.frame().origin(), Point3::ORIGIN);
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(p.normal(), Vector3D::Z);
+        assert_eq!(p.frame().origin(), Point3D::ORIGIN);
     }
 
     #[test]
     fn test_new_null_normal_errors() {
         assert_eq!(
-            Plane::new(Point3::ORIGIN, Vector3::ZERO),
+            Plane::new(Point3D::ORIGIN, Vector3D::ZERO),
             Err(PlaneConstructionError::NullNormal)
         );
     }
 
     #[test]
     fn test_from_frame_is_infallible_and_roundtrips() {
-        let p = Plane::from_frame(Frame3::WORLD);
-        assert_eq!(p.frame(), Frame3::WORLD);
+        let p = Plane::from_frame(Frame3D::WORLD);
+        assert_eq!(p.frame(), Frame3D::WORLD);
     }
 
     #[test]
     fn test_from_three_points_ok() {
         let p = Plane::from_three_points(
-            Point3::ORIGIN,
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(0.0, 1.0, 0.0),
         )
         .unwrap();
-        assert_eq!(p.normal(), Vector3::Z);
-        assert_eq!(p.frame().origin(), Point3::ORIGIN);
+        assert_eq!(p.normal(), Vector3D::Z);
+        assert_eq!(p.frame().origin(), Point3D::ORIGIN);
     }
 
     #[test]
     fn test_from_three_points_confused_errors() {
-        let p1 = Point3::new(1.0, 2.0, 3.0);
+        let p1 = Point3D::new(1.0, 2.0, 3.0);
         assert_eq!(
-            Plane::from_three_points(p1, p1, Point3::new(4.0, 5.0, 6.0)),
+            Plane::from_three_points(p1, p1, Point3D::new(4.0, 5.0, 6.0)),
             Err(PlaneConstructionError::ConfusedPoints)
         );
     }
 
     #[test]
     fn test_from_three_points_collinear_errors() {
-        let p1 = Point3::new(0.0, 0.0, 0.0);
-        let p2 = Point3::new(1.0, 0.0, 0.0);
-        let p3 = Point3::new(2.0, 0.0, 0.0);
+        let p1 = Point3D::new(0.0, 0.0, 0.0);
+        let p2 = Point3D::new(1.0, 0.0, 0.0);
+        let p3 = Point3D::new(2.0, 0.0, 0.0);
         assert_eq!(
             Plane::from_three_points(p1, p2, p3),
             Err(PlaneConstructionError::CollinearPoints)
@@ -375,8 +375,8 @@ mod tests {
     #[test]
     fn test_from_coefficients_ok_axis_aligned() {
         let p = Plane::from_coefficients(0.0, 0.0, 1.0, -2.0).unwrap();
-        assert_eq!(p.frame().origin(), Point3::new(0.0, 0.0, 2.0));
-        assert_eq!(p.normal(), Vector3::Z);
+        assert_eq!(p.frame().origin(), Point3D::new(0.0, 0.0, 2.0));
+        assert_eq!(p.normal(), Vector3D::Z);
     }
 
     #[test]
@@ -409,51 +409,51 @@ mod tests {
 
     #[test]
     fn test_eval_point() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-        assert_eq!(p.eval_point(2.0, 3.0), Point3::new(2.0, 3.0, 0.0));
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(p.eval_point(2.0, 3.0), Point3D::new(2.0, 3.0, 0.0));
     }
 
     #[test]
     fn test_eval_points_matches_loop() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         let uvs = [(0.0, 0.0), (1.0, 2.0), (-1.0, 3.0)];
-        let expected: Vec<Point3> = uvs.iter().map(|&(u, v)| p.eval_point(u, v)).collect();
+        let expected: Vec<Point3D> = uvs.iter().map(|&(u, v)| p.eval_point(u, v)).collect();
         assert_eq!(p.eval_points(&uvs), expected);
     }
 
     #[test]
     fn test_eval_derivative_first_orders() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-        assert_eq!(p.eval_derivative(0.0, 0.0, 1, 0), Vector3::X);
-        assert_eq!(p.eval_derivative(0.0, 0.0, 0, 1), Vector3::Y);
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(p.eval_derivative(0.0, 0.0, 1, 0), Vector3D::X);
+        assert_eq!(p.eval_derivative(0.0, 0.0, 0, 1), Vector3D::Y);
     }
 
     #[test]
     fn test_eval_derivative_second_orders_are_zero() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-        assert_eq!(p.eval_derivative(0.0, 0.0, 2, 0), Vector3::ZERO);
-        assert_eq!(p.eval_derivative(0.0, 0.0, 0, 2), Vector3::ZERO);
-        assert_eq!(p.eval_derivative(0.0, 0.0, 1, 1), Vector3::ZERO);
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(p.eval_derivative(0.0, 0.0, 2, 0), Vector3D::ZERO);
+        assert_eq!(p.eval_derivative(0.0, 0.0, 0, 2), Vector3D::ZERO);
+        assert_eq!(p.eval_derivative(0.0, 0.0, 1, 1), Vector3D::ZERO);
     }
 
     #[test]
     #[should_panic(expected = "du + dv must be >= 1")]
     fn test_eval_derivative_zero_order_panics() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         p.eval_derivative(0.0, 0.0, 0, 0);
     }
 
     #[test]
     #[should_panic(expected = "du + dv must be <= 2")]
     fn test_eval_derivative_order_too_high_panics() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         p.eval_derivative(0.0, 0.0, 2, 1);
     }
 
     #[test]
     fn test_parameters_of_round_trip() {
-        let p = Plane::new(Point3::ORIGIN, Vector3::Z).unwrap();
-        assert_eq!(p.parameters_of(Point3::new(2.0, 3.0, 0.0)), (2.0, 3.0));
+        let p = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(p.parameters_of(Point3D::new(2.0, 3.0, 0.0)), (2.0, 3.0));
     }
 
     // ---- PlaneConstructionError ----
