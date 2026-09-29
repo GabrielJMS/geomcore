@@ -113,14 +113,104 @@ def pair_sphere_sphere():
     return (s1, "Sphere"), (s2, "Sphere"), (curve, "circle")
 
 
+def pair_sphere_cylinder():
+    s1 = canonical("Sphere")
+    s2 = canonical("Cylinder")
+    kind, payload = s1.intersect_cylinder(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Sphere"), (s2, "Cylinder"), (curves, "two_circles")
+
+
+def pair_cylinder_sphere():
+    s1 = canonical("Cylinder")
+    s2 = canonical("Sphere")
+    kind, payload = s2.intersect_cylinder(s1)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Cylinder"), (s2, "Sphere"), (curves, "two_circles")
+
+
+def pair_sphere_cone():
+    s1 = canonical("Sphere")
+    s2 = canonical("Cone")
+    kind, payload = s1.intersect_cone(s2)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Sphere"), (s2, "Cone"), (curves, "two_circles")
+
+
+def pair_cone_sphere():
+    s1 = canonical("Cone")
+    s2 = canonical("Sphere")
+    kind, payload = s2.intersect_cone(s1)
+    assert kind == "two_circles", kind
+    curves = [sample_curve(c.eval_point, 0.0, TAU, 128) for c in payload]
+    return (s1, "Cone"), (s2, "Sphere"), (curves, "two_circles")
+
+
+def pair_cylinder_cylinder():
+    s1 = canonical("Cylinder")
+    s2 = Cylinder(Point3D(3.0, 0.0, 0.0), Vector3D.z(), 2.0)
+    kind, payload = s1.intersect_cylinder(s2)
+    assert kind == "two_lines", kind
+    curves = [sample_curve(line.eval_point, -7.0, 7.0, 128) for line in payload]
+    return (s1, "Cylinder"), (s2, "Cylinder"), (curves, "two_lines")
+
+
+def pair_plane_cylinder():
+    s1 = canonical("Plane")
+    s2 = canonical("Cylinder")
+    kind, payload = s1.intersect_cylinder(s2)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Plane"), (s2, "Cylinder"), (curve, "circle")
+
+
+def pair_cylinder_plane():
+    s1 = canonical("Cylinder")
+    s2 = canonical("Plane")
+    kind, payload = s2.intersect_cylinder(s1)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Cylinder"), (s2, "Plane"), (curve, "circle")
+
+
+def pair_plane_cone():
+    s1 = canonical("Plane")
+    s2 = canonical("Cone")
+    kind, payload = s1.intersect_cone(s2)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Plane"), (s2, "Cone"), (curve, "circle")
+
+
+def pair_cone_plane():
+    s1 = canonical("Cone")
+    s2 = canonical("Plane")
+    kind, payload = s2.intersect_cone(s1)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Cone"), (s2, "Plane"), (curve, "circle")
+
+
 # Pair-specific builders returning ((surf1, kind1), (surf2, kind2),
 # (curve_points, curve_label) | None). Absent pairs fall back to two
 # canonical instances with no curve (pending analytic intersection).
 PAIR_BUILDERS = {
     ("Plane", "Plane"): pair_plane_plane,
     ("Plane", "Sphere"): pair_plane_sphere,
+    ("Plane", "Cylinder"): pair_plane_cylinder,
+    ("Plane", "Cone"): pair_plane_cone,
     ("Sphere", "Plane"): pair_sphere_plane,
     ("Sphere", "Sphere"): pair_sphere_sphere,
+    ("Sphere", "Cylinder"): pair_sphere_cylinder,
+    ("Sphere", "Cone"): pair_sphere_cone,
+    ("Cylinder", "Plane"): pair_cylinder_plane,
+    ("Cylinder", "Sphere"): pair_cylinder_sphere,
+    ("Cylinder", "Cylinder"): pair_cylinder_cylinder,
+    ("Cone", "Plane"): pair_cone_plane,
+    ("Cone", "Sphere"): pair_cone_sphere,
 }
 
 
@@ -165,10 +255,14 @@ def main() -> int:
                 )
             if curve_info is not None:
                 pts, label = curve_info
-                viewer.add_curve3d(
-                    f"{tag}_x", shift(pts, (ox, oy, 0.0)),
-                    color=CURVE_COLOR, name=f"{tag} {label}",
-                )
+                # Single polyline or a list of them (twin sections).
+                polylines = pts if isinstance(pts[0][0], list) else [pts]
+                for k, poly in enumerate(polylines):
+                    suffix = f"_x{k}" if len(polylines) > 1 else "_x"
+                    viewer.add_curve3d(
+                        f"{tag}{suffix}", shift(poly, (ox, oy, 0.0)),
+                        color=CURVE_COLOR, name=f"{tag} {label}",
+                    )
                 with_curve.append(f"({row},{col})")
             else:
                 pending.append(f"({row},{col})")

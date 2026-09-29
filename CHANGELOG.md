@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-29
+
+### Added
+
+- Analytic intersections, Stream 2 batch 3 (symmetric quadrics):
+  `Sphere::intersect_cylinder` and `Sphere::intersect_cone` (latitude
+  rings, single/tangent/empty) and `Cylinder::intersect_cylinder`
+  (generators, tangent, coincident, empty). Each checks its analytic
+  criterion first (axis through center / on axis / parallel axes) and
+  reports `NotAnalytic` otherwise — the reserved hook for the future
+  numeric surface-surface path, never a silent miss. Python returns
+  `(kind, payload)` tuples throughout.
+
 ## [0.7.0] - 2026-09-29
 
 ### Added
@@ -103,7 +116,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.8.0
 [0.7.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.7.0
 [0.6.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.6.0
 [0.5.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.5.0

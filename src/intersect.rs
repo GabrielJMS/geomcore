@@ -110,6 +110,64 @@ pub enum LineQuadricIntersection {
     Coincident,
 }
 
+/// Result of intersecting a sphere with a cylinder.
+///
+/// The analytic path requires the cylinder axis through the sphere
+/// center (within `tol.confusion`); otherwise the section is a space
+/// quartic and reports [`SphereCylinderIntersection::NotAnalytic`],
+/// reserved for the numeric surface-surface path.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SphereCylinderIntersection {
+    /// Latitude circle(s): one tangent ring or a symmetric pair.
+    Circle(Circle3D),
+    /// Two latitude rings symmetric about the equatorial plane.
+    TwoCircles(Circle3D, Circle3D),
+    /// The cylinder misses the sphere.
+    Empty,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting a sphere with a cone.
+///
+/// The analytic path requires the sphere center on the cone axis
+/// (within `tol.confusion`); otherwise the section is a space quartic
+/// and reports [`SphereConeIntersection::NotAnalytic`], reserved for the
+/// numeric surface-surface path.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SphereConeIntersection {
+    /// Latitude circle on the nappe.
+    Circle(Circle3D),
+    /// Two latitude circles on the nappe.
+    TwoCircles(Circle3D, Circle3D),
+    /// Grazing contact ring on the nappe.
+    TangentCircle(Circle3D),
+    /// No latitude circle lies on the single nappe.
+    Empty,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
+/// Result of intersecting two cylinders.
+///
+/// The analytic path requires parallel axes (within `tol.angular`);
+/// skew or crossing axes give a space quartic and report
+/// [`CylinderCylinderIntersection::NotAnalytic`], reserved for the
+/// numeric surface-surface path.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CylinderCylinderIntersection {
+    /// Two shared generators.
+    TwoLines(Line3D, Line3D),
+    /// One shared grazing generator.
+    TangentLine(Line3D),
+    /// Separate, nested without contact, or concentric with different radii.
+    Empty,
+    /// Same axis and radius within tolerance.
+    Coincident,
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
 /// Solution classification for `a*t^2 + b*t + c = 0` with tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {

@@ -4,7 +4,9 @@
 
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
-use crate::{Axis3D, Circle3D, Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{
+    Axis3D, Circle3D, CylinderCylinderIntersection, Frame3D, Line3D, Point3D, Tolerance, Vector3D,
+};
 use std::fmt;
 
 /// Error returned when a [`Cylinder`] cannot be constructed from the given
@@ -299,6 +301,76 @@ impl Cylinder {
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// Intersects this cylinder with another cylinder.
+    ///
+    /// The analytic path needs parallel axes (against `tol.angular`):
+    /// with the axis separation `d`, disjoint (`d` beyond `r1 + r2`),
+    /// nested (`d` below `|r1 - r2|`), grazing, and twin-generator cases
+    /// follow the planar two-circle logic, positioned by the radical
+    /// formula `s = (r1^2 - r2^2 + d^2) / (2d)`. Coaxial cylinders of
+    /// equal radius coincide; concentric ones of different radii miss.
+    /// Skew or crossing axes give a space quartic and report
+    /// [`CylinderCylinderIntersection::NotAnalytic`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, CylinderCylinderIntersection, Point3D, Tolerance, Vector3D};
+    /// let c1 = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let c2 = Cylinder::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match c1.intersect_cylinder(&c2, tol) {
+    ///     CylinderCylinderIntersection::TwoLines(_, _) => {}
+    ///     _ => panic!("expected two lines"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        other: &Cylinder,
+        tol: Tolerance,
+    ) -> CylinderCylinderIntersection {
+        let a1 = self.axis().direction();
+        if self
+            .axis()
+            .direction()
+            .cross(other.axis().direction())
+            .magnitude()
+            > tol.angular
+        {
+            return CylinderCylinderIntersection::NotAnalytic;
+        }
+        let w = other.axis().origin() - self.axis().origin();
+        let m = w - a1 * w.dot(a1);
+        let d = m.magnitude();
+        let (r1, r2) = (self.radius(), other.radius());
+        if d <= tol.confusion {
+            if (r1 - r2).abs() <= tol.confusion {
+                return CylinderCylinderIntersection::Coincident;
+            }
+            return CylinderCylinderIntersection::Empty;
+        }
+        let out = r1 + r2;
+        let inn = (r1 - r2).abs();
+        if d > out + tol.confusion || d < inn - tol.confusion {
+            return CylinderCylinderIntersection::Empty;
+        }
+        let expect = "generator direction is unit by construction";
+        let mhat = m * (1.0 / d);
+        if (d - out).abs() <= tol.confusion || (d - inn).abs() <= tol.confusion {
+            let p = self.axis().origin() + mhat * ((r1 * r1 - r2 * r2 + d * d) / (2.0 * d));
+            CylinderCylinderIntersection::TangentLine(Line3D::new(p, a1).expect(expect))
+        } else {
+            let s = (r1 * r1 - r2 * r2 + d * d) / (2.0 * d);
+            let h = (r1 * r1 - s * s).max(0.0).sqrt();
+            let base = self.axis().origin() + mhat * s;
+            let nhat = a1.cross(mhat);
+            CylinderCylinderIntersection::TwoLines(
+                Line3D::new(base + nhat * h, a1).expect(expect),
+                Line3D::new(base - nhat * h, a1).expect(expect),
+            )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -456,5 +528,62 @@ mod tests {
         let axis = cylinder.project_point(Point3D::new(0.0, 0.0, 5.0), tol);
         assert_eq!(axis.v, 5.0);
         assert_eq!(axis.distance, 2.0);
+    }
+
+    #[test]
+    fn test_cylinder_cylinder_intersection_two_lines() {
+        let tol = Tolerance::DEFAULT;
+        let c1 = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let c2 = Cylinder::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        match c1.intersect_cylinder(&c2, tol) {
+            CylinderCylinderIntersection::TwoLines(l1, l2) => {
+                assert_eq!(l1.direction(), Vector3D::Z);
+                assert!((l1.origin().x - 1.5).abs() < 1e-12);
+                assert!((l1.origin().y - 1.75f64.sqrt()).abs() < 1e-9);
+                assert!((l2.origin().y + 1.75f64.sqrt()).abs() < 1e-9);
+                for p in [l1.eval_point(2.0), l2.eval_point(-1.0)] {
+                    assert!(c1.contains(p, tol));
+                    assert!(c2.contains(p, tol));
+                }
+            }
+            _ => panic!("expected two lines"),
+        }
+    }
+
+    #[test]
+    fn test_cylinder_cylinder_intersection_degenerate() {
+        let tol = Tolerance::DEFAULT;
+        let c1 = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        // External tangency.
+        let tangent = Cylinder::new(Point3D::new(4.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        match c1.intersect_cylinder(&tangent, tol) {
+            CylinderCylinderIntersection::TangentLine(l) => {
+                assert_eq!(l.origin(), Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected a tangent line"),
+        }
+        // Separate.
+        let far = Cylinder::new(Point3D::new(5.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        assert_eq!(
+            c1.intersect_cylinder(&far, tol),
+            CylinderCylinderIntersection::Empty
+        );
+        // Concentric, different radii.
+        let nested = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        assert_eq!(
+            c1.intersect_cylinder(&nested, tol),
+            CylinderCylinderIntersection::Empty
+        );
+        // Coincident.
+        assert_eq!(
+            c1.intersect_cylinder(&c1, tol),
+            CylinderCylinderIntersection::Coincident
+        );
+        // Crossing axes: space quartic, no closed form.
+        let crossed = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 2.0).unwrap();
+        assert_eq!(
+            c1.intersect_cylinder(&crossed, tol),
+            CylinderCylinderIntersection::NotAnalytic
+        );
     }
 }

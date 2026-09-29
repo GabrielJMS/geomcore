@@ -14,8 +14,9 @@ use geomcore::curves::{
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, Frame3D, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
-    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
+    Axis3D, CylinderCylinderIntersection, Frame3D, LinePlaneIntersection, LineQuadricIntersection,
+    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
+    PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
     SphereSphereIntersection, Tolerance, Transform, Vector2D, Vector3D,
 };
 
@@ -749,6 +750,43 @@ impl PyCylinder {
             .map(|p| (p.u, p.v, p.distance))
             .collect()
     }
+
+    /// Intersects this cylinder with another cylinder.
+    ///
+    /// The analytic path needs parallel axes. Returns
+    /// `("two_lines", (Line3D, Line3D))`, `("tangent_line", Line3D)`,
+    /// `("empty", None)`, `("coincident", None)` or
+    /// `("not_analytic", None)` (no closed form; numeric path pending).
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        other: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cylinder(&other.0, tol) {
+            CylinderCylinderIntersection::TwoLines(l1, l2) => Ok((
+                "two_lines".to_string(),
+                (
+                    PyLine3D(l1).into_pyobject(py)?.into_any().unbind(),
+                    PyLine3D(l2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            CylinderCylinderIntersection::TangentLine(l) => Ok((
+                "tangent_line".to_string(),
+                PyLine3D(l).into_pyobject(py)?.into_any().unbind(),
+            )),
+            CylinderCylinderIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            CylinderCylinderIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+            CylinderCylinderIntersection::NotAnalytic => {
+                Ok(("not_analytic".to_string(), py.None()))
+            }
+        }
+    }
 }
 
 /// An infinite cone; u is the angle around the axis, v the distance along a
@@ -974,6 +1012,79 @@ impl PySphere {
             )),
             SphereSphereIntersection::Empty => Ok(("empty".to_string(), py.None())),
             SphereSphereIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this sphere with a cylinder.
+    ///
+    /// The analytic path needs the cylinder axis through the sphere
+    /// center. Returns `("circle", Circle3D)`,
+    /// `("two_circles", (Circle3D, Circle3D))`, `("empty", None)` or
+    /// `("not_analytic", None)` (no closed form; numeric path pending).
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cylinder(&cylinder.0, tol) {
+            SphereCylinderIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            SphereCylinderIntersection::TwoCircles(c1, c2) => Ok((
+                "two_circles".to_string(),
+                (
+                    PyCircle3D(c1).into_pyobject(py)?.into_any().unbind(),
+                    PyCircle3D(c2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            SphereCylinderIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            SphereCylinderIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this sphere with a cone.
+    ///
+    /// The analytic path needs the sphere center on the cone axis.
+    /// Returns `("circle", Circle3D)`,
+    /// `("two_circles", (Circle3D, Circle3D))`,
+    /// `("tangent_circle", Circle3D)`, `("empty", None)` or
+    /// `("not_analytic", None)` (no closed form; numeric path pending).
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cone(&cone.0, tol) {
+            SphereConeIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            SphereConeIntersection::TwoCircles(c1, c2) => Ok((
+                "two_circles".to_string(),
+                (
+                    PyCircle3D(c1).into_pyobject(py)?.into_any().unbind(),
+                    PyCircle3D(c2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            SphereConeIntersection::TangentCircle(c) => Ok((
+                "tangent_circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            SphereConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            SphereConeIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
         }
     }
 }

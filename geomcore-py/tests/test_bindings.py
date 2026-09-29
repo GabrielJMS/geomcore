@@ -297,3 +297,43 @@ def test_intersect_line_surface():
     gen = Line3D(Point3D(2.0, 0.0, 0.0), Vector3D.z())
     cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
     assert gen.intersect_cylinder(cylinder) == ("coincident", None)
+
+
+def test_intersect_symmetric_quadrics():
+    import math
+
+    from geomcore import Frame3D
+    from geomcore.surfaces import Cone, Cylinder
+
+    sphere = Sphere(Point3D.origin(), 3.0)
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+
+    kind, (c1, c2) = sphere.intersect_cylinder(cylinder)
+    assert kind == "two_circles"
+    assert c1.radius() == pytest.approx(2.0)
+    assert c1.center().z == pytest.approx(math.sqrt(5.0))
+
+    kind, _ = sphere.intersect_cylinder(Cylinder(Point3D.origin(), Vector3D.z(), 3.0))
+    assert kind == "circle"
+    off = Cylinder(Point3D(0.0, 1.0, 0.0), Vector3D.z(), 2.0)
+    assert sphere.intersect_cylinder(off) == ("not_analytic", None)
+
+    cone = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
+    kind, (r1, r2) = sphere.intersect_cone(cone)
+    assert kind == "two_circles"
+    assert r1.radius() == pytest.approx(2.6188, abs=1e-3)
+    assert r2.radius() == pytest.approx(0.7746, abs=1e-3)
+    # Small cone: one root falls behind the apex, leaving a single ring.
+    small = Cone.from_frame(Frame3D.world(), 0.4, 0.5)
+    kind, ring = sphere.intersect_cone(small)
+    assert kind == "circle"
+    assert ring.radius() == pytest.approx(1.5786, abs=1e-3)
+
+    c1 = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    c2 = Cylinder(Point3D(3.0, 0.0, 0.0), Vector3D.z(), 2.0)
+    kind, (l1, l2) = c1.intersect_cylinder(c2)
+    assert kind == "two_lines"
+    assert l1.origin().x == pytest.approx(1.5)
+    assert c1.intersect_cylinder(c1)[0] == "coincident"
+    crossed = Cylinder(Point3D.origin(), Vector3D.x(), 2.0)
+    assert c1.intersect_cylinder(crossed) == ("not_analytic", None)
