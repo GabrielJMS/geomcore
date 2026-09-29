@@ -14,10 +14,10 @@ use geomcore::curves::{
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, CylinderCylinderIntersection, Frame3D, LinePlaneIntersection, LineQuadricIntersection,
-    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
-    PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
-    SphereSphereIntersection, Tolerance, Transform, Vector2D, Vector3D,
+    Axis3D, ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D, LinePlaneIntersection,
+    LineQuadricIntersection, PlaneConeIntersection, PlaneCylinderIntersection,
+    PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection,
+    SphereCylinderIntersection, SphereSphereIntersection, Tolerance, Transform, Vector2D, Vector3D,
 };
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
@@ -897,6 +897,32 @@ impl PyCone {
             .iter()
             .map(|p| (p.u, p.v, p.distance))
             .collect()
+    }
+
+    /// Intersects this cone with a cylinder.
+    ///
+    /// The analytic path needs coaxial axes. Returns `("circle", Circle3D)`,
+    /// `("apex_point", Point3D)` or `("not_analytic", None)` (no closed
+    /// form; numeric path pending).
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cylinder(&cylinder.0, tol) {
+            ConeCylinderIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            ConeCylinderIntersection::ApexPoint(p) => Ok((
+                "apex_point".to_string(),
+                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            ConeCylinderIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
     }
 }
 

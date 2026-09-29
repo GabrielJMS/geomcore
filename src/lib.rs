@@ -92,10 +92,10 @@ pub use curves::{
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::{
-    CylinderCylinderIntersection, LinePlaneIntersection, LineQuadricIntersection,
-    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
-    PlaneSphereIntersection, SphereConeIntersection, SphereCylinderIntersection,
-    SphereSphereIntersection,
+    ConeCylinderIntersection, CylinderCylinderIntersection, LinePlaneIntersection,
+    LineQuadricIntersection, PlaneConeIntersection, PlaneCylinderIntersection,
+    PlanePlaneIntersection, PlaneSphereIntersection, SphereConeIntersection,
+    SphereCylinderIntersection, SphereSphereIntersection,
 };
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, SurfaceProjection};

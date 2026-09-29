@@ -194,6 +194,24 @@ def pair_cone_plane():
     return (s1, "Cone"), (s2, "Plane"), (curve, "circle")
 
 
+def pair_cone_cylinder():
+    s1 = canonical("Cone")
+    s2 = canonical("Cylinder")
+    kind, payload = s1.intersect_cylinder(s2)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Cone"), (s2, "Cylinder"), (curve, "circle")
+
+
+def pair_cylinder_cone():
+    s1 = canonical("Cylinder")
+    s2 = canonical("Cone")
+    kind, payload = s2.intersect_cylinder(s1)
+    assert kind == "circle", kind
+    curve = sample_curve(payload.eval_point, 0.0, TAU, 128)
+    return (s1, "Cylinder"), (s2, "Cone"), (curve, "circle")
+
+
 # Pair-specific builders returning ((surf1, kind1), (surf2, kind2),
 # (curve_points, curve_label) | None). Absent pairs fall back to two
 # canonical instances with no curve (pending analytic intersection).
@@ -209,8 +227,10 @@ PAIR_BUILDERS = {
     ("Cylinder", "Plane"): pair_cylinder_plane,
     ("Cylinder", "Sphere"): pair_cylinder_sphere,
     ("Cylinder", "Cylinder"): pair_cylinder_cylinder,
+    ("Cylinder", "Cone"): pair_cylinder_cone,
     ("Cone", "Plane"): pair_cone_plane,
     ("Cone", "Sphere"): pair_cone_sphere,
+    ("Cone", "Cylinder"): pair_cone_cylinder,
 }
 
 

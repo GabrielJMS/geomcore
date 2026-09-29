@@ -337,3 +337,18 @@ def test_intersect_symmetric_quadrics():
     assert c1.intersect_cylinder(c1)[0] == "coincident"
     crossed = Cylinder(Point3D.origin(), Vector3D.x(), 2.0)
     assert c1.intersect_cylinder(crossed) == ("not_analytic", None)
+
+
+def test_intersect_cone_cylinder():
+    from geomcore import Frame3D
+    from geomcore.surfaces import Cone, Cylinder
+
+    cone = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    kind, circle = cone.intersect_cylinder(cylinder)
+    assert kind == "circle"
+    assert circle.radius() == pytest.approx(2.0)
+    assert circle.center().distance(Point3D.origin()) < 1e-9
+
+    off = Cylinder(Point3D(1.0, 0.0, 0.0), Vector3D.z(), 2.0)
+    assert cone.intersect_cylinder(off) == ("not_analytic", None)

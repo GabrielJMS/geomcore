@@ -5,7 +5,7 @@
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
-use crate::{Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{Circle3D, ConeCylinderIntersection, Cylinder, Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Cone`] cannot be constructed from the given
@@ -376,6 +376,55 @@ impl Cone {
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// Intersects this cone with a cylinder.
+    ///
+    /// The analytic path needs coaxial axes: with the axis lines
+    /// coincident (direction against `tol.angular`, separation against
+    /// `tol.confusion`), the tube of radius `r` meets the nappe at axial
+    /// `r/tan(semi_angle)`, always a single latitude circle — or just the
+    /// apex for a degenerate (zero-radius) tube. Anything else is a space
+    /// quartic and reports [`ConeCylinderIntersection::NotAnalytic`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, ConeCylinderIntersection, Cylinder, Frame3D, Point3D, Tolerance, Vector3D};
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match cone.intersect_cylinder(&cylinder, tol) {
+    ///     ConeCylinderIntersection::Circle(circle) => {
+    ///         assert_eq!(circle.radius(), 2.0);
+    ///         assert!(circle.center().distance(Point3D::ORIGIN) < 1e-12);
+    ///     }
+    ///     _ => panic!("expected a circle"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> ConeCylinderIntersection {
+        let a = self.frame().z_direction();
+        let axis = cylinder.axis();
+        if a.cross(axis.direction()).magnitude() > tol.angular {
+            return ConeCylinderIntersection::NotAnalytic;
+        }
+        let w = axis.origin() - self.apex();
+        if (w - a * w.dot(a)).magnitude() > tol.confusion {
+            return ConeCylinderIntersection::NotAnalytic;
+        }
+        let r = cylinder.radius();
+        if r <= tol.confusion {
+            return ConeCylinderIntersection::ApexPoint(self.apex());
+        }
+        // Axial reach is always positive: exactly one latitude ring.
+        let alpha = r / self.semi_angle().tan();
+        let circle = Circle3D::new(self.apex() + a * alpha, a, r)
+            .expect("tube radius is positive by construction");
+        ConeCylinderIntersection::Circle(circle)
+    }
 }
 
 /// Checks that `semi_angle` is within the accepted range for a cone:
@@ -675,5 +724,46 @@ mod tests {
         assert!((proj.u - 1.0).abs() < 1e-9);
         assert!((proj.v - 2.0).abs() < 1e-9);
         assert_eq!(proj.distance, 0.0);
+    }
+
+    #[test]
+    fn test_cone_cylinder_intersection() {
+        let tol = Tolerance::DEFAULT;
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        match cone.intersect_cylinder(&cylinder, tol) {
+            ConeCylinderIntersection::Circle(circle) => {
+                assert_eq!(circle.radius(), 2.0);
+                assert!(circle.center().distance(Point3D::ORIGIN) < 1e-9);
+                for p in circle.eval_points(&[0.0, 1.0, 3.0]) {
+                    assert!(cone.contains(p, tol));
+                    assert!(cylinder.contains(p, tol));
+                }
+            }
+            _ => panic!("expected a circle"),
+        }
+        // Degenerate tube: just the apex.
+        let axis_line = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 0.0).unwrap();
+        assert_eq!(
+            cone.intersect_cylinder(&axis_line, tol),
+            ConeCylinderIntersection::ApexPoint(cone.apex())
+        );
+        // Offset axis: space quartic, no closed form.
+        let off = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        assert_eq!(
+            cone.intersect_cylinder(&off, tol),
+            ConeCylinderIntersection::NotAnalytic
+        );
+        // Tilted axis: space quartic, no closed form.
+        let tilted = Cylinder::new(
+            Point3D::ORIGIN,
+            Vector3D::new(0.0, 0.1, 1.0).normalized().unwrap(),
+            2.0,
+        )
+        .unwrap();
+        assert_eq!(
+            cone.intersect_cylinder(&tilted, tol),
+            ConeCylinderIntersection::NotAnalytic
+        );
     }
 }

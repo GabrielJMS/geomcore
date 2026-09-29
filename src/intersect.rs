@@ -168,6 +168,24 @@ pub enum CylinderCylinderIntersection {
     NotAnalytic,
 }
 
+/// Result of intersecting a cone with a cylinder.
+///
+/// The analytic path needs coaxial axes (within tolerance): the tube of
+/// radius `r` meets the nappe at axial `r/tan(phi)`, always a single
+/// latitude circle (or the apex for a degenerate tube). Anything else is
+/// a space quartic and reports
+/// [`ConeCylinderIntersection::NotAnalytic`], reserved for the numeric
+/// surface-surface path.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConeCylinderIntersection {
+    /// Latitude circle on the nappe.
+    Circle(Circle3D),
+    /// Degenerate tube (its axis) meeting the nappe at the apex.
+    ApexPoint(Point3D),
+    /// No closed form: the pair is not in analytic configuration.
+    NotAnalytic,
+}
+
 /// Solution classification for `a*t^2 + b*t + c = 0` with tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {
