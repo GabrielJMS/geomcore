@@ -4,7 +4,7 @@
 
 use crate::surface_math::analytic;
 use crate::tol;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Plane`] cannot be constructed from the given
@@ -288,6 +288,26 @@ impl Plane {
     pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::plane_parameters(&self.frame, point)
     }
+
+    /// Returns whether `point` lies on the plane: the inverse parameters
+    /// are recovered with [`Plane::parameters_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(plane.contains(Point3D::ORIGIN, tol));
+    /// assert!(plane.contains(Point3D::new(1.0, 2.0, 0.0), tol));
+    /// assert!(!plane.contains(Point3D::new(0.0, 0.0, 1.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let (u, v) = self.parameters_of(point);
+        self.eval_point(u, v).distance(point) <= tol.confusion
+    }
 }
 
 /// Builds a frame at `origin` with `z_dir = normalize(normal)` and an
@@ -482,5 +502,25 @@ mod tests {
     fn test_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&PlaneConstructionError::NullNormal);
+    }
+
+    #[test]
+    fn test_plane_contains() {
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(plane.contains(Point3D::ORIGIN, tol));
+        assert!(plane.contains(Point3D::new(1.0, 2.0, 0.0), tol));
+        assert!(plane.contains(plane.eval_point(1.0, -2.0), tol));
+        assert!(!plane.contains(Point3D::new(0.0, 0.0, 1.0), tol));
+        // Tolerance boundary: 1e-6 off the plane fails at default, passes loose.
+        let near = Point3D::new(0.0, 0.0, 1e-6);
+        assert!(!plane.contains(near, tol));
+        assert!(plane.contains(
+            near,
+            Tolerance {
+                confusion: 1e-5,
+                ..tol
+            }
+        ));
     }
 }

@@ -2,7 +2,7 @@
 //! wrappers over [`crate::surface_math::analytic`].
 
 use crate::surface_math::analytic;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Sphere`] cannot be constructed from the given
@@ -201,6 +201,25 @@ impl Sphere {
     pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::sphere_parameters(&self.frame, self.radius, point)
     }
+
+    /// Returns whether `point` lies on the sphere: the inverse parameters
+    /// are recovered with [`Sphere::parameters_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, Tolerance};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(sphere.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+    /// assert!(!sphere.contains(Point3D::ORIGIN, tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let (u, v) = self.parameters_of(point);
+        self.eval_point(u, v).distance(point) <= tol.confusion
+    }
 }
 
 #[cfg(test)]
@@ -306,5 +325,15 @@ mod tests {
     fn test_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&SphereConstructionError::NegativeRadius);
+    }
+
+    #[test]
+    fn test_sphere_contains() {
+        let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(sphere.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+        assert!(sphere.contains(sphere.eval_point(0.7, 0.4), tol));
+        assert!(!sphere.contains(Point3D::ORIGIN, tol));
+        assert!(!sphere.contains(Point3D::new(4.0, 0.0, 0.0), tol));
     }
 }

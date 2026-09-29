@@ -143,3 +143,20 @@ def test_contains_curve():
     near = Point3D(2.0 + 1e-6, 0.0, 0.0)
     assert not circle.contains(near)
     assert circle.contains(near, Tolerance(confusion=1e-5))
+
+
+def test_contains_surface():
+    from geomcore.surfaces import Plane, Torus
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    assert plane.contains(Point3D.origin())
+    assert plane.contains(Point3D(1.0, 2.0, 0.0))
+    assert not plane.contains(Point3D(0.0, 0.0, 1.0))
+
+    sphere = Sphere(Point3D.origin(), 3.0)
+    assert sphere.contains(Point3D(3.0, 0.0, 0.0))
+    assert not sphere.contains(Point3D.origin())
+
+    torus = Torus(Point3D.origin(), Vector3D.z(), 4.0, 1.0)
+    assert torus.contains(Point3D(5.0, 0.0, 0.0))
+    assert not torus.contains(Point3D.origin())

@@ -468,6 +468,14 @@ impl PyPlane {
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
+
+    /// Returns whether `point` lies on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
 }
 
 /// An infinite circular cylinder; u is the angle around the axis, v the
@@ -536,6 +544,14 @@ impl PyCylinder {
     /// Recover the (u, v) parameters of a point lying on the cylinder.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// Returns whether `point` lies on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 }
 
@@ -614,6 +630,14 @@ impl PyCone {
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
     }
+
+    /// Returns whether `point` lies on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
 }
 
 /// A sphere; u is the longitude in [0, 2*pi), v the latitude in [-pi/2, pi/2].
@@ -669,6 +693,14 @@ impl PySphere {
     /// Recover the (u, v) parameters of a point lying on the sphere.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// Returns whether `point` lies on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 }
 
@@ -732,6 +764,14 @@ impl PyTorus {
     /// Recover the (u, v) parameters of a point lying on the torus.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// Returns whether `point` lies on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 }
 

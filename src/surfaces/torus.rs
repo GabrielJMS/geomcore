@@ -2,7 +2,7 @@
 //! over [`crate::surface_math::analytic`].
 
 use crate::surface_math::analytic;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Torus`] cannot be constructed from the given
@@ -245,6 +245,25 @@ impl Torus {
     pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::torus_parameters(&self.frame, self.major_radius, self.minor_radius, point)
     }
+
+    /// Returns whether `point` lies on the torus: the inverse parameters
+    /// are recovered with [`Torus::parameters_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Tolerance, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(torus.contains(Point3D::new(5.0, 0.0, 0.0), tol));
+    /// assert!(!torus.contains(Point3D::ORIGIN, tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let (u, v) = self.parameters_of(point);
+        self.eval_point(u, v).distance(point) <= tol.confusion
+    }
 }
 
 #[cfg(test)]
@@ -358,5 +377,15 @@ mod tests {
     fn test_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&TorusConstructionError::NegativeRadius);
+    }
+
+    #[test]
+    fn test_torus_contains() {
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(torus.contains(Point3D::new(5.0, 0.0, 0.0), tol));
+        assert!(torus.contains(torus.eval_point(1.0, 2.0), tol));
+        assert!(!torus.contains(Point3D::ORIGIN, tol));
+        assert!(!torus.contains(Point3D::new(4.0, 0.0, 0.0), tol));
     }
 }

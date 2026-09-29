@@ -4,7 +4,7 @@
 
 use crate::surface_math::analytic;
 use crate::tol;
-use crate::{Frame3D, Point3D, Vector3D};
+use crate::{Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Cone`] cannot be constructed from the given
@@ -323,6 +323,25 @@ impl Cone {
     pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::cone_parameters(&self.frame, self.ref_radius, self.semi_angle, point)
     }
+
+    /// Returns whether `point` lies on the cone: the inverse parameters are
+    /// recovered with [`Cone::parameters_of`] and re-evaluated, and the
+    /// point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Frame3D, Point3D, Tolerance};
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(cone.contains(cone.eval_point(0.0, 0.0), tol));
+    /// assert!(!cone.contains(Point3D::ORIGIN, tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let (u, v) = self.parameters_of(point);
+        self.eval_point(u, v).distance(point) <= tol.confusion
+    }
 }
 
 /// Checks that `semi_angle` is within the accepted range for a cone:
@@ -601,5 +620,15 @@ mod tests {
     fn test_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&ConeConstructionError::NegativeRadius);
+    }
+
+    #[test]
+    fn test_cone_contains() {
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(cone.contains(cone.eval_point(0.0, 0.0), tol));
+        assert!(cone.contains(cone.eval_point(1.0, 2.0), tol));
+        assert!(!cone.contains(Point3D::ORIGIN, tol));
+        assert!(!cone.contains(Point3D::new(0.0, 0.0, 10.0), tol));
     }
 }

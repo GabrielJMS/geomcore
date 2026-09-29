@@ -3,7 +3,7 @@
 //! [`crate::surface_math::analytic`].
 
 use crate::surface_math::analytic;
-use crate::{Axis3D, Circle3D, Frame3D, Point3D, Vector3D};
+use crate::{Axis3D, Circle3D, Frame3D, Point3D, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Cylinder`] cannot be constructed from the given
@@ -248,6 +248,25 @@ impl Cylinder {
     pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
         analytic::cylinder_parameters(&self.frame, point)
     }
+
+    /// Returns whether `point` lies on the cylinder: the inverse parameters
+    /// are recovered with [`Cylinder::parameters_of`] and re-evaluated, and
+    /// the point counts as contained when the re-evaluated point is within
+    /// `tol.confusion` of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Tolerance, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(cylinder.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+    /// assert!(!cylinder.contains(Point3D::ORIGIN, tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let (u, v) = self.parameters_of(point);
+        self.eval_point(u, v).distance(point) <= tol.confusion
+    }
 }
 
 #[cfg(test)]
@@ -382,5 +401,15 @@ mod tests {
     fn test_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&CylinderConstructionError::NegativeRadius);
+    }
+
+    #[test]
+    fn test_cylinder_contains() {
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert!(cylinder.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+        assert!(cylinder.contains(cylinder.eval_point(1.0, 3.0), tol));
+        assert!(!cylinder.contains(Point3D::ORIGIN, tol));
+        assert!(!cylinder.contains(Point3D::new(3.0, 0.0, 0.0), tol));
     }
 }
