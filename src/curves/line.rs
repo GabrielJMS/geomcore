@@ -4,9 +4,14 @@
 use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
+use crate::intersect::{
+    LinePlaneIntersection, LineQuadricIntersection, QuadraticSolution, solve_quadratic,
+};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
-use crate::{Axis2D, Axis3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D};
+use crate::{
+    Axis2D, Axis3D, Cone, Cylinder, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
+};
 use std::fmt;
 
 /// Error returned when a [`Line3D`] or [`Line2D`] cannot be constructed from
@@ -261,6 +266,205 @@ impl Line3D {
     /// native call per batch, mirroring [`Line3D::eval_points`].
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// Intersects this line with a plane.
+    ///
+    /// A transversal line meets the plane once; a line parallel to the
+    /// plane (direction against the normal within `tol.angular`) is either
+    /// offset ([`LinePlaneIntersection::Parallel`]) or contained
+    /// ([`LinePlaneIntersection::Coincident`], decided by `tol.confusion`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, LinePlaneIntersection, Plane, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_plane(&plane, tol) {
+    ///     LinePlaneIntersection::Point(t, p) => {
+    ///         assert_eq!(t, 0.0);
+    ///         assert_eq!(p, Point3D::ORIGIN);
+    ///     }
+    ///     _ => panic!("expected a point"),
+    /// }
+    /// ```
+    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> LinePlaneIntersection {
+        let n = plane.normal();
+        let b = n.dot(self.direction());
+        let c = n.dot(self.origin() - plane.frame().origin());
+        if b.abs() <= tol.angular {
+            if c.abs() <= tol.confusion {
+                LinePlaneIntersection::Coincident
+            } else {
+                LinePlaneIntersection::Parallel
+            }
+        } else {
+            let t = -c / b;
+            LinePlaneIntersection::Point(t, self.eval_point(t))
+        }
+    }
+
+    /// Intersects this line with a sphere.
+    ///
+    /// Substituting the unit-speed parametrization into `|X - C|^2 = R^2`
+    /// gives a quadratic (leading coefficient exactly 1), classified with
+    /// [`solve_quadratic`]: two ordered hits, a grazing tangent, or empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, LineQuadricIntersection, Point3D, Sphere, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_sphere(&sphere, tol) {
+    ///     LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
+    ///         assert_eq!((t1, t2), (-2.0, 2.0));
+    ///         assert_eq!(p1, Point3D::new(-2.0, 0.0, 0.0));
+    ///         assert_eq!(p2, Point3D::new(2.0, 0.0, 0.0));
+    ///     }
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> LineQuadricIntersection {
+        let d = self.direction();
+        let w = self.origin() - sphere.center();
+        // A is exactly 1: the direction is unit by construction.
+        match solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - sphere.radius().powi(2), tol) {
+            QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(
+                (t1, self.eval_point(t1)),
+                (t2, self.eval_point(t2)),
+            ),
+            QuadraticSolution::One(t) => LineQuadricIntersection::Tangent(t, self.eval_point(t)),
+            QuadraticSolution::Empty => LineQuadricIntersection::Empty,
+            QuadraticSolution::Linear(_) | QuadraticSolution::Degenerate => {
+                unreachable!("unit direction gives a leading coefficient of 1")
+            }
+        }
+    }
+
+    /// Intersects this line with a cylinder.
+    ///
+    /// The implicit equation `|X - C|^2 - ((X - C).a)^2 = r^2` along the
+    /// line is quadratic; a direction parallel to the axis degrades to the
+    /// linear case (one transversal hit) or, when fully degenerate, to a
+    /// generator coincidence check.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Line3D, LineQuadricIntersection, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_cylinder(&cylinder, tol) {
+    ///     LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
+    ///         assert_eq!((t1, t2), (-2.0, 2.0));
+    ///     }
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> LineQuadricIntersection {
+        let d = self.direction();
+        let a = cylinder.axis().direction();
+        let w = self.origin() - cylinder.axis().origin();
+        let da = d.dot(a);
+        let wa = w.dot(a);
+        let qa = 1.0 - da * da;
+        let qb = 2.0 * (d.dot(w) - da * wa);
+        let qc = w.dot(w) - wa * wa - cylinder.radius().powi(2);
+        match solve_quadratic(qa, qb, qc, tol) {
+            QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(
+                (t1, self.eval_point(t1)),
+                (t2, self.eval_point(t2)),
+            ),
+            QuadraticSolution::One(t) => LineQuadricIntersection::Tangent(t, self.eval_point(t)),
+            QuadraticSolution::Linear(t) => {
+                LineQuadricIntersection::OnePoint(t, self.eval_point(t))
+            }
+            QuadraticSolution::Empty => LineQuadricIntersection::Empty,
+            QuadraticSolution::Degenerate => {
+                if cylinder.contains(self.origin(), tol) {
+                    LineQuadricIntersection::Coincident
+                } else {
+                    LineQuadricIntersection::Empty
+                }
+            }
+        }
+    }
+
+    /// Intersects this line with a cone.
+    ///
+    /// The half-angle equation `((X - A).a)^2 = |X - A|^2*cos^2(phi)`
+    /// along the line is quadratic; roots on the wrong nappe (behind the
+    /// apex) are filtered, leaving two hits, one transversal hit, a
+    /// tangent, or empty. A direction parallel to a generator degrades to
+    /// the linear case; full degeneracy resolves to a generator
+    /// coincidence check.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Frame3D, Line3D, LineQuadricIntersection, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::new(0.0, 0.0, 5.0), Vector3D::X).unwrap();
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_cone(&cone, tol) {
+    ///     LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
+    ///         assert!(t1 < t2);
+    ///     }
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> LineQuadricIntersection {
+        let d = self.direction();
+        let a = cone.frame().z_direction();
+        let cos_phi = cone.semi_angle().cos();
+        let m = self.origin() - cone.apex();
+        let da = d.dot(a);
+        let ma = m.dot(a);
+        let qa = da * da - cos_phi * cos_phi;
+        let qb = 2.0 * (da * ma - cos_phi * cos_phi * d.dot(m));
+        let qc = ma * ma - cos_phi * cos_phi * m.dot(m);
+        // Roots on the wrong nappe (behind the apex) are filtered; a
+        // single surviving transversal root reports as one point.
+        let keep = |t: f64| {
+            let p = self.eval_point(t);
+            if (p - cone.apex()).dot(a) >= -tol.confusion {
+                Some((t, p))
+            } else {
+                None
+            }
+        };
+        match solve_quadratic(qa, qb, qc, tol) {
+            QuadraticSolution::Two(t1, t2) => match (keep(t1), keep(t2)) {
+                (Some(q1), Some(q2)) => LineQuadricIntersection::TwoPoints(q1, q2),
+                (Some(q), None) | (None, Some(q)) => LineQuadricIntersection::OnePoint(q.0, q.1),
+                (None, None) => LineQuadricIntersection::Empty,
+            },
+            QuadraticSolution::One(t) => match keep(t) {
+                Some((t, p)) => LineQuadricIntersection::Tangent(t, p),
+                None => LineQuadricIntersection::Empty,
+            },
+            QuadraticSolution::Linear(t) => match keep(t) {
+                Some((t, p)) => LineQuadricIntersection::OnePoint(t, p),
+                None => LineQuadricIntersection::Empty,
+            },
+            QuadraticSolution::Empty => LineQuadricIntersection::Empty,
+            QuadraticSolution::Degenerate => {
+                if cone.contains(self.origin(), tol) {
+                    LineQuadricIntersection::Coincident
+                } else {
+                    LineQuadricIntersection::Empty
+                }
+            }
+        }
     }
 
     /// Computes the exact 2D representation of this line in a surface's
@@ -536,7 +740,8 @@ impl Line2D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2D, Axis3D, Line2D, Line3D, LineConstructionError, Point2D, Point3D, Tolerance,
+        Axis2D, Axis3D, Cone, Cylinder, Frame3D, Line2D, Line3D, LineConstructionError,
+        LinePlaneIntersection, LineQuadricIntersection, Plane, Point2D, Point3D, Sphere, Tolerance,
         Vector2D, Vector3D,
     };
 
@@ -812,5 +1017,140 @@ mod tests {
         let proj = line.project_point(Point2D::new(2.5, 1.0), tol);
         assert_eq!(proj.parameter, 2.5);
         assert_eq!(proj.distance, 1.0);
+    }
+
+    #[test]
+    fn test_line3d_intersect_plane() {
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        match line.intersect_plane(&plane, tol) {
+            LinePlaneIntersection::Point(t, p) => {
+                assert_eq!(t, 0.0);
+                assert_eq!(p, Point3D::ORIGIN);
+            }
+            _ => panic!("expected a point"),
+        }
+        // Parallel offset.
+        let off = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::X).unwrap();
+        assert_eq!(
+            off.intersect_plane(&plane, tol),
+            LinePlaneIntersection::Parallel
+        );
+        // Contained.
+        let flat = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        assert_eq!(
+            flat.intersect_plane(&plane, tol),
+            LinePlaneIntersection::Coincident
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_sphere() {
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match line.intersect_sphere(&sphere, tol) {
+            LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
+                assert_eq!((t1, t2), (-2.0, 2.0));
+                assert_eq!(p1, Point3D::new(-2.0, 0.0, 0.0));
+                assert_eq!(p2, Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected two points"),
+        }
+        // Tangent at the north pole.
+        let tangent = Line3D::new(Point3D::new(0.0, 0.0, 2.0), Vector3D::X).unwrap();
+        match tangent.intersect_sphere(&sphere, tol) {
+            LineQuadricIntersection::Tangent(t, p) => {
+                assert_eq!(t, 0.0);
+                assert_eq!(p, Point3D::new(0.0, 0.0, 2.0));
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // Clear miss.
+        let miss = Line3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::X).unwrap();
+        assert_eq!(
+            miss.intersect_sphere(&sphere, tol),
+            LineQuadricIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_cylinder() {
+        let tol = Tolerance::DEFAULT;
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match line.intersect_cylinder(&cylinder, tol) {
+            LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
+                assert_eq!((t1, t2), (-2.0, 2.0));
+                assert_eq!(p1, Point3D::new(-2.0, 0.0, 0.0));
+                assert_eq!(p2, Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected two points"),
+        }
+        // Parallel offset: miss.
+        let side = Line3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            side.intersect_cylinder(&cylinder, tol),
+            LineQuadricIntersection::Empty
+        );
+        // Generator: coincident.
+        let generator = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            generator.intersect_cylinder(&cylinder, tol),
+            LineQuadricIntersection::Coincident
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_cone() {
+        let tol = Tolerance::DEFAULT;
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        // Horizontal line at z = 5: radius there is (5 + 4.729...) * tan(0.4).
+        let line = Line3D::new(Point3D::new(0.0, 0.0, 5.0), Vector3D::X).unwrap();
+        match line.intersect_cone(&cone, tol) {
+            LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
+                assert!(t1 < t2);
+                assert!((t1.abs() - t2.abs()).abs() < 1e-9);
+                assert!(cone.contains(p1, tol));
+                assert!(cone.contains(p2, tol));
+            }
+            _ => panic!("expected two points"),
+        }
+        // Generator through the apex: coincident.
+        let apex = cone.apex();
+        let generator = Line3D::new(apex, Vector3D::new(0.4f64.sin(), 0.0, 0.4f64.cos())).unwrap();
+        assert_eq!(
+            generator.intersect_cone(&cone, tol),
+            LineQuadricIntersection::Coincident
+        );
+        // Vertical line at radial distance 20: one nappe-filtered hit.
+        let side = Line3D::new(Point3D::new(20.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        match side.intersect_cone(&cone, tol) {
+            LineQuadricIntersection::OnePoint(t, p) => {
+                assert!(cone.contains(p, tol));
+                assert_eq!(p, side.eval_point(t));
+            }
+            _ => panic!("expected one point"),
+        }
+        // Horizontal line far from the axis: clear miss.
+        let miss = Line3D::new(Point3D::new(0.0, 20.0, 0.0), Vector3D::X).unwrap();
+        assert_eq!(
+            miss.intersect_cone(&cone, tol),
+            LineQuadricIntersection::Empty
+        );
+        // Generator direction but offset: linear single hit.
+        let slanted = Line3D::new(
+            Point3D::new(0.0, 5.0, 0.0),
+            Vector3D::new(0.4f64.sin(), 0.0, 0.4f64.cos()),
+        )
+        .unwrap();
+        match slanted.intersect_cone(&cone, tol) {
+            LineQuadricIntersection::OnePoint(t, p) => {
+                assert!(cone.contains(p, tol));
+                assert_eq!(p, slanted.eval_point(t));
+            }
+            _ => panic!("expected one point"),
+        }
     }
 }

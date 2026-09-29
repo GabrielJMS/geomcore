@@ -14,7 +14,8 @@ use geomcore::curves::{
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, Frame3D, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
+    Axis3D, Frame3D, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
     SphereSphereIntersection, Tolerance, Transform, Vector2D, Vector3D,
 };
 
@@ -550,6 +551,99 @@ impl PyPlane {
                 PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
             )),
             PlaneSphereIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this plane with a cylinder.
+    ///
+    /// Returns `("circle", Circle3D)`, `("ellipse", Ellipse3D)`,
+    /// `("two_lines", (Line3D, Line3D))`, `("tangent_line", Line3D)` or
+    /// `("empty", None)`.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cylinder(&cylinder.0, tol) {
+            PlaneCylinderIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneCylinderIntersection::Ellipse(e) => Ok((
+                "ellipse".to_string(),
+                PyEllipse3D(e).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneCylinderIntersection::TwoLines(l1, l2) => Ok((
+                "two_lines".to_string(),
+                (
+                    PyLine3D(l1).into_pyobject(py)?.into_any().unbind(),
+                    PyLine3D(l2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            PlaneCylinderIntersection::TangentLine(l) => Ok((
+                "tangent_line".to_string(),
+                PyLine3D(l).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneCylinderIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this plane with a cone.
+    ///
+    /// Returns `("circle", Circle3D)`, `("ellipse", Ellipse3D)`,
+    /// `("parabola", Parabola3D)`, `("hyperbola", Hyperbola3D)`,
+    /// `("two_lines", (Line3D, Line3D))`, `("tangent_line", Line3D)`,
+    /// `("apex_point", Point3D)` or `("empty", None)`.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_cone(&cone.0, tol) {
+            PlaneConeIntersection::Circle(c) => Ok((
+                "circle".to_string(),
+                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneConeIntersection::Ellipse(e) => Ok((
+                "ellipse".to_string(),
+                PyEllipse3D(e).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneConeIntersection::Parabola(p) => Ok((
+                "parabola".to_string(),
+                PyParabola3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneConeIntersection::Hyperbola(h) => Ok((
+                "hyperbola".to_string(),
+                PyHyperbola3D(h).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneConeIntersection::TwoLines(l1, l2) => Ok((
+                "two_lines".to_string(),
+                (
+                    PyLine3D(l1).into_pyobject(py)?.into_any().unbind(),
+                    PyLine3D(l2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            PlaneConeIntersection::TangentLine(l) => Ok((
+                "tangent_line".to_string(),
+                PyLine3D(l).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneConeIntersection::ApexPoint(p) => Ok((
+                "apex_point".to_string(),
+                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            PlaneConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
         }
     }
 }
@@ -1135,6 +1229,30 @@ fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny>> {
     }
 }
 
+fn quadric_hit_to_py(
+    py: Python<'_>,
+    hit: LineQuadricIntersection,
+) -> PyResult<(String, Py<PyAny>)> {
+    fn point(py: Python<'_>, t: f64, p: Point3D) -> PyResult<Py<PyAny>> {
+        (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
+            .into_pyobject(py)
+            .map(|o| o.into_any().unbind())
+    }
+    match hit {
+        LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => Ok((
+            "two_points".to_string(),
+            (point(py, t1, p1)?, point(py, t2, p2)?)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind(),
+        )),
+        LineQuadricIntersection::OnePoint(t, p) => Ok(("one_point".to_string(), point(py, t, p)?)),
+        LineQuadricIntersection::Tangent(t, p) => Ok(("tangent".to_string(), point(py, t, p)?)),
+        LineQuadricIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        LineQuadricIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Curves
 // ---------------------------------------------------------------------------
@@ -1226,6 +1344,80 @@ impl PyLine3D {
             .iter()
             .map(|p| (p.parameter, p.distance))
             .collect()
+    }
+
+    /// Intersects this line with a plane.
+    ///
+    /// Returns `("point", (t, Point3D))`, `("parallel", None)` or
+    /// `("coincident", None)`.
+    #[pyo3(signature = (plane, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        plane: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_plane(&plane.0, tol) {
+            LinePlaneIntersection::Point(t, p) => Ok((
+                "point".to_string(),
+                (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            LinePlaneIntersection::Parallel => Ok(("parallel".to_string(), py.None())),
+            LinePlaneIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this line with a sphere.
+    ///
+    /// Returns `("two_points", ((t1, Point3D), (t2, Point3D)))`,
+    /// `("one_point", (t, Point3D))`, `("tangent", (t, Point3D))`,
+    /// `("empty", None)` or `("coincident", None)` (the latter never
+    /// triggers for spheres, which contain no line).
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        quadric_hit_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+    }
+
+    /// Intersects this line with a cylinder.
+    ///
+    /// Same return shape as [`PyLine3D::intersect_sphere`]; a generator
+    /// reports `("coincident", None)`.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        quadric_hit_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+    }
+
+    /// Intersects this line with a cone.
+    ///
+    /// Same return shape as [`PyLine3D::intersect_sphere`]; roots behind
+    /// the apex are filtered, so a single surviving hit reports
+    /// `("one_point", (t, Point3D))`, and a generator reports
+    /// `("coincident", None)`.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        quadric_hit_to_py(py, self.0.intersect_cone(&cone.0, tol))
     }
 
     /// Compute this line's 2D representation in a surface's (u, v) space.

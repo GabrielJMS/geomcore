@@ -91,7 +91,11 @@ pub use curves::{
     ParametricCurve3D, ParametrizeError,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
-pub use intersect::{PlanePlaneIntersection, PlaneSphereIntersection, SphereSphereIntersection};
+pub use intersect::{
+    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection,
+    SphereSphereIntersection,
+};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, SurfaceProjection};
 pub use surfaces::{

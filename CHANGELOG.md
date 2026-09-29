@@ -9,6 +9,20 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-29
+
+### Added
+
+- Analytic intersections, Stream 2 batch 2: `Plane::intersect_cylinder`
+  (→ circle / ellipse / two lines / tangent line / empty),
+  `Plane::intersect_cone` (→ circle / ellipse / parabola / hyperbola
+  branch / two apex lines / tangent generator / apex point / empty, with
+  single-nappe filtering), and `Line3D::intersect_plane/sphere/cylinder/
+  cone` (→ ordered hits with parameters, tangent, single transversal
+  hit, empty, coincident). A shared tolerance-aware quadratic solver
+  classifies by root separation, so grazing contact is robust across
+  scales. Python returns `(kind, payload)` tuples throughout.
+
 ## [0.6.0] - 2026-09-29
 
 ### Added
@@ -89,7 +103,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.7.0
 [0.6.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.6.0
 [0.5.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.5.0
 [0.4.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.4.0

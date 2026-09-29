@@ -232,3 +232,68 @@ def test_intersect_sphere_sphere():
 
     assert s1.intersect_sphere(Sphere(Point3D(5.0, 0.0, 0.0), 2.0)) == ("empty", None)
     assert s1.intersect_sphere(s1)[0] == "coincident"
+
+
+def test_intersect_plane_cylinder():
+    from geomcore.surfaces import Cylinder, Plane
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    kind, circle = plane.intersect_cylinder(cylinder)
+    assert kind == "circle"
+    assert circle.radius() == pytest.approx(2.0)
+
+    side = Plane(Point3D(0.0, 1.0, 0.0), Vector3D.y())
+    kind, lines = side.intersect_cylinder(cylinder)
+    assert kind == "two_lines"
+    assert lines[0].direction().components() == pytest.approx((0.0, 0.0, 1.0))
+
+    assert side.intersect_cylinder(Cylinder(Point3D.origin(), Vector3D.z(), 0.5)) == (
+        "empty",
+        None,
+    )
+    miss = Plane(Point3D(0.0, 3.0, 0.0), Vector3D.y())
+    assert miss.intersect_cylinder(cylinder) == ("empty", None)
+
+
+def test_intersect_plane_cone():
+    from geomcore import Frame3D
+    from geomcore.surfaces import Cone, Plane
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    cone = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
+    kind, circle = plane.intersect_cone(cone)
+    assert kind == "circle"
+    assert circle.radius() == pytest.approx(2.0)
+
+    below = Plane(Point3D(0.0, 0.0, -6.0), Vector3D.z())
+    assert below.intersect_cone(cone) == ("empty", None)
+
+    apex_plane = Plane(cone.apex(), Vector3D.z())
+    kind, payload = apex_plane.intersect_cone(cone)
+    assert kind == "apex_point"
+
+
+def test_intersect_line_surface():
+    from geomcore.curves import Line3D
+    from geomcore.surfaces import Cylinder, Plane
+
+    line = Line3D(Point3D.origin(), Vector3D.x())
+    kind, ((t1, p1), (t2, p2)) = line.intersect_sphere(Sphere(Point3D.origin(), 2.0))
+    assert kind == "two_points"
+    assert (t1, t2) == pytest.approx((-2.0, 2.0))
+    assert (p1.x, p2.x) == pytest.approx((-2.0, 2.0))
+
+    kind, (t, p) = Line3D(Point3D.origin(), Vector3D.z()).intersect_plane(
+        Plane(Point3D.origin(), Vector3D.z())
+    )
+    assert kind == "point"
+    assert t == pytest.approx(0.0)
+    assert line.intersect_plane(Plane(Point3D.origin(), Vector3D.z())) == (
+        "coincident",
+        None,
+    )
+
+    gen = Line3D(Point3D(2.0, 0.0, 0.0), Vector3D.z())
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    assert gen.intersect_cylinder(cylinder) == ("coincident", None)

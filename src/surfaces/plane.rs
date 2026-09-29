@@ -6,8 +6,9 @@ use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
 use crate::{
-    Circle3D, Frame3D, Line3D, PlanePlaneIntersection, PlaneSphereIntersection, Point3D, Sphere,
-    Tolerance, Vector3D,
+    Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D,
+    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
+    PlaneSphereIntersection, Point3D, Sphere, Tolerance, Vector3D,
 };
 use std::fmt;
 
@@ -458,6 +459,211 @@ impl Plane {
             PlaneSphereIntersection::Circle(circle)
         }
     }
+
+    /// Intersects this plane with a cylinder.
+    ///
+    /// With `s = n.a` (plane normal against cylinder axis) and
+    /// `sin = |n x a|`: a perpendicular plane (`sin` within
+    /// `tol.angular`) cuts a [`Circle3D`]; a plane parallel to the axis
+    /// (`|s|` within tolerance) misses, grazes one generator, or cuts two
+    /// generators, by the axis distance against the radius; otherwise the
+    /// section is an [`Ellipse3D`] with minor radius `r` and major radius
+    /// `r/|s|` around the axis piercing point.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Plane, PlaneCylinderIntersection, Point3D, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match plane.intersect_cylinder(&cylinder, tol) {
+    ///     PlaneCylinderIntersection::Circle(circle) => {
+    ///         assert_eq!(circle.center(), Point3D::ORIGIN);
+    ///         assert_eq!(circle.radius(), 2.0);
+    ///     }
+    ///     _ => panic!("expected a circle"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> PlaneCylinderIntersection {
+        let n = self.normal();
+        let a = cylinder.axis().direction();
+        let r = cylinder.radius();
+        let s = n.dot(a);
+        let cross = n.cross(a);
+        let sin = cross.magnitude();
+        let o = self.frame.origin();
+        let c = cylinder.axis().origin();
+        if sin <= tol.angular {
+            // Perpendicular: circle around the axis piercing point.
+            // s is +-1 here, so the division is exact.
+            let center = c + a * ((o - c).dot(n) / s);
+            let circle = Circle3D::new(center, n, r)
+                .expect("cylinder radius is non-negative by construction");
+            PlaneCylinderIntersection::Circle(circle)
+        } else if s.abs() <= tol.angular {
+            // Parallel to the axis: generators at foot +- w*sqrt(r^2-h^2).
+            let h = (c - o).dot(n);
+            let h_abs = h.abs();
+            if h_abs > r + tol.confusion {
+                PlaneCylinderIntersection::Empty
+            } else {
+                let foot = c - n * h;
+                let expect = "generator direction is unit by construction";
+                if h_abs >= r - tol.confusion {
+                    PlaneCylinderIntersection::TangentLine(Line3D::new(foot, a).expect(expect))
+                } else {
+                    let w = cross * (1.0 / sin);
+                    let off = (r * r - h * h).sqrt();
+                    PlaneCylinderIntersection::TwoLines(
+                        Line3D::new(foot + w * off, a).expect(expect),
+                        Line3D::new(foot - w * off, a).expect(expect),
+                    )
+                }
+            }
+        } else {
+            // Oblique: ellipse with minor r and major r/|s|.
+            let h = (c - o).dot(n);
+            let foot = c - n * h;
+            let m = (a - n * s) * (1.0 / sin);
+            let lambda_c = -h * sin / s;
+            let center = foot + m * lambda_c;
+            let ellipse = Ellipse3D::new(center, n, m, r / s.abs(), r)
+                .expect("ellipse radii ordered by construction");
+            PlaneCylinderIntersection::Ellipse(ellipse)
+        }
+    }
+
+    /// Intersects this plane with a cone.
+    ///
+    /// With the apex distance `sigma`, the axis/normal cosine `s`, and the
+    /// critical angle `PI/2 - semi_angle`: a plane through the apex
+    /// (`|sigma|` within tolerance) meets just the apex, one generator, or
+    /// two generators; a perpendicular plane cuts a circle (or misses
+    /// behind the apex); otherwise the section is an ellipse, a parabola
+    /// (plane parallel to a generator), or one hyperbola branch, built in
+    /// closed form in the plane's `(M, Y)` basis around the apex foot
+    /// point. Sections falling entirely behind the apex report
+    /// [`PlaneConeIntersection::Empty`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Frame3D, Plane, PlaneConeIntersection, Point3D, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match plane.intersect_cone(&cone, tol) {
+    ///     PlaneConeIntersection::Circle(circle) => {
+    ///         assert_eq!(circle.center(), Point3D::ORIGIN);
+    ///         assert!((circle.radius() - 2.0).abs() < 1e-12);
+    ///     }
+    ///     _ => panic!("expected a circle"),
+    /// }
+    /// ```
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> PlaneConeIntersection {
+        let n = self.normal();
+        let a = cone.frame().z_direction();
+        let phi = cone.semi_angle();
+        let apex = cone.apex();
+        let o = self.frame.origin();
+        let sigma = (o - apex).dot(n);
+        let s = n.dot(a);
+        let sin_gamma = n.cross(a).magnitude();
+        if sigma.abs() <= tol.confusion {
+            // Through the apex: generators satisfy
+            // cos(theta) = -cos(phi)*s / (sin(phi)*sin_gamma).
+            if sin_gamma <= tol.angular {
+                return PlaneConeIntersection::ApexPoint(apex);
+            }
+            let e1 = (n - a * s) * (1.0 / sin_gamma);
+            let e2 = a.cross(e1);
+            let raw = -phi.cos() * s / (phi.sin() * sin_gamma);
+            let expect = "generator direction is unit by construction";
+            if raw.abs() > 1.0 + tol.angular {
+                PlaneConeIntersection::ApexPoint(apex)
+            } else if raw.abs() >= 1.0 - tol.angular {
+                let g = a * phi.cos() + e1 * (phi.sin() * raw.clamp(-1.0, 1.0));
+                PlaneConeIntersection::TangentLine(Line3D::new(apex, g).expect(expect))
+            } else {
+                let theta = raw.acos();
+                let (sin_t, cos_t) = (theta.sin(), theta.cos());
+                let g = |w: f64| a * phi.cos() + (e1 * cos_t + e2 * (w * sin_t)) * phi.sin();
+                PlaneConeIntersection::TwoLines(
+                    Line3D::new(apex, g(1.0)).expect(expect),
+                    Line3D::new(apex, g(-1.0)).expect(expect),
+                )
+            }
+        } else {
+            let gamma = s.abs().clamp(0.0, 1.0).acos();
+            let gamma_p = std::f64::consts::FRAC_PI_2 - phi;
+            if sin_gamma <= tol.angular {
+                // Perpendicular: circle at axial distance alpha0 (s = +-1).
+                let alpha0 = sigma / s;
+                if alpha0 < -tol.confusion {
+                    PlaneConeIntersection::Empty
+                } else {
+                    let center = apex + a * alpha0;
+                    let circle = Circle3D::new(center, n, alpha0 * phi.tan())
+                        .expect("section radius is positive by construction");
+                    PlaneConeIntersection::Circle(circle)
+                }
+            } else {
+                // In-plane basis: M holds the axis component, Y = N x M.
+                let m = (a - n * s) * (1.0 / sin_gamma);
+                let q = apex + n * sigma;
+                let tan_phi = phi.tan();
+                let a2 = s * s - tan_phi * tan_phi * sin_gamma * sin_gamma;
+                let b2 = -2.0 * sigma * s * sin_gamma / phi.cos().powi(2);
+                let c0 = sigma * sigma * (sin_gamma * sin_gamma - tan_phi * tan_phi * s * s);
+                if gamma < gamma_p - tol.angular {
+                    // Ellipse: center at lambda_c, semi-axes from K > 0.
+                    let lambda_c = -b2 / (2.0 * a2);
+                    let k = (b2 * b2 / (4.0 * a2) - c0).max(0.0);
+                    let center = q + m * lambda_c;
+                    if (center - apex).dot(a) < -tol.confusion {
+                        return PlaneConeIntersection::Empty;
+                    }
+                    let semi_l = (k / a2).sqrt();
+                    let semi_w = k.sqrt();
+                    let (major, minor, x) = if semi_l >= semi_w {
+                        (semi_l, semi_w, m)
+                    } else {
+                        (semi_w, semi_l, n.cross(m))
+                    };
+                    let ellipse = Ellipse3D::new(center, n, x, major, minor)
+                        .expect("ellipse frame valid by construction");
+                    PlaneConeIntersection::Ellipse(ellipse)
+                } else if (gamma - gamma_p).abs() <= tol.angular {
+                    // Parabola: vertex at lambda_v, opening along -sign(B2)*M.
+                    // B2 cannot vanish here (sigma, s, sin_gamma all nonzero).
+                    let lambda_v = -c0 / b2;
+                    let vertex = q + m * lambda_v;
+                    if (vertex - apex).dot(a) < -tol.confusion {
+                        return PlaneConeIntersection::Empty;
+                    }
+                    let x = if b2 >= 0.0 { m * -1.0 } else { m };
+                    let parabola = Parabola3D::new(vertex, n, x, b2.abs() / 4.0)
+                        .expect("parabola frame valid by construction");
+                    PlaneConeIntersection::Parabola(parabola)
+                } else {
+                    // Hyperbola: center at lambda_c; +M holds the live branch
+                    // (alpha grows along +M since sin_gamma > 0).
+                    let lambda_c = -b2 / (2.0 * a2);
+                    let k = (b2 * b2 / (4.0 * a2) - c0).min(0.0);
+                    let center = q + m * lambda_c;
+                    let hyperbola =
+                        Hyperbola3D::new(center, n, m, (k / a2).max(0.0).sqrt(), (-k).sqrt())
+                            .expect("hyperbola radii positive by construction");
+                    PlaneConeIntersection::Hyperbola(hyperbola)
+                }
+            }
+        }
+    }
 }
 
 /// Builds a frame at `origin` with `z_dir = normalize(normal)` and an
@@ -771,5 +977,140 @@ mod tests {
             PlaneSphereIntersection::Empty => {}
             _ => panic!("expected empty"),
         }
+    }
+
+    #[test]
+    fn test_plane_cylinder_intersection_ellipse() {
+        let tol = Tolerance::DEFAULT;
+        let tilt = 0.3f64;
+        let plane =
+            Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, tilt.sin(), tilt.cos())).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        match plane.intersect_cylinder(&cylinder, tol) {
+            PlaneCylinderIntersection::Ellipse(ellipse) => {
+                assert_eq!(ellipse.center(), Point3D::ORIGIN);
+                assert_eq!(ellipse.minor_radius(), 2.0);
+                assert!((ellipse.major_radius() - 2.0 / tilt.cos()).abs() < 1e-9);
+                for p in ellipse.eval_points(&[0.0, 1.0, 2.0, 4.0]) {
+                    assert!(plane.contains(p, tol));
+                    assert!(cylinder.contains(p, tol));
+                }
+            }
+            _ => panic!("expected an ellipse"),
+        }
+    }
+
+    #[test]
+    fn test_plane_cylinder_intersection_parallel() {
+        let tol = Tolerance::DEFAULT;
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        // Two generators at x = +-sqrt(3), y = 1.
+        let plane = Plane::new(Point3D::new(0.0, 1.0, 0.0), Vector3D::Y).unwrap();
+        match plane.intersect_cylinder(&cylinder, tol) {
+            PlaneCylinderIntersection::TwoLines(l1, l2) => {
+                assert_eq!(l1.direction(), Vector3D::Z);
+                assert_eq!(l2.direction(), Vector3D::Z);
+                assert!((l1.origin().x - 3.0f64.sqrt()).abs() < 1e-9);
+                assert!((l2.origin().x + 3.0f64.sqrt()).abs() < 1e-9);
+            }
+            _ => panic!("expected two lines"),
+        }
+        // Grazing generator.
+        let tangent = Plane::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::Y).unwrap();
+        match tangent.intersect_cylinder(&cylinder, tol) {
+            PlaneCylinderIntersection::TangentLine(l) => {
+                assert_eq!(l.origin(), Point3D::new(0.0, 2.0, 0.0));
+            }
+            _ => panic!("expected a tangent line"),
+        }
+        // Clear miss.
+        let miss = Plane::new(Point3D::new(0.0, 3.0, 0.0), Vector3D::Y).unwrap();
+        assert_eq!(
+            miss.intersect_cylinder(&cylinder, tol),
+            PlaneCylinderIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_plane_cone_intersection_ellipse() {
+        let tol = Tolerance::DEFAULT;
+        let tilt = 0.2f64;
+        let plane =
+            Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, tilt.sin(), tilt.cos())).unwrap();
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        match plane.intersect_cone(&cone, tol) {
+            PlaneConeIntersection::Ellipse(ellipse) => {
+                assert!(ellipse.major_radius() > ellipse.minor_radius());
+                for p in ellipse.eval_points(&[0.0, 1.0, 2.0, 4.0]) {
+                    assert!(plane.contains(p, tol));
+                    assert!(cone.contains(p, tol));
+                }
+            }
+            _ => panic!("expected an ellipse"),
+        }
+    }
+
+    #[test]
+    fn test_plane_cone_intersection_parabola() {
+        let tol = Tolerance::DEFAULT;
+        let tilt = std::f64::consts::FRAC_PI_2 - 0.4;
+        let plane =
+            Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, tilt.sin(), tilt.cos())).unwrap();
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        match plane.intersect_cone(&cone, tol) {
+            PlaneConeIntersection::Parabola(parabola) => {
+                for p in parabola.eval_points(&[-2.0, 0.0, 2.0]) {
+                    assert!(plane.contains(p, tol));
+                    assert!(cone.contains(p, tol));
+                }
+            }
+            _ => panic!("expected a parabola"),
+        }
+    }
+
+    #[test]
+    fn test_plane_cone_intersection_hyperbola() {
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        match plane.intersect_cone(&cone, tol) {
+            PlaneConeIntersection::Hyperbola(hyperbola) => {
+                for p in hyperbola.eval_points(&[-2.0, 0.0, 2.0]) {
+                    assert!(plane.contains(p, tol));
+                    assert!(cone.contains(p, tol));
+                }
+            }
+            _ => panic!("expected a hyperbola"),
+        }
+    }
+
+    #[test]
+    fn test_plane_cone_intersection_degenerate() {
+        let tol = Tolerance::DEFAULT;
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let apex = cone.apex();
+        // Perpendicular plane through the apex: just the tip.
+        let perp = Plane::new(apex, Vector3D::Z).unwrap();
+        assert_eq!(
+            perp.intersect_cone(&cone, tol),
+            PlaneConeIntersection::ApexPoint(apex)
+        );
+        // Steep plane through the apex: two generators.
+        let steep = Plane::new(apex, Vector3D::new(1.0, 0.0, 0.1).normalized().unwrap()).unwrap();
+        match steep.intersect_cone(&cone, tol) {
+            PlaneConeIntersection::TwoLines(l1, l2) => {
+                assert_eq!(l1.origin(), apex);
+                assert_eq!(l2.origin(), apex);
+                assert!(cone.contains(l1.eval_point(2.0), tol));
+                assert!(cone.contains(l2.eval_point(2.0), tol));
+            }
+            _ => panic!("expected two lines"),
+        }
+        // Section entirely behind the apex misses the single nappe.
+        let below = Plane::new(Point3D::new(0.0, 0.0, -6.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            below.intersect_cone(&cone, tol),
+            PlaneConeIntersection::Empty
+        );
     }
 }
