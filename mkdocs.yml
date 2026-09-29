@@ -1,0 +1,22 @@
+site_name: geomcore
+site_url: https://gabrieljms.github.io/geomcore/
+repo_url: https://github.com/GabrielJMS/geomcore
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - tables
+
+nav:
+  - Home: index.md
+  - Viewer: viewer.md
+  - Python: python.md
+  - Roadmap: roadmap.md
+
+exclude_docs: superpowers/*

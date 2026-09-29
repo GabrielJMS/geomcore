@@ -14,3 +14,4 @@ dist/
 .superpowers/
 .venv-py/
 .idea/
+site/
