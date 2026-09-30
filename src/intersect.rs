@@ -359,6 +359,40 @@ pub enum LineLine3DIntersection {
     },
 }
 
+/// Result of intersecting a 3D line with a 3D circle.
+///
+/// The line meets the circle's plane in at most one point (transversal
+/// graze or miss); a line lying in the plane reduces to the 2D problem.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineCircle3DIntersection {
+    /// Two hits: `(line parameter, point)` pairs, ordered.
+    Points((f64, Point3D), (f64, Point3D)),
+    /// Grazing contact: line parameter and point.
+    Tangent(f64, Point3D),
+    /// No intersection.
+    Empty,
+}
+
+/// Result of intersecting two 3D circles.
+///
+/// Only coplanar pairs admit a closed form (via 2D images in the shared
+/// plane); anything else reports [`CircleCircle3DIntersection::NotAnalytic`].
+/// Parameters are omitted (no natural primary curve); recover them with
+/// [`Circle3D::parameter_of`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CircleCircle3DIntersection {
+    /// Two meeting points.
+    Points(Point3D, Point3D),
+    /// Grazing contact point.
+    Tangent(Point3D),
+    /// No intersection.
+    Empty,
+    /// Same center, radius, and plane within tolerance.
+    Coincident,
+    /// No closed form: the circles are not coplanar.
+    NotAnalytic,
+}
+
 /// Solution classification for `a*t^2 + b*t + c = 0` with tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {

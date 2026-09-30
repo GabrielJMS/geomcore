@@ -14,9 +14,10 @@ use geomcore::curves::{
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, CircleCircle2DIntersection, ConeConeIntersection, ConeCylinderIntersection,
-    CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection, LineLine2DIntersection,
-    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
+    ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection,
+    LineCircle3DIntersection, LineLine2DIntersection, LineLine3DIntersection,
+    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
     PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
     SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection, Tolerance,
     TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
@@ -1834,6 +1835,36 @@ impl PyLine3D {
         }
     }
 
+    /// Intersects this line with a 3D circle.
+    ///
+    /// Returns `("points", ((t1, Point3D), (t2, Point3D)))`,
+    /// `("tangent", (t, Point3D))` or `("empty", None)`.
+    #[pyo3(signature = (circle, tol = None))]
+    fn intersect_circle(
+        &self,
+        py: Python<'_>,
+        circle: &PyCircle3D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        fn hit(py: Python<'_>, t: f64, p: Point3D) -> PyResult<Py<PyAny>> {
+            (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
+                .into_pyobject(py)
+                .map(|o| o.into_any().unbind())
+        }
+        match self.0.intersect_circle(&circle.0, tol) {
+            LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => Ok((
+                "points".to_string(),
+                (hit(py, t1, p1)?, hit(py, t2, p2)?)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            LineCircle3DIntersection::Tangent(t, p) => Ok(("tangent".to_string(), hit(py, t, p)?)),
+            LineCircle3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        }
+    }
+
     /// Compute this line's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
@@ -1956,6 +1987,41 @@ impl PyCircle3D {
     fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+    }
+
+    /// Intersects this circle with another 3D circle.
+    ///
+    /// Only coplanar pairs admit a closed form. Returns
+    /// `("points", (Point3D, Point3D))`, `("tangent", Point3D)`,
+    /// `("empty", None)`, `("coincident", None)` or
+    /// `("not_analytic", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_circle(
+        &self,
+        py: Python<'_>,
+        other: &PyCircle3D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_circle(&other.0, tol) {
+            CircleCircle3DIntersection::Points(p1, p2) => Ok((
+                "points".to_string(),
+                (
+                    PyPoint3D(p1).into_pyobject(py)?.into_any().unbind(),
+                    PyPoint3D(p2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            CircleCircle3DIntersection::Tangent(p) => Ok((
+                "tangent".to_string(),
+                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            CircleCircle3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            CircleCircle3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+            CircleCircle3DIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        }
     }
 }
 

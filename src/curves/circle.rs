@@ -9,8 +9,8 @@ use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
 use crate::{
-    Axis3D, CircleCircle2DIntersection, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D,
-    Vector3D,
+    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, Frame2D, Frame3D, Plane,
+    Point2D, Point3D, Tolerance, Vector2D, Vector3D,
 };
 use std::fmt;
 
@@ -365,6 +365,60 @@ impl Circle3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// Intersects this circle with another 3D circle.
+    ///
+    /// Only coplanar pairs admit a closed form: both circles map to 2D
+    /// images in the shared plane ([`parametrize_on`](Circle3D::parametrize_on)),
+    /// the 2D problem solves, and hits map back through the plane
+    /// evaluation. Anything else reports
+    /// [`CircleCircle3DIntersection::NotAnalytic`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, CircleCircle3DIntersection, Point3D, Tolerance, Vector3D};
+    /// let c1 = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let c2 = Circle3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match c1.intersect_circle(&c2, tol) {
+    ///     CircleCircle3DIntersection::Points(_, _) => {}
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_circle(&self, other: &Circle3D, tol: Tolerance) -> CircleCircle3DIntersection {
+        if self.normal().cross(other.normal()).magnitude() > tol.angular {
+            return CircleCircle3DIntersection::NotAnalytic;
+        }
+        let plane = Plane::from_frame(self.frame());
+        if !plane.contains(other.center(), tol) {
+            return CircleCircle3DIntersection::NotAnalytic;
+        }
+        if self.center().distance(other.center()) <= tol.confusion
+            && (self.radius() - other.radius()).abs() <= tol.confusion
+        {
+            return CircleCircle3DIntersection::Coincident;
+        }
+        let c1 = match self.parametrize_on(plane) {
+            Ok(Curve2D::Circle(c)) => c,
+            _ => return CircleCircle3DIntersection::NotAnalytic,
+        };
+        let c2 = match other.parametrize_on(plane) {
+            Ok(Curve2D::Circle(c)) => c,
+            _ => return CircleCircle3DIntersection::NotAnalytic,
+        };
+        match c1.intersect_circle(&c2, tol) {
+            CircleCircle2DIntersection::Points(p1, p2) => CircleCircle3DIntersection::Points(
+                plane.eval_point(p1.x, p1.y),
+                plane.eval_point(p2.x, p2.y),
+            ),
+            CircleCircle2DIntersection::Tangent(p) => {
+                CircleCircle3DIntersection::Tangent(plane.eval_point(p.x, p.y))
+            }
+            CircleCircle2DIntersection::Empty => CircleCircle3DIntersection::Empty,
+            CircleCircle2DIntersection::Coincident => CircleCircle3DIntersection::Coincident,
+        }
+    }
+
     /// Computes the exact 2D representation of this circle in a surface's
     /// parameter space: a [`Curve2D`] `q(t)` such that
     /// `surface.eval_point(q(t)) == self.eval_point(t)` for the same `t`.
@@ -670,8 +724,8 @@ impl Circle2D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Circle2D, Circle3D, CircleCircle2DIntersection, CircleConstructionError, Frame2D, Frame3D,
-        Point2D, Point3D, Tolerance, Vector2D, Vector3D,
+        Circle2D, Circle3D, CircleCircle2DIntersection, CircleCircle3DIntersection,
+        CircleConstructionError, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D,
     };
 
     // ---- Circle3D construction ----
@@ -1027,6 +1081,34 @@ mod tests {
         assert_eq!(
             c1.intersect_circle(&c1, tol),
             CircleCircle2DIntersection::Coincident
+        );
+    }
+
+    #[test]
+    fn test_circle3d_intersect_circle() {
+        let tol = Tolerance::DEFAULT;
+        let c1 = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let c2 = Circle3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        match c1.intersect_circle(&c2, tol) {
+            CircleCircle3DIntersection::Points(p1, p2) => {
+                assert!((p1.x - 1.5).abs() < 1e-9);
+                assert!((p1.y - 1.75f64.sqrt()).abs() < 1e-9);
+                assert!((p2.y + 1.75f64.sqrt()).abs() < 1e-9);
+                assert!(c1.contains(p1, tol));
+                assert!(c2.contains(p2, tol));
+            }
+            _ => panic!("expected two points"),
+        }
+        // Tilted partner: no closed form.
+        let tilted = Circle3D::new(Point3D::ORIGIN, Vector3D::X, 2.0).unwrap();
+        assert_eq!(
+            c1.intersect_circle(&tilted, tol),
+            CircleCircle3DIntersection::NotAnalytic
+        );
+        // Coincident.
+        assert_eq!(
+            c1.intersect_circle(&c1, tol),
+            CircleCircle3DIntersection::Coincident
         );
     }
 }

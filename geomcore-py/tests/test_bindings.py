@@ -428,6 +428,25 @@ def test_intersect_curves_2d_and_lines():
     assert payload[2] == pytest.approx(1.0)
 
 
+def test_intersect_curves_3d():
+    from geomcore.curves import Circle3D, Line3D
+
+    line = Line3D(Point3D.origin(), Vector3D.x())
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    kind, ((t1, _), (t2, _)) = line.intersect_circle(circle)
+    assert kind == "points"
+    assert (t1, t2) == pytest.approx((-2.0, 2.0))
+
+    c1 = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    c2 = Circle3D(Point3D(3.0, 0.0, 0.0), Vector3D.z(), 2.0)
+    kind, (p1, p2) = c1.intersect_circle(c2)
+    assert kind == "points"
+    assert p1.x == pytest.approx(1.5)
+    tilted = Circle3D(Point3D.origin(), Vector3D.x(), 2.0)
+    assert c1.intersect_circle(tilted) == ("not_analytic", None)
+    assert c1.intersect_circle(c1)[0] == "coincident"
+
+
 def _bilinear_patch():
     from geomcore.surfaces import BSplineSurface
 

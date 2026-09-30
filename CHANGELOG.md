@@ -9,6 +9,16 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-30
+
+### Added
+
+- Analytic curve intersections, batch 2: `Line3D::intersect_circle`
+  (transversal graze or in-plane 2D reduction) and
+  `Circle3D::intersect_circle` (coplanar pairs via shared-plane 2D
+  images, `NotAnalytic` otherwise). Python returns `(kind, payload)`
+  tuples.
+
 ## [0.15.0] - 2026-09-30
 
 ### Added
@@ -189,7 +199,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.16.0
 [0.15.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.15.0
 [0.14.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.14.0
 [0.13.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.13.0

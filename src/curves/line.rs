@@ -5,15 +5,16 @@ use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::intersect::{
-    LineCircle2DIntersection, LineLine2DIntersection, LineLine3DIntersection,
-    LinePlaneIntersection, LineQuadricIntersection, QuadraticSolution, solve_quadratic,
+    LineCircle2DIntersection, LineCircle3DIntersection, LineLine2DIntersection,
+    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, QuadraticSolution,
+    solve_quadratic,
 };
 use crate::math::solve_2x2;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{
-    Axis2D, Axis3D, Circle2D, Cone, Cylinder, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D,
-    Vector3D,
+    Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Plane, Point2D, Point3D, Sphere, Tolerance,
+    Vector2D, Vector3D,
 };
 use std::fmt;
 
@@ -554,6 +555,65 @@ impl Line3D {
             }
         }
     }
+
+    /// Intersects this line with a 3D circle.
+    ///
+    /// A transversal line meets the circle's plane once: on-circle hits
+    /// graze, the rest miss. A line lying in the plane reduces to the 2D
+    /// problem (both 2D images exist in closed form), mapping hits back
+    /// with the plane evaluation and this line's inverse parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Line3D, LineCircle3DIntersection, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_circle(&circle, tol) {
+    ///     LineCircle3DIntersection::Points((t1, _), (t2, _)) => {
+    ///         assert_eq!((t1, t2), (-2.0, 2.0));
+    ///     }
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_circle(&self, circle: &Circle3D, tol: Tolerance) -> LineCircle3DIntersection {
+        let plane = Plane::from_frame(circle.frame());
+        match self.intersect_plane(&plane, tol) {
+            LinePlaneIntersection::Point(t, p) => {
+                if circle.contains(p, tol) {
+                    LineCircle3DIntersection::Tangent(t, p)
+                } else {
+                    LineCircle3DIntersection::Empty
+                }
+            }
+            LinePlaneIntersection::Parallel => LineCircle3DIntersection::Empty,
+            LinePlaneIntersection::Coincident => {
+                let l2 = match self.parametrize_on(plane) {
+                    Ok(Curve2D::Line(l)) => l,
+                    _ => return LineCircle3DIntersection::Empty,
+                };
+                let c2 = match circle.parametrize_on(plane) {
+                    Ok(Curve2D::Circle(c)) => c,
+                    _ => return LineCircle3DIntersection::Empty,
+                };
+                match l2.intersect_circle(&c2, tol) {
+                    LineCircle2DIntersection::Points((_, p1), (_, p2)) => {
+                        let (q1, q2) = (plane.eval_point(p1.x, p1.y), plane.eval_point(p2.x, p2.y));
+                        LineCircle3DIntersection::Points(
+                            (self.parameter_of(q1), q1),
+                            (self.parameter_of(q2), q2),
+                        )
+                    }
+                    LineCircle2DIntersection::Tangent(_, p) => {
+                        let q = plane.eval_point(p.x, p.y);
+                        LineCircle3DIntersection::Tangent(self.parameter_of(q), q)
+                    }
+                    LineCircle2DIntersection::Empty => LineCircle3DIntersection::Empty,
+                }
+            }
+        }
+    }
 }
 
 /// An infinite line in 2D: an origin point and a unit direction, evaluated
@@ -864,10 +924,10 @@ impl Line2D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2D, Axis3D, Circle2D, Cone, Cylinder, Frame3D, Line2D, Line3D,
-        LineCircle2DIntersection, LineConstructionError, LineLine2DIntersection,
-        LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, Plane, Point2D,
-        Point3D, Sphere, Tolerance, Vector2D, Vector3D,
+        Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Frame3D, Line2D, Line3D,
+        LineCircle2DIntersection, LineCircle3DIntersection, LineConstructionError,
+        LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
+        LineQuadricIntersection, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
     };
 
     // ---- Line3D construction ----
@@ -1364,6 +1424,37 @@ mod tests {
         assert_eq!(
             miss.intersect_circle(&circle, tol),
             LineCircle2DIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_circle() {
+        let tol = Tolerance::DEFAULT;
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        // In-plane line: two hits.
+        match line.intersect_circle(&circle, tol) {
+            LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => {
+                assert_eq!((t1, t2), (-2.0, 2.0));
+                assert_eq!(p1, Point3D::new(-2.0, 0.0, 0.0));
+                assert_eq!(p2, Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected two points"),
+        }
+        // Transversal graze through a circle point.
+        let graze = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        match graze.intersect_circle(&circle, tol) {
+            LineCircle3DIntersection::Tangent(t, p) => {
+                assert_eq!(t, 0.0);
+                assert_eq!(p, Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // Transversal miss.
+        let miss = Line3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            miss.intersect_circle(&circle, tol),
+            LineCircle3DIntersection::Empty
         );
     }
 }
