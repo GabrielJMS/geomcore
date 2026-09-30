@@ -9,6 +9,16 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-30
+
+### Added
+
+- Point projection, extrema, and containment on `BSplineSurface`:
+  dense grid seeds (boundaries included) refined by 2D Gauss-Newton
+  (first derivatives only, clamped into non-periodic directions).
+  Python returns `(u, v, distance)` tuples. Surface containment is now
+  complete across every surface type.
+
 ## [0.13.0] - 2026-09-30
 
 ### Added
@@ -169,7 +179,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.14.0
 [0.13.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.13.0
 [0.12.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.12.0
 [0.11.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.11.0

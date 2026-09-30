@@ -400,6 +400,37 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
 
 
+def _bilinear_patch():
+    from geomcore.surfaces import BSplineSurface
+
+    return BSplineSurface(
+        1,
+        1,
+        [
+            [Point3D(0.0, 0.0, 0.0), Point3D(0.0, 2.0, 0.0)],
+            [Point3D(2.0, 0.0, 0.0), Point3D(2.0, 2.0, 0.0)],
+        ],
+        [0.0, 1.0],
+        [2, 2],
+        [0.0, 1.0],
+        [2, 2],
+        False,
+        False,
+    )
+
+
+def test_bspline_surface_projection():
+    surface = _bilinear_patch()
+    u, v, dist = surface.project_point(Point3D(1.0, 1.0, 1.0))
+    assert (u, v) == pytest.approx((0.5, 0.5))
+    assert dist == pytest.approx(1.0)
+    assert surface.contains(Point3D(1.0, 1.0, 0.0))
+    assert not surface.contains(Point3D(1.0, 1.0, 1.0))
+    ext = surface.extrema(Point3D(1.0, 1.0, 1.0))
+    assert len(ext) >= 1
+    assert ext[0][2] == pytest.approx(1.0)
+
+
 def test_bspline_curve_projection():
     curve = BSplineCurve3D(
         1,

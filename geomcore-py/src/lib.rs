@@ -1496,6 +1496,52 @@ impl PyBSplineSurface {
         self.0.is_rational()
     }
 
+    /// Returns whether `point` lies on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// All stationary points of the distance from `point` to the surface,
+    /// as `(u, v, distance)` tuples ordered by ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64, f64)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .extrema(point.0, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
+    }
+
+    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.u, proj.v, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the surface, returning a
+    /// `(u, v, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(
+        &self,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<(f64, f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.u, p.v, p.distance))
+            .collect()
+    }
+
     /// Evaluate the point at surface parameters (u, v).
     fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
         PyPoint3D(self.0.eval_point(u, v))

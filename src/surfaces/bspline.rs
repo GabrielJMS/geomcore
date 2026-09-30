@@ -8,9 +8,11 @@
 //! direction, so evaluation never re-derives them.
 
 use crate::curve_math::bspline as curve;
+use crate::math::gauss_newton_2d;
+use crate::projection::SurfaceProjection;
 use crate::surface_math::bspline as math;
 use crate::surfaces::ParametricSurface;
-use crate::{Point3D, Vector3D};
+use crate::{Point3D, Tolerance, Vector3D};
 
 pub use crate::curves::BSplineConstructionError;
 
@@ -445,6 +447,175 @@ impl BSplineSurface {
                 "eval_derivative: order du={du}, dv={dv} is not supported (only first derivatives are supported)"
             ),
         }
+    }
+
+    /// Returns whether `point` lies on the surface: the surface is
+    /// projected with [`BSplineSurface::project_point`] and the point
+    /// counts as contained when the projected distance is within
+    /// `tol.confusion`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Tolerance};
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+    ///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+    /// ];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(surface.contains(Point3D::new(1.0, 1.0, 0.0), tol));
+    /// assert!(!surface.contains(Point3D::new(1.0, 1.0, 1.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        self.project_point(point, tol).distance <= tol.confusion
+    }
+
+    /// All stationary points of the distance from `point` to the surface,
+    /// ordered by ascending distance.
+    ///
+    /// A dense grid over the parameter bounds (edges and corners included,
+    /// so boundary minima on open patches survive) seeds Gauss-Newton
+    /// refinement on `|(S(u,v) - P)|^2` (first derivatives only, clamped
+    /// into non-periodic directions). Distinct seeds converging to the
+    /// same point merge; the first entry is the global closest point (see
+    /// [`BSplineSurface::project_point`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Tolerance};
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+    ///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+    /// ];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let extrema = surface.extrema(Point3D::new(1.0, 1.0, 1.0), Tolerance::DEFAULT);
+    /// assert!(!extrema.is_empty());
+    /// assert_eq!(extrema[0].distance, 1.0);
+    /// ```
+    pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<SurfaceProjection> {
+        use crate::projection::snap_distance;
+        let (u0, u1) = ParametricSurface::u_bounds(self);
+        let (v0, v1) = ParametricSurface::v_bounds(self);
+        let clamp_u = |u: f64| {
+            if self.is_u_periodic() {
+                u
+            } else {
+                u.clamp(u0, u1)
+            }
+        };
+        let clamp_v = |v: f64| {
+            if self.is_v_periodic() {
+                v
+            } else {
+                v.clamp(v0, v1)
+            }
+        };
+        // Dense seeds over the patch, boundaries included.
+        const NU: usize = 16;
+        const NV: usize = 16;
+        const KEEP: usize = 12;
+        let mut samples: Vec<(f64, f64, f64)> = Vec::with_capacity((NU + 1) * (NV + 1));
+        for j in 0..=NV {
+            for i in 0..=NU {
+                let u = u0 + (u1 - u0) * i as f64 / NU as f64;
+                let v = v0 + (v1 - v0) * j as f64 / NV as f64;
+                samples.push((u, v, self.eval_point(u, v).distance(point)));
+            }
+        }
+        samples.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+        let mut params: Vec<(f64, f64)> = Vec::new();
+        for (u, v, _) in samples.into_iter().take(KEEP) {
+            let p = self.eval_point(u, v);
+            if params
+                .iter()
+                .any(|&(su, sv)| self.eval_point(su, sv).distance(p) <= tol.confusion)
+            {
+                continue;
+            }
+            let residual = |u: f64, v: f64| {
+                let q = self.eval_point(clamp_u(u), clamp_v(v)) - point;
+                [q.x, q.y, q.z]
+            };
+            let jac_u = |u: f64, v: f64| {
+                let d = self.eval_derivative(clamp_u(u), clamp_v(v), 1, 0);
+                [d.x, d.y, d.z]
+            };
+            let jac_v = |u: f64, v: f64| {
+                let d = self.eval_derivative(clamp_u(u), clamp_v(v), 0, 1);
+                [d.x, d.y, d.z]
+            };
+            if let Some((ru, rv)) = gauss_newton_2d(residual, jac_u, jac_v, u, v, tol.confusion, 50)
+            {
+                params.push((clamp_u(ru), clamp_v(rv)));
+            }
+        }
+        // The best raw sample guarantees a non-empty answer when nothing
+        // converges.
+        if params.is_empty() {
+            params.push((u0, v0));
+        }
+        let mut out: Vec<SurfaceProjection> = Vec::new();
+        for (u, v) in params {
+            let p = self.eval_point(u, v);
+            if out
+                .iter()
+                .any(|e: &SurfaceProjection| self.eval_point(e.u, e.v).distance(p) <= tol.confusion)
+            {
+                continue;
+            }
+            let distance = p.distance(point);
+            out.push(SurfaceProjection {
+                u,
+                v,
+                distance: snap_distance(distance, tol.confusion),
+            });
+        }
+        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out
+    }
+
+    /// Projects `point` onto the surface: the nearest of
+    /// [`BSplineSurface::extrema`]. Distances within `tol.confusion` snap
+    /// to `0.0`, matching [`BSplineSurface::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Tolerance};
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+    ///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+    /// ];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let proj = surface.project_point(Point3D::new(1.0, 1.0, 1.0), Tolerance::DEFAULT);
+    /// assert!((proj.u - 0.5).abs() < 1e-9);
+    /// assert!((proj.v - 0.5).abs() < 1e-9);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        self.extrema(point, tol)
+            .into_iter()
+            .next()
+            .expect("seeding guarantees a non-empty candidate list")
+    }
+
+    /// Projects each point in `points` onto the surface.
+    ///
+    /// Default-style batch wrapper over [`BSplineSurface::project_point`]:
+    /// one native call per batch, mirroring [`BSplineSurface::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
     /// Shared first-derivative evaluation, returning `(S, Su, Sv)`.
@@ -899,5 +1070,77 @@ mod tests {
         assert!((p.x - 1.7596000000000003).abs() < 1e-7);
         assert!((p.y - -0.5507921568069025).abs() < 1e-7);
         assert!((p.z - 1.7999999999999998).abs() < 1e-7);
+    }
+
+    fn bilinear_patch() -> BSplineSurface {
+        let poles = vec![
+            vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+            vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+        ];
+        BSplineSurface::new(
+            1,
+            1,
+            poles,
+            vec![0.0, 1.0],
+            vec![2, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_bspline_surface_project_point_planar() {
+        let s = bilinear_patch();
+        let tol = Tolerance::DEFAULT;
+        let proj = s.project_point(Point3D::new(1.0, 1.0, 1.0), tol);
+        assert!((proj.u - 0.5).abs() < 1e-9);
+        assert!((proj.v - 0.5).abs() < 1e-9);
+        assert!((proj.distance - 1.0).abs() < 1e-9);
+        // Beyond the edge: boundary foot wins.
+        let edge = s.project_point(Point3D::new(3.0, 1.0, 0.0), tol);
+        assert!((edge.u - 1.0).abs() < 1e-9);
+        assert!((edge.v - 0.5).abs() < 1e-9);
+        assert!((edge.distance - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_bspline_surface_contains_planar() {
+        let s = bilinear_patch();
+        let tol = Tolerance::DEFAULT;
+        assert!(s.contains(Point3D::new(1.0, 1.0, 0.0), tol));
+        assert!(s.contains(s.eval_point(0.25, 0.75), tol));
+        assert!(!s.contains(Point3D::new(1.0, 1.0, 1.0), tol));
+    }
+
+    #[test]
+    fn test_bspline_surface_project_point_tube() {
+        let s = periodic_tube();
+        let tol = Tolerance::DEFAULT;
+        // On-surface point projects to (near-)zero distance.
+        let on = s.eval_point(0.5, 0.5);
+        assert_eq!(s.project_point(on, tol).distance, 0.0);
+        assert!(s.contains(on, tol));
+        // Off-surface: beat against dense brute-force sampling.
+        let query = Point3D::new(0.0, 0.0, 5.0);
+        let proj = s.project_point(query, tol);
+        let (u0, u1) = ParametricSurface::u_bounds(&s);
+        let (v0, v1) = ParametricSurface::v_bounds(&s);
+        let mut best = f64::INFINITY;
+        for j in 0..=60 {
+            for i in 0..=60 {
+                let d = s
+                    .eval_point(
+                        u0 + (u1 - u0) * i as f64 / 60.0,
+                        v0 + (v1 - v0) * j as f64 / 60.0,
+                    )
+                    .distance(query);
+                best = best.min(d);
+            }
+        }
+        assert!(proj.distance <= best + 1e-9);
+        assert!(best - proj.distance < 1e-2);
     }
 }
