@@ -5,16 +5,16 @@ use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::intersect::{
-    LineCircle2DIntersection, LineCircle3DIntersection, LineLine2DIntersection,
-    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, QuadraticSolution,
-    solve_quadratic,
+    ImplicitConic, LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection,
+    LineConicHit, LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
+    LineQuadricIntersection, PlacedConic, QuadraticSolution, solve_quadratic,
 };
 use crate::math::solve_2x2;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{
-    Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Plane, Point2D, Point3D, Sphere, Tolerance,
-    Vector2D, Vector3D,
+    Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Ellipse3D, Hyperbola3D, Parabola3D, Plane,
+    Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
 };
 use std::fmt;
 
@@ -614,6 +614,200 @@ impl Line3D {
             }
         }
     }
+
+    /// Shared solve for [`Line3D::intersect_ellipse`],
+    /// [`Line3D::intersect_parabola`], and [`Line3D::intersect_hyperbola`]:
+    /// a transversal line meets the conic's plane once (graze or miss); a
+    /// coplanar line substitutes into the conic's implicit equation and the
+    /// quadratic roots map back with this line's evaluation. Candidates
+    /// off the conic (the unmodeled hyperbola branch) are dropped, so a
+    /// lone hit reports [`LineConic3DIntersection::Tangent`] even when it
+    /// is transversal.
+    fn intersect_frame_conic(
+        &self,
+        conic: &PlacedConic,
+        contains: impl Fn(Point3D) -> bool,
+        conic_parameter_of: impl Fn(Point3D) -> f64,
+        tol: Tolerance,
+    ) -> LineConic3DIntersection {
+        match self.intersect_plane(&conic.plane, tol) {
+            LinePlaneIntersection::Point(t, p) => {
+                if contains(p) {
+                    LineConic3DIntersection::Tangent(LineConicHit {
+                        line_param: t,
+                        point: p,
+                        conic_param: conic_parameter_of(p),
+                    })
+                } else {
+                    LineConic3DIntersection::Empty
+                }
+            }
+            LinePlaneIntersection::Parallel => LineConic3DIntersection::Empty,
+            LinePlaneIntersection::Coincident => {
+                let w = self.origin() - conic.origin;
+                let d = self.direction();
+                let (qa, qb, qc) = conic.implicit.line_substitute(
+                    w.dot(conic.x),
+                    w.dot(conic.y),
+                    d.dot(conic.x),
+                    d.dot(conic.y),
+                );
+                let mut hits = Vec::new();
+                let mut push = |t: f64| {
+                    let p = self.eval_point(t);
+                    if contains(p) {
+                        hits.push(LineConicHit {
+                            line_param: t,
+                            point: p,
+                            conic_param: conic_parameter_of(p),
+                        });
+                    }
+                };
+                match solve_quadratic(qa, qb, qc, tol) {
+                    QuadraticSolution::Two(t1, t2) => {
+                        push(t1);
+                        push(t2);
+                    }
+                    QuadraticSolution::One(t) | QuadraticSolution::Linear(t) => push(t),
+                    QuadraticSolution::Degenerate | QuadraticSolution::Empty => {}
+                }
+                match hits.len() {
+                    2 => LineConic3DIntersection::Points(hits[0], hits[1]),
+                    1 => LineConic3DIntersection::Tangent(hits[0]),
+                    _ => LineConic3DIntersection::Empty,
+                }
+            }
+        }
+    }
+
+    /// Intersects this line with a 3D ellipse.
+    ///
+    /// A transversal line meets the ellipse's plane once: on-ellipse hits
+    /// graze, the rest miss. A line lying in the plane substitutes into
+    /// the ellipse equation (quadratic in the line parameter).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Line3D, LineConic3DIntersection, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_ellipse(&ellipse, tol) {
+    ///     LineConic3DIntersection::Points(h1, h2) => {
+    ///         assert_eq!((h1.line_param, h2.line_param), (-3.0, 3.0));
+    ///         assert_eq!((h1.point, h2.point), (Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)));
+    ///     }
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_ellipse(
+        &self,
+        ellipse: &Ellipse3D,
+        tol: Tolerance,
+    ) -> LineConic3DIntersection {
+        let frame = ellipse.frame();
+        let conic = PlacedConic {
+            plane: Plane::from_frame(frame),
+            x: frame.x_direction(),
+            y: frame.y_direction(),
+            origin: ellipse.center(),
+            normal: frame.z_direction(),
+            implicit: ImplicitConic::ellipse(ellipse.major_radius(), ellipse.minor_radius()),
+        };
+        self.intersect_frame_conic(
+            &conic,
+            |p| ellipse.contains(p, tol),
+            |p| ellipse.parameter_of(p),
+            tol,
+        )
+    }
+
+    /// Intersects this line with a 3D parabola.
+    ///
+    /// Same calling shape as [`Line3D::intersect_ellipse`]: a transversal
+    /// line grazes or misses, a coplanar line solves the substituted
+    /// quadratic (asymptote-style parallels report the linear root).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, LineConic3DIntersection, Parabola3D, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_parabola(&parabola, tol) {
+    ///     LineConic3DIntersection::Tangent(hit) => {
+    ///         assert_eq!(hit.line_param, 0.0);
+    ///         assert_eq!(hit.point, Point3D::ORIGIN);
+    ///     }
+    ///     _ => panic!("expected a tangent"),
+    /// }
+    /// ```
+    pub fn intersect_parabola(
+        &self,
+        parabola: &Parabola3D,
+        tol: Tolerance,
+    ) -> LineConic3DIntersection {
+        let frame = parabola.frame();
+        let conic = PlacedConic {
+            plane: Plane::from_frame(frame),
+            x: frame.x_direction(),
+            y: frame.y_direction(),
+            origin: parabola.apex(),
+            normal: frame.z_direction(),
+            implicit: ImplicitConic::parabola(parabola.focal()),
+        };
+        self.intersect_frame_conic(
+            &conic,
+            |p| parabola.contains(p, tol),
+            |p| parabola.parameter_of(p),
+            tol,
+        )
+    }
+
+    /// Intersects this line with a 3D hyperbola.
+    ///
+    /// Same calling shape as [`Line3D::intersect_ellipse`]. Only the
+    /// modeled branch participates ([`Hyperbola3D`] is single-branched):
+    /// roots on the mirror branch are dropped, so a lone hit reports
+    /// [`LineConic3DIntersection::Tangent`] even when it is transversal.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Hyperbola3D, Line3D, LineConic3DIntersection, Point3D, Tolerance, Vector3D};
+    /// let line = Line3D::new(Point3D::new(2.0, -5.0, 0.0), Vector3D::Y).unwrap();
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_hyperbola(&hyperbola, tol) {
+    ///     LineConic3DIntersection::Tangent(hit) => {
+    ///         assert_eq!(hit.point, Point3D::new(2.0, 0.0, 0.0));
+    ///     }
+    ///     _ => panic!("expected a tangent"),
+    /// }
+    /// ```
+    pub fn intersect_hyperbola(
+        &self,
+        hyperbola: &Hyperbola3D,
+        tol: Tolerance,
+    ) -> LineConic3DIntersection {
+        let frame = hyperbola.frame();
+        let conic = PlacedConic {
+            plane: Plane::from_frame(frame),
+            x: frame.x_direction(),
+            y: frame.y_direction(),
+            origin: hyperbola.center(),
+            normal: frame.z_direction(),
+            implicit: ImplicitConic::hyperbola(hyperbola.major_radius(), hyperbola.minor_radius()),
+        };
+        self.intersect_frame_conic(
+            &conic,
+            |p| hyperbola.contains(p, tol),
+            |p| hyperbola.parameter_of(p),
+            tol,
+        )
+    }
 }
 
 /// An infinite line in 2D: an origin point and a unit direction, evaluated
@@ -924,10 +1118,11 @@ impl Line2D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Frame3D, Line2D, Line3D,
-        LineCircle2DIntersection, LineCircle3DIntersection, LineConstructionError,
-        LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
-        LineQuadricIntersection, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
+        Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D,
+        Line2D, Line3D, LineCircle2DIntersection, LineCircle3DIntersection,
+        LineConic3DIntersection, LineConstructionError, LineLine2DIntersection,
+        LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, Parabola3D, Plane,
+        Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
     };
 
     // ---- Line3D construction ----
@@ -1455,6 +1650,105 @@ mod tests {
         assert_eq!(
             miss.intersect_circle(&circle, tol),
             LineCircle3DIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_ellipse() {
+        let tol = Tolerance::DEFAULT;
+        let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+        // In-plane line through both vertices.
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match line.intersect_ellipse(&ellipse, tol) {
+            LineConic3DIntersection::Points(h1, h2) => {
+                assert_eq!((h1.line_param, h2.line_param), (-3.0, 3.0));
+                assert_eq!(
+                    (h1.point, h2.point),
+                    (Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0))
+                );
+                assert_eq!(h2.conic_param, 0.0);
+            }
+            _ => panic!("expected two points"),
+        }
+        // Transversal graze through a vertex.
+        let graze = Line3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        match graze.intersect_ellipse(&ellipse, tol) {
+            LineConic3DIntersection::Tangent(hit) => {
+                assert_eq!(hit.line_param, 0.0);
+                assert_eq!(hit.point, Point3D::new(3.0, 0.0, 0.0));
+                assert_eq!(hit.conic_param, 0.0);
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // Transversal miss.
+        let miss = Line3D::new(Point3D::new(4.0, 0.0, 0.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            miss.intersect_ellipse(&ellipse, tol),
+            LineConic3DIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_parabola() {
+        let tol = Tolerance::DEFAULT;
+        let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        // In-plane axis: the linear root at the apex.
+        let axis = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match axis.intersect_parabola(&parabola, tol) {
+            LineConic3DIntersection::Tangent(hit) => {
+                assert_eq!(hit.line_param, 0.0);
+                assert_eq!(hit.point, Point3D::ORIGIN);
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // In-plane vertical line: two symmetric hits.
+        let vertical = Line3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Y).unwrap();
+        match vertical.intersect_parabola(&parabola, tol) {
+            LineConic3DIntersection::Points(h1, h2) => {
+                assert_eq!((h1.line_param, h2.line_param), (-2.0, 2.0));
+                assert_eq!(
+                    (h1.point, h2.point),
+                    (Point3D::new(1.0, -2.0, 0.0), Point3D::new(1.0, 2.0, 0.0))
+                );
+            }
+            _ => panic!("expected two points"),
+        }
+        // Parallel miss above the plane.
+        let miss = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::X).unwrap();
+        assert_eq!(
+            miss.intersect_parabola(&parabola, tol),
+            LineConic3DIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_hyperbola() {
+        let tol = Tolerance::DEFAULT;
+        let hyperbola =
+            Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+        // Tangent at the right vertex.
+        let tangent = Line3D::new(Point3D::new(2.0, -5.0, 0.0), Vector3D::Y).unwrap();
+        match tangent.intersect_hyperbola(&hyperbola, tol) {
+            LineConic3DIntersection::Tangent(hit) => {
+                assert_eq!(hit.line_param, 5.0);
+                assert_eq!(hit.point, Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // Axis line: the mirror-branch root is dropped, leaving a lone hit.
+        let axis = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match axis.intersect_hyperbola(&hyperbola, tol) {
+            LineConic3DIntersection::Tangent(hit) => {
+                assert_eq!(hit.line_param, 2.0);
+                assert_eq!(hit.point, Point3D::new(2.0, 0.0, 0.0));
+            }
+            _ => panic!("expected a lone hit"),
+        }
+        // Parallel miss above the plane.
+        let miss = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::X).unwrap();
+        assert_eq!(
+            miss.intersect_hyperbola(&hyperbola, tol),
+            LineConic3DIntersection::Empty
         );
     }
 }

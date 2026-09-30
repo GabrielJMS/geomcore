@@ -661,3 +661,65 @@ def test_conic_extrema_and_projection():
     hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
     u, dist = hyperbola.project_point(Point3D(3.0, 0.0, 0.0))
     assert dist == pytest.approx(math.sqrt(0.8))
+
+
+def test_line_conic_intersections():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Line3D, Parabola3D
+
+    tol = Tolerance.default()
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    kind, ((t1, p1, u1), (t2, p2, u2)) = Line3D(Point3D.origin(), Vector3D.x()).intersect_ellipse(
+        ellipse
+    )
+    assert kind == "points"
+    assert (t1, t2) == pytest.approx((-3.0, 3.0))
+    assert (u1, u2) == pytest.approx((math.pi, 0.0))
+
+    parabola = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0)
+    kind, (t, p, u) = Line3D(Point3D.origin(), Vector3D.x()).intersect_parabola(parabola)
+    assert kind == "tangent"
+    assert t == pytest.approx(0.0) and u == pytest.approx(0.0)
+
+    hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
+    kind, (t, p, u) = Line3D(Point3D(2.0, -5.0, 0.0), Vector3D.y()).intersect_hyperbola(
+        hyperbola, tol
+    )
+    assert kind == "tangent"
+    assert (p.x, p.y, p.z) == pytest.approx((2.0, 0.0, 0.0))
+
+    miss = Line3D(Point3D(0.0, 0.0, 1.0), Vector3D.x())
+    assert miss.intersect_ellipse(ellipse) == ("empty", None)
+    assert miss.intersect_parabola(parabola) == ("empty", None)
+    assert miss.intersect_hyperbola(hyperbola) == ("empty", None)
+
+
+def test_circle_conic_intersections():
+    from geomcore.curves import Circle3D, Ellipse3D, Hyperbola3D, Parabola3D
+
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    kind, hits = circle.intersect_ellipse(ellipse)
+    assert kind == "points"
+    assert len(hits) == 4
+    for s, p, u in hits:
+        assert circle.contains(p)
+        assert ellipse.contains(p)
+
+    assert circle.intersect_ellipse(
+        Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
+    ) == ("coincident", None)
+    tilted = Ellipse3D(Point3D.origin(), Vector3D.x(), Vector3D.z(), 3.0, 1.5)
+    assert circle.intersect_ellipse(tilted) == ("not_analytic", None)
+
+    unit = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    parabola = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0)
+    kind, hits = unit.intersect_parabola(parabola)
+    assert kind == "points"
+    assert len(hits) == 2
+
+    big = Circle3D(Point3D.origin(), Vector3D.z(), 3.0)
+    hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
+    kind, hits = big.intersect_hyperbola(hyperbola)
+    assert kind == "points"
+    assert len(hits) == 2
+    assert all(p.x > 0.0 for _, p, _ in hits)

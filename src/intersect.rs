@@ -10,7 +10,10 @@
 use crate::curves::{BSplineCurve3D, InterpParametrization, ParametricCurve3D};
 use crate::math::{gauss_newton_2d, newton_3d};
 use crate::surfaces::ParametricSurface;
-use crate::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point2D, Point3D, Tolerance};
+use crate::{
+    Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Plane, Point2D, Point3D, Tolerance,
+    Vector3D,
+};
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -394,6 +397,176 @@ pub enum CircleCircle3DIntersection {
     Coincident,
     /// No closed form: the circles are not coplanar.
     NotAnalytic,
+}
+
+/// One hit of an analytic line-vs-conic solve: parameter on the line,
+/// the hit point, and parameter on the conic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineConicHit {
+    /// Parameter on the line.
+    pub line_param: f64,
+    /// The hit point.
+    pub point: Point3D,
+    /// Parameter on the conic.
+    pub conic_param: f64,
+}
+
+/// Result of intersecting a 3D line with an ellipse, parabola, or
+/// hyperbola.
+///
+/// A transversal line meets the conic's plane once (graze or miss); a
+/// line lying in the plane substitutes into the conic's implicit equation
+/// (quadratic in the line parameter).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineConic3DIntersection {
+    /// Two hits, ordered by line parameter.
+    Points(LineConicHit, LineConicHit),
+    /// Grazing contact (double or linear root).
+    Tangent(LineConicHit),
+    /// No intersection.
+    Empty,
+}
+
+/// One hit of an analytic circle-vs-conic solve: parameter on the circle,
+/// the hit point, and parameter on the conic.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CircleConicHit {
+    /// Parameter on the circle.
+    pub circle_param: f64,
+    /// The hit point.
+    pub point: Point3D,
+    /// Parameter on the conic.
+    pub conic_param: f64,
+}
+
+/// Result of intersecting a 3D circle with an ellipse, parabola, or
+/// hyperbola.
+///
+/// Only coplanar pairs admit a closed form (the circle parametrizes into
+/// the conic's implicit equation, a trigonometric solve); anything else
+/// reports [`CircleConic3DIntersection::NotAnalytic`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum CircleConic3DIntersection {
+    /// Isolated hits (up to four).
+    Points(Vec<CircleConicHit>),
+    /// A single grazing contact.
+    Tangent(CircleConicHit),
+    /// The circle coincides with a circular ellipse.
+    Coincident,
+    /// No intersection.
+    Empty,
+    /// No closed form: the curves are not coplanar.
+    NotAnalytic,
+}
+
+/// Implicit quadratic `A*x^2 + B*y^2 + C*x*y + D*x + E*y + F = 0` of a
+/// conic in its own frame coordinates: the substitution target for
+/// coplanar line/circle solves.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ImplicitConic {
+    a2: f64,
+    b2: f64,
+    c2: f64,
+    d1: f64,
+    e1: f64,
+    f0: f64,
+}
+
+impl ImplicitConic {
+    /// `(x/a)^2 + (y/b)^2 = 1`.
+    pub(crate) fn ellipse(a: f64, b: f64) -> ImplicitConic {
+        ImplicitConic {
+            a2: 1.0 / (a * a),
+            b2: 1.0 / (b * b),
+            c2: 0.0,
+            d1: 0.0,
+            e1: 0.0,
+            f0: -1.0,
+        }
+    }
+
+    /// `y^2 = 4*f*x`.
+    pub(crate) fn parabola(focal: f64) -> ImplicitConic {
+        ImplicitConic {
+            a2: 0.0,
+            b2: 1.0,
+            c2: 0.0,
+            d1: -4.0 * focal,
+            e1: 0.0,
+            f0: 0.0,
+        }
+    }
+
+    /// `(x/a)^2 - (y/b)^2 = 1`.
+    pub(crate) fn hyperbola(a: f64, b: f64) -> ImplicitConic {
+        ImplicitConic {
+            a2: 1.0 / (a * a),
+            b2: -1.0 / (b * b),
+            c2: 0.0,
+            d1: 0.0,
+            e1: 0.0,
+            f0: -1.0,
+        }
+    }
+
+    /// Coefficients `(qa, qb, qc)` of `qa*t^2 + qb*t + qc = 0` for the
+    /// line `(ox + t*dx, oy + t*dy)` substituted into the implicit
+    /// equation.
+    pub(crate) fn line_substitute(&self, ox: f64, oy: f64, dx: f64, dy: f64) -> (f64, f64, f64) {
+        let qa = self.a2 * dx * dx + self.b2 * dy * dy + self.c2 * dx * dy;
+        let qb = 2.0 * self.a2 * ox * dx
+            + 2.0 * self.b2 * oy * dy
+            + self.c2 * (ox * dy + oy * dx)
+            + self.d1 * dx
+            + self.e1 * dy;
+        let qc = self.a2 * ox * ox
+            + self.b2 * oy * oy
+            + self.c2 * ox * oy
+            + self.d1 * ox
+            + self.e1 * oy
+            + self.f0;
+        (qa, qb, qc)
+    }
+
+    /// Coefficients `(a2, b2, c1, d1, e)` of
+    /// `a2*cos2s + b2*sin2s + c1*cos s + d1*sin s + e = 0` for the circle
+    /// `(cx + r*cos s, cy + r*sin s)` substituted into the implicit
+    /// equation (see [`solve_trig`]).
+    pub(crate) fn circle_substitute(&self, cx: f64, cy: f64, r: f64) -> (f64, f64, f64, f64, f64) {
+        let r2 = r * r;
+        let a2 = r2 * (self.a2 - self.b2) / 2.0;
+        let b2 = r2 * self.c2 / 2.0;
+        let c1 = r * (2.0 * self.a2 * cx + self.c2 * cy + self.d1);
+        let d1 = r * (2.0 * self.b2 * cy + self.c2 * cx + self.e1);
+        let e = self.a2 * cx * cx
+            + self.b2 * cy * cy
+            + self.c2 * cx * cy
+            + self.d1 * cx
+            + self.e1 * cy
+            + self.f0
+            + r2 * (self.a2 + self.b2) / 2.0;
+        (a2, b2, c1, d1, e)
+    }
+}
+
+/// Frame placement plus implicit equation of a conic for the coplanar
+/// line/circle solves: the section plane, the frame axes and reference
+/// point (center or apex) the implicit coordinates are measured in, and
+/// the [`ImplicitConic`] itself.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PlacedConic {
+    /// The conic's plane.
+    pub plane: Plane,
+    /// The frame x direction.
+    pub x: Vector3D,
+    /// The frame y direction.
+    pub y: Vector3D,
+    /// The frame origin (center or apex).
+    pub origin: Point3D,
+    /// The frame z direction (plane normal).
+    pub normal: Vector3D,
+    /// The implicit equation in frame coordinates.
+    pub implicit: ImplicitConic,
 }
 
 /// One hit of an analytic conic-vs-quadric solve: parameter, point, and

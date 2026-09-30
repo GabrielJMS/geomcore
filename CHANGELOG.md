@@ -9,6 +9,17 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Analytic line/circle-vs-conic intersections: `intersect_ellipse/
+  parabola/hyperbola` on `Line3D` (plane-piercing graze/miss, coplanar
+  quadratic substitution) and on `Circle3D` (coplanar trigonometric
+  solve, circular-ellipse coincidence, `NotAnalytic` otherwise),
+  sharing `LineConic3DIntersection`/`CircleConic3DIntersection` with
+  both curve parameters per hit. Hits on the unmodeled hyperbola
+  branch are dropped. Python: per-type methods returning
+  `(kind, payload)` tuples.
+
 ## [0.24.0] - 2026-09-30
 
 ### Added
