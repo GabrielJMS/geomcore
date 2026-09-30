@@ -339,7 +339,7 @@ impl Ellipse3D {
     /// ordered by ascending distance.
     ///
     /// The stationarity condition `(E(t) - P).E'(t) = 0` becomes a quartic
-    /// in `u = tan(t/2)` (solved by [`real_roots`]); `t = PI`, which the
+    /// in `u = tan(t/2)` (solved by `real_roots`); `t = PI`, which the
     /// substitution misses, is always added as a candidate. The first
     /// entry is the global closest point (see [`Ellipse3D::project_point`]).
     ///

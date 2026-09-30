@@ -314,7 +314,7 @@ impl Line3D {
     ///
     /// Substituting the unit-speed parametrization into `|X - C|^2 = R^2`
     /// gives a quadratic (leading coefficient exactly 1), classified with
-    /// [`solve_quadratic`]: two ordered hits, a grazing tangent, or empty.
+    /// `solve_quadratic`: two ordered hits, a grazing tangent, or empty.
     ///
     /// # Examples
     ///
@@ -887,7 +887,7 @@ impl Line2D {
     ///
     /// Substituting the unit-speed parametrization into
     /// `|X - C|^2 = r^2` gives a quadratic with leading coefficient
-    /// exactly 1, classified with [`solve_quadratic`].
+    /// exactly 1, classified with `solve_quadratic`.
     ///
     /// # Examples
     ///

@@ -239,7 +239,7 @@ impl Parabola3D {
     ///
     /// The stationarity condition is the cubic
     /// `t^3 + (8f^2 - 4f*px)t - 8f^2*py = 0` in the frame coordinates
-    /// (solved by [`real_roots`]). The first entry is the global closest
+    /// (solved by `real_roots`). The first entry is the global closest
     /// point (see [`Parabola3D::project_point`]).
     ///
     /// # Examples

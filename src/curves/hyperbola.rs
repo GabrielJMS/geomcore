@@ -341,7 +341,7 @@ impl Hyperbola3D {
     /// hyperbola branch, ordered by ascending distance.
     ///
     /// The stationarity condition becomes a quartic in `u = e^t` (solved
-    /// by [`real_roots`]; only positive roots give real parameters). The
+    /// by `real_roots`; only positive roots give real parameters). The
     /// first entry is the global closest point (see
     /// [`Hyperbola3D::project_point`]).
     ///

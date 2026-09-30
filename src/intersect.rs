@@ -329,7 +329,7 @@ pub enum LineCircle2DIntersection {
 /// Result of intersecting two 2D circles.
 ///
 /// Parameters are intentionally omitted (no natural primary curve);
-/// recover them with [`Circle2D::parameter_of`].
+/// recover them with [`crate::Circle2D::parameter_of`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CircleCircle2DIntersection {
     /// Two meeting points.
