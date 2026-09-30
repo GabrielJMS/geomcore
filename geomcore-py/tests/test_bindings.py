@@ -400,6 +400,19 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
 
 
+def test_intersect_curve_surface():
+    from geomcore import intersect_curve_surface
+    from geomcore.curves import Line3D
+
+    line = Line3D(Point3D.origin(), Vector3D.x())
+    hits = intersect_curve_surface(line, Sphere(Point3D.origin(), 2.0))
+    assert len(hits) == 2
+    assert hits[0][0] == pytest.approx(-2.0)
+    assert hits[1][0] == pytest.approx(2.0)
+
+    assert intersect_curve_surface(line, Sphere(Point3D(0.0, 0.0, 5.0), 2.0)) == []
+
+
 def test_intersect_curves_2d_and_lines():
     from geomcore.curves import Circle2D, Line2D, Line3D
 

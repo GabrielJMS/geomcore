@@ -7,6 +7,9 @@
 //! [`crate::Tolerance`], so near-degenerate configurations classify
 //! robustly instead of collapsing to noise.
 
+use crate::curves::ParametricCurve3D;
+use crate::math::newton_3d;
+use crate::surfaces::ParametricSurface;
 use crate::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point2D, Point3D, Tolerance};
 
 /// Result of intersecting two planes.
@@ -436,10 +439,100 @@ pub(crate) fn solve_quadratic(a: f64, b: f64, c: f64, tol: Tolerance) -> Quadrat
     }
 }
 
+/// One transversal meeting of a curve and a surface.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveSurfaceHit {
+    /// Parameter on the curve.
+    pub curve_param: f64,
+    /// Parameters on the surface.
+    pub surface_params: (f64, f64),
+    /// The meeting point (on the curve; within tolerance of the surface).
+    pub point: Point3D,
+}
+
+/// Generic curve-surface intersection for any parametric curve and surface.
+///
+/// Curve samples projected onto the surface seed Newton iteration on
+/// `C(t) - S(u, v) = 0` (first derivatives only); converged roots with a
+/// residual within `tol.confusion` report, ordered by curve parameter.
+/// Unbounded curves seed `[-10, 10]`. Overlapping pairs yield dense hit
+/// sets along the overlap — use the analytic `intersect_*` methods when
+/// classification (tangent, coincident) matters.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+/// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
+/// assert_eq!(hits.len(), 2);
+/// assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
+/// assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
+/// ```
+pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> Vec<CurveSurfaceHit>
+where
+    C: ParametricCurve3D,
+    S: ParametricSurface,
+{
+    let (t0, t1) = curve.bounds();
+    // Unbounded curves seed a documented default window.
+    const WINDOW: f64 = 10.0;
+    let (lo, hi) = (
+        if t0.is_finite() { t0 } else { -WINDOW },
+        if t1.is_finite() { t1 } else { WINDOW },
+    );
+    const SEEDS: usize = 128;
+    const KEEP: usize = 24;
+    let mut samples: Vec<(f64, f64)> = (0..SEEDS)
+        .map(|i| {
+            let t = lo + (hi - lo) * i as f64 / (SEEDS - 1) as f64;
+            (t, surface.project_point(curve.eval_point(t), tol).distance)
+        })
+        .collect();
+    samples.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    let mut hits: Vec<CurveSurfaceHit> = Vec::new();
+    for (t, _) in samples.into_iter().take(KEEP) {
+        let proj = surface.project_point(curve.eval_point(t), tol);
+        let f = |x: [f64; 3]| {
+            let d = curve.eval_point(x[0]) - surface.eval_point(x[1], x[2]);
+            [d.x, d.y, d.z]
+        };
+        let jac = |x: [f64; 3]| {
+            let ct = curve.eval_derivative(x[0], 1);
+            let su = surface.eval_derivative(x[1], x[2], 1, 0);
+            let sv = surface.eval_derivative(x[1], x[2], 0, 1);
+            [
+                [ct.x, -su.x, -sv.x],
+                [ct.y, -su.y, -sv.y],
+                [ct.z, -su.z, -sv.z],
+            ]
+        };
+        if let Some([rt, ru, rv]) = newton_3d(f, jac, [t, proj.u, proj.v], tol.confusion, 50) {
+            let p = curve.eval_point(rt);
+            let q = surface.eval_point(ru, rv);
+            if p.distance(q) <= tol.confusion
+                && !hits
+                    .iter()
+                    .any(|h: &CurveSurfaceHit| h.point.distance(p) <= tol.confusion)
+            {
+                hits.push(CurveSurfaceHit {
+                    curve_param: rt,
+                    surface_params: (ru, rv),
+                    point: p,
+                });
+            }
+        }
+    }
+    hits.sort_by(|a, b| a.curve_param.partial_cmp(&b.curve_param).unwrap());
+    hits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Tolerance;
+    use crate::{Line3D, Point3D, Sphere, Vector3D};
 
     #[test]
     fn test_solve_quadratic_two_roots_ordered() {
@@ -486,5 +579,45 @@ mod tests {
             solve_quadratic(0.0, 0.0, 1.0, Tolerance::DEFAULT),
             QuadraticSolution::Degenerate
         );
+    }
+
+    #[test]
+    fn test_generic_line_sphere_matches_analytic() {
+        let tol = Tolerance::DEFAULT;
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let hits = intersect_curve_surface(&line, &sphere, tol);
+        assert_eq!(hits.len(), 2);
+        assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
+        assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
+        // Cross-check against the analytic solver.
+        match line.intersect_sphere(&sphere, tol) {
+            LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
+                assert!((hits[0].curve_param - t1).abs() < 1e-9);
+                assert!((hits[1].curve_param - t2).abs() < 1e-9);
+            }
+            _ => panic!("analytic expected two points"),
+        }
+    }
+
+    #[test]
+    fn test_generic_line_sphere_miss() {
+        let tol = Tolerance::DEFAULT;
+        let line = Line3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::X).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        assert!(intersect_curve_surface(&line, &sphere, tol).is_empty());
+    }
+
+    #[test]
+    fn test_generic_segment_plane_hit() {
+        use crate::{BSplineCurve3D, Plane};
+        let tol = Tolerance::DEFAULT;
+        let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+        let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+        let plane = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
+        let hits = intersect_curve_surface(&curve, &plane, tol);
+        assert_eq!(hits.len(), 1);
+        assert!((hits[0].curve_param - 0.5).abs() < 1e-9);
+        assert_eq!(hits[0].point, Point3D::new(1.0, 0.0, 0.0));
     }
 }

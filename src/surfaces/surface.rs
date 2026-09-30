@@ -2,7 +2,7 @@
 //! concrete analytic surface types.
 
 use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Torus};
-use crate::{Point3D, Vector3D};
+use crate::{Point3D, SurfaceProjection, Tolerance, Vector3D};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 /// Common interface for parametric surfaces. Implement this to add a new
@@ -57,11 +57,19 @@ pub trait ParametricSurface {
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         uvs.iter().map(|&(u, v)| self.eval_point(u, v)).collect()
     }
+
+    /// Projects `point` onto the surface, returning the `(u, v)` parameters
+    /// of the closest point and its distance.
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection;
 }
 
 impl ParametricSurface for Plane {
     fn eval_point(&self, u: f64, v: f64) -> Point3D {
         Plane::eval_point(self, u, v)
+    }
+
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        Plane::project_point(self, point, tol)
     }
 
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
@@ -94,6 +102,10 @@ impl ParametricSurface for Cylinder {
         Cylinder::eval_point(self, u, v)
     }
 
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        Cylinder::project_point(self, point, tol)
+    }
+
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         Cylinder::eval_derivative(self, u, v, du, dv)
     }
@@ -122,6 +134,10 @@ impl ParametricSurface for Cylinder {
 impl ParametricSurface for Cone {
     fn eval_point(&self, u: f64, v: f64) -> Point3D {
         Cone::eval_point(self, u, v)
+    }
+
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        Cone::project_point(self, point, tol)
     }
 
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
@@ -154,6 +170,10 @@ impl ParametricSurface for Sphere {
         Sphere::eval_point(self, u, v)
     }
 
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        Sphere::project_point(self, point, tol)
+    }
+
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         Sphere::eval_derivative(self, u, v, du, dv)
     }
@@ -182,6 +202,10 @@ impl ParametricSurface for Sphere {
 impl ParametricSurface for Torus {
     fn eval_point(&self, u: f64, v: f64) -> Point3D {
         Torus::eval_point(self, u, v)
+    }
+
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        Torus::project_point(self, point, tol)
     }
 
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
@@ -311,6 +335,17 @@ impl ParametricSurface for Surface {
             Surface::Sphere(s) => s.v_period(),
             Surface::Torus(s) => s.v_period(),
             Surface::BSpline(s) => s.v_period(),
+        }
+    }
+
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        match self {
+            Surface::Plane(s) => s.project_point(point, tol),
+            Surface::Cylinder(s) => s.project_point(point, tol),
+            Surface::Cone(s) => s.project_point(point, tol),
+            Surface::Sphere(s) => s.project_point(point, tol),
+            Surface::Torus(s) => s.project_point(point, tol),
+            Surface::BSpline(s) => s.project_point(point, tol),
         }
     }
 

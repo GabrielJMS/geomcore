@@ -9,6 +9,17 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-30
+
+### Added
+
+- Generic curve–surface intersection (`intersect_curve_surface`, free
+  function over `ParametricCurve3D` × `ParametricSurface`): curve samples
+  projected onto the surface seed Newton iteration on `C(t) - S(u,v) =
+  0`, reporting ordered transversal hits. `project_point` joined the
+  `ParametricSurface` trait so every surface works uniformly. Also
+  available as top-level `geomcore.intersect_curve_surface` in Python.
+
 ## [0.16.0] - 2026-09-30
 
 ### Added
@@ -199,7 +210,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.17.0
 [0.16.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.16.0
 [0.15.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.15.0
 [0.14.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.14.0

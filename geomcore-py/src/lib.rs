@@ -10,8 +10,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
 use geomcore::curves::{
-    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Ellipse3D, Hyperbola3D, Line2D, Line3D, Parabola3D,
+    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D, Line2D, Line3D,
+    Parabola3D,
 };
+use geomcore::intersect_curve_surface;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
@@ -1588,6 +1590,64 @@ fn extract_surface(obj: &Bound<'_, PyAny>) -> PyResult<Surface> {
     ))
 }
 
+fn extract_curve3d(obj: &Bound<'_, PyAny>) -> PyResult<Curve3D> {
+    if let Ok(c) = obj.extract::<PyRef<'_, PyLine3D>>() {
+        return Ok(Curve3D::from(c.0));
+    }
+    if let Ok(c) = obj.extract::<PyRef<'_, PyCircle3D>>() {
+        return Ok(Curve3D::from(c.0));
+    }
+    if let Ok(c) = obj.extract::<PyRef<'_, PyEllipse3D>>() {
+        return Ok(Curve3D::from(c.0));
+    }
+    if let Ok(c) = obj.extract::<PyRef<'_, PyParabola3D>>() {
+        return Ok(Curve3D::from(c.0));
+    }
+    if let Ok(c) = obj.extract::<PyRef<'_, PyHyperbola3D>>() {
+        return Ok(Curve3D::from(c.0));
+    }
+    if let Ok(c) = obj.extract::<PyRef<'_, PyBSplineCurve3D>>() {
+        // BSplineCurve3D owns heap data (not Copy): clone is required here.
+        #[allow(clippy::clone_on_copy)]
+        return Ok(Curve3D::from(c.0.clone()));
+    }
+    Err(PyTypeError::new_err(
+        "expected a geomcore 3D curve (Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D or BSplineCurve3D)",
+    ))
+}
+
+/// A generic intersection hit: `(curve parameter, (u, v), point)`.
+type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
+
+/// Generic curve-surface intersection for any curve and surface.
+///
+/// Samples the curve, projects onto the surface for seeds, and refines
+/// with Newton on `C(t) - S(u, v) = 0`. Returns a
+/// `(curve_param, (u, v), Point3D)` tuple per transversal hit, ordered
+/// by curve parameter. Overlapping pairs yield dense hit sets; use the
+/// analytic `intersect_*` methods when classification matters.
+#[pyfunction]
+#[pyo3(name = "intersect_curve_surface", signature = (curve, surface, tol = None))]
+fn py_intersect_curve_surface(
+    py: Python<'_>,
+    curve: &Bound<'_, PyAny>,
+    surface: &Bound<'_, PyAny>,
+    tol: Option<PyTolerance>,
+) -> PyResult<Vec<CurveHitPy>> {
+    let tol = tol.map(|t| t.0).unwrap_or_default();
+    let c = extract_curve3d(curve)?;
+    let s = extract_surface(surface)?;
+    let mut out = Vec::new();
+    for h in intersect_curve_surface(&c, &s, tol) {
+        out.push((
+            h.curve_param,
+            h.surface_params,
+            PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+        ));
+    }
+    Ok(out)
+}
+
 fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny>> {
     match curve {
         Curve2D::Line(l) => Ok(PyLine2D(l).into_pyobject(py)?.into_any().unbind()),
@@ -2806,6 +2866,8 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let sys_modules = py.import("sys")?.getattr("modules")?;
     sys_modules.set_item("geomcore.curves", &curves)?;
     sys_modules.set_item("geomcore.surfaces", &surfaces)?;
+
+    m.add_function(wrap_pyfunction!(py_intersect_curve_surface, m)?)?;
 
     Ok(())
 }
