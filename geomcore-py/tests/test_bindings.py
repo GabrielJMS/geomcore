@@ -440,6 +440,25 @@ def test_intersect_marching():
     assert intersect_marching(miss, sphere) == []
 
 
+def test_parametrize_numeric():
+    import math
+
+    from geomcore import parametrize_numeric
+
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    pcurve = parametrize_numeric(circle, cylinder, 9)
+    assert len(pcurve) == 9
+    for u, v in pcurve:
+        assert v == pytest.approx(0.0)
+    # Round-trip through the surface recovers the curve.
+    for i, (u, v) in enumerate(pcurve):
+        p = cylinder.eval_point(u, v)
+        q = circle.eval_point(i / 8 * math.tau)
+        assert p.x == pytest.approx(q.x)
+        assert p.y == pytest.approx(q.y)
+
+
 def test_intersect_curves_2d_and_lines():
     from geomcore.curves import Circle2D, Line2D, Line3D
 

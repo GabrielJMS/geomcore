@@ -91,6 +91,7 @@ pub use curves::{
     Curve3D, Ellipse3D, EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError,
     InterpParametrization, Line2D, Line3D, LineConstructionError, Parabola3D,
     ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
+    parametrize_numeric,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;

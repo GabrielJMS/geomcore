@@ -15,6 +15,7 @@ use geomcore::curves::{
 };
 use geomcore::intersect_curve_surface;
 use geomcore::marching_intersection;
+use geomcore::parametrize_numeric;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
@@ -1619,7 +1620,6 @@ fn extract_curve3d(obj: &Bound<'_, PyAny>) -> PyResult<Curve3D> {
 
 /// A generic intersection hit: `(curve parameter, (u, v), point)`.
 type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
-
 /// Generic curve-surface intersection for any curve and surface.
 ///
 /// Samples the curve, projects onto the surface for seeds, and refines
@@ -1647,6 +1647,28 @@ fn py_intersect_curve_surface(
         ));
     }
     Ok(out)
+}
+
+/// Numeric curve-on-surface parametrization for pairs without closed form.
+///
+/// Samples the curve uniformly (`n` points) and inverts each sample onto
+/// the surface. Returns `(u, v)` tuples; surface evaluation at them
+/// recovers the samples where the curve lies on the surface.
+#[pyfunction]
+#[pyo3(name = "parametrize_numeric", signature = (curve, surface, n = 64, tol = None))]
+fn py_parametrize_numeric(
+    curve: &Bound<'_, PyAny>,
+    surface: &Bound<'_, PyAny>,
+    n: usize,
+    tol: Option<PyTolerance>,
+) -> PyResult<Vec<(f64, f64)>> {
+    let tol = tol.map(|t| t.0).unwrap_or_default();
+    let c = extract_curve3d(curve)?;
+    let s = extract_surface(surface)?;
+    Ok(parametrize_numeric(&c, &s, n, tol)
+        .iter()
+        .map(|p| (p.x, p.y))
+        .collect())
 }
 
 fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny>> {
@@ -2915,6 +2937,7 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(py_intersect_curve_surface, m)?)?;
     m.add_function(wrap_pyfunction!(py_intersect_marching, m)?)?;
+    m.add_function(wrap_pyfunction!(py_parametrize_numeric, m)?)?;
 
     Ok(())
 }

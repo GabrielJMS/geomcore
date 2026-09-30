@@ -19,4 +19,4 @@ pub use ellipse::{Ellipse3D, EllipseConstructionError};
 pub use hyperbola::{Hyperbola3D, HyperbolaConstructionError};
 pub use line::{Line2D, Line3D, LineConstructionError};
 pub use parabola::{Parabola3D, ParabolaConstructionError};
-pub use parametrize::ParametrizeError;
+pub use parametrize::{ParametrizeError, parametrize_numeric};
