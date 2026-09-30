@@ -27,6 +27,7 @@ use geomcore::{
     TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
     TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
+use geomcore::{curve_curve_extrema, intersect_curve_curve};
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -1620,6 +1621,54 @@ fn extract_curve3d(obj: &Bound<'_, PyAny>) -> PyResult<Curve3D> {
 
 /// A generic intersection hit: `(curve parameter, (u, v), point)`.
 type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
+
+/// Closest-point enumeration between any two 3D curves.
+///
+/// Samples both curves and refines with Gauss-Newton. Returns
+/// `(first_param, second_param, distance)` tuples ordered by distance.
+/// Overlapping curves yield dense sets; use the analytic methods when
+/// classification matters.
+#[pyfunction]
+#[pyo3(name = "curve_curve_extrema", signature = (curve_a, curve_b, tol = None))]
+fn py_curve_curve_extrema(
+    curve_a: &Bound<'_, PyAny>,
+    curve_b: &Bound<'_, PyAny>,
+    tol: Option<PyTolerance>,
+) -> PyResult<Vec<(f64, f64, f64)>> {
+    let tol = tol.map(|t| t.0).unwrap_or_default();
+    let a = extract_curve3d(curve_a)?;
+    let b = extract_curve3d(curve_b)?;
+    Ok(curve_curve_extrema(&a, &b, tol)
+        .iter()
+        .map(|e| (e.first_param, e.second_param, e.distance))
+        .collect())
+}
+
+/// Generic 3D curve-curve intersection: extrema within tolerance.
+///
+/// Returns `(first_param, Point3D, second_param)` tuples ordered by
+/// first-curve parameter.
+#[pyfunction]
+#[pyo3(name = "intersect_curve_curve", signature = (curve_a, curve_b, tol = None))]
+fn py_intersect_curve_curve(
+    py: Python<'_>,
+    curve_a: &Bound<'_, PyAny>,
+    curve_b: &Bound<'_, PyAny>,
+    tol: Option<PyTolerance>,
+) -> PyResult<Vec<(f64, Py<PyAny>, f64)>> {
+    let tol = tol.map(|t| t.0).unwrap_or_default();
+    let a = extract_curve3d(curve_a)?;
+    let b = extract_curve3d(curve_b)?;
+    let mut out = Vec::new();
+    for h in intersect_curve_curve(&a, &b, tol) {
+        out.push((
+            h.first_param,
+            PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+            h.second_param,
+        ));
+    }
+    Ok(out)
+}
 /// Generic curve-surface intersection for any curve and surface.
 ///
 /// Samples the curve, projects onto the surface for seeds, and refines
@@ -2938,6 +2987,8 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_intersect_curve_surface, m)?)?;
     m.add_function(wrap_pyfunction!(py_intersect_marching, m)?)?;
     m.add_function(wrap_pyfunction!(py_parametrize_numeric, m)?)?;
+    m.add_function(wrap_pyfunction!(py_curve_curve_extrema, m)?)?;
+    m.add_function(wrap_pyfunction!(py_intersect_curve_curve, m)?)?;
 
     Ok(())
 }

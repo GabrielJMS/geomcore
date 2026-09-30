@@ -8,7 +8,7 @@
 //! robustly instead of collapsing to noise.
 
 use crate::curves::{BSplineCurve3D, InterpParametrization, ParametricCurve3D};
-use crate::math::newton_3d;
+use crate::math::{gauss_newton_2d, newton_3d};
 use crate::surfaces::ParametricSurface;
 use crate::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point2D, Point3D, Tolerance};
 
@@ -439,6 +439,147 @@ pub(crate) fn solve_quadratic(a: f64, b: f64, c: f64, tol: Tolerance) -> Quadrat
     }
 }
 
+/// One stationary point of the distance between two 3D curves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveCurveExtremum {
+    /// Parameter on the first curve.
+    pub first_param: f64,
+    /// Parameter on the second curve.
+    pub second_param: f64,
+    /// Distance between the two points.
+    pub distance: f64,
+}
+
+/// One transversal meeting of two 3D curves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveCurveHit {
+    /// Parameter on the first curve.
+    pub first_param: f64,
+    /// The meeting point (on the first curve; within tolerance of both).
+    pub point: Point3D,
+    /// Parameter on the second curve.
+    pub second_param: f64,
+}
+
+/// Clamp `t` into finite bounds (periodic and unbounded curves evaluate
+/// anywhere, so only finite windows clamp).
+fn clamp_param(t: f64, bounds: (f64, f64)) -> f64 {
+    if bounds.0.is_finite() || bounds.1.is_finite() {
+        t.clamp(bounds.0, bounds.1)
+    } else {
+        t
+    }
+}
+
+/// Generic closest-point enumeration between two 3D curves.
+///
+/// A coarse parameter grid seeds Gauss-Newton on
+/// `|C1(s) - C2(t)|^2`; distinct converged stationary points report
+/// ordered by distance. Unbounded curves seed `[-10, 10]`. Overlapping
+/// curves yield dense sets — use the analytic methods when
+/// classification matters.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Line3D, Point3D, Tolerance, Vector3D, curve_curve_extrema};
+/// let l1 = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// let l2 = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Y).unwrap();
+/// let ext = curve_curve_extrema(&l1, &l2, Tolerance::DEFAULT);
+/// assert_eq!(ext.len(), 1);
+/// assert_eq!(ext[0].distance, 1.0);
+/// ```
+pub fn curve_curve_extrema<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<CurveCurveExtremum>
+where
+    A: ParametricCurve3D,
+    B: ParametricCurve3D,
+{
+    const WINDOW: f64 = 10.0;
+    let (ba, bb) = (a.bounds(), b.bounds());
+    let (la, ha) = (
+        if ba.0.is_finite() { ba.0 } else { -WINDOW },
+        if ba.1.is_finite() { ba.1 } else { WINDOW },
+    );
+    let (lb, hb) = (
+        if bb.0.is_finite() { bb.0 } else { -WINDOW },
+        if bb.1.is_finite() { bb.1 } else { WINDOW },
+    );
+    const NS: usize = 32;
+    const NT: usize = 32;
+    const KEEP: usize = 24;
+    let mut samples: Vec<(f64, f64, f64)> = Vec::with_capacity(NS * NT);
+    for i in 0..NS {
+        for j in 0..NT {
+            let s = la + (ha - la) * i as f64 / (NS - 1) as f64;
+            let t = lb + (hb - lb) * j as f64 / (NT - 1) as f64;
+            samples.push((s, t, a.eval_point(s).distance(b.eval_point(t))));
+        }
+    }
+    samples.sort_by(|x, y| x.2.partial_cmp(&y.2).unwrap());
+    let mut out: Vec<CurveCurveExtremum> = Vec::new();
+    for (s, t, _) in samples.into_iter().take(KEEP) {
+        let residual = |s: f64, t: f64| {
+            let d = a.eval_point(clamp_param(s, ba)) - b.eval_point(clamp_param(t, bb));
+            [d.x, d.y, d.z]
+        };
+        let jac_s = |s: f64, _t: f64| {
+            let v = a.eval_derivative(clamp_param(s, ba), 1);
+            [v.x, v.y, v.z]
+        };
+        let jac_t = |_s: f64, t: f64| {
+            let v = b.eval_derivative(clamp_param(t, bb), 1);
+            [-v.x, -v.y, -v.z]
+        };
+        if let Some((rs, rt)) = gauss_newton_2d(residual, jac_s, jac_t, s, t, tol.confusion, 50) {
+            let (cs, ct) = (clamp_param(rs, ba), clamp_param(rt, bb));
+            let distance = a.eval_point(cs).distance(b.eval_point(ct));
+            if !out.iter().any(|e: &CurveCurveExtremum| {
+                (a.eval_point(e.first_param).distance(a.eval_point(cs))
+                    + b.eval_point(e.second_param).distance(b.eval_point(ct)))
+                    <= tol.confusion
+            }) {
+                out.push(CurveCurveExtremum {
+                    first_param: cs,
+                    second_param: ct,
+                    distance,
+                });
+            }
+        }
+    }
+    out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+    out
+}
+
+/// Generic 3D curve-curve intersection: [`curve_curve_extrema`] filtered
+/// to meetings within `tol.confusion`, ordered by first-curve parameter.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+/// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
+/// assert_eq!(hits.len(), 2);
+/// ```
+pub fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<CurveCurveHit>
+where
+    A: ParametricCurve3D,
+    B: ParametricCurve3D,
+{
+    let mut hits: Vec<CurveCurveHit> = curve_curve_extrema(a, b, tol)
+        .into_iter()
+        .filter(|e| e.distance <= tol.confusion)
+        .map(|e| CurveCurveHit {
+            first_param: e.first_param,
+            point: a.eval_point(e.first_param),
+            second_param: e.second_param,
+        })
+        .collect();
+    hits.sort_by(|x, y| x.first_param.partial_cmp(&y.first_param).unwrap());
+    hits
+}
+
 /// One transversal meeting of a curve and a surface.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
@@ -805,7 +946,10 @@ fn off_bounds<S: ParametricSurface + ?Sized>(s: &S, u: f64, v: f64) -> bool {
 mod tests {
     use super::*;
     use crate::Tolerance;
-    use crate::{Line3D, Point3D, Sphere, Vector3D};
+    use crate::{
+        Circle3D, Line3D, LineCircle3DIntersection, LineLine3DIntersection, Point3D, Sphere,
+        Vector3D,
+    };
 
     #[test]
     fn test_solve_quadratic_two_roots_ordered() {
@@ -933,5 +1077,44 @@ mod tests {
         let plane = Plane::new(Point3D::new(0.0, 0.0, 5.0), Vector3D::Z).unwrap();
         let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
         assert!(marching_intersection(&plane, &sphere, tol).is_empty());
+    }
+
+    #[test]
+    fn test_curve_curve_extrema_skew_matches_analytic() {
+        use crate::{Line3D, LineLine3DIntersection};
+        let tol = Tolerance::DEFAULT;
+        let l1 = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let l2 = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Y).unwrap();
+        let ext = curve_curve_extrema(&l1, &l2, tol);
+        assert_eq!(ext.len(), 1);
+        assert!((ext[0].distance - 1.0).abs() < 1e-9);
+        match l1.intersect_line(&l2, tol) {
+            LineLine3DIntersection::Skew { s, t, distance } => {
+                assert!((ext[0].first_param - s).abs() < 1e-9);
+                assert!((ext[0].second_param - t).abs() < 1e-9);
+                assert!((ext[0].distance - distance).abs() < 1e-12);
+            }
+            _ => panic!("analytic expected skew"),
+        }
+    }
+
+    #[test]
+    fn test_intersect_curve_curve_line_circle() {
+        use crate::{Circle3D, Line3D};
+        let tol = Tolerance::DEFAULT;
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let hits = intersect_curve_curve(&line, &circle, tol);
+        assert_eq!(hits.len(), 2);
+        assert!((hits[0].first_param + 2.0).abs() < 1e-9);
+        assert!((hits[1].first_param - 2.0).abs() < 1e-9);
+        // Cross-check against the analytic solver.
+        match line.intersect_circle(&circle, tol) {
+            LineCircle3DIntersection::Points((t1, _), (t2, _)) => {
+                assert!((hits[0].first_param - t1).abs() < 1e-9);
+                assert!((hits[1].first_param - t2).abs() < 1e-9);
+            }
+            _ => panic!("analytic expected two points"),
+        }
     }
 }

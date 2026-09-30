@@ -440,6 +440,23 @@ def test_intersect_marching():
     assert intersect_marching(miss, sphere) == []
 
 
+def test_curve_curve_generic():
+    from geomcore import curve_curve_extrema, intersect_curve_curve
+    from geomcore.curves import Circle3D, Line3D
+
+    l1 = Line3D(Point3D.origin(), Vector3D.x())
+    l2 = Line3D(Point3D(0.0, 0.0, 1.0), Vector3D.y())
+    ext = curve_curve_extrema(l1, l2)
+    assert len(ext) == 1
+    assert ext[0][2] == pytest.approx(1.0)
+
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    hits = intersect_curve_curve(l1, circle)
+    assert len(hits) == 2
+    assert hits[0][0] == pytest.approx(-2.0)
+    assert hits[1][0] == pytest.approx(2.0)
+
+
 def test_parametrize_numeric():
     import math
 

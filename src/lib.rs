@@ -98,14 +98,15 @@ pub use intersect::intersect_curve_surface;
 pub use intersect::marching_intersection;
 pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
-    ConeCylinderIntersection, CurveSurfaceHit, CylinderCylinderIntersection,
-    LineCircle2DIntersection, LineCircle3DIntersection, LineLine2DIntersection,
-    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
-    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection,
-    SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection,
-    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
-    TorusSphereIntersection, TorusTorusIntersection,
+    ConeCylinderIntersection, CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit,
+    CylinderCylinderIntersection, LineCircle2DIntersection, LineCircle3DIntersection,
+    LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
+    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
+    PlaneSphereIntersection, SphereConeIntersection, SphereCylinderIntersection,
+    SphereSphereIntersection, TorusConeIntersection, TorusCylinderIntersection,
+    TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection,
 };
+pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, SurfaceProjection};
 pub use surfaces::{

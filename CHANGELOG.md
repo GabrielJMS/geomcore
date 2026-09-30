@@ -9,6 +9,16 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-30
+
+### Added
+
+- Generic 3D curve–curve extrema and intersection
+  (`curve_curve_extrema`, `intersect_curve_curve`, over
+  `ParametricCurve3D`): coarse grid seeds refined by Gauss-Newton on
+  `|C1(s) - C2(t)|^2`, meetings filtered by tolerance. Python:
+  `geomcore.curve_curve_extrema` and `geomcore.intersect_curve_curve`.
+
 ## [0.20.0] - 2026-09-30
 
 ### Added
@@ -240,7 +250,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.21.0
 [0.20.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.20.0
 [0.19.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.19.0
 [0.18.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.18.0
