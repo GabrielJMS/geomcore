@@ -946,10 +946,7 @@ fn off_bounds<S: ParametricSurface + ?Sized>(s: &S, u: f64, v: f64) -> bool {
 mod tests {
     use super::*;
     use crate::Tolerance;
-    use crate::{
-        Circle3D, Line3D, LineCircle3DIntersection, LineLine3DIntersection, Point3D, Sphere,
-        Vector3D,
-    };
+    use crate::{Line3D, LineCircle3DIntersection, Point3D, Sphere, Vector3D};
 
     #[test]
     fn test_solve_quadratic_two_roots_ordered() {
