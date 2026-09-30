@@ -9,6 +9,15 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-30
+
+### Added
+
+- Points-to-B-spline interpolation: `BSplineCurve3D::interpolate`
+  (chordal/centripetal parametrization, averaged knots, banded LU —
+  the tracing-to-curve primitive marching SSI will build on). Python:
+  `BSplineCurve3D.interpolate(points, degree)`.
+
 ## [0.17.0] - 2026-09-30
 
 ### Added
@@ -210,7 +219,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.18.0
 [0.17.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.17.0
 [0.16.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.16.0
 [0.15.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.15.0

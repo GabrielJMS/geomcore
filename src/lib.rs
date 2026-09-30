@@ -88,9 +88,9 @@ pub mod vector;
 
 pub use curves::{
     BSplineConstructionError, BSplineCurve3D, Circle2D, Circle3D, CircleConstructionError, Curve2D,
-    Curve3D, Ellipse3D, EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError, Line2D,
-    Line3D, LineConstructionError, Parabola3D, ParabolaConstructionError, ParametricCurve2D,
-    ParametricCurve3D, ParametrizeError,
+    Curve3D, Ellipse3D, EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError,
+    InterpParametrization, Line2D, Line3D, LineConstructionError, Parabola3D,
+    ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;

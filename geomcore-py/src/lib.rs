@@ -10,8 +10,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
 use geomcore::curves::{
-    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D, Line2D, Line3D,
-    Parabola3D,
+    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D,
+    InterpParametrization, Line2D, Line3D, Parabola3D,
 };
 use geomcore::intersect_curve_surface;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
@@ -2481,6 +2481,28 @@ impl PyBSplineCurve3D {
         Ok(PyBSplineCurve3D(
             BSplineCurve3D::new_rational(degree, poles, weights, knots, multiplicities, periodic)
                 .map_err(val_err)?,
+        ))
+    }
+
+    /// Interpolate a clamped B-spline through `points`.
+    ///
+    /// `parametrization` is `"centripetal"` (default, tamer at sharp
+    /// turns) or `"chordal"`.
+    #[staticmethod]
+    #[pyo3(signature = (points, degree, parametrization = "centripetal"))]
+    fn interpolate(points: Vec<PyPoint3D>, degree: usize, parametrization: &str) -> PyResult<Self> {
+        let param = match parametrization {
+            "chordal" => InterpParametrization::Chordal,
+            "centripetal" => InterpParametrization::Centripetal,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "parametrization must be 'chordal' or 'centripetal'",
+                ));
+            }
+        };
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        Ok(PyBSplineCurve3D(
+            BSplineCurve3D::interpolate(&points, degree, param).map_err(val_err)?,
         ))
     }
 

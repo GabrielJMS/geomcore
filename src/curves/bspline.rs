@@ -40,6 +40,12 @@ pub enum BSplineConstructionError {
     WeightCountMismatch,
     /// A weight is zero or negative.
     NonPositiveWeight,
+    /// Interpolation needs at least two points.
+    TooFewPoints,
+    /// Interpolation degree exceeds points minus one.
+    DegreeTooHigh,
+    /// Two consecutive interpolation points coincide.
+    ConfusedPoints,
 }
 
 impl fmt::Display for BSplineConstructionError {
@@ -59,6 +65,13 @@ impl fmt::Display for BSplineConstructionError {
                 "weight count does not match pole count"
             }
             BSplineConstructionError::NonPositiveWeight => "a weight is zero or negative",
+            BSplineConstructionError::TooFewPoints => "interpolation needs at least two points",
+            BSplineConstructionError::DegreeTooHigh => {
+                "interpolation degree exceeds points minus one"
+            }
+            BSplineConstructionError::ConfusedPoints => {
+                "two consecutive interpolation points coincide"
+            }
         };
         f.write_str(message)
     }
@@ -111,6 +124,84 @@ pub struct BSplineCurve3D {
     /// Cached flat pole buffer: `dim` coordinates per pole, where
     /// `dim = 4` (homogeneous `(x*w, y*w, z*w, w)`) if rational, else `3`.
     flat_poles: Vec<f64>,
+}
+
+/// Point parametrization for [`BSplineCurve3D::interpolate`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterpParametrization {
+    /// Cumulative chord lengths (simplest; overshoots at sharp turns).
+    Chordal,
+    /// Square roots of chord lengths (tamer at sharp turns; default choice).
+    Centripetal,
+}
+
+/// All `n_poles` B-spline basis values at `t` over the full knot vector
+/// (Cox-de Boor, `0/0 = 0` at repeated knots).
+fn basis_values(full: &[f64], degree: usize, t: f64) -> Vec<f64> {
+    let n_poles = full.len() - degree - 1;
+    let mut out = vec![0.0; n_poles];
+    let (lo, hi) = (full[degree], full[n_poles]);
+    let tt = t.clamp(lo, hi);
+    let mut span = n_poles - 1;
+    if tt < hi {
+        span = degree;
+        while full[span + 1] <= tt {
+            span += 1;
+        }
+    }
+    let mut n = vec![0.0; degree + 1];
+    let mut left = vec![0.0; degree + 1];
+    let mut right = vec![0.0; degree + 1];
+    n[0] = 1.0;
+    for k in 1..=degree {
+        left[k] = tt - full[span + 1 - k];
+        right[k] = full[span + k] - tt;
+        let mut saved = 0.0;
+        for r in 0..k {
+            let denom = right[r + 1] + left[k - r];
+            let temp = if denom == 0.0 { 0.0 } else { n[r] / denom };
+            n[r] = saved + right[r + 1] * temp;
+            saved = left[k - r] * temp;
+        }
+        n[k] = saved;
+    }
+    for (r, &v) in n.iter().enumerate() {
+        out[span - degree + r] = v;
+    }
+    out
+}
+
+/// In-place band LU without pivoting (bandwidth `p` each side), solving the
+/// three coordinate columns. Safe here: averaged interpolation knots give a
+/// totally positive system.
+fn banded_solve(band: &mut [Vec<f64>], p: usize, rhs: &mut [Vec<f64>]) {
+    let m = band.len();
+    for k in 0..m {
+        for i in (k + 1)..(k + p + 1).min(m) {
+            let factor = band[i][p + k - i] / band[k][p];
+            band[i][p + k - i] = factor;
+            for j in (k + 1)..(k + p + 1).min(m) {
+                band[i][p + j - i] -= factor * band[k][p + j - k];
+            }
+        }
+    }
+    for col in rhs.iter_mut() {
+        for i in 0..m {
+            let (done, rest) = col.split_at_mut(i);
+            let elem = &mut rest[0];
+            for j in i.saturating_sub(p)..i {
+                *elem -= band[i][p + j - i] * done[j];
+            }
+        }
+        for i in (0..m).rev() {
+            let (left, right) = col.split_at_mut(i + 1);
+            let elem = &mut left[i];
+            for (k, r) in right.iter().enumerate().take(p) {
+                *elem -= band[i][p + 1 + k] * r;
+            }
+            *elem /= band[i][p];
+        }
+    }
 }
 
 impl BSplineCurve3D {
@@ -238,6 +329,125 @@ impl BSplineCurve3D {
     /// ```
     pub fn degree(&self) -> usize {
         self.degree
+    }
+
+    /// Interpolates a clamped non-rational B-spline through `points`.
+    ///
+    /// Parameters come from chord lengths (`Chordal`) or their square
+    /// roots (`Centripetal`, better behaved at sharp turns), normalized
+    /// to `[0, 1]`; interior knots are parameter averages, and the
+    /// interior poles solve the banded interpolation system by LU without
+    /// pivoting (safe: averaged knots satisfy Schoenberg-Whitney, so the
+    /// matrix is totally positive). End poles equal the end points.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BSplineConstructionError::TooFewPoints`] for fewer than
+    /// two points, [`BSplineConstructionError::InvalidDegree`] outside
+    /// `1..=25`, [`BSplineConstructionError::DegreeTooHigh`] when
+    /// `degree` exceeds points minus one, or
+    /// [`BSplineConstructionError::ConfusedPoints`] for coincident
+    /// consecutive points.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, InterpParametrization, Point3D, Tolerance};
+    /// let points = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 1.0, 0.0),
+    ///     Point3D::new(2.0, 0.0, 0.0),
+    /// ];
+    /// let curve =
+    ///     BSplineCurve3D::interpolate(&points, 2, InterpParametrization::Centripetal).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// for p in &points {
+    ///     assert!(curve.contains(*p, tol));
+    /// }
+    /// ```
+    pub fn interpolate(
+        points: &[Point3D],
+        degree: usize,
+        param: InterpParametrization,
+    ) -> Result<BSplineCurve3D, BSplineConstructionError> {
+        let n = points.len();
+        if n < 2 {
+            return Err(BSplineConstructionError::TooFewPoints);
+        }
+        if !(1..=25).contains(&degree) {
+            return Err(BSplineConstructionError::InvalidDegree);
+        }
+        if degree > n - 1 {
+            return Err(BSplineConstructionError::DegreeTooHigh);
+        }
+        // Parameters from chord lengths.
+        let exponent = match param {
+            InterpParametrization::Chordal => 1.0,
+            InterpParametrization::Centripetal => 0.5,
+        };
+        let mut params = vec![0.0; n];
+        for i in 1..n {
+            let d = points[i].distance(points[i - 1]);
+            if d <= crate::tol::CONFUSION {
+                return Err(BSplineConstructionError::ConfusedPoints);
+            }
+            params[i] = params[i - 1] + d.powf(exponent);
+        }
+        let total = params[n - 1];
+        for t in &mut params {
+            *t /= total;
+        }
+        // Averaged interior knots, clamped ends; compress to distinct + mults.
+        let p = degree;
+        let mut full = vec![0.0; p + 1];
+        for j in 1..=(n - p - 1) {
+            let mut acc = 0.0;
+            for k in 0..p {
+                acc += params[j + k];
+            }
+            full.push(acc / p as f64);
+        }
+        full.extend(std::iter::repeat_n(1.0, p + 1));
+        let mut knots = vec![full[0]];
+        let mut mults = vec![1u32];
+        for &u in &full[1..] {
+            if u > *knots.last().expect("knots non-empty") {
+                knots.push(u);
+                mults.push(1);
+            } else {
+                let last = mults.len() - 1;
+                mults[last] += 1;
+            }
+        }
+        // Interior system: A[j][i] = N_i(t_j), ends fixed to end points.
+        let m = n - 2;
+        let mut poles = vec![Point3D::ORIGIN; n];
+        poles[0] = points[0];
+        poles[n - 1] = points[n - 1];
+        if m > 0 {
+            let mut band = vec![vec![0.0; 2 * p + 1]; m];
+            // One right-hand side per coordinate.
+            let mut rhs = vec![vec![0.0; m]; 3];
+            for (row, j) in (1..n - 1).enumerate() {
+                let basis = basis_values(&full, p, params[j]);
+                for (i, &b) in basis.iter().enumerate().take(n - 1).skip(1) {
+                    if b != 0.0 && i + p >= j && i <= j + p {
+                        band[row][p + i - j] = b;
+                    }
+                }
+                for k in 0..3 {
+                    let coord = |pt: Point3D| [pt.x, pt.y, pt.z][k];
+                    rhs[k][row] = coord(points[j])
+                        - basis[0] * coord(points[0])
+                        - basis[n - 1] * coord(points[n - 1]);
+                }
+            }
+            banded_solve(&mut band, p, &mut rhs);
+            for row in 0..m {
+                poles[row + 1] = Point3D::new(rhs[0][row], rhs[1][row], rhs[2][row]);
+            }
+        }
+        Self::new(degree, poles, knots, mults, false)
     }
 
     /// Returns whether the curve is periodic (closed).
@@ -881,5 +1091,80 @@ mod tests {
         }
         assert!(proj.distance <= best);
         assert!(best - proj.distance < 1e-3);
+    }
+
+    #[test]
+    fn test_interpolate_line_points() {
+        let tol = Tolerance::DEFAULT;
+        let points = vec![
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(3.0, 0.0, 0.0),
+        ];
+        for param in [
+            InterpParametrization::Chordal,
+            InterpParametrization::Centripetal,
+        ] {
+            let curve = BSplineCurve3D::interpolate(&points, 2, param).unwrap();
+            for p in &points {
+                assert!(curve.contains(*p, tol), "{param:?}");
+            }
+            // Collinear data interpolates the straight segment.
+            assert!((curve.eval_point(0.5).y).abs() < 1e-9);
+            assert!((curve.eval_point(0.5).z).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_interpolate_circle_points() {
+        let tol = Tolerance::DEFAULT;
+        let points: Vec<Point3D> = (0..9)
+            .map(|i| {
+                let u = i as f64 / 8.0 * std::f64::consts::TAU;
+                Point3D::new(2.0 * u.cos(), 2.0 * u.sin(), 0.0)
+            })
+            .collect();
+        let curve =
+            BSplineCurve3D::interpolate(&points, 3, InterpParametrization::Centripetal).unwrap();
+        for p in &points {
+            assert!(curve.contains(*p, tol));
+        }
+        // Near-circular: radius stays close to 2.
+        for i in 0..=40 {
+            let p = curve.eval_point(i as f64 / 40.0);
+            let r = (p.x * p.x + p.y * p.y).sqrt();
+            assert!((r - 2.0).abs() < 0.05, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn test_interpolate_errors() {
+        let one = vec![Point3D::ORIGIN];
+        assert_eq!(
+            BSplineCurve3D::interpolate(&one, 1, InterpParametrization::Chordal),
+            Err(BSplineConstructionError::TooFewPoints)
+        );
+        let three = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(1.0, 1.0, 0.0),
+        ];
+        assert_eq!(
+            BSplineCurve3D::interpolate(&three, 0, InterpParametrization::Chordal),
+            Err(BSplineConstructionError::InvalidDegree)
+        );
+        assert_eq!(
+            BSplineCurve3D::interpolate(&three, 3, InterpParametrization::Chordal),
+            Err(BSplineConstructionError::DegreeTooHigh)
+        );
+        let dup = vec![
+            Point3D::ORIGIN,
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+        ];
+        assert_eq!(
+            BSplineCurve3D::interpolate(&dup, 1, InterpParametrization::Chordal),
+            Err(BSplineConstructionError::ConfusedPoints)
+        );
     }
 }

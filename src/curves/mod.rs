@@ -11,7 +11,7 @@ mod hyperbola;
 mod line;
 mod parabola;
 mod parametrize;
-pub use bspline::{BSplineConstructionError, BSplineCurve3D};
+pub use bspline::{BSplineConstructionError, BSplineCurve3D, InterpParametrization};
 pub use circle::{Circle2D, Circle3D, CircleConstructionError};
 pub use curve::{Curve3D, ParametricCurve3D};
 pub use curve2d::{Curve2D, ParametricCurve2D};

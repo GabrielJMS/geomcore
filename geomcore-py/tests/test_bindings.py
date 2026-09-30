@@ -400,6 +400,16 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
 
 
+def test_interpolate_curve():
+    curve = BSplineCurve3D.interpolate(
+        [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 1.0, 0.0), Point3D(2.0, 0.0, 0.0)], 2
+    )
+    assert curve.contains(Point3D(0.0, 0.0, 0.0))
+    assert curve.contains(Point3D(2.0, 0.0, 0.0))
+    with pytest.raises(ValueError):
+        BSplineCurve3D.interpolate([Point3D.origin()], 1)
+
+
 def test_intersect_curve_surface():
     from geomcore import intersect_curve_surface
     from geomcore.curves import Line3D
