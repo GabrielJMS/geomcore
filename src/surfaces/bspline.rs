@@ -670,6 +670,10 @@ impl ParametricSurface for BSplineSurface {
         BSplineSurface::project_point(self, point, tol)
     }
 
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        BSplineSurface::contains(self, point, tol)
+    }
+
     /// See [`BSplineSurface::eval_derivative`] for the supported orders and the
     /// panic conditions (only first derivatives are supported).
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {

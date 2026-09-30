@@ -97,14 +97,15 @@ pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;
 pub use intersect::marching_intersection;
 pub use intersect::{
-    CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
-    ConeCylinderIntersection, CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit,
-    CylinderCylinderIntersection, LineCircle2DIntersection, LineCircle3DIntersection,
-    LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
-    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
-    PlaneSphereIntersection, SphereConeIntersection, SphereCylinderIntersection,
-    SphereSphereIntersection, TorusConeIntersection, TorusCylinderIntersection,
-    TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection,
+    CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
+    ConeConeIntersection, ConeCylinderIntersection, ConicSurfaceHit, CurveCurveExtremum,
+    CurveCurveHit, CurveSurfaceHit, CylinderCylinderIntersection, LineCircle2DIntersection,
+    LineCircle3DIntersection, LineLine2DIntersection, LineLine3DIntersection,
+    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection,
+    SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection,
+    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
+    TorusSphereIntersection, TorusTorusIntersection,
 };
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};

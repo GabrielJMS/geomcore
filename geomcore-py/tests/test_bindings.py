@@ -400,6 +400,39 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
 
 
+def test_circle_surface_and_measures():
+    import math
+
+    from geomcore.surfaces import Cone, Cylinder, Plane
+
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    assert circle.circumference() == pytest.approx(math.tau * 2.0)
+    assert circle.disk_area() == pytest.approx(math.pi * 4.0)
+
+    kind, hits = circle.intersect_plane(Plane(Point3D.origin(), Vector3D.x()))
+    assert kind == "hits"
+    assert len(hits) == 2
+
+    kind, _ = circle.intersect_sphere(Sphere(Point3D.origin(), 3.0))
+    assert kind == "empty"
+
+    kind, _ = circle.intersect_cylinder(Cylinder(Point3D.origin(), Vector3D.z(), 2.0))
+    assert kind == "circle"
+
+    cone = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
+    kind, _ = circle.intersect_cone(cone)
+    assert kind == "circle"
+
+    from geomcore.curves import Ellipse3D
+
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    assert ellipse.area() == pytest.approx(math.pi * 4.5)
+
+    sphere = Sphere(Point3D.origin(), 3.0)
+    assert sphere.area() == pytest.approx(4.0 * math.pi * 9.0)
+    assert sphere.volume() == pytest.approx(4.0 / 3.0 * math.pi * 27.0)
+
+
 def test_interpolate_curve():
     curve = BSplineCurve3D.interpolate(
         [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 1.0, 0.0), Point3D(2.0, 0.0, 0.0)], 2

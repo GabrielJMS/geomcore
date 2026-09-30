@@ -396,7 +396,96 @@ pub enum CircleCircle3DIntersection {
     NotAnalytic,
 }
 
-/// Solution classification for `a*t^2 + b*t + c = 0` with tolerance.
+/// One hit of an analytic conic-vs-quadric solve: parameter, point, and
+/// root multiplicity (2+ marks grazing tangency).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConicSurfaceHit {
+    /// Parameter on the conic.
+    pub parameter: f64,
+    /// The hit point.
+    pub point: Point3D,
+    /// Root multiplicity (≥ 2 signals tangency).
+    pub multiplicity: u32,
+}
+
+/// Result of intersecting a 3D circle with a plane, sphere, cylinder, or
+/// cone: either the whole circle lies on the surface, isolated hits
+/// report, or nothing does.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CircleSurfaceIntersection {
+    /// The whole circle lies on the surface (sample-verified).
+    Circle(Circle3D),
+    /// Isolated hits with multiplicity.
+    Hits(Vec<ConicSurfaceHit>),
+    /// No intersection.
+    Empty,
+}
+
+/// Solve `C*cos t + D*sin t + E = 0`, returning `(parameter, multiplicity)`.
+/// Tangency (grazing) reports multiplicity 2; `scale` carries the equation
+/// units for the tolerance band. Below-significance equations (amplitude
+/// within tolerance) yield nothing — whole-curve coincidence is the
+/// caller's precheck.
+pub(crate) fn solve_trig_linear(
+    c: f64,
+    d: f64,
+    e: f64,
+    scale: f64,
+    tol: Tolerance,
+) -> Vec<(f64, u32)> {
+    let amp = c.hypot(d);
+    let band = tol.confusion * scale.max(f64::MIN_POSITIVE);
+    if amp <= band {
+        return Vec::new();
+    }
+    if e.abs() > amp + band {
+        return Vec::new();
+    }
+    let phi = d.atan2(c);
+    let t0 = (-e / amp).clamp(-1.0, 1.0).acos();
+    if e.abs() >= amp - band {
+        vec![(phi + t0, 2)]
+    } else {
+        vec![(phi + t0, 1), (phi - t0, 1)]
+    }
+}
+
+/// Solve `A*cos2t + B*sin2t + C*cos t + D*sin t + E = 0` via `u = tan(t/2)`
+/// (quartic), returning `(parameter, multiplicity)` plus the always-added
+/// `t = PI` candidate (deduped). Callers filter by surface containment.
+pub(crate) fn solve_trig(
+    a2: f64,
+    b2: f64,
+    c1: f64,
+    d1: f64,
+    e: f64,
+    tol: Tolerance,
+) -> Vec<(f64, u32)> {
+    // x(u^4 - 6u^2 + 1) form; ascending u^0..u^4 coefficients.
+    let q = [
+        a2 + c1 + e,
+        4.0 * b2 + 2.0 * d1,
+        -6.0 * a2 + 2.0 * e,
+        -4.0 * b2 + 2.0 * d1,
+        a2 - c1 + e,
+    ];
+    let mut out: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+        .into_iter()
+        .map(|r| (2.0 * r.value.atan(), r.multiplicity))
+        .collect();
+    out.push((std::f64::consts::PI, 1));
+    out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let mut deduped: Vec<(f64, u32)> = Vec::with_capacity(out.len());
+    for (t, m) in out {
+        match deduped.last_mut() {
+            Some((last_t, last_m)) if (t - *last_t).abs() <= tol.parametric * (1.0 + t.abs()) => {
+                *last_m = (*last_m).max(m);
+            }
+            _ => deduped.push((t, m)),
+        }
+    }
+    deduped
+}
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {
     /// Two distinct roots, ordered.

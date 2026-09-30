@@ -62,6 +62,9 @@ pub trait ParametricSurface {
     /// Projects `point` onto the surface, returning the `(u, v)` parameters
     /// of the closest point and its distance.
     fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection;
+
+    /// Returns whether `point` lies on the surface.
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool;
 }
 
 impl ParametricSurface for Plane {
@@ -71,6 +74,10 @@ impl ParametricSurface for Plane {
 
     fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
         Plane::project_point(self, point, tol)
+    }
+
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        Plane::contains(self, point, tol)
     }
 
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
@@ -107,6 +114,10 @@ impl ParametricSurface for Cylinder {
         Cylinder::project_point(self, point, tol)
     }
 
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        Cylinder::contains(self, point, tol)
+    }
+
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         Cylinder::eval_derivative(self, u, v, du, dv)
     }
@@ -139,6 +150,10 @@ impl ParametricSurface for Cone {
 
     fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
         Cone::project_point(self, point, tol)
+    }
+
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        Cone::contains(self, point, tol)
     }
 
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
@@ -175,6 +190,10 @@ impl ParametricSurface for Sphere {
         Sphere::project_point(self, point, tol)
     }
 
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        Sphere::contains(self, point, tol)
+    }
+
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         Sphere::eval_derivative(self, u, v, du, dv)
     }
@@ -207,6 +226,10 @@ impl ParametricSurface for Torus {
 
     fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
         Torus::project_point(self, point, tol)
+    }
+
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        Torus::contains(self, point, tol)
     }
 
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
@@ -368,6 +391,17 @@ impl ParametricSurface for Surface {
             Surface::Sphere(s) => s.project_point(point, tol),
             Surface::Torus(s) => s.project_point(point, tol),
             Surface::BSpline(s) => s.project_point(point, tol),
+        }
+    }
+
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        match self {
+            Surface::Plane(s) => s.contains(point, tol),
+            Surface::Cylinder(s) => s.contains(point, tol),
+            Surface::Cone(s) => s.contains(point, tol),
+            Surface::Sphere(s) => s.contains(point, tol),
+            Surface::Torus(s) => s.contains(point, tol),
+            Surface::BSpline(s) => s.contains(point, tol),
         }
     }
 

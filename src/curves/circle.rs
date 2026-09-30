@@ -5,12 +5,13 @@
 use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
+use crate::intersect::{CircleSurfaceIntersection, ConicSurfaceHit, solve_trig, solve_trig_linear};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
 use crate::{
-    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, Frame2D, Frame3D, Plane,
-    Point2D, Point3D, Tolerance, Vector2D, Vector3D,
+    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, Cone, Cylinder, Frame2D,
+    Frame3D, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
 };
 use std::fmt;
 
@@ -419,6 +420,245 @@ impl Circle3D {
         }
     }
 
+    /// Circumference (`2*PI*radius`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// use std::f64::consts::TAU;
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.circumference(), TAU * 2.0);
+    /// ```
+    pub fn circumference(&self) -> f64 {
+        std::f64::consts::TAU * self.radius()
+    }
+
+    /// Area of the enclosed disk (`PI*radius^2`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// use std::f64::consts::PI;
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert!((circle.disk_area() - PI * 4.0).abs() < 1e-12);
+    /// ```
+    pub fn disk_area(&self) -> f64 {
+        std::f64::consts::PI * self.radius() * self.radius()
+    }
+
+    /// Whether the whole circle lies on `surface` (three spread samples
+    /// contained — sound, since three non-collinear points fix a circle).
+    fn lies_on_surface<S: crate::surfaces::ParametricSurface>(
+        &self,
+        surface: &S,
+        tol: Tolerance,
+    ) -> bool {
+        [0.0, 2.0943951023931953, 4.188790204786391]
+            .iter()
+            .all(|&t| surface.contains(self.eval_point(t), tol))
+    }
+
+    /// Keep trig-solve candidates verified on the surface.
+    fn keep_hits<S: crate::surfaces::ParametricSurface>(
+        &self,
+        surface: &S,
+        candidates: Vec<(f64, u32)>,
+        tol: Tolerance,
+    ) -> Vec<ConicSurfaceHit> {
+        candidates
+            .into_iter()
+            .filter_map(|(t, multiplicity)| {
+                let p = self.eval_point(t);
+                if surface.contains(p, tol) {
+                    Some(ConicSurfaceHit {
+                        parameter: t,
+                        point: p,
+                        multiplicity,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Intersects this circle with a plane.
+    ///
+    /// In the circle frame the equation is first-order trigonometric
+    /// (`C*cos t + D*sin t + E = 0`), solved exactly with tangency
+    /// multiplicity; a coincident plane returns the circle itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, CircleSurfaceIntersection, Plane, Point3D, Tolerance, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match circle.intersect_plane(&plane, tol) {
+    ///     CircleSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> CircleSurfaceIntersection {
+        if self.lies_on_surface(plane, tol) {
+            return CircleSurfaceIntersection::Circle(*self);
+        }
+        let n = plane.normal();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = self.radius();
+        let c = r * x.dot(n);
+        let d = r * y.dot(n);
+        let e = (self.center() - plane.frame().origin()).dot(n);
+        let scale = (self.center() - plane.frame().origin()).magnitude() + r + 1.0;
+        let hits = self.keep_hits(plane, solve_trig_linear(c, d, e, scale, tol), tol);
+        if hits.is_empty() {
+            CircleSurfaceIntersection::Empty
+        } else {
+            CircleSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this circle with a sphere.
+    ///
+    /// In circle-frame coordinates the sphere equation collapses to
+    /// first-order trigonometric form (the `cos^2 + sin^2` terms fold to
+    /// a constant), solved exactly; a fully contained circle returns
+    /// itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, CircleSurfaceIntersection, Point3D, Sphere, Tolerance, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match circle.intersect_sphere(&sphere, tol) {
+    ///     CircleSurfaceIntersection::Empty => {}
+    ///     _ => panic!("expected empty"),
+    /// }
+    /// ```
+    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> CircleSurfaceIntersection {
+        if self.lies_on_surface(sphere, tol) {
+            return CircleSurfaceIntersection::Circle(*self);
+        }
+        let w = self.center() - sphere.center();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = self.radius();
+        let rs = sphere.radius();
+        let c = 2.0 * r * x.dot(w);
+        let d = 2.0 * r * y.dot(w);
+        let e = w.dot(w) + r * r - rs * rs;
+        let scale = w.magnitude() + r + rs;
+        let hits = self.keep_hits(sphere, solve_trig_linear(c, d, e, scale * scale, tol), tol);
+        if hits.is_empty() {
+            CircleSurfaceIntersection::Empty
+        } else {
+            CircleSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this circle with a cylinder.
+    ///
+    /// The cylinder equation in circle-frame coordinates carries
+    /// double-angle terms, solved as a quartic in `tan(t/2)` (plus the
+    /// `t = PI` candidate); a fully contained circle returns itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, CircleSurfaceIntersection, Cylinder, Point3D, Tolerance, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// // The equator lies entirely on the cylinder.
+    /// match circle.intersect_cylinder(&cylinder, tol) {
+    ///     CircleSurfaceIntersection::Circle(_) => {}
+    ///     _ => panic!("expected the whole circle"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> CircleSurfaceIntersection {
+        if self.lies_on_surface(cylinder, tol) {
+            return CircleSurfaceIntersection::Circle(*self);
+        }
+        let a = cylinder.axis().direction();
+        let w = self.center() - cylinder.axis().origin();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = self.radius();
+        let rho = cylinder.radius();
+        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        // |E - C0|^2 - ((E - C0).a)^2 - rho^2 in double-angle form.
+        let a2 = r * r * (ya * ya - xa * xa) / 2.0;
+        let b2 = -r * r * xa * ya;
+        let c1 = 2.0 * r * (xw - wa * xa);
+        let d1 = 2.0 * r * (yw - wa * ya);
+        let e = ww + r * r - wa * wa - r * r * (xa * xa + ya * ya) / 2.0 - rho * rho;
+        let hits = self.keep_hits(cylinder, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        if hits.is_empty() {
+            CircleSurfaceIntersection::Empty
+        } else {
+            CircleSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this circle with a cone.
+    ///
+    /// The half-angle equation in circle-frame coordinates carries
+    /// double-angle terms, solved as a quartic in `tan(t/2)` (plus the
+    /// `t = PI` candidate); a fully contained circle returns itself.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, CircleSurfaceIntersection, Cone, Frame3D, Point3D, Tolerance, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// // The reference circle lies entirely on the cone.
+    /// match circle.intersect_cone(&cone, tol) {
+    ///     CircleSurfaceIntersection::Circle(_) => {}
+    ///     _ => panic!("expected the whole circle"),
+    /// }
+    /// ```
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> CircleSurfaceIntersection {
+        if self.lies_on_surface(cone, tol) {
+            return CircleSurfaceIntersection::Circle(*self);
+        }
+        let a = cone.frame().z_direction();
+        let cos_phi = cone.semi_angle().cos();
+        let w = self.center() - cone.apex();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = self.radius();
+        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let c2 = cos_phi * cos_phi;
+        // ((E - A).a)^2 - |E - A|^2*cos^2(phi) in double-angle form.
+        let a2 = r * r * (xa * xa - ya * ya) / 2.0;
+        let b2 = r * r * xa * ya;
+        let c1 = 2.0 * r * (wa * xa - c2 * xw);
+        let d1 = 2.0 * r * (wa * ya - c2 * yw);
+        let e = wa * wa + r * r * (xa * xa + ya * ya) / 2.0 - c2 * (ww + r * r);
+        let hits = self.keep_hits(cone, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        if hits.is_empty() {
+            CircleSurfaceIntersection::Empty
+        } else {
+            CircleSurfaceIntersection::Hits(hits)
+        }
+    }
+
     /// Computes the exact 2D representation of this circle in a surface's
     /// parameter space: a [`Curve2D`] `q(t)` such that
     /// `surface.eval_point(q(t)) == self.eval_point(t)` for the same `t`.
@@ -725,7 +965,8 @@ impl Circle2D {
 mod tests {
     use crate::{
         Circle2D, Circle3D, CircleCircle2DIntersection, CircleCircle3DIntersection,
-        CircleConstructionError, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D,
+        CircleConstructionError, CircleSurfaceIntersection, Frame2D, Frame3D, Point2D, Point3D,
+        Tolerance, Vector2D, Vector3D,
     };
 
     // ---- Circle3D construction ----
@@ -1110,5 +1351,88 @@ mod tests {
             c1.intersect_circle(&c1, tol),
             CircleCircle3DIntersection::Coincident
         );
+    }
+
+    #[test]
+    fn test_circle3d_intersect_plane() {
+        use crate::Plane;
+        let tol = Tolerance::DEFAULT;
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        // Transversal plane through the x-axis: hits at (±2, 0, 0).
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match circle.intersect_plane(&plane, tol) {
+            CircleSurfaceIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 2);
+                let mut pts: Vec<Point3D> = hits.iter().map(|h| h.point).collect();
+                pts.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap());
+                assert!(pts[0].distance(Point3D::new(0.0, -2.0, 0.0)) < 1e-9);
+                assert!(pts[1].distance(Point3D::new(0.0, 2.0, 0.0)) < 1e-9);
+                for h in &hits {
+                    assert!(circle.contains(h.point, tol));
+                    assert!(plane.contains(h.point, tol));
+                }
+            }
+            _ => panic!("expected hits"),
+        }
+        // Coplanar: the whole circle.
+        let flat = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        match circle.intersect_plane(&flat, tol) {
+            CircleSurfaceIntersection::Circle(_) => {}
+            _ => panic!("expected the whole circle"),
+        }
+        // Parallel offset: miss.
+        let miss = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            circle.intersect_plane(&miss, tol),
+            CircleSurfaceIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_circle3d_intersect_sphere_cylinder_cone() {
+        use crate::{Cone, Cylinder, Frame3D, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        // Small off-center sphere: two hits, cross-checked both sides.
+        let sphere = Sphere::new(Point3D::new(1.0, 0.0, 0.0), 2.0).unwrap();
+        match circle.intersect_sphere(&sphere, tol) {
+            CircleSurfaceIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 2);
+                for h in &hits {
+                    assert!(circle.contains(h.point, tol));
+                    assert!(sphere.contains(h.point, tol));
+                }
+            }
+            _ => panic!("expected hits"),
+        }
+        // Coaxial cylinder wider than the circle: miss.
+        let fat = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 3.0).unwrap();
+        assert_eq!(
+            circle.intersect_cylinder(&fat, tol),
+            CircleSurfaceIntersection::Empty
+        );
+        // Tilted cylinder through the ring: hits on both.
+        let tilted = Cylinder::new(
+            Point3D::ORIGIN,
+            Vector3D::new(0.0, 1.0, 1.0).normalized().unwrap(),
+            2.0,
+        )
+        .unwrap();
+        match circle.intersect_cylinder(&tilted, tol) {
+            CircleSurfaceIntersection::Hits(hits) => {
+                assert!(!hits.is_empty());
+                for h in &hits {
+                    assert!(circle.contains(h.point, tol));
+                    assert!(tilted.contains(h.point, tol));
+                }
+            }
+            _ => panic!("expected hits"),
+        }
+        // Reference cone contains the ring by construction.
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        match circle.intersect_cone(&cone, tol) {
+            CircleSurfaceIntersection::Circle(_) => {}
+            _ => panic!("expected the whole circle"),
+        }
     }
 }

@@ -18,10 +18,10 @@ use geomcore::marching_intersection;
 use geomcore::parametrize_numeric;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
-    ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection,
-    LineCircle3DIntersection, LineLine2DIntersection, LineLine3DIntersection,
-    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
+    ConeConeIntersection, ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D,
+    LineCircle2DIntersection, LineCircle3DIntersection, LineLine2DIntersection,
+    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
     PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
     SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection, Tolerance,
     TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
@@ -1004,6 +1004,16 @@ impl PySphere {
         self.0.radius()
     }
 
+    /// The surface area (`4*PI*radius^2`).
+    fn area(&self) -> f64 {
+        self.0.area()
+    }
+
+    /// The enclosed volume (`4/3*PI*radius^3`).
+    fn volume(&self) -> f64 {
+        self.0.volume()
+    }
+
     /// Evaluate the point at surface parameters (u, v).
     fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
         PyPoint3D(self.0.eval_point(u, v))
@@ -1777,6 +1787,33 @@ fn point2(py: Python<'_>, t: f64, p: Point2D) -> PyResult<Py<PyAny>> {
         .map(|o| o.into_any().unbind())
 }
 
+fn circle_surface_to_py(
+    py: Python<'_>,
+    hit: CircleSurfaceIntersection,
+) -> PyResult<(String, Py<PyAny>)> {
+    match hit {
+        CircleSurfaceIntersection::Circle(c) => Ok((
+            "circle".to_string(),
+            PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+        )),
+        CircleSurfaceIntersection::Hits(hits) => {
+            let mut out = Vec::with_capacity(hits.len());
+            for h in hits {
+                out.push((
+                    h.parameter,
+                    PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+                    h.multiplicity,
+                ));
+            }
+            Ok((
+                "hits".to_string(),
+                out.into_pyobject(py)?.into_any().unbind(),
+            ))
+        }
+        CircleSurfaceIntersection::Empty => Ok(("empty".to_string(), py.None())),
+    }
+}
+
 /// Marching surface-surface intersection of any two surfaces.
 ///
 /// Traces the meeting curves numerically and fits B-spline approximants.
@@ -2090,6 +2127,16 @@ impl PyCircle3D {
         self.0.radius()
     }
 
+    /// The circumference (`2*PI*radius`).
+    fn circumference(&self) -> f64 {
+        self.0.circumference()
+    }
+
+    /// The enclosed disk area (`PI*radius^2`).
+    fn disk_area(&self) -> f64 {
+        self.0.disk_area()
+    }
+
     /// The unit normal of the circle's plane.
     fn normal(&self) -> PyVector3D {
         PyVector3D(self.0.normal())
@@ -2188,6 +2235,63 @@ impl PyCircle3D {
             CircleCircle3DIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
         }
     }
+
+    /// Intersects this circle with a plane.
+    ///
+    /// Returns `("circle", Circle3D)`,
+    /// `("hits", [(t, Point3D, multiplicity)])` or `("empty", None)`.
+    #[pyo3(signature = (plane, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        plane: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        circle_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+    }
+
+    /// Intersects this circle with a sphere.
+    ///
+    /// Same return shape as circle-vs-plane.
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        circle_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+    }
+
+    /// Intersects this circle with a cylinder.
+    ///
+    /// Same return shape as circle-vs-plane.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        circle_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+    }
+
+    /// Intersects this circle with a cone.
+    ///
+    /// Same return shape as circle-vs-plane.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        circle_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
+    }
 }
 
 /// An ellipse in 3D.
@@ -2248,6 +2352,11 @@ impl PyEllipse3D {
     /// The semi-minor radius.
     fn minor_radius(&self) -> f64 {
         self.0.minor_radius()
+    }
+
+    /// The enclosed area (`PI*major*minor`).
+    fn area(&self) -> f64 {
+        self.0.area()
     }
 
     /// Evaluate the point at angle `u` (radians).

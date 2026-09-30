@@ -250,6 +250,23 @@ impl Ellipse3D {
         self.minor_radius
     }
 
+    /// Area enclosed by the ellipse (`PI*major*minor`).
+    ///
+    /// (The perimeter has no closed form, so this kernel does not provide
+    /// one — not even an approximation disguised as a property.)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Point3D, Vector3D};
+    /// use std::f64::consts::PI;
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// assert!((ellipse.area() - PI * 4.5).abs() < 1e-12);
+    /// ```
+    pub fn area(&self) -> f64 {
+        std::f64::consts::PI * self.major_radius * self.minor_radius
+    }
+
     /// Evaluates the point on the ellipse at angular parameter `u`:
     /// `center + major*cos(u)*x_dir + minor*sin(u)*y_dir`.
     ///

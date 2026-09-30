@@ -134,6 +134,34 @@ impl Sphere {
         self.radius
     }
 
+    /// Surface area (`4*PI*radius^2`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// use std::f64::consts::PI;
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// assert!((sphere.area() - PI * 36.0).abs() < 1e-9);
+    /// ```
+    pub fn area(&self) -> f64 {
+        4.0 * std::f64::consts::PI * self.radius * self.radius
+    }
+
+    /// Enclosed volume (`4/3*PI*radius^3`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// use std::f64::consts::PI;
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// assert!((sphere.volume() - 4.0 / 3.0 * PI * 27.0).abs() < 1e-9);
+    /// ```
+    pub fn volume(&self) -> f64 {
+        4.0 / 3.0 * std::f64::consts::PI * self.radius.powi(3)
+    }
+
     /// Evaluates the point on the sphere at `(u, v)`. See the type-level
     /// docs for the formula.
     ///

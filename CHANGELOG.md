@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-09-30
+
+### Added
+
+- Analytic circle-vs-quadric intersections: `Circle3D::intersect_plane/
+  sphere/cylinder/cone` (linear trigonometry for planes/spheres,
+  double-angle quartics otherwise, whole-circle detection by
+  three-sample containment, tangency multiplicities). Python returns
+  `(kind, payload)` tuples.
+- Closed-geometry measures: `Circle3D::circumference/disk_area`,
+  `Ellipse3D::area`, `Sphere::area/volume` (exact; ellipse perimeter
+  deliberately absent — no closed form).
+
 ## [0.22.0] - 2026-09-30
 
 ### Added
@@ -259,7 +272,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.23.0
 [0.22.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.22.0
 [0.21.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.21.0
 [0.20.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.20.0
