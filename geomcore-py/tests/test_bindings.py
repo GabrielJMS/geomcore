@@ -423,6 +423,23 @@ def test_intersect_curve_surface():
     assert intersect_curve_surface(line, Sphere(Point3D(0.0, 0.0, 5.0), 2.0)) == []
 
 
+def test_intersect_marching():
+    from geomcore import intersect_marching
+    from geomcore.surfaces import Plane
+
+    xy = Plane(Point3D.origin(), Vector3D.z())
+    zy = Plane(Point3D.origin(), Vector3D.x())
+    curves = intersect_marching(xy, zy)
+    assert len(curves) == 1
+
+    sphere = Sphere(Point3D.origin(), 2.0)
+    loops = intersect_marching(xy, sphere)
+    assert len(loops) == 1
+
+    miss = Plane(Point3D(0.0, 0.0, 5.0), Vector3D.z())
+    assert intersect_marching(miss, sphere) == []
+
+
 def test_intersect_curves_2d_and_lines():
     from geomcore.curves import Circle2D, Line2D, Line3D
 

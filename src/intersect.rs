@@ -7,7 +7,7 @@
 //! [`crate::Tolerance`], so near-degenerate configurations classify
 //! robustly instead of collapsing to noise.
 
-use crate::curves::ParametricCurve3D;
+use crate::curves::{BSplineCurve3D, InterpParametrization, ParametricCurve3D};
 use crate::math::newton_3d;
 use crate::surfaces::ParametricSurface;
 use crate::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point2D, Point3D, Tolerance};
@@ -528,6 +528,279 @@ where
     hits
 }
 
+/// Marching surface-surface intersection for any two parametric surfaces.
+///
+/// Seeds come from both grids projected onto the other surface; each seed
+/// traces along the `N1 x N2` tangent with adaptive steps, corrected by
+/// alternating projections, until it closes a loop, leaves the parameter
+/// bounds, or stalls. Traces fit [`BSplineCurve3D`] interpolants
+/// (degree 3, closed loops by repeated end points).
+///
+/// The fits are APPROXIMATIONS (interpolation error, typically ~1e-4 at
+/// default tolerance — assert residuals, not containment): exact
+/// classification stays with the analytic `intersect_*` methods. Likewise
+/// no tangency classification (grazing pairs may trace partially or not
+/// at all), no marching through singular points (poles, apexes), and a
+/// fixed seed density — v1 heuristics, documented so callers can judge
+/// fit.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Plane, Point3D, Tolerance, Vector3D, marching_intersection};
+/// let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+/// let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// let curves = marching_intersection(&xy, &zy, Tolerance::DEFAULT);
+/// assert_eq!(curves.len(), 1);
+/// ```
+pub fn marching_intersection<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<BSplineCurve3D>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    // Seed both directions: grid samples projected onto the other surface.
+    // Unbounded directions seed a documented default window.
+    let mut seeds: Vec<(Point3D, f64)> = Vec::new();
+    {
+        let (u0, u1) = seed_window(a.u_bounds());
+        let (v0, v1) = seed_window(a.v_bounds());
+        const NU: usize = 24;
+        const NV: usize = 24;
+        for j in 0..=NV {
+            for i in 0..=NU {
+                let (u, v) = (
+                    u0 + (u1 - u0) * i as f64 / NU as f64,
+                    v0 + (v1 - v0) * j as f64 / NV as f64,
+                );
+                let p = a.eval_point(u, v);
+                let d = b.project_point(p, tol).distance;
+                if d <= 100.0 * tol.confusion {
+                    seeds.push((p, d));
+                }
+            }
+        }
+    }
+    {
+        let (u0, u1) = seed_window(b.u_bounds());
+        let (v0, v1) = seed_window(b.v_bounds());
+        const NU: usize = 24;
+        const NV: usize = 24;
+        for j in 0..=NV {
+            for i in 0..=NU {
+                let (u, v) = (
+                    u0 + (u1 - u0) * i as f64 / NU as f64,
+                    v0 + (v1 - v0) * j as f64 / NV as f64,
+                );
+                let p = b.eval_point(u, v);
+                let d = a.project_point(p, tol).distance;
+                if d <= 100.0 * tol.confusion {
+                    seeds.push((p, d));
+                }
+            }
+        }
+    }
+    // Union-find chaining so each connected seed set traces once: a seed
+    // joins any cluster with a member in radius (5% of the seed bbox
+    // diagonal), transitively linking extended structures like lines.
+    let mut leaders: Vec<Point3D> = Vec::new();
+    if !seeds.is_empty() {
+        let mut lo = seeds[0].0;
+        let mut hi = seeds[0].0;
+        for &(p, _) in &seeds[1..] {
+            lo = Point3D::new(lo.x.min(p.x), lo.y.min(p.y), lo.z.min(p.z));
+            hi = Point3D::new(hi.x.max(p.x), hi.y.max(p.y), hi.z.max(p.z));
+        }
+        let radius = (0.05 * lo.distance(hi)).max(100.0 * tol.confusion);
+        let mut parent: Vec<usize> = (0..seeds.len()).collect();
+        fn find(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        for i in 0..seeds.len() {
+            for j in (i + 1)..seeds.len() {
+                if seeds[i].0.distance(seeds[j].0) <= radius {
+                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                    parent[ri] = rj;
+                }
+            }
+        }
+        // Best (closest) seed per cluster, clusters ordered by it.
+        let mut best: std::collections::HashMap<usize, (f64, Point3D)> =
+            std::collections::HashMap::new();
+        for (i, &(p, d)) in seeds.iter().enumerate() {
+            let r = find(&mut parent, i);
+            best.entry(r)
+                .and_modify(|e| {
+                    if d < e.0 {
+                        *e = (d, p);
+                    }
+                })
+                .or_insert((d, p));
+        }
+        let mut ordered: Vec<(f64, Point3D)> = best.into_values().collect();
+        ordered.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        leaders = ordered.into_iter().map(|(_, p)| p).collect();
+    }
+    let mut curves: Vec<BSplineCurve3D> = Vec::new();
+    // Seeds near an already traced loop are suppressed by projection
+    // onto its fit (raw spacing and fit error both exceed confusion, so
+    // neither raw points nor tight containment can decide duplication).
+    // Near-tangent distinct loops (closer than this) are out of scope.
+    let suppress = 1000.0 * tol.confusion;
+    let mut step = 0.02f64;
+    for seed in leaders {
+        if curves
+            .iter()
+            .any(|c| c.project_point(seed, tol).distance <= suppress)
+        {
+            continue;
+        }
+        if let Some(loop_pts) = trace_loop(a, b, seed, &mut step, tol)
+            && loop_pts.len() >= 4
+        {
+            let mut closed = loop_pts;
+            closed.push(closed[0]);
+            let degree = 3.min(closed.len() - 1);
+            if let Ok(fit) =
+                BSplineCurve3D::interpolate(&closed, degree, InterpParametrization::Centripetal)
+            {
+                curves.push(fit);
+            }
+        }
+    }
+    curves
+}
+
+/// Trace one loop (or open arc) through `seed`; adaptive step in `step`.
+fn trace_loop<A, B>(
+    a: &A,
+    b: &B,
+    seed: Point3D,
+    step: &mut f64,
+    tol: Tolerance,
+) -> Option<Vec<Point3D>>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let normal_at = |s: &dyn ParametricSurface, u: f64, v: f64| {
+        let su = s.eval_derivative(u, v, 1, 0);
+        let sv = s.eval_derivative(u, v, 0, 1);
+        let n = su.cross(sv);
+        let scale = su.magnitude() * sv.magnitude();
+        if n.magnitude() <= tol.angular * scale.max(f64::MIN_POSITIVE) {
+            None
+        } else {
+            Some(n * (1.0 / n.magnitude()))
+        }
+    };
+    // Seed must project cleanly onto both surfaces for tangents.
+    let mut fwd: Vec<Point3D> = vec![seed];
+    let mut bwd: Vec<Point3D> = Vec::new();
+    // March both directions from the seed.
+    for (chain, dir) in [(&mut fwd, 1.0), (&mut bwd, -1.0)] {
+        let mut p = seed;
+        let mut h = *step;
+        for _ in 0..2000 {
+            let qa = a.project_point(p, tol);
+            let qb = b.project_point(p, tol);
+            let (Some(na), Some(nb)) = (normal_at(a, qa.u, qa.v), normal_at(b, qb.u, qb.v)) else {
+                break;
+            };
+            let t = na.cross(nb);
+            if t.magnitude() <= tol.angular {
+                break;
+            }
+            let t = t * (dir / t.magnitude());
+            // Adaptive predict-correct.
+            let mut accepted = false;
+            for _ in 0..10 {
+                let q = correct(a, b, p + t * h, tol);
+                match q {
+                    Some(q) if b.project_point(q, tol).distance <= 10.0 * tol.confusion => {
+                        p = q;
+                        h = (h * 1.25).min(0.1);
+                        accepted = true;
+                        break;
+                    }
+                    _ => {
+                        h *= 0.5;
+                        if h < tol.confusion {
+                            break;
+                        }
+                    }
+                }
+            }
+            if !accepted {
+                break;
+            }
+            // Closed loop?
+            if chain.len() > 10 && p.distance(chain[0]) <= 10.0 * tol.confusion {
+                chain.push(chain[0]);
+                break;
+            }
+            // Left the parameter domain on an open direction?
+            let ra = a.project_point(p, tol);
+            let rb = b.project_point(p, tol);
+            if off_bounds(a, ra.u, ra.v) || off_bounds(b, rb.u, rb.v) {
+                chain.push(p);
+                break;
+            }
+            chain.push(p);
+        }
+    }
+    *step = (*step).clamp(tol.confusion, 1.0);
+    // Stitch backward (reversed, seed duplicates dropped) + forward.
+    bwd.reverse();
+    let mut pts = bwd;
+    pts.extend(fwd.into_iter().skip(1));
+    if pts.len() < 4 { None } else { Some(pts) }
+}
+
+/// Alternating-projection correction onto both surfaces.
+fn correct<A, B>(a: &A, b: &B, p: Point3D, tol: Tolerance) -> Option<Point3D>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let mut q = p;
+    for _ in 0..8 {
+        let pa = a.project_point(q, tol);
+        let qa = a.eval_point(pa.u, pa.v);
+        let pb = b.project_point(qa, tol);
+        let qb = b.eval_point(pb.u, pb.v);
+        if qb.distance(q) <= tol.confusion {
+            return Some(qb);
+        }
+        q = qb;
+    }
+    let residual = a.project_point(q, tol).distance + b.project_point(q, tol).distance;
+    if residual <= 10.0 * tol.confusion {
+        Some(q)
+    } else {
+        None
+    }
+}
+
+/// Clamp a parameter bound pair to a finite seed window.
+fn seed_window((lo, hi): (f64, f64)) -> (f64, f64) {
+    const WINDOW: f64 = 10.0;
+    (
+        if lo.is_finite() { lo } else { -WINDOW },
+        if hi.is_finite() { hi } else { WINDOW },
+    )
+}
+
+/// Whether `(u, v)` left a non-periodic direction's bounds.
+fn off_bounds<S: ParametricSurface + ?Sized>(s: &S, u: f64, v: f64) -> bool {
+    let (u0, u1) = s.u_bounds();
+    let (v0, v1) = s.v_bounds();
+    (s.u_period().is_none() && (u < u0 || u > u1)) || (s.v_period().is_none() && (v < v0 || v > v1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,5 +892,46 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert!((hits[0].curve_param - 0.5).abs() < 1e-9);
         assert_eq!(hits[0].point, Point3D::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_marching_plane_plane_line() {
+        use crate::Plane;
+        let tol = Tolerance::DEFAULT;
+        let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let curves = marching_intersection(&xy, &zy, tol);
+        assert_eq!(curves.len(), 1);
+        // The traced line runs along Y through the origin.
+        for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let p = curves[0].eval_point(t);
+            assert!(p.x.abs() < 1e-6, "{p:?}");
+            assert!(p.z.abs() < 1e-6, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn test_marching_plane_sphere_circle() {
+        use crate::{Plane, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let curves = marching_intersection(&plane, &sphere, tol);
+        assert_eq!(curves.len(), 1);
+        // Approximate fit: residuals within marching scale (not confusion).
+        for t in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] {
+            let p = curves[0].eval_point(t);
+            assert!(plane.project_point(p, tol).distance < 1e-3, "{p:?}");
+            assert!(sphere.project_point(p, tol).distance < 1e-3, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn test_marching_miss_is_empty() {
+        use crate::{Plane, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::new(0.0, 0.0, 5.0), Vector3D::Z).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        assert!(marching_intersection(&plane, &sphere, tol).is_empty());
     }
 }

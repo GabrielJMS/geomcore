@@ -94,6 +94,7 @@ pub use curves::{
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;
+pub use intersect::marching_intersection;
 pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
     ConeCylinderIntersection, CurveSurfaceHit, CylinderCylinderIntersection,

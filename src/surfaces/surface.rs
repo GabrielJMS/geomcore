@@ -1,6 +1,7 @@
 //! [`ParametricSurface`] trait and the [`Surface`] enum adaptor unifying the
 //! concrete analytic surface types.
 
+use crate::curves::BSplineCurve3D;
 use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Torus};
 use crate::{Point3D, SurfaceProjection, Tolerance, Vector3D};
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -269,6 +270,27 @@ pub enum Surface {
     Torus(Torus),
     /// A [`BSplineSurface`] (tensor-product NURBS) surface.
     BSpline(BSplineSurface),
+}
+
+impl Surface {
+    /// Marching intersection with another surface: traces the meeting
+    /// curves numerically and fits [`BSplineCurve3D`] approximants.
+    ///
+    /// See [`marching_intersection`](crate::marching_intersection) for the
+    /// algorithm, scope, and approximation guarantees.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Surface, Tolerance, Vector3D};
+    /// let xy = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let zy = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+    /// let curves = xy.intersect_marching(&zy, Tolerance::DEFAULT);
+    /// assert_eq!(curves.len(), 1);
+    /// ```
+    pub fn intersect_marching(&self, other: &Surface, tol: Tolerance) -> Vec<BSplineCurve3D> {
+        crate::marching_intersection(self, other, tol)
+    }
 }
 
 impl ParametricSurface for Surface {

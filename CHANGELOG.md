@@ -9,6 +9,18 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-30
+
+### Added
+
+- Generic marching surface-surface intersection
+  (`marching_intersection`, also `Surface::intersect_marching`): grid
+  seeds projected both ways, adaptive tangent tracing with alternating
+  projections, loop/boundary termination, `BSplineCurve3D` fits.
+  Approximate by design (fits, no tangency classification, no singular
+  points). Python: `geomcore.intersect_marching(a, b)` returning a list
+  of `BSplineCurve3D`.
+
 ## [0.18.0] - 2026-09-30
 
 ### Added
@@ -219,7 +231,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.19.0
 [0.18.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.18.0
 [0.17.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.17.0
 [0.16.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.16.0

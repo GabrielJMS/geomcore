@@ -14,6 +14,7 @@ use geomcore::curves::{
     InterpParametrization, Line2D, Line3D, Parabola3D,
 };
 use geomcore::intersect_curve_surface;
+use geomcore::marching_intersection;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, ConeConeIntersection,
@@ -1695,6 +1696,29 @@ fn point2(py: Python<'_>, t: f64, p: Point2D) -> PyResult<Py<PyAny>> {
         .map(|o| o.into_any().unbind())
 }
 
+/// Marching surface-surface intersection of any two surfaces.
+///
+/// Traces the meeting curves numerically and fits B-spline approximants.
+/// Returns one `BSplineCurve3D` per traced loop or arc (empty when the
+/// surfaces miss).
+#[pyfunction]
+#[pyo3(name = "intersect_marching", signature = (surface_a, surface_b, tol = None))]
+fn py_intersect_marching(
+    py: Python<'_>,
+    surface_a: &Bound<'_, PyAny>,
+    surface_b: &Bound<'_, PyAny>,
+    tol: Option<PyTolerance>,
+) -> PyResult<Vec<Py<PyAny>>> {
+    let tol = tol.map(|t| t.0).unwrap_or_default();
+    let a = extract_surface(surface_a)?;
+    let b = extract_surface(surface_b)?;
+    let mut out = Vec::new();
+    for c in marching_intersection(&a, &b, tol) {
+        out.push(PyBSplineCurve3D(c).into_pyobject(py)?.into_any().unbind());
+    }
+    Ok(out)
+}
+
 // ---------------------------------------------------------------------------
 // Curves
 // ---------------------------------------------------------------------------
@@ -2890,6 +2914,7 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     sys_modules.set_item("geomcore.surfaces", &surfaces)?;
 
     m.add_function(wrap_pyfunction!(py_intersect_curve_surface, m)?)?;
+    m.add_function(wrap_pyfunction!(py_intersect_marching, m)?)?;
 
     Ok(())
 }
