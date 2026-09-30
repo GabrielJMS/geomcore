@@ -400,6 +400,30 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
 
 
+def test_conic_surface_intersections():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Parabola3D
+    from geomcore.surfaces import Cone, Cylinder, Plane
+
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    kind, hits = ellipse.intersect_plane(Plane(Point3D.origin(), Vector3D.x()))
+    assert kind == "hits"
+    assert len(hits) == 2
+
+    parabola = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0)
+    kind, _ = parabola.intersect_plane(Plane(Point3D.origin(), Vector3D.z()))
+    assert kind == "coincident"
+
+    hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    kind, hits = hyperbola.intersect_cylinder(cylinder)
+    assert kind == "hits"
+    assert len(hits) >= 1
+
+    cone = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
+    kind, _ = ellipse.intersect_cone(cone)
+    assert kind == "hits"
+
+
 def test_circle_surface_and_measures():
     import math
 

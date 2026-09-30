@@ -65,13 +65,29 @@ pub(crate) fn real_roots(coeffs: &[f64], tol: f64) -> Vec<RealRoot> {
     let monic: Vec<f64> = c.iter().map(|&v| v / lead).collect();
     let d1 = deriv(&monic);
     let d2 = deriv(&d1);
+    let dscale = d1.iter().fold(f64::MIN_POSITIVE, |m, &v| m.max(v.abs()));
     for x in &mut raw {
-        for _ in 0..2 {
-            let slope = eval(&d1, *x);
-            if slope.abs() <= 1e-300 * (1.0 + eval(&monic, *x).abs()) {
+        // Newton polish withFp-noise safeguards: near a multiple root both
+        // p and p' sit at rounding scale and their ratio is meaningless,
+        // so stop on small residuals, tiny slopes, and non-improvement.
+        for _ in 0..3 {
+            let fx = eval(&monic, *x);
+            if fx.abs() <= tol * scale {
                 break;
             }
-            *x -= eval(&monic, *x) / slope;
+            let slope = eval(&d1, *x);
+            if slope.abs() <= tol * dscale {
+                break;
+            }
+            let x_new = *x - fx / slope;
+            if eval(&monic, x_new).abs() > fx.abs() {
+                break;
+            }
+            let step = (*x - x_new).abs();
+            *x = x_new;
+            if step <= tol * (1.0 + x.abs()) {
+                break;
+            }
         }
     }
     cluster(raw, &monic, &d1, &d2, scale, tol)
@@ -136,6 +152,7 @@ fn quartic_raw(a: f64, b: f64, c: f64, d: f64, e: f64, tol: f64) -> Vec<f64> {
     let r = e - b * d / 4.0 + b * b * c / 16.0 - 3.0 * b * b * b * b / 256.0;
     // Biquadratic shortcut (exact when q vanishes): far more accurate
     // than Ferrari near symmetric configurations.
+    eprintln!("DBG quartic a={a} b={b} c={c} d={d} e={e} || p={p} q={q} r={r} tol={tol}");
     if q.abs() <= tol * (1.0 + p.abs() + r.abs()) {
         let mut out = Vec::new();
         for y in quadratic_raw(1.0, p, r, tol) {
@@ -358,5 +375,94 @@ mod tests {
                 assert!(eval(coeffs, r.value).abs() < 1e-6, "{coeffs:?} {r:?}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod dbg_poly {
+    use super::real_roots;
+    #[test]
+    fn dbg_biquad() {
+        let r = real_roots(
+            &[
+                -4.241766773367914,
+                0.0,
+                8.483533546735814,
+                0.0,
+                -4.241766773367914,
+            ],
+            1e-7,
+        );
+        eprintln!("roots = {r:?}");
+        assert_eq!(r.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod dbg_poly2 {
+    use super::{quadratic_raw, real_roots};
+    #[test]
+    fn dbg_q() {
+        eprintln!("quad: {:?}", quadratic_raw(1.0, -2.0, 1.0, 1e-7));
+        eprintln!("full: {:?}", real_roots(&[1.0, 0.0, -2.0, 0.0, 1.0], 1e-7));
+    }
+}
+
+#[cfg(test)]
+mod dbg_poly3 {
+    use super::real_roots;
+    #[test]
+    fn dbg_scaled() {
+        // Same polynomial scaled: monic works, scaled fails?
+        let r1 = real_roots(&[1.0, 0.0, -2.0, 0.0, 1.0], 1e-7);
+        eprintln!("monic: {r1:?}");
+        let r2 = real_roots(
+            &[
+                -4.241766773367914,
+                0.0,
+                8.483533546735814,
+                0.0,
+                -4.241766773367914,
+            ],
+            1e-7,
+        );
+        eprintln!("scaled: {r2:?}");
+        // Evaluate the equation at the reported roots:
+        for r in &r2 {
+            let x = r.value;
+            let y =
+                -4.241766773367914 + 8.483533546735814 * x * x - 4.241766773367914 * x * x * x * x;
+            eprintln!("residual at {x}: {y}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod dbg_poly4 {
+    use super::{quadratic_raw, real_roots};
+    #[test]
+    fn dbg_inside() {
+        // Manually replicate quartic_raw normalization for the scaled input.
+        let (a, b, c, d, e) = (
+            -4.241766773367914f64,
+            0.0,
+            8.483533546735814,
+            0.0,
+            -4.241766773367914,
+        );
+        let (b, c, d, e) = (b / a, c / a, d / a, e / a);
+        eprintln!("norm b={b} c={c} d={d} e={e}");
+        let shift = -b / 4.0;
+        let p = c - 3.0 * b * b / 8.0;
+        let q = d - b * c / 2.0 + b * b * b / 8.0;
+        let r = e - b * d / 4.0 + b * b * c / 16.0 - 3.0 * b * b * b * b / 256.0;
+        eprintln!("shift={shift} p={p} q={q} r={r}");
+        eprintln!(
+            "biquad cond: {} <= {}",
+            q.abs(),
+            1e-7 * (1.0 + p.abs() + r.abs())
+        );
+        eprintln!("quad: {:?}", quadratic_raw(1.0, p, r, 1e-7));
+        let _ = real_roots;
     }
 }

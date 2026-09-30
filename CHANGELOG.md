@@ -9,6 +9,17 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-30
+
+### Added
+
+- Analytic conic-vs-quadric intersections: `intersect_plane/sphere/
+  cylinder/cone` on `Ellipse3D`, `Parabola3D`, and `Hyperbola3D`
+  (linear trigonometry, quartics in `tan(t/2)`/`t`/`e^t`, tangency
+  multiplicities, whole-curve coincidence, nappe filtering), sharing
+  `ConicSurfaceIntersection`. Cross-validated against the generic
+  solver. Python: per-type methods returning `(kind, payload)` tuples.
+
 ## [0.23.0] - 2026-09-30
 
 ### Added
@@ -272,7 +283,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.24.0
 [0.23.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.23.0
 [0.22.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.22.0
 [0.21.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.21.0

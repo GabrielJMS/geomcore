@@ -98,10 +98,10 @@ pub use intersect::intersect_curve_surface;
 pub use intersect::marching_intersection;
 pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
-    ConeConeIntersection, ConeCylinderIntersection, ConicSurfaceHit, CurveCurveExtremum,
-    CurveCurveHit, CurveSurfaceHit, CylinderCylinderIntersection, LineCircle2DIntersection,
-    LineCircle3DIntersection, LineLine2DIntersection, LineLine3DIntersection,
-    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    ConeConeIntersection, ConeCylinderIntersection, ConicSurfaceHit, ConicSurfaceIntersection,
+    CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit, CylinderCylinderIntersection,
+    LineCircle2DIntersection, LineCircle3DIntersection, LineLine2DIntersection,
+    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
     PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection,
     SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection,
     TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,

@@ -19,13 +19,14 @@ use geomcore::parametrize_numeric;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
-    ConeConeIntersection, ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D,
-    LineCircle2DIntersection, LineCircle3DIntersection, LineLine2DIntersection,
-    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
-    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
-    SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection, Tolerance,
-    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
-    TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D, Vector3D,
+    ConeConeIntersection, ConeCylinderIntersection, ConicSurfaceIntersection,
+    CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection, LineCircle3DIntersection,
+    LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
+    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
+    PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
+    SphereSphereIntersection, Tolerance, TorusConeIntersection, TorusCylinderIntersection,
+    TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D,
+    Vector3D,
 };
 use geomcore::{curve_curve_extrema, intersect_curve_curve};
 
@@ -1757,6 +1758,30 @@ fn circles_to_py(py: Python<'_>, c1: Circle3D, c2: Circle3D) -> PyResult<Py<PyAn
         .map(|o| o.into_any().unbind())
 }
 
+fn conic_surface_to_py(
+    py: Python<'_>,
+    hit: ConicSurfaceIntersection,
+) -> PyResult<(String, Py<PyAny>)> {
+    match hit {
+        ConicSurfaceIntersection::Hits(hits) => {
+            let mut out = Vec::with_capacity(hits.len());
+            for h in hits {
+                out.push((
+                    h.parameter,
+                    PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+                    h.multiplicity,
+                ));
+            }
+            Ok((
+                "hits".to_string(),
+                out.into_pyobject(py)?.into_any().unbind(),
+            ))
+        }
+        ConicSurfaceIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        ConicSurfaceIntersection::Empty => Ok(("empty".to_string(), py.None())),
+    }
+}
+
 fn quadric_hit_to_py(
     py: Python<'_>,
     hit: LineQuadricIntersection,
@@ -2421,6 +2446,63 @@ impl PyEllipse3D {
             .collect()
     }
 
+    /// Intersects this ellipse with a plane.
+    ///
+    /// Returns `("hits", [(t, Point3D, multiplicity)])`,
+    /// `("coincident", None)` or `("empty", None)`.
+    #[pyo3(signature = (plane, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        plane: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+    }
+
+    /// Intersects this ellipse with a sphere.
+    ///
+    /// Same return shape as ellipse-vs-plane.
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+    }
+
+    /// Intersects this ellipse with a cylinder.
+    ///
+    /// Same return shape as ellipse-vs-plane.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+    }
+
+    /// Intersects this ellipse with a cone.
+    ///
+    /// Same return shape as ellipse-vs-plane.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
+    }
+
     /// Not available for ellipses in this release; always raises `ValueError`.
     fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
@@ -2521,6 +2603,63 @@ impl PyParabola3D {
             .iter()
             .map(|p| (p.parameter, p.distance))
             .collect()
+    }
+
+    /// Intersects this parabola with a plane.
+    ///
+    /// Returns `("hits", [(t, Point3D, multiplicity)])`,
+    /// `("coincident", None)` or `("empty", None)`.
+    #[pyo3(signature = (plane, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        plane: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+    }
+
+    /// Intersects this parabola with a sphere.
+    ///
+    /// Same return shape as parabola-vs-plane.
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+    }
+
+    /// Intersects this parabola with a cylinder.
+    ///
+    /// Same return shape as parabola-vs-plane.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+    }
+
+    /// Intersects this parabola with a cone.
+    ///
+    /// Same return shape as parabola-vs-plane.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
     }
 
     /// Not available for parabolas in this release; always raises `ValueError`.
@@ -2650,6 +2789,63 @@ impl PyHyperbola3D {
             .iter()
             .map(|p| (p.parameter, p.distance))
             .collect()
+    }
+
+    /// Intersects this hyperbola with a plane.
+    ///
+    /// Returns `("hits", [(t, Point3D, multiplicity)])`,
+    /// `("coincident", None)` or `("empty", None)`.
+    #[pyo3(signature = (plane, tol = None))]
+    fn intersect_plane(
+        &self,
+        py: Python<'_>,
+        plane: &PyPlane,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+    }
+
+    /// Intersects this hyperbola with a sphere.
+    ///
+    /// Same return shape as hyperbola-vs-plane.
+    #[pyo3(signature = (sphere, tol = None))]
+    fn intersect_sphere(
+        &self,
+        py: Python<'_>,
+        sphere: &PySphere,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+    }
+
+    /// Intersects this hyperbola with a cylinder.
+    ///
+    /// Same return shape as hyperbola-vs-plane.
+    #[pyo3(signature = (cylinder, tol = None))]
+    fn intersect_cylinder(
+        &self,
+        py: Python<'_>,
+        cylinder: &PyCylinder,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+    }
+
+    /// Intersects this hyperbola with a cone.
+    ///
+    /// Same return shape as hyperbola-vs-plane.
+    #[pyo3(signature = (cone, tol = None))]
+    fn intersect_cone(
+        &self,
+        py: Python<'_>,
+        cone: &PyCone,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
     }
 
     /// Not available for hyperbolas in this release; always raises `ValueError`.

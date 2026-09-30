@@ -4,11 +4,14 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::intersect::{
+    ConicSurfaceIntersection, QuadraticSolution, solve_quadratic, verify_conic_hits,
+};
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Hyperbola3D`] cannot be constructed from the
@@ -410,6 +413,227 @@ impl Hyperbola3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// Plane coincident check: parallel normals and center in the plane.
+    fn plane_coincident(&self, plane: &Plane, tol: Tolerance) -> bool {
+        let n = plane.normal();
+        self.frame().z_direction().cross(n).magnitude() <= tol.angular
+            && plane.contains(self.center(), tol)
+    }
+
+    /// Positive `u = e^t` roots as parameters (filtering `u <= 0`).
+    fn params_from_u(&self, roots: Vec<crate::math::RealRoot>) -> Vec<(f64, u32)> {
+        roots
+            .into_iter()
+            .filter(|r| r.value > 0.0)
+            .map(|r| (r.value.ln(), r.multiplicity))
+            .collect()
+    }
+
+    /// Intersects this hyperbola with a plane: quadratic in `u = e^t`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{ConicSurfaceIntersection, Hyperbola3D, Plane, Point3D, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let plane = Plane::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match hyperbola.intersect_plane(&plane, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 1),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
+        if self.plane_coincident(plane, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
+        let n = plane.normal();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let e = (self.center() - plane.frame().origin()).dot(n);
+        // [(a*xn + b*yn)u^2 + 2e*u + (a*xn - b*yn)] / 2u = 0.
+        let aq = a * x.dot(n) + b * y.dot(n);
+        let bq = 2.0 * e;
+        let cq = a * x.dot(n) - b * y.dot(n);
+        let mut candidates = Vec::new();
+        match solve_quadratic(aq, bq, cq, tol) {
+            QuadraticSolution::Two(u1, u2) => {
+                for u in [u1, u2] {
+                    if u > 0.0 {
+                        candidates.push((u.ln(), 1));
+                    }
+                }
+            }
+            QuadraticSolution::One(u) => {
+                if u > 0.0 {
+                    candidates.push((u.ln(), 2));
+                }
+            }
+            QuadraticSolution::Linear(u) => {
+                if u > 0.0 {
+                    candidates.push((u.ln(), 1));
+                }
+            }
+            QuadraticSolution::Empty | QuadraticSolution::Degenerate => {}
+        }
+        let hits = verify_conic_hits(self, plane, candidates, tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this hyperbola with a sphere; hits verified on the
+    /// sphere. See [`Hyperbola3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{ConicSurfaceIntersection, Hyperbola3D, Point3D, Sphere, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match hyperbola.intersect_sphere(&sphere, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let w = self.center() - sphere.center();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = sphere.radius();
+        // |E - S|^2 - R^2, x4u^2 cleared: full quartic (see derivation in
+        // intersect_plane docs pattern above).
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let g4 = a * a + b * b;
+        let g3 = 4.0 * a * xw + 4.0 * b * yw;
+        let g2 = 2.0 * (a * a - b * b) + 4.0 * (ww - r * r);
+        let g1 = 4.0 * a * xw - 4.0 * b * yw;
+        let g0 = a * a + b * b;
+        let roots = real_roots(&[g0, g1, g2, g3, g4], tol.confusion);
+        let hits = verify_conic_hits(self, sphere, self.params_from_u(roots), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this hyperbola with a cylinder; hits verified on the
+    /// cylinder (single nappe is automatic here). See
+    /// [`Hyperbola3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{ConicSurfaceIntersection, Cylinder, Hyperbola3D, Point3D, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match hyperbola.intersect_cylinder(&cylinder, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> ConicSurfaceIntersection {
+        let (ra, rb) = (self.major_radius, self.minor_radius);
+        let ax = cylinder.axis().direction();
+        let w = self.center() - cylinder.axis().origin();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = cylinder.radius();
+        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let p = ra * xa + rb * ya;
+        let q = ra * xa - rb * ya;
+        // G(u) = F(u) - H(u): F from |E - C0|^2, H = (P*u^2 + 2*wa*u + Q)^2.
+        let f4 = ra * ra + rb * rb;
+        let f3 = 4.0 * ra * xw + 4.0 * rb * yw;
+        let f2 = 4.0 * ww + 2.0 * ra * ra - 2.0 * rb * rb - 4.0 * r * r;
+        let f1 = 4.0 * ra * xw - 4.0 * rb * yw;
+        let f0 = ra * ra + rb * rb;
+        let h4 = p * p;
+        let h3 = 4.0 * wa * p;
+        let h2 = 4.0 * wa * wa + 2.0 * p * q;
+        let h1 = 4.0 * wa * q;
+        let h0 = q * q;
+        let g = [f0 - h0, f1 - h1, f2 - h2, f3 - h3, f4 - h4];
+        let roots = real_roots(&g, tol.confusion);
+        let hits = verify_conic_hits(self, cylinder, self.params_from_u(roots), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this hyperbola with a cone; hits verified on the nappe.
+    /// See [`Hyperbola3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, ConicSurfaceIntersection, Frame3D, Hyperbola3D, Point3D, Tolerance, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match hyperbola.intersect_cone(&cone, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+        let (ra, rb) = (self.major_radius, self.minor_radius);
+        let ac = cone.frame().z_direction();
+        let cos_phi = cone.semi_angle().cos();
+        let c2 = cos_phi * cos_phi;
+        let v = self.center() - cone.apex();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let (xa, ya, va) = (x.dot(ac), y.dot(ac), v.dot(ac));
+        let (xv, yv) = (x.dot(v), y.dot(v));
+        let vv = v.dot(v);
+        let p2 = ra * xa + rb * ya;
+        let q2 = ra * xa - rb * ya;
+        // G(u) = (P2*u^2 + 2*va*u + Q2)^2 - c^2 * F(u).
+        let f4 = ra * ra + rb * rb;
+        let f3 = 4.0 * ra * xv + 4.0 * rb * yv;
+        let f2 = 4.0 * vv + 2.0 * ra * ra - 2.0 * rb * rb;
+        let f1 = 4.0 * ra * xv - 4.0 * rb * yv;
+        let f0 = ra * ra + rb * rb;
+        let h4 = p2 * p2;
+        let h3 = 4.0 * va * p2;
+        let h2 = 4.0 * va * va + 2.0 * p2 * q2;
+        let h1 = 4.0 * va * q2;
+        let h0 = q2 * q2;
+        let g = [
+            h4 - c2 * f4,
+            h3 - c2 * f3,
+            h2 - c2 * f2,
+            h1 - c2 * f1,
+            h0 - c2 * f0,
+        ];
+        // Ascending order for the solver.
+        let q = [g[4], g[3], g[2], g[1], g[0]];
+        let roots = real_roots(&q, tol.confusion);
+        let hits = verify_conic_hits(self, cone, self.params_from_u(roots), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
     /// Computes the exact 2D representation of this hyperbola in a surface's
     /// parameter space.
     ///
@@ -437,7 +661,10 @@ impl Hyperbola3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Frame3D, Hyperbola3D, HyperbolaConstructionError, Point3D, Tolerance, Vector3D};
+    use crate::{
+        Cone, ConicSurfaceIntersection, Frame3D, Hyperbola3D, HyperbolaConstructionError, Point3D,
+        Tolerance, Vector3D, intersect_curve_surface,
+    };
 
     // ---- construction ----
 
@@ -656,5 +883,71 @@ mod tests {
         }
         assert!(off.distance <= best);
         assert!(best - off.distance < 1e-3);
+    }
+
+    #[test]
+    fn test_hyperbola3d_intersect_cone_crosscheck() {
+        let tol = Tolerance::DEFAULT;
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        match h.intersect_cone(&cone, tol) {
+            ConicSurfaceIntersection::Hits(hits) => {
+                assert!(!hits.is_empty());
+                for h in &hits {
+                    assert!(cone.contains(h.point, tol));
+                }
+                let generic = intersect_curve_surface(&h, &cone, tol);
+                assert_eq!(generic.len(), hits.len());
+            }
+            _ => panic!("expected hits"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod dbg_hyp2 {
+    use super::*;
+    use crate::math::real_roots;
+    #[test]
+    fn dbg_roots() {
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        // Recompute the quartic exactly as intersect_cone does.
+        let (ra, rb) = (h.major_radius, h.minor_radius);
+        let ac = cone.frame().z_direction();
+        let cos_phi = cone.semi_angle().cos();
+        let c2 = cos_phi * cos_phi;
+        let v = h.center() - cone.apex();
+        let x = h.frame().x_direction();
+        let y = h.frame().y_direction();
+        let (xa, ya, va) = (x.dot(ac), y.dot(ac), v.dot(ac));
+        let (xv, yv) = (x.dot(v), y.dot(v));
+        let vv = v.dot(v);
+        let p2 = ra * xa + rb * ya;
+        let q2 = ra * xa - rb * ya;
+        let f4 = ra * ra + rb * rb;
+        let f3 = 4.0 * ra * xv + 4.0 * rb * yv;
+        let f2 = 4.0 * vv + 2.0 * ra * ra - 2.0 * rb * rb;
+        let f1 = 4.0 * ra * xv - 4.0 * rb * yv;
+        let f0 = ra * ra + rb * rb;
+        let h4 = p2 * p2;
+        let h3 = 4.0 * va * p2;
+        let h2 = 4.0 * va * va + 2.0 * p2 * q2;
+        let h1 = 4.0 * va * q2;
+        let h0 = q2 * q2;
+        let g = [
+            h4 - c2 * f4,
+            h3 - c2 * f3,
+            h2 - c2 * f2,
+            h1 - c2 * f1,
+            h0 - c2 * f0,
+        ];
+        eprintln!("g = {g:?}");
+        // NOTE: intersect_cone passes [g4..g0] scrambled — see below.
+        let roots = real_roots(&[g[4], g[3], g[2], g[1], g[0]], tol.confusion);
+        eprintln!("roots(scrambled) = {roots:?}");
+        let roots2 = real_roots(&[g[0], g[1], g[2], g[3], g[4]], tol.confusion);
+        eprintln!("roots(asc) = {roots2:?}");
     }
 }

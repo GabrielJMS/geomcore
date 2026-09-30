@@ -452,7 +452,9 @@ pub(crate) fn solve_trig_linear(
 
 /// Solve `A*cos2t + B*sin2t + C*cos t + D*sin t + E = 0` via `u = tan(t/2)`
 /// (quartic), returning `(parameter, multiplicity)` plus the always-added
-/// `t = PI` candidate (deduped). Callers filter by surface containment.
+/// `t = PI` candidate (deduped; reported with multiplicity 1 even when it
+/// is truly multiple — check tangency by root clustering instead).
+/// Callers filter by surface containment.
 pub(crate) fn solve_trig(
     a2: f64,
     b2: f64,
@@ -486,6 +488,48 @@ pub(crate) fn solve_trig(
     }
     deduped
 }
+
+/// Result of intersecting an ellipse, parabola, or hyperbola with a
+/// plane, sphere, cylinder, or cone: isolated hits, whole-curve
+/// coincidence (planar curves in coincident planes only), or nothing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConicSurfaceIntersection {
+    /// Isolated hits with multiplicity (≥ 2 marks tangency).
+    Hits(Vec<ConicSurfaceHit>),
+    /// The whole curve lies in the section plane.
+    Coincident,
+    /// No intersection.
+    Empty,
+}
+
+/// Keep trig/quartic candidates verified on the surface.
+pub(crate) fn verify_conic_hits<C, S>(
+    curve: &C,
+    surface: &S,
+    candidates: Vec<(f64, u32)>,
+    tol: Tolerance,
+) -> Vec<ConicSurfaceHit>
+where
+    C: ParametricCurve3D,
+    S: ParametricSurface,
+{
+    candidates
+        .into_iter()
+        .filter_map(|(t, multiplicity)| {
+            let p = curve.eval_point(t);
+            if surface.contains(p, tol) {
+                Some(ConicSurfaceHit {
+                    parameter: t,
+                    point: p,
+                    multiplicity,
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {
     /// Two distinct roots, ordered.
@@ -656,7 +700,7 @@ where
     A: ParametricCurve3D,
     B: ParametricCurve3D,
 {
-    let mut hits: Vec<CurveCurveHit> = curve_curve_extrema(a, b, tol)
+    let hits: Vec<CurveCurveHit> = curve_curve_extrema(a, b, tol)
         .into_iter()
         .filter(|e| e.distance <= tol.confusion)
         .map(|e| CurveCurveHit {
@@ -665,8 +709,19 @@ where
             second_param: e.second_param,
         })
         .collect();
-    hits.sort_by(|x, y| x.first_param.partial_cmp(&y.first_param).unwrap());
-    hits
+    // Contact-level dedupe (see intersect_curve_surface).
+    let merge_gap = tol.confusion.sqrt();
+    let mut merged: Vec<CurveCurveHit> = Vec::new();
+    for h in hits {
+        if merged
+            .iter()
+            .all(|m: &CurveCurveHit| m.point.distance(h.point) > merge_gap)
+        {
+            merged.push(h);
+        }
+    }
+    merged.sort_by(|x, y| x.first_param.partial_cmp(&y.first_param).unwrap());
+    merged
 }
 
 /// One transversal meeting of a curve and a surface.
@@ -741,10 +796,15 @@ where
         if let Some([rt, ru, rv]) = newton_3d(f, jac, [t, proj.u, proj.v], tol.confusion, 50) {
             let p = curve.eval_point(rt);
             let q = surface.eval_point(ru, rv);
+            // Contact-level dedupe (sqrt scale): near-tangent seeds reach
+            // distinct points of one grazing contact; transversal hits are
+            // far apart by comparison. Extrema (stationary points) keep
+            // tight dedupe elsewhere — distinct minima are real data.
+            let merge_gap = tol.confusion.sqrt();
             if p.distance(q) <= tol.confusion
                 && !hits
                     .iter()
-                    .any(|h: &CurveSurfaceHit| h.point.distance(p) <= tol.confusion)
+                    .any(|h: &CurveSurfaceHit| h.point.distance(p) <= merge_gap)
             {
                 hits.push(CurveSurfaceHit {
                     curve_param: rt,

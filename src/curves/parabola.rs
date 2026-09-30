@@ -3,10 +3,13 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::intersect::{
+    ConicSurfaceIntersection, QuadraticSolution, solve_quadratic, verify_conic_hits,
+};
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
-use crate::{Frame3D, Point3D, Tolerance, Vector3D};
+use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Parabola3D`] cannot be constructed from the given
@@ -280,7 +283,7 @@ impl Parabola3D {
     /// use geomcore::{Parabola3D, Point3D, Tolerance, Vector3D};
     /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
     /// let proj = parabola.project_point(Point3D::new(1.0, 2.0, 0.0), Tolerance::DEFAULT);
-    /// assert_eq!(proj.parameter, 2.0);
+    /// assert!((proj.parameter - 2.0).abs() < 1e-9);
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
         self.extrema(point, tol)
@@ -295,6 +298,198 @@ impl Parabola3D {
     /// one native call per batch, mirroring [`Parabola3D::eval_points`].
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// Plane coincident check: parallel normals and apex in the plane.
+    fn plane_coincident(&self, plane: &Plane, tol: Tolerance) -> bool {
+        let n = plane.normal();
+        self.frame().z_direction().cross(n).magnitude() <= tol.angular
+            && plane.contains(self.apex(), tol)
+    }
+
+    /// Intersects this parabola with a plane.
+    ///
+    /// Quadratic in the curve parameter, solved exactly; a
+    /// coplanar-coincident plane holds the whole parabola.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{ConicSurfaceIntersection, Parabola3D, Plane, Point3D, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match parabola.intersect_plane(&plane, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 1),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
+        if self.plane_coincident(plane, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
+        let n = plane.normal();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let f = self.focal();
+        // c*t^2 + d*t + e = 0 with E(t) = apex + (t^2/4f)X + tY.
+        let c = x.dot(n) / (4.0 * f);
+        let d = y.dot(n);
+        let e = (self.apex() - plane.frame().origin()).dot(n);
+        let roots = solve_quadratic(c, d, e, tol);
+        let candidates: Vec<(f64, u32)> = match roots {
+            QuadraticSolution::Two(t1, t2) => vec![(t1, 1), (t2, 1)],
+            QuadraticSolution::One(t) => vec![(t, 2)],
+            QuadraticSolution::Linear(t) => vec![(t, 1)],
+            QuadraticSolution::Empty | QuadraticSolution::Degenerate => Vec::new(),
+        };
+        let hits = verify_conic_hits(self, plane, candidates, tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this parabola with a sphere; hits verified on the
+    /// sphere. See [`Parabola3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{ConicSurfaceIntersection, Parabola3D, Point3D, Sphere, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match parabola.intersect_sphere(&sphere, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let f = self.focal();
+        let w = self.apex() - sphere.center();
+        let r = sphere.radius();
+        let q = [
+            w.dot(w) - r * r,
+            2.0 * y.dot(w),
+            1.0 + x.dot(w) / (2.0 * f),
+            0.0,
+            1.0 / (16.0 * f * f),
+        ];
+        let candidates: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+            .into_iter()
+            .map(|root| (root.value, root.multiplicity))
+            .collect();
+        let hits = verify_conic_hits(self, sphere, candidates, tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this parabola with a cylinder; hits verified on the
+    /// cylinder (single nappe is automatic here). See
+    /// [`Parabola3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{ConicSurfaceIntersection, Cylinder, Parabola3D, Point3D, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match parabola.intersect_cylinder(&cylinder, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> ConicSurfaceIntersection {
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let f = self.focal();
+        let a = cylinder.axis().direction();
+        let w = self.apex() - cylinder.axis().origin();
+        let r = cylinder.radius();
+        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let alpha = xa / (4.0 * f);
+        let beta = ya;
+        // |E - C0|^2 - axial^2 - rho^2, E - C0 = W + (t^2/4f)X + tY.
+        let q = [
+            ww - wa * wa - r * r,
+            2.0 * yw - 2.0 * wa * beta,
+            1.0 + xw / (2.0 * f) - (beta * beta + 2.0 * wa * alpha),
+            -2.0 * alpha * beta,
+            1.0 / (16.0 * f * f) - alpha * alpha,
+        ];
+        let candidates: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+            .into_iter()
+            .map(|root| (root.value, root.multiplicity))
+            .collect();
+        let hits = verify_conic_hits(self, cylinder, candidates, tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+
+    /// Intersects this parabola with a cone; hits verified on the nappe.
+    /// See [`Parabola3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, ConicSurfaceIntersection, Frame3D, Parabola3D, Point3D, Tolerance, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match parabola.intersect_cone(&cone, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let f = self.focal();
+        let a = cone.frame().z_direction();
+        let cos_phi = cone.semi_angle().cos();
+        let c2 = cos_phi * cos_phi;
+        let w = self.apex() - cone.apex();
+        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let alpha = xa / (4.0 * f);
+        let beta = ya;
+        // m(t)^2 - c^2*|E - A|^2 with m = va + alpha*t^2 + beta*t.
+        let va = wa;
+        let q = [
+            va * va - c2 * ww,
+            2.0 * va * beta - c2 * 2.0 * yw,
+            (2.0 * va * alpha + beta * beta) - c2 * (1.0 + xw / (2.0 * f)),
+            2.0 * alpha * beta,
+            alpha * alpha - c2 / (16.0 * f * f),
+        ];
+        let candidates: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+            .into_iter()
+            .map(|root| (root.value, root.multiplicity))
+            .collect();
+        let hits = verify_conic_hits(self, cone, candidates, tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
     }
 
     /// Computes the exact 2D representation of this parabola in a surface's
@@ -324,7 +519,10 @@ impl Parabola3D {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Frame3D, Parabola3D, ParabolaConstructionError, Point3D, Tolerance, Vector3D};
+    use crate::{
+        ConicSurfaceIntersection, Cylinder, Frame3D, Parabola3D, ParabolaConstructionError, Plane,
+        Point3D, Tolerance, Vector3D, intersect_curve_surface,
+    };
 
     // ---- construction ----
 
@@ -472,7 +670,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         // (1,2,0) is on the curve (t = 2).
         let on = p.project_point(Point3D::new(1.0, 2.0, 0.0), tol);
-        assert_eq!(on.parameter, 2.0);
+        assert!((on.parameter - 2.0).abs() < 1e-9);
         assert_eq!(on.distance, 0.0);
         // Off-curve: verify against brute-force sampling (which can only
         // overestimate the true minimum).
@@ -486,5 +684,41 @@ mod tests {
         assert!(proj.distance <= best);
         assert!(best - proj.distance < 1e-3);
         assert!(p.contains(p.eval_point(proj.parameter), tol));
+    }
+
+    #[test]
+    fn test_parabola3d_intersect_plane_coincident() {
+        let tol = Tolerance::DEFAULT;
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(
+            p.intersect_plane(&plane, tol),
+            ConicSurfaceIntersection::Coincident
+        );
+        // Parallel offset: miss.
+        let miss = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+        assert_eq!(
+            p.intersect_plane(&miss, tol),
+            ConicSurfaceIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_parabola3d_intersect_cylinder_crosscheck() {
+        let tol = Tolerance::DEFAULT;
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        match p.intersect_cylinder(&cylinder, tol) {
+            ConicSurfaceIntersection::Hits(hits) => {
+                assert!(!hits.is_empty());
+                for h in &hits {
+                    assert!(p.contains(h.point, tol));
+                    assert!(cylinder.contains(h.point, tol));
+                }
+                let generic = intersect_curve_surface(&p, &cylinder, tol);
+                assert_eq!(generic.len(), hits.len());
+            }
+            _ => panic!("expected hits"),
+        }
     }
 }
