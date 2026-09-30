@@ -33,6 +33,16 @@ fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
+fn parse_parametrization(s: &str) -> PyResult<InterpParametrization> {
+    match s {
+        "chordal" => Ok(InterpParametrization::Chordal),
+        "centripetal" => Ok(InterpParametrization::Centripetal),
+        _ => Err(PyValueError::new_err(
+            "parametrization must be 'chordal' or 'centripetal'",
+        )),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Root value types
 // ---------------------------------------------------------------------------
@@ -2586,18 +2596,28 @@ impl PyBSplineCurve3D {
     #[staticmethod]
     #[pyo3(signature = (points, degree, parametrization = "centripetal"))]
     fn interpolate(points: Vec<PyPoint3D>, degree: usize, parametrization: &str) -> PyResult<Self> {
-        let param = match parametrization {
-            "chordal" => InterpParametrization::Chordal,
-            "centripetal" => InterpParametrization::Centripetal,
-            _ => {
-                return Err(PyValueError::new_err(
-                    "parametrization must be 'chordal' or 'centripetal'",
-                ));
-            }
-        };
+        let param = parse_parametrization(parametrization)?;
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         Ok(PyBSplineCurve3D(
             BSplineCurve3D::interpolate(&points, degree, param).map_err(val_err)?,
+        ))
+    }
+
+    /// Least-squares B-spline fit through `points` with `num_poles` poles.
+    ///
+    /// `parametrization` is `"centripetal"` (default) or `"chordal"`.
+    #[staticmethod]
+    #[pyo3(signature = (points, degree, num_poles, parametrization = "centripetal"))]
+    fn approximate(
+        points: Vec<PyPoint3D>,
+        degree: usize,
+        num_poles: usize,
+        parametrization: &str,
+    ) -> PyResult<Self> {
+        let param = parse_parametrization(parametrization)?;
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        Ok(PyBSplineCurve3D(
+            BSplineCurve3D::approximate(&points, degree, num_poles, param).map_err(val_err)?,
         ))
     }
 

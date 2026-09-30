@@ -410,6 +410,16 @@ def test_interpolate_curve():
         BSplineCurve3D.interpolate([Point3D.origin()], 1)
 
 
+def test_approximate_curve():
+    import math
+
+    pts = [Point3D(2.0 * math.cos(i / 12 * math.tau), 2.0 * math.sin(i / 12 * math.tau), 0.0) for i in range(12)]
+    curve = BSplineCurve3D.approximate(pts, 3, 7)
+    assert curve.degree() == 3
+    with pytest.raises(ValueError):
+        BSplineCurve3D.approximate(pts, 3, 20)
+
+
 def test_intersect_curve_surface():
     from geomcore import intersect_curve_surface
     from geomcore.curves import Line3D

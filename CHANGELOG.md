@@ -9,6 +9,15 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-30
+
+### Added
+
+- B-spline least-squares approximation: `BSplineCurve3D::approximate`
+  (uniform interior knots, normal equations by band LU with an explicit
+  support guard). Python: `BSplineCurve3D.approximate(points, degree,
+  num_poles)`.
+
 ## [0.21.0] - 2026-09-30
 
 ### Added
@@ -250,7 +259,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.22.0
 [0.21.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.21.0
 [0.20.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.20.0
 [0.19.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.19.0
