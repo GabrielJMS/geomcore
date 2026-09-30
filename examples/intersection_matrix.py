@@ -47,6 +47,8 @@ WINDOWS = {
 
 SURFACE_COLORS = ("#4d94ff", "#35c163")
 CURVE_COLOR = "#ff5533"
+# Translucent surfaces so intersection curves inside stay visible.
+SURFACE_OPACITY = 0.45
 
 # Layout: cells are CELL_STEP apart; surfaces span about +-6 locally.
 CELL_STEP = 18.0
@@ -365,14 +367,14 @@ def main() -> int:
             verts, idx = sample_surface(s1, k1)
             viewer.add_surface(
                 f"{tag}_s1", shift(verts, (ox, oy, 0.0)), idx,
-                color=SURFACE_COLORS[0], name=f"{tag} {k1}#1",
+                color=SURFACE_COLORS[0], name=f"{tag} {k1}#1", opacity=SURFACE_OPACITY,
             )
             if second is not None:
                 (s2, k2) = second
                 verts, idx = sample_surface(s2, k2)
                 viewer.add_surface(
                     f"{tag}_s2", shift(verts, (ox, oy, 0.0)), idx,
-                    color=SURFACE_COLORS[1], name=f"{tag} {k2}#2",
+                    color=SURFACE_COLORS[1], name=f"{tag} {k2}#2", opacity=SURFACE_OPACITY,
                 )
             if curve_info is not None:
                 pts, label = curve_info
