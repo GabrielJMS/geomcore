@@ -9,6 +9,8 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-30
+
 ### Added
 
 - Analytic line/circle-vs-conic intersections: `intersect_ellipse/
@@ -294,7 +296,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.25.0
 [0.24.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.24.0
 [0.23.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.23.0
 [0.22.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.22.0
