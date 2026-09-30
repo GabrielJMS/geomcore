@@ -10,8 +10,10 @@ use std::fmt;
 
 use crate::curve_math::bspline as math;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::math::gauss_newton_1d;
+use crate::projection::CurveProjection;
 use crate::surfaces::Surface;
-use crate::{Point3D, Vector3D};
+use crate::{Point3D, Tolerance, Vector3D};
 
 /// Error returned when a [`BSplineCurve3D`] cannot be constructed from the
 /// given degree, poles, knots, multiplicities, and (for rational curves)
@@ -431,6 +433,140 @@ impl BSplineCurve3D {
         Err(ParametrizeError::NotAnalytic)
     }
 
+    /// Returns whether `point` lies on the curve: the curve is projected
+    /// with [`BSplineCurve3D::project_point`] and the point counts as
+    /// contained when the projected distance is within `tol.confusion`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Tolerance};
+    /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// assert!(curve.contains(Point3D::new(1.0, 0.0, 0.0), tol));
+    /// assert!(!curve.contains(Point3D::new(1.0, 1.0, 0.0), tol));
+    /// ```
+    pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        self.project_point(point, tol).distance <= tol.confusion
+    }
+
+    /// All stationary points of the distance from `point` to the curve,
+    /// ordered by ascending distance.
+    ///
+    /// Dense uniform seeds over [`BSplineCurve3D::bounds`] are refined
+    /// with Gauss-Newton on `(C(t) - P).C'(t) = 0` (first derivatives
+    /// only); distinct seeds converging to the same point merge, and the
+    /// interval ends join as candidates on open curves. The first entry
+    /// is the global closest point (see [`BSplineCurve3D::project_point`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Tolerance};
+    /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// let extrema = curve.extrema(Point3D::new(1.0, 1.0, 0.0), Tolerance::DEFAULT);
+    /// assert!(!extrema.is_empty());
+    /// assert_eq!(extrema[0].distance, 1.0);
+    /// ```
+    pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        use crate::projection::snap_distance;
+        let (first, last) = self.bounds();
+        let clamp = |t: f64| {
+            if self.is_periodic() {
+                t
+            } else {
+                t.clamp(first, last)
+            }
+        };
+        // Dense seeds; keep only well-separated ones for refinement.
+        const SEEDS: usize = 64;
+        const KEEP: usize = 8;
+        let mut samples: Vec<(f64, f64)> = (0..SEEDS)
+            .map(|i| {
+                let u = first + (last - first) * i as f64 / (SEEDS - 1) as f64;
+                (u, self.eval_point(u).distance(point))
+            })
+            .collect();
+        samples.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let mut params: Vec<f64> = Vec::new();
+        for (u, _) in samples.into_iter().take(KEEP) {
+            let p = self.eval_point(u);
+            if params
+                .iter()
+                .any(|&t| self.eval_point(t).distance(p) <= tol.confusion)
+            {
+                continue;
+            }
+            let residual = |t: f64| {
+                let q = self.eval_point(clamp(t)) - point;
+                [q.x, q.y, q.z]
+            };
+            let jacobian = |t: f64| {
+                let v = self.eval_derivative(clamp(t), 1);
+                [v.x, v.y, v.z]
+            };
+            if let Some(t) = gauss_newton_1d(residual, jacobian, u, tol.confusion, 50) {
+                params.push(clamp(t));
+            }
+        }
+        // Interval ends are candidates on open curves; the best raw sample
+        // guarantees a non-empty answer when nothing converges.
+        if !self.is_periodic() {
+            params.push(first);
+            params.push(last);
+        }
+        if params.is_empty() {
+            params.push(first);
+        }
+        let mut out: Vec<CurveProjection> = Vec::new();
+        for t in params {
+            let p = self.eval_point(t);
+            if out.iter().any(|e: &CurveProjection| {
+                self.eval_point(e.parameter).distance(p) <= tol.confusion
+            }) {
+                continue;
+            }
+            let distance = p.distance(point);
+            out.push(CurveProjection {
+                parameter: t,
+                distance: snap_distance(distance, tol.confusion),
+            });
+        }
+        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out
+    }
+
+    /// Projects `point` onto the curve: the nearest of
+    /// [`BSplineCurve3D::extrema`]. Distances within `tol.confusion` snap
+    /// to `0.0`, matching [`BSplineCurve3D::contains`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Tolerance};
+    /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// let proj = curve.project_point(Point3D::new(1.0, 1.0, 0.0), Tolerance::DEFAULT);
+    /// assert!((proj.parameter - 0.5).abs() < 1e-9);
+    /// assert_eq!(proj.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        self.extrema(point, tol)
+            .into_iter()
+            .next()
+            .expect("seeding guarantees a non-empty candidate list")
+    }
+
+    /// Projects each point in `points` onto the curve.
+    ///
+    /// Default-style batch wrapper over [`BSplineCurve3D::project_point`]:
+    /// one native call per batch, mirroring [`BSplineCurve3D::eval_points`].
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
     /// Evaluates the value and derivatives up to `n` (`n <= 2`) at `u`,
     /// returning Euclidean coordinates as `[f, f', f'']` flattened (9
     /// values, trailing ones zero if `n < 2`).
@@ -693,5 +829,57 @@ mod tests {
         let knots = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let mults = vec![1; 7];
         BSplineCurve3D::new(3, poles, knots, mults, true).unwrap()
+    }
+
+    fn degree_one_segment() -> BSplineCurve3D {
+        let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+        BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap()
+    }
+
+    #[test]
+    fn test_bspline_project_point_segment() {
+        let curve = degree_one_segment();
+        let tol = Tolerance::DEFAULT;
+        // Interior foot.
+        let proj = curve.project_point(Point3D::new(1.0, 1.0, 0.0), tol);
+        assert!((proj.parameter - 0.5).abs() < 1e-9);
+        assert!((proj.distance - 1.0).abs() < 1e-9);
+        // Beyond the end: the endpoint wins.
+        let end = curve.project_point(Point3D::new(5.0, 0.0, 0.0), tol);
+        assert!((end.parameter - 1.0).abs() < 1e-9);
+        assert!((end.distance - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_bspline_contains_segment() {
+        let curve = degree_one_segment();
+        let tol = Tolerance::DEFAULT;
+        assert!(curve.contains(Point3D::new(1.0, 0.0, 0.0), tol));
+        assert!(curve.contains(curve.eval_point(0.25), tol));
+        assert!(!curve.contains(Point3D::new(1.0, 1.0, 0.0), tol));
+        assert!(!curve.contains(Point3D::new(3.0, 0.0, 0.0), tol));
+    }
+
+    #[test]
+    fn test_bspline_project_point_periodic_ring() {
+        let curve = periodic_ring_curve();
+        let tol = Tolerance::DEFAULT;
+        // On-curve point projects to (near-)zero distance.
+        let on = curve.eval_point(2.5);
+        assert_eq!(curve.project_point(on, tol).distance, 0.0);
+        assert!(curve.contains(on, tol));
+        // Off-curve: beat against dense brute-force sampling.
+        let query = Point3D::new(0.5, 1.0, 2.0);
+        let proj = curve.project_point(query, tol);
+        let (first, last) = curve.bounds();
+        let mut best = f64::INFINITY;
+        for i in 0..=2000 {
+            let d = curve
+                .eval_point(first + (last - first) * i as f64 / 2000.0)
+                .distance(query);
+            best = best.min(d);
+        }
+        assert!(proj.distance <= best);
+        assert!(best - proj.distance < 1e-3);
     }
 }

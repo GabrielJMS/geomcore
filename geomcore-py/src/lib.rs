@@ -2292,6 +2292,48 @@ impl PyBSplineCurve3D {
         self.0.bounds()
     }
 
+    /// Returns whether `point` lies on the curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// All stationary points of the distance from `point` to the curve,
+    /// as `(parameter, distance)` tuples ordered by ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .extrema(point.0, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
+    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
     /// Evaluate the point at parameter `u`.
     fn eval_point(&self, u: f64) -> PyPoint3D {
         PyPoint3D(self.0.eval_point(u))

@@ -400,6 +400,28 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
 
 
+def test_bspline_curve_projection():
+    curve = BSplineCurve3D(
+        1,
+        [Point3D(0.0, 0.0, 0.0), Point3D(2.0, 0.0, 0.0)],
+        [0.0, 1.0],
+        [2, 2],
+        False,
+    )
+    u, dist = curve.project_point(Point3D(1.0, 1.0, 0.0))
+    assert u == pytest.approx(0.5)
+    assert dist == pytest.approx(1.0)
+    assert curve.contains(Point3D(1.0, 0.0, 0.0))
+    assert not curve.contains(Point3D(1.0, 1.0, 0.0))
+    # Beyond the end: the endpoint wins.
+    u, dist = curve.project_point(Point3D(5.0, 0.0, 0.0))
+    assert u == pytest.approx(1.0)
+    assert dist == pytest.approx(3.0)
+    ext = curve.extrema(Point3D(1.0, 1.0, 0.0))
+    assert len(ext) >= 1
+    assert ext[0][1] == pytest.approx(1.0)
+
+
 def test_conic_extrema_and_projection():
     from geomcore.curves import Ellipse3D, Hyperbola3D, Parabola3D
 

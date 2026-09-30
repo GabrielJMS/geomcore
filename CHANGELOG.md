@@ -9,6 +9,16 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-30
+
+### Added
+
+- Point projection, extrema, and containment on `BSplineCurve3D`:
+  dense seeds refined by Gauss-Newton (first derivatives only),
+  endpoint candidates on open curves, batch variants. Python returns
+  `(parameter, distance)` tuples. Curve containment is now complete
+  across every curve type.
+
 ## [0.12.0] - 2026-09-30
 
 ### Added
@@ -159,7 +169,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.13.0
 [0.12.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.12.0
 [0.11.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.11.0
 [0.10.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.10.0
