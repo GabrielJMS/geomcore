@@ -5,12 +5,15 @@ use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::intersect::{
+    LineCircle2DIntersection, LineLine2DIntersection, LineLine3DIntersection,
     LinePlaneIntersection, LineQuadricIntersection, QuadraticSolution, solve_quadratic,
 };
+use crate::math::solve_2x2;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{
-    Axis2D, Axis3D, Cone, Cylinder, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
+    Axis2D, Axis3D, Circle2D, Cone, Cylinder, Plane, Point2D, Point3D, Sphere, Tolerance, Vector2D,
+    Vector3D,
 };
 use std::fmt;
 
@@ -503,6 +506,54 @@ impl Line3D {
     pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
         parametrize::line_on_surface(self, &surface.into())
     }
+
+    /// Intersects this line with another 3D line.
+    ///
+    /// Skew lines report both parameters and their distance (the classic
+    /// `sc = (b*e - d)/(1 - b^2)` solution); parallel lines report their
+    /// distance or coincidence. Transversal hits carry both parameters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, LineLine3DIntersection, Point3D, Tolerance, Vector3D};
+    /// let l1 = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let l2 = Line3D::new(Point3D::ORIGIN, Vector3D::Y).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match l1.intersect_line(&l2, tol) {
+    ///     LineLine3DIntersection::Point(s, p, t) => {
+    ///         assert_eq!((s, t), (0.0, 0.0));
+    ///         assert_eq!(p, Point3D::ORIGIN);
+    ///     }
+    ///     _ => panic!("expected a point"),
+    /// }
+    /// ```
+    pub fn intersect_line(&self, other: &Line3D, tol: Tolerance) -> LineLine3DIntersection {
+        let (d1, d2) = (self.direction(), other.direction());
+        let w0 = self.origin() - other.origin();
+        let b = d1.dot(d2);
+        let denom = 1.0 - b * b;
+        if denom.abs() <= tol.angular {
+            // Parallel: distance from other's origin to self, or coincident.
+            if other.contains(self.origin(), tol) {
+                LineLine3DIntersection::Coincident
+            } else {
+                LineLine3DIntersection::Parallel(self.project_point(other.origin(), tol).distance)
+            }
+        } else {
+            let d = d1.dot(w0);
+            let e = d2.dot(w0);
+            let s = (b * e - d) / denom;
+            let t = (e - b * d) / denom;
+            let (p1, p2) = (self.eval_point(s), other.eval_point(t));
+            let distance = p1.distance(p2);
+            if distance <= tol.confusion {
+                LineLine3DIntersection::Point(s, p1, t)
+            } else {
+                LineLine3DIntersection::Skew { s, t, distance }
+            }
+        }
+    }
 }
 
 /// An infinite line in 2D: an origin point and a unit direction, evaluated
@@ -735,14 +786,88 @@ impl Line2D {
     pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// Intersects this line with another 2D line.
+    ///
+    /// The 2x2 system solves both parameters at once; singularity (against
+    /// `tol.angular`) falls back to a coincidence check.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line2D, LineLine2DIntersection, Point2D, Tolerance, Vector2D};
+    /// let l1 = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let l2 = Line2D::new(Point2D::ORIGIN, Vector2D::Y).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match l1.intersect_line(&l2, tol) {
+    ///     LineLine2DIntersection::Point(s, p, t) => {
+    ///         assert_eq!((s, t), (0.0, 0.0));
+    ///         assert_eq!(p, Point2D::ORIGIN);
+    ///     }
+    ///     _ => panic!("expected a point"),
+    /// }
+    /// ```
+    pub fn intersect_line(&self, other: &Line2D, tol: Tolerance) -> LineLine2DIntersection {
+        let (d1, d2) = (self.direction(), other.direction());
+        let w = other.origin() - self.origin();
+        let lhs = [[d1.x, -d2.x], [d1.y, -d2.y]];
+        match solve_2x2(lhs, [w.x, w.y], tol.angular) {
+            Some([s, t]) => LineLine2DIntersection::Point(s, self.eval_point(s), t),
+            None => {
+                if other.contains(self.origin(), tol) {
+                    LineLine2DIntersection::Coincident
+                } else {
+                    LineLine2DIntersection::Parallel
+                }
+            }
+        }
+    }
+
+    /// Intersects this line with a 2D circle.
+    ///
+    /// Substituting the unit-speed parametrization into
+    /// `|X - C|^2 = r^2` gives a quadratic with leading coefficient
+    /// exactly 1, classified with [`solve_quadratic`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle2D, Line2D, LineCircle2DIntersection, Point2D, Tolerance, Vector2D};
+    /// let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_circle(&circle, tol) {
+    ///     LineCircle2DIntersection::Points((t1, _), (t2, _)) => {
+    ///         assert_eq!((t1, t2), (-2.0, 2.0));
+    ///     }
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_circle(&self, circle: &Circle2D, tol: Tolerance) -> LineCircle2DIntersection {
+        let d = self.direction();
+        let w = self.origin() - circle.center();
+        // A is exactly 1: the direction is unit by construction.
+        match solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - circle.radius().powi(2), tol) {
+            QuadraticSolution::Two(t1, t2) => LineCircle2DIntersection::Points(
+                (t1, self.eval_point(t1)),
+                (t2, self.eval_point(t2)),
+            ),
+            QuadraticSolution::One(t) => LineCircle2DIntersection::Tangent(t, self.eval_point(t)),
+            QuadraticSolution::Empty => LineCircle2DIntersection::Empty,
+            QuadraticSolution::Linear(_) | QuadraticSolution::Degenerate => {
+                unreachable!("unit direction gives a leading coefficient of 1")
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        Axis2D, Axis3D, Cone, Cylinder, Frame3D, Line2D, Line3D, LineConstructionError,
-        LinePlaneIntersection, LineQuadricIntersection, Plane, Point2D, Point3D, Sphere, Tolerance,
-        Vector2D, Vector3D,
+        Axis2D, Axis3D, Circle2D, Cone, Cylinder, Frame3D, Line2D, Line3D,
+        LineCircle2DIntersection, LineConstructionError, LineLine2DIntersection,
+        LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, Plane, Point2D,
+        Point3D, Sphere, Tolerance, Vector2D, Vector3D,
     };
 
     // ---- Line3D construction ----
@@ -1152,5 +1277,93 @@ mod tests {
             }
             _ => panic!("expected one point"),
         }
+    }
+
+    #[test]
+    fn test_line3d_intersect_line() {
+        let tol = Tolerance::DEFAULT;
+        let l1 = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let l2 = Line3D::new(Point3D::ORIGIN, Vector3D::Y).unwrap();
+        match l1.intersect_line(&l2, tol) {
+            LineLine3DIntersection::Point(s, p, t) => {
+                assert_eq!((s, t), (0.0, 0.0));
+                assert_eq!(p, Point3D::ORIGIN);
+            }
+            _ => panic!("expected a point"),
+        }
+        // Skew: x-axis against a z-shifted y-line.
+        let skew = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Y).unwrap();
+        match l1.intersect_line(&skew, tol) {
+            LineLine3DIntersection::Skew { s, t, distance } => {
+                assert_eq!((s, t), (0.0, 0.0));
+                assert_eq!(distance, 1.0);
+            }
+            _ => panic!("expected skew"),
+        }
+        // Parallel distinct.
+        let parallel = Line3D::new(Point3D::new(0.0, 1.0, 0.0), Vector3D::X).unwrap();
+        match l1.intersect_line(&parallel, tol) {
+            LineLine3DIntersection::Parallel(d) => assert_eq!(d, 1.0),
+            _ => panic!("expected parallel"),
+        }
+        // Coincident.
+        let same = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::X).unwrap();
+        assert_eq!(
+            l1.intersect_line(&same, tol),
+            LineLine3DIntersection::Coincident
+        );
+    }
+
+    #[test]
+    fn test_line2d_intersect_line() {
+        let tol = Tolerance::DEFAULT;
+        let l1 = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+        let l2 = Line2D::new(Point2D::ORIGIN, Vector2D::Y).unwrap();
+        match l1.intersect_line(&l2, tol) {
+            LineLine2DIntersection::Point(s, p, t) => {
+                assert_eq!((s, t), (0.0, 0.0));
+                assert_eq!(p, Point2D::ORIGIN);
+            }
+            _ => panic!("expected a point"),
+        }
+        let parallel = Line2D::new(Point2D::new(0.0, 1.0), Vector2D::X).unwrap();
+        assert_eq!(
+            l1.intersect_line(&parallel, tol),
+            LineLine2DIntersection::Parallel
+        );
+        assert_eq!(
+            l1.intersect_line(&l1, tol),
+            LineLine2DIntersection::Coincident
+        );
+    }
+
+    #[test]
+    fn test_line2d_intersect_circle() {
+        let tol = Tolerance::DEFAULT;
+        let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+        let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+        match line.intersect_circle(&circle, tol) {
+            LineCircle2DIntersection::Points((t1, p1), (t2, p2)) => {
+                assert_eq!((t1, t2), (-2.0, 2.0));
+                assert_eq!(p1, Point2D::new(-2.0, 0.0));
+                assert_eq!(p2, Point2D::new(2.0, 0.0));
+            }
+            _ => panic!("expected two points"),
+        }
+        // Tangent at the top.
+        let tangent = Line2D::new(Point2D::new(0.0, 2.0), Vector2D::X).unwrap();
+        match tangent.intersect_circle(&circle, tol) {
+            LineCircle2DIntersection::Tangent(t, p) => {
+                assert_eq!(t, 0.0);
+                assert_eq!(p, Point2D::new(0.0, 2.0));
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // Clear miss.
+        let miss = Line2D::new(Point2D::new(0.0, 3.0), Vector2D::X).unwrap();
+        assert_eq!(
+            miss.intersect_circle(&circle, tol),
+            LineCircle2DIntersection::Empty
+        );
     }
 }

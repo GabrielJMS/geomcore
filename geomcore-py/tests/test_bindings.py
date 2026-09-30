@@ -5,7 +5,7 @@ import math
 import pytest
 
 import geomcore
-from geomcore import Axis3D, Frame3D, Point3D, Tolerance, Transform, Vector3D
+from geomcore import Axis3D, Frame3D, Point2D, Point3D, Tolerance, Transform, Vector2D, Vector3D
 from geomcore.curves import BSplineCurve3D, Circle3D, Line2D
 from geomcore.surfaces import Cylinder, Sphere
 
@@ -398,6 +398,34 @@ def test_intersect_torus_symmetric():
     assert torus.intersect_torus(torus)[0] == "coincident"
     tilted = Torus(Point3D.origin(), Vector3D.x(), 4.0, 1.0)
     assert torus.intersect_torus(tilted) == ("not_analytic", None)
+
+
+def test_intersect_curves_2d_and_lines():
+    from geomcore.curves import Circle2D, Line2D, Line3D
+
+    l1 = Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0))
+    l2 = Line2D(Point2D(0.0, 0.0), Vector2D(0.0, 1.0))
+    kind, (s, p, t) = l1.intersect_line(l2)
+    assert kind == "point"
+    assert (s, t) == pytest.approx((0.0, 0.0))
+
+    circle = Circle2D(Point2D(0.0, 0.0), 2.0)
+    kind, ((t1, _), (t2, _)) = l1.intersect_circle(circle)
+    assert kind == "points"
+    assert (t1, t2) == pytest.approx((-2.0, 2.0))
+
+    kind, (p1, p2) = circle.intersect_circle(Circle2D(Point2D(3.0, 0.0), 2.0))
+    assert kind == "points"
+    assert p1.x == pytest.approx(1.5)
+
+    a = Line3D(Point3D.origin(), Vector3D.x())
+    b = Line3D(Point3D.origin(), Vector3D.y())
+    kind, (_, p, _) = a.intersect_line(b)
+    assert kind == "point"
+    assert (p.x, p.y, p.z) == pytest.approx((0.0, 0.0, 0.0))
+    kind, payload = a.intersect_line(Line3D(Point3D(0.0, 0.0, 1.0), Vector3D.y()))
+    assert kind == "skew"
+    assert payload[2] == pytest.approx(1.0)
 
 
 def _bilinear_patch():

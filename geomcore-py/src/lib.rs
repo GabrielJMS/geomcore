@@ -14,8 +14,9 @@ use geomcore::curves::{
 };
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, ConeConeIntersection, ConeCylinderIntersection, CylinderCylinderIntersection, Frame3D,
-    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
+    Axis3D, CircleCircle2DIntersection, ConeConeIntersection, ConeCylinderIntersection,
+    CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection, LineLine2DIntersection,
+    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
     PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
     SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection, Tolerance,
     TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
@@ -1627,6 +1628,12 @@ fn quadric_hit_to_py(
     }
 }
 
+fn point2(py: Python<'_>, t: f64, p: Point2D) -> PyResult<Py<PyAny>> {
+    (t, PyPoint2D(p).into_pyobject(py)?.into_any().unbind())
+        .into_pyobject(py)
+        .map(|o| o.into_any().unbind())
+}
+
 // ---------------------------------------------------------------------------
 // Curves
 // ---------------------------------------------------------------------------
@@ -1792,6 +1799,39 @@ impl PyLine3D {
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
         quadric_hit_to_py(py, self.0.intersect_cone(&cone.0, tol))
+    }
+
+    /// Intersects this line with another 3D line.
+    ///
+    /// Returns `("point", (s, Point3D, t))`,
+    /// `("parallel", distance)`, `("coincident", None)` or
+    /// `("skew", (s, t, distance))`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_line(
+        &self,
+        py: Python<'_>,
+        other: &PyLine3D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_line(&other.0, tol) {
+            LineLine3DIntersection::Point(s, p, t) => Ok((
+                "point".to_string(),
+                (s, PyPoint3D(p).into_pyobject(py)?.into_any().unbind(), t)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            LineLine3DIntersection::Parallel(d) => Ok((
+                "parallel".to_string(),
+                d.into_pyobject(py)?.into_any().unbind(),
+            )),
+            LineLine3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+            LineLine3DIntersection::Skew { s, t, distance } => Ok((
+                "skew".to_string(),
+                (s, t, distance).into_pyobject(py)?.into_any().unbind(),
+            )),
+        }
     }
 
     /// Compute this line's 2D representation in a surface's (u, v) space.
@@ -2477,6 +2517,58 @@ impl PyLine2D {
             .collect()
     }
 
+    /// Intersects this line with another 2D line.
+    ///
+    /// Returns `("point", (s, Point2D, t))`, `("parallel", None)` or
+    /// `("coincident", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_line(
+        &self,
+        py: Python<'_>,
+        other: &PyLine2D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_line(&other.0, tol) {
+            LineLine2DIntersection::Point(s, p, t) => Ok((
+                "point".to_string(),
+                (s, PyPoint2D(p).into_pyobject(py)?.into_any().unbind(), t)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            LineLine2DIntersection::Parallel => Ok(("parallel".to_string(), py.None())),
+            LineLine2DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        }
+    }
+
+    /// Intersects this line with a 2D circle.
+    ///
+    /// Returns `("points", ((t1, Point2D), (t2, Point2D)))`,
+    /// `("tangent", (t, Point2D))` or `("empty", None)`.
+    #[pyo3(signature = (circle, tol = None))]
+    fn intersect_circle(
+        &self,
+        py: Python<'_>,
+        circle: &PyCircle2D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_circle(&circle.0, tol) {
+            LineCircle2DIntersection::Points((t1, p1), (t2, p2)) => Ok((
+                "points".to_string(),
+                (point2(py, t1, p1)?, point2(py, t2, p2)?)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            LineCircle2DIntersection::Tangent(t, p) => {
+                Ok(("tangent".to_string(), point2(py, t, p)?))
+            }
+            LineCircle2DIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        }
+    }
+
     fn __repr__(&self) -> String {
         let o = self.0.origin();
         let d = self.0.direction();
@@ -2560,6 +2652,39 @@ impl PyCircle2D {
             .iter()
             .map(|p| (p.parameter, p.distance))
             .collect()
+    }
+
+    /// Intersects this circle with another 2D circle.
+    ///
+    /// Returns `("points", (Point2D, Point2D))`,
+    /// `("tangent", Point2D)`, `("empty", None)` or
+    /// `("coincident", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_circle(
+        &self,
+        py: Python<'_>,
+        other: &PyCircle2D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        match self.0.intersect_circle(&other.0, tol) {
+            CircleCircle2DIntersection::Points(p1, p2) => Ok((
+                "points".to_string(),
+                (
+                    PyPoint2D(p1).into_pyobject(py)?.into_any().unbind(),
+                    PyPoint2D(p2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
+            )),
+            CircleCircle2DIntersection::Tangent(p) => Ok((
+                "tangent".to_string(),
+                PyPoint2D(p).into_pyobject(py)?.into_any().unbind(),
+            )),
+            CircleCircle2DIntersection::Empty => Ok(("empty".to_string(), py.None())),
+            CircleCircle2DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        }
     }
 
     fn __repr__(&self) -> String {

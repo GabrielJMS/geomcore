@@ -8,7 +8,10 @@ use crate::curves::parametrize::{self, ParametrizeError};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Axis3D, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D};
+use crate::{
+    Axis3D, CircleCircle2DIntersection, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Vector2D,
+    Vector3D,
+};
 use std::fmt;
 
 /// Error returned when a [`Circle3D`] or [`Circle2D`] cannot be constructed
@@ -616,13 +619,59 @@ impl Circle2D {
     pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// Intersects this circle with another 2D circle.
+    ///
+    /// Concentric circles (center distance within `tol.confusion`) are
+    /// coincident for equal radii, else empty; otherwise the radical line
+    /// positions the meeting points by `a = (r1^2 - r2^2 + d^2) / (2d)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle2D, CircleCircle2DIntersection, Point2D, Tolerance};
+    /// let c1 = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let c2 = Circle2D::new(Point2D::new(3.0, 0.0), 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match c1.intersect_circle(&c2, tol) {
+    ///     CircleCircle2DIntersection::Points(_, _) => {}
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    pub fn intersect_circle(&self, other: &Circle2D, tol: Tolerance) -> CircleCircle2DIntersection {
+        let (c1, c2) = (self.center(), other.center());
+        let (r1, r2) = (self.radius(), other.radius());
+        let w = c2 - c1;
+        let d = w.magnitude();
+        if d <= tol.confusion {
+            if (r1 - r2).abs() <= tol.confusion {
+                return CircleCircle2DIntersection::Coincident;
+            }
+            return CircleCircle2DIntersection::Empty;
+        }
+        let out = r1 + r2;
+        let inn = (r1 - r2).abs();
+        if d > out + tol.confusion || d < inn - tol.confusion {
+            return CircleCircle2DIntersection::Empty;
+        }
+        let n = w * (1.0 / d);
+        let a = (r1 * r1 - r2 * r2 + d * d) / (2.0 * d);
+        let base = c1 + n * a;
+        if (d - out).abs() <= tol.confusion || (d - inn).abs() <= tol.confusion {
+            CircleCircle2DIntersection::Tangent(base)
+        } else {
+            let h = (r1 * r1 - a * a).max(0.0).sqrt();
+            let perp = n.perp();
+            CircleCircle2DIntersection::Points(base + perp * h, base - perp * h)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        Circle2D, Circle3D, CircleConstructionError, Frame2D, Frame3D, Point2D, Point3D, Tolerance,
-        Vector2D, Vector3D,
+        Circle2D, Circle3D, CircleCircle2DIntersection, CircleConstructionError, Frame2D, Frame3D,
+        Point2D, Point3D, Tolerance, Vector2D, Vector3D,
     };
 
     // ---- Circle3D construction ----
@@ -944,5 +993,40 @@ mod tests {
         let proj = circle.project_point(Point2D::new(3.0, 0.0), tol);
         assert_eq!(proj.parameter, 0.0);
         assert_eq!(proj.distance, 1.0);
+    }
+
+    #[test]
+    fn test_circle2d_intersect_circle() {
+        let tol = Tolerance::DEFAULT;
+        let c1 = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+        let c2 = Circle2D::new(Point2D::new(3.0, 0.0), 2.0).unwrap();
+        match c1.intersect_circle(&c2, tol) {
+            CircleCircle2DIntersection::Points(p1, p2) => {
+                assert!((p1.x - 1.5).abs() < 1e-9);
+                assert!((p1.y - 1.75f64.sqrt()).abs() < 1e-9);
+                assert!((p2.y + 1.75f64.sqrt()).abs() < 1e-9);
+                assert!(c1.contains(p1, tol));
+                assert!(c2.contains(p2, tol));
+            }
+            _ => panic!("expected two points"),
+        }
+        // External tangency.
+        let tangent = Circle2D::new(Point2D::new(4.0, 0.0), 2.0).unwrap();
+        match c1.intersect_circle(&tangent, tol) {
+            CircleCircle2DIntersection::Tangent(p) => {
+                assert_eq!(p, Point2D::new(2.0, 0.0));
+            }
+            _ => panic!("expected a tangent"),
+        }
+        // Separate and coincident.
+        let far = Circle2D::new(Point2D::new(5.0, 0.0), 2.0).unwrap();
+        assert_eq!(
+            c1.intersect_circle(&far, tol),
+            CircleCircle2DIntersection::Empty
+        );
+        assert_eq!(
+            c1.intersect_circle(&c1, tol),
+            CircleCircle2DIntersection::Coincident
+        );
     }
 }

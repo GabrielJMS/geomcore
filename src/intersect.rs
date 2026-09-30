@@ -7,7 +7,7 @@
 //! [`crate::Tolerance`], so near-degenerate configurations classify
 //! robustly instead of collapsing to noise.
 
-use crate::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point3D, Tolerance};
+use crate::{Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point2D, Point3D, Tolerance};
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -299,6 +299,64 @@ pub enum ConeConeIntersection {
     Coincident,
     /// No closed form: the pair is not in analytic configuration.
     NotAnalytic,
+}
+
+/// Result of intersecting two 2D lines.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineLine2DIntersection {
+    /// Transversal hit: line parameter on self, point, line parameter other.
+    Point(f64, Point2D, f64),
+    /// Parallel distinct lines.
+    Parallel,
+    /// Coincident lines.
+    Coincident,
+}
+
+/// Result of intersecting a 2D line with a 2D circle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineCircle2DIntersection {
+    /// Two hits: `(line parameter, point)` pairs, ordered.
+    Points((f64, Point2D), (f64, Point2D)),
+    /// Grazing contact: line parameter and point.
+    Tangent(f64, Point2D),
+    /// No intersection.
+    Empty,
+}
+
+/// Result of intersecting two 2D circles.
+///
+/// Parameters are intentionally omitted (no natural primary curve);
+/// recover them with [`Circle2D::parameter_of`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CircleCircle2DIntersection {
+    /// Two meeting points.
+    Points(Point2D, Point2D),
+    /// Grazing contact point.
+    Tangent(Point2D),
+    /// Separate, nested, or concentric with different radii.
+    Empty,
+    /// Same center and radius within tolerance.
+    Coincident,
+}
+
+/// Result of intersecting two 3D lines.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LineLine3DIntersection {
+    /// Transversal hit: parameter on self, point, parameter on other.
+    Point(f64, Point3D, f64),
+    /// Parallel distinct lines, with their distance.
+    Parallel(f64),
+    /// Coincident lines.
+    Coincident,
+    /// Skew lines: parameters and distance of the closest pair.
+    Skew {
+        /// Parameter on the first line.
+        s: f64,
+        /// Parameter on the second line.
+        t: f64,
+        /// Distance between the closest points.
+        distance: f64,
+    },
 }
 
 /// Solution classification for `a*t^2 + b*t + c = 0` with tolerance.
