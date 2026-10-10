@@ -7,8 +7,11 @@
 //! `[i_u][i_v][h]`, together with the flattened knot sequences for each
 //! direction, so evaluation never re-derives them.
 
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+
 use crate::curve_math::bspline as curve;
-use crate::math::boxtree::{BoxTree, Lazy};
+use crate::math::boxtree::{BoxTree, Lazy, box_distance};
 use crate::math::newton_min_2d;
 use crate::projection::SurfaceProjection;
 use crate::surface_math::bspline as math;
@@ -86,13 +89,57 @@ pub struct BSplineSurface {
     patches: Lazy<PatchTree>,
 }
 
-/// The knot-span boundaries of each direction and the box hierarchy over
+/// The knot-span boundaries of each direction, whether the surface is a
+/// crease or ends there ([`curve::crease_breaks`]), each span's Bezier
+/// matrix ([`curve::span_bezier_matrices`]), and the box hierarchy over
 /// the patches (`i_u * (v_breaks.len() - 1) + i_v`).
 #[derive(Clone)]
 struct PatchTree {
     u_breaks: Vec<f64>,
     v_breaks: Vec<f64>,
+    u_creases: Vec<bool>,
+    v_creases: Vec<bool>,
+    u_spans: (Vec<usize>, Vec<f64>),
+    v_spans: (Vec<usize>, Vec<f64>),
     tree: BoxTree,
+}
+
+impl PatchTree {
+    /// The parameter rectangle `[u0, u1, v0, v1]` of patch `k` and whether
+    /// each of its edges is a crease or a boundary.
+    fn patch(&self, k: usize) -> ([f64; 4], [bool; 4]) {
+        let n_vspans = self.v_breaks.len() - 1;
+        let (a, b) = (k / n_vspans, k % n_vspans);
+        (
+            [
+                self.u_breaks[a],
+                self.u_breaks[a + 1],
+                self.v_breaks[b],
+                self.v_breaks[b + 1],
+            ],
+            [
+                self.u_creases[a],
+                self.u_creases[a + 1],
+                self.v_creases[b],
+                self.v_creases[b + 1],
+            ],
+        )
+    }
+
+    /// The number of patches.
+    fn len(&self) -> usize {
+        (self.u_breaks.len() - 1) * (self.v_breaks.len() - 1)
+    }
+
+    /// Distances below this much of the best one found are not worth
+    /// telling apart: a relative `1e-12` of the surface's extent and of
+    /// its distance to `point`.
+    fn resolution(&self, point: Point3D) -> f64 {
+        let b = self.tree.bounds();
+        let diagonal =
+            ((b[3] - b[0]).powi(2) + (b[4] - b[1]).powi(2) + (b[5] - b[2]).powi(2)).sqrt();
+        1e-12 * (diagonal + box_distance(point, b))
+    }
 }
 
 impl BSplineSurface {
@@ -545,17 +592,16 @@ impl BSplineSurface {
     }
 
     /// All local minima of the distance from `point` to the surface,
-    /// ordered by ascending distance.
+    /// ordered by ascending distance, the first being
+    /// [`BSplineSurface::project_point`].
     ///
-    /// Seeding follows the knot structure: each direction is sampled at least `max(degree, 2)` times per
-    /// knot span (16 samples minimum), boundaries included, and the
-    /// discrete local minima of the sampled distance (wrapping across
-    /// periodic seams) seed a box-bounded Newton minimisation of
-    /// `|S(u,v) - P|^2` with exact second derivatives, within the C1
-    /// region around each seed (C0 crease knots bound it). Minima on an
-    /// edge, corner or crease are reached exactly. Seeds converging to
-    /// the same point merge; the first entry is the global closest point
-    /// ([`BSplineSurface::project_point`] is always a candidate).
+    /// Every knot-span patch is searched as in
+    /// [`BSplineSurface::project_point`], but keeping each minimum found
+    /// rather than only the closest: a subpatch is dropped only when it
+    /// provably holds no local minimum. Each minimum is polished by the
+    /// same Newton minimisation within the C1 region around it (C0 crease
+    /// knots bound it), so minima on an edge, corner or crease are reached
+    /// exactly. Minima within `tol.confusion` of each other merge.
     /// Periodic parameters are reported within their period.
     ///
     /// # Examples
@@ -576,46 +622,17 @@ impl BSplineSurface {
     /// ```
     pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<SurfaceProjection> {
         use crate::projection::snap_distance;
-        // Refined seeds beyond this many (by sampled distance) are dropped.
-        const MAX_SEEDS: usize = 32;
+        let global = self.project_point(point, tol);
+        let patches = self.patch_tree();
+        let mut search = PatchSearch::new(self, point, patches.resolution(point), true);
+        for k in 0..patches.len() {
+            let (rect, creases) = patches.patch(k);
+            if let Some(root) = search.root(patches, k) {
+                search.search(root, rect, creases);
+            }
+        }
         let (u0, u1) = self.u_param_range();
         let (v0, v1) = self.v_param_range();
-        let ub = curve::span_breaks(&self.u_knots, u0, u1);
-        let vb = curve::span_breaks(&self.v_knots, v0, v1);
-        let us = curve::span_samples(
-            &ub,
-            samples_per_span(self.u_degree, ub.len() - 1),
-            self.u_periodic,
-        );
-        let vs = curve::span_samples(
-            &vb,
-            samples_per_span(self.v_degree, vb.len() - 1),
-            self.v_periodic,
-        );
-        let (nu, nv) = (us.len(), vs.len());
-        let dist: Vec<f64> = math::surface_grid(
-            &us,
-            &vs,
-            self.u_degree,
-            self.v_degree,
-            self.u_periodic,
-            self.v_periodic,
-            &self.u_flat,
-            &self.v_flat,
-            &self.flat_poles,
-            self.n_u,
-            self.n_v,
-            self.h,
-        )
-        .into_iter()
-        .map(|p| p.distance(point))
-        .collect();
-        let mut seeds: Vec<(f64, usize, usize)> =
-            grid_minima(&dist, nu, nv, [self.u_periodic, self.v_periodic])
-                .map(|(i, j)| (dist[i * nv + j], i, j))
-                .collect();
-        seeds.sort_by(|a, b| a.0.total_cmp(&b.0));
-        seeds.truncate(MAX_SEEDS);
         let u_regions = curve::smooth_regions(
             &self.u_knots,
             &self.u_mults,
@@ -636,11 +653,13 @@ impl BSplineSurface {
             self.u_periodic.then_some(u1 - u0),
             self.v_periodic.then_some(v1 - v0),
         );
-        let global = self.project_point(point, tol);
+        // A minimum on a subpatch edge inside a smooth region is where the
+        // search stopped, not necessarily a minimum of the surface: polish
+        // across subpatches.
         let mut candidates = vec![(global.u, global.v)];
-        for (_, i, j) in seeds {
-            for (ubounds, u) in curve::regions_at(&u_regions, us[i], u_period) {
-                for (vbounds, v) in curve::regions_at(&v_regions, vs[j], v_period) {
+        for (u, v) in search.minima {
+            for (ubounds, u) in curve::regions_at(&u_regions, u, u_period) {
+                for (vbounds, v) in curve::regions_at(&v_regions, v, v_period) {
                     candidates.push(self.refine_projection(point, u, v, [ubounds, vbounds]));
                 }
             }
@@ -659,7 +678,8 @@ impl BSplineSurface {
                 distance: snap_distance(p.distance(point), tol.confusion),
             });
         }
-        out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
+        // The projection leads, even past a rounding-level tie.
+        out[1..].sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }
 
@@ -668,16 +688,29 @@ impl BSplineSurface {
     /// without visiting the whole surface. Distances within
     /// `tol.confusion` snap to `0.0`, matching [`BSplineSurface::contains`].
     ///
-    /// Branch and bound over the knot-span patches: each patch lies in the
-    /// bounding box of its control poles (convex hull property), so
-    /// patches are visited by increasing box distance, each seeded from
-    /// its best sample (same density as [`BSplineSurface::extrema`]) and
-    /// refined by the same Newton minimisation bounded to the patch (a
-    /// polynomial piece, so minima on its creases and edges are reached
-    /// exactly), until no remaining
-    /// box can hold a closer point. The boxes form a hierarchy built once
-    /// per surface (on the first projection), so the cost tracks the
-    /// patches near `point`, not the size of the control net.
+    /// Branch and bound, exact up to rounding. The knot-span patches whose
+    /// control poles' bounding boxes (convex hull property) may hold the
+    /// closest point are found from a hierarchy built once per surface.
+    /// Each patch's Bernstein (Bezier) control net is then halved by de
+    /// Casteljau subdivision, closest control point first, until each
+    /// subpatch is either
+    ///
+    /// - farther than the closest point so far, its control points' boxes
+    ///   being a lower bound (a box fitted to a small subpatch is flat, so
+    ///   the bound is tight to second order);
+    /// - free of local minima, by interval bounds on the gradient and
+    ///   Hessian of the squared distance from the nets of its derivatives
+    ///   (a gradient that keeps its sign towards a smooth edge, or a
+    ///   direction of negative curvature);
+    /// - or holding a single minimum, convex there, which a box-bounded
+    ///   Newton minimisation with exact second derivatives then reaches.
+    ///
+    /// A subpatch whose gradient pins its minima to a crease or boundary
+    /// edge is searched as that edge curve. Subpatch corners lie on the
+    /// surface and tighten the closest point. The search stops within a
+    /// relative `1e-12` of the surface's extent; where the distance is
+    /// flat to that resolution (a point on an axis of revolution) a cap on
+    /// the subdivision falls back to Newton from the closest subpatches.
     ///
     /// # Examples
     ///
@@ -699,53 +732,27 @@ impl BSplineSurface {
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
         use crate::projection::snap_distance;
         let patches = self.patch_tree();
-        let (ub, vb) = (&patches.u_breaks, &patches.v_breaks);
-        let (per_u, per_v) = (
-            samples_per_span(self.u_degree, ub.len() - 1),
-            samples_per_span(self.v_degree, vb.len() - 1),
-        );
-        let n_vspans = vb.len() - 1;
-        // (distance, u, v) of the closest point so far.
-        let mut best = (f64::INFINITY, ub[0], vb[0]);
+        let mut search = PatchSearch::new(self, point, patches.resolution(point), false);
+        // Every patch that may hold the closest point, by their pole boxes
+        // then their Bernstein nets (whose corners tighten the bound),
+        // searched closest control point first.
+        let mut roots = Vec::new();
         patches.tree.nearest_first(point, |k| {
-            let (a, b) = (k / n_vspans, k % n_vspans);
-            let us = curve::span_samples(&ub[a..a + 2], per_u, false);
-            let vs = curve::span_samples(&vb[b..b + 2], per_v, false);
-            let samples = math::surface_grid(
-                &us,
-                &vs,
-                self.u_degree,
-                self.v_degree,
-                self.u_periodic,
-                self.v_periodic,
-                &self.u_flat,
-                &self.v_flat,
-                &self.flat_poles,
-                self.n_u,
-                self.n_v,
-                self.h,
-            );
-            let dist: Vec<f64> = samples.iter().map(|p| p.distance(point)).collect();
-            // A patch can hold several basins: refine from each discrete
-            // local minimum of its samples.
-            for (i, j) in grid_minima(&dist, us.len(), vs.len(), [false, false]) {
-                let (u, v) = self.refine_projection(
-                    point,
-                    us[i],
-                    vs[j],
-                    [Some((ub[a], ub[a + 1])), Some((vb[b], vb[b + 1]))],
-                );
-                let d = self.eval_point(u, v).distance(point);
-                if d < best.0 {
-                    best = (d, u, v);
-                }
+            if let Some(root) = search.root(patches, k) {
+                let (rect, creases) = patches.patch(k);
+                roots.push((root, rect, creases));
             }
-            best.0
+            search.best.0
         });
+        roots.sort_by(|a, b| a.0.key.total_cmp(&b.0.key));
+        for (root, rect, creases) in roots {
+            search.search(root, rect, creases);
+        }
+        let (distance, u, v) = search.best;
         SurfaceProjection {
-            u: best.1,
-            v: best.2,
-            distance: snap_distance(best.0, tol.confusion),
+            u,
+            v,
+            distance: snap_distance(distance, tol.confusion),
         }
     }
 
@@ -780,6 +787,34 @@ impl BSplineSurface {
             );
             PatchTree {
                 tree: BoxTree::new(&boxes, v_breaks.len() - 1),
+                u_spans: curve::span_bezier_matrices(
+                    &u_breaks,
+                    self.u_degree,
+                    self.u_periodic,
+                    &self.u_flat,
+                    self.n_u,
+                ),
+                v_spans: curve::span_bezier_matrices(
+                    &v_breaks,
+                    self.v_degree,
+                    self.v_periodic,
+                    &self.v_flat,
+                    self.n_v,
+                ),
+                u_creases: curve::crease_breaks(
+                    &self.u_knots,
+                    &self.u_mults,
+                    self.u_degree,
+                    self.u_periodic,
+                    &u_breaks,
+                ),
+                v_creases: curve::crease_breaks(
+                    &self.v_knots,
+                    &self.v_mults,
+                    self.v_degree,
+                    self.v_periodic,
+                    &v_breaks,
+                ),
                 u_breaks,
                 v_breaks,
             }
@@ -940,48 +975,484 @@ impl ParametricSurface for BSplineSurface {
     }
 }
 
-/// The discrete local minima `(i, j)` of a row-major `nu x nv` grid of
-/// values, against all 8 neighbours (wrapping in a periodic direction),
-/// ties broken by index so a plateau yields one minimum.
-fn grid_minima(
-    values: &[f64],
-    nu: usize,
-    nv: usize,
-    periodic: [bool; 2],
-) -> impl Iterator<Item = (usize, usize)> + '_ {
-    let step = |k: usize, delta: isize, n: usize, periodic: bool| {
-        let m = k as isize + delta;
-        if periodic {
-            Some(m.rem_euclid(n as isize) as usize)
-        } else {
-            (0..n as isize).contains(&m).then_some(m as usize)
-        }
-    };
-    (0..nu)
-        .flat_map(move |i| (0..nv).map(move |j| (i, j)))
-        .filter(move |&(i, j)| {
-            let k = i * nv + j;
-            let d = values[k];
-            (-1..=1).all(|di| {
-                (-1..=1).all(|dj| {
-                    match (step(i, di, nu, periodic[0]), step(j, dj, nv, periodic[1])) {
-                        (Some(a), Some(b)) => {
-                            let n = a * nv + b;
-                            n == k || values[n] > d || (values[n] == d && n > k)
-                        }
-                        _ => true,
-                    }
-                })
-            })
-        })
+/// Subdivisions per knot-span patch before the search settles for Newton
+/// from the closest remaining subpatches: reached only where the distance
+/// is flat to the search resolution. Once one patch of a closest-point
+/// search reaches it, the later patches get an eighth of it.
+const MAX_SPLITS: usize = 256;
+
+/// Newton refinements once [`MAX_SPLITS`] is reached.
+const MAX_FALLBACKS: usize = 8;
+/// Subdivisions from a patch down to one subpatch: halving below this,
+/// parameter steps reach rounding.
+const MAX_DEPTH: u32 = 80;
+
+/// Branch and bound over the Bernstein subpatches of knot-span patches for
+/// the minima of the distance to a point (see
+/// [`BSplineSurface::project_point`]).
+struct PatchSearch<'a> {
+    surface: &'a BSplineSurface,
+    point: Point3D,
+    /// Net shape: `rows x cols` points of `h` values, `size` in all.
+    rows: usize,
+    cols: usize,
+    size: usize,
+    /// Storage of the pending subpatches' nets, `size` values per slot.
+    nets: Vec<f64>,
+    /// Offsets of unused slots in `nets`.
+    free: Vec<usize>,
+    pending: BinaryHeap<Subpatch>,
+    /// Euclidean control points of the subpatch at hand.
+    points: Vec<[f64; 3]>,
+    /// A copy of the net being split.
+    scratch: Vec<f64>,
+    /// `(distance, u, v)` of the closest point so far.
+    best: (f64, f64, f64),
+    /// Subpatches closer than this to `best` need no search.
+    resolution: f64,
+    /// Whether every local minimum is wanted, not only the closest.
+    all: bool,
+    /// The minima found, when `all`.
+    minima: Vec<(f64, f64)>,
+    /// Subdivisions allowed per patch.
+    budget: usize,
 }
 
-/// Samples per knot span: at least `max(degree, 2)`, and 16 over all
-/// `spans`, so dense control nets are sampled as finely as their spans
-/// demand.
-fn samples_per_span(degree: usize, spans: usize) -> usize {
-    const MIN_SAMPLES: usize = 16;
-    degree.max(2).max(MIN_SAMPLES.div_ceil(spans))
+/// A subpatch awaiting its visit: its net at offset `slot`, its parameter
+/// rectangle `[u0, u1, v0, v1]`, a lower bound `lower` on its distance,
+/// and the visiting order `key`, its closest control point's distance. Once
+/// its minima are known to lie on its edge `side` of `direction`, `edge`
+/// holds `(direction, side)` and the net is that edge curve's.
+#[derive(Clone, Copy)]
+struct Subpatch {
+    lower: f64,
+    key: f64,
+    slot: usize,
+    rect: [f64; 4],
+    depth: u32,
+    edge: Option<(usize, usize)>,
+}
+
+impl PartialEq for Subpatch {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Subpatch {}
+
+impl PartialOrd for Subpatch {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Subpatch {
+    /// Reversed, so a [`BinaryHeap`] pops the lowest key first.
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.key.total_cmp(&self.key)
+    }
+}
+
+/// What a subpatch's derivative bounds say about its minima.
+enum Verdict {
+    /// No local minimum of the surface: the gradient keeps a sign towards
+    /// a smooth edge, or the distance curves down everywhere.
+    None,
+    /// At the corner `[s, t]` (each `0` or `1`), the gradient pinning it
+    /// to two crease or boundary edges.
+    Corner([usize; 2]),
+    /// On edge `side` (`0` or `1`) of direction `direction` (`0` for `u`),
+    /// pinned there by the gradient, convex along it.
+    Edge(usize, usize),
+    /// On edge `side` of `direction`, pinned there by the gradient, but
+    /// anywhere along it as far as known.
+    Pinned(usize, usize),
+    /// Anywhere, the distance being convex.
+    Convex,
+    /// Not known yet: split along `u` if true, else along `v`.
+    Unknown(bool),
+}
+
+impl<'a> PatchSearch<'a> {
+    /// An empty search for the minima of the distance from `point` (every
+    /// local one if `all`), subpatches within `resolution` of the best
+    /// distance so far being settled.
+    fn new(surface: &'a BSplineSurface, point: Point3D, resolution: f64, all: bool) -> Self {
+        let (rows, cols) = (surface.u_degree + 1, surface.v_degree + 1);
+        let size = rows * cols * surface.h;
+        PatchSearch {
+            surface,
+            point,
+            rows,
+            cols,
+            size,
+            nets: Vec::new(),
+            free: Vec::new(),
+            pending: BinaryHeap::new(),
+            points: Vec::with_capacity(rows * cols),
+            scratch: vec![0.0; size],
+            best: (f64::INFINITY, 0.0, 0.0),
+            resolution,
+            all,
+            minima: Vec::new(),
+            budget: MAX_SPLITS,
+        }
+    }
+
+    /// The whole patch `k` of `patches` as a subpatch to search, unless it
+    /// is farther than the closest point so far.
+    fn root(&mut self, patches: &PatchTree, k: usize) -> Option<Subpatch> {
+        let s = self.surface;
+        let slot = self.slot();
+        let n_vspans = patches.v_breaks.len() - 1;
+        let (a, b) = (k / n_vspans, k % n_vspans);
+        let (p, q) = (s.u_degree, s.v_degree);
+        let (mu, mv) = ((p + 1) * (p + 1), (q + 1) * (q + 1));
+        math::patch_bezier(
+            (
+                &patches.u_spans.1[a * mu..(a + 1) * mu],
+                patches.u_spans.0[a],
+                p,
+                s.n_u,
+            ),
+            (
+                &patches.v_spans.1[b * mv..(b + 1) * mv],
+                patches.v_spans.0[b],
+                q,
+                s.n_v,
+            ),
+            &s.flat_poles,
+            s.h,
+            &mut self.scratch,
+            &mut self.nets[slot..slot + self.size],
+        );
+        self.node(slot, patches.patch(k).0, 0, None)
+    }
+
+    /// Searches the patch over `rect`, with the subpatch `root` over all of
+    /// it, whose edges are creases or boundaries as flagged in `creases`.
+    fn search(&mut self, root: Subpatch, rect: [f64; 4], creases: [bool; 4]) {
+        self.pending.push(root);
+        let (mut splits, mut fallbacks) = (0, 0);
+        while let Some(node) = self.pending.pop() {
+            if !self.all && node.lower >= self.best.0 - self.resolution {
+                self.free.push(node.slot);
+                continue;
+            }
+            // Only the patch's own edges can be creases.
+            let edge = std::array::from_fn(|i| creases[i] && node.rect[i] == rect[i]);
+            let verdict = self.verdict(&node, edge);
+            match verdict {
+                Verdict::None => {}
+                Verdict::Corner([s, t]) => {
+                    let p = self.points[s * (self.rows - 1) * self.cols + t * (self.cols - 1)];
+                    let distance = Point3D::new(p[0], p[1], p[2]).distance(self.point);
+                    self.found(distance, node.rect[s], node.rect[2 + t]);
+                }
+                Verdict::Edge(direction, side) => {
+                    let start = self.closest_control_point(Some((direction, side)));
+                    self.minimise(&node, start);
+                }
+                Verdict::Pinned(direction, side) => {
+                    // Search the edge curve instead, keeping the slot.
+                    math::collapse_net(
+                        &mut self.nets[node.slot..node.slot + self.size],
+                        self.rows,
+                        self.cols,
+                        self.surface.h,
+                        direction == 0,
+                        side,
+                    );
+                    self.push(node.slot, node.rect, node.depth, Some((direction, side)));
+                    continue;
+                }
+                Verdict::Convex => {
+                    let start = self.closest_control_point(None);
+                    self.minimise(&node, start);
+                }
+                Verdict::Unknown(along_u) => {
+                    if node.depth < MAX_DEPTH && splits < self.budget {
+                        splits += 1;
+                        self.split(&node, along_u);
+                    } else if fallbacks < MAX_FALLBACKS {
+                        fallbacks += 1;
+                        let start = self.closest_control_point(node.edge);
+                        self.minimise(&node, start);
+                    }
+                }
+            }
+            self.free.push(node.slot);
+        }
+        // The distance is flat to the resolution here (a point on an axis
+        // of revolution): wherever else it is, other patches can only
+        // match it, so they get a smaller budget.
+        if splits >= self.budget && !self.all {
+            self.budget = MAX_SPLITS / 8;
+        }
+    }
+
+    /// A free net slot.
+    fn slot(&mut self) -> usize {
+        self.free.pop().unwrap_or_else(|| {
+            let slot = self.nets.len();
+            self.nets.resize(slot + self.size, 0.0);
+            slot
+        })
+    }
+
+    /// Queues the subpatch with the net at `slot` (see [`Self::node`]).
+    fn push(&mut self, slot: usize, rect: [f64; 4], depth: u32, edge: Option<(usize, usize)>) {
+        if let Some(node) = self.node(slot, rect, depth, edge) {
+            self.pending.push(node);
+        }
+    }
+
+    /// The subpatch with the net at `slot`, unless only the closest point
+    /// is wanted and the subpatch is farther than the closest so far; its
+    /// corners, on the surface, may become that point.
+    fn node(
+        &mut self,
+        slot: usize,
+        rect: [f64; 4],
+        depth: u32,
+        edge: Option<(usize, usize)>,
+    ) -> Option<Subpatch> {
+        let (rows, cols) = (self.rows, self.cols);
+        if self.all {
+            // Every subpatch counts, in any order.
+            return Some(Subpatch {
+                lower: 0.0,
+                key: 0.0,
+                slot,
+                rect,
+                depth,
+                edge,
+            });
+        }
+        math::net_points(
+            &self.nets[slot..slot + self.size],
+            self.surface.h,
+            &mut self.points,
+        );
+        for (s, t) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+            let p = self.points[s * (rows - 1) * cols + t * (cols - 1)];
+            let distance = Point3D::new(p[0], p[1], p[2]).distance(self.point);
+            if distance < self.best.0 {
+                // A collapsed net's corners sit on its edge.
+                let [s, t] = match edge {
+                    Some((0, side)) => [side, t],
+                    Some((_, side)) => [s, side],
+                    None => [s, t],
+                };
+                self.best = (distance, rect[s], rect[2 + t]);
+            }
+        }
+        let q = [self.point.x, self.point.y, self.point.z];
+        let lower = math::net_distance_bound(&self.points, rows, cols, q);
+        if lower >= self.best.0 - self.resolution {
+            self.free.push(slot);
+            return None;
+        }
+        let key = self
+            .points
+            .iter()
+            .map(|x| (0..3).map(|c| (x[c] - q[c]).powi(2)).sum::<f64>())
+            .fold(f64::INFINITY, f64::min)
+            .sqrt();
+        Some(Subpatch {
+            lower,
+            key,
+            slot,
+            rect,
+            depth,
+            edge,
+        })
+    }
+
+    /// Classifies `node` given its crease or boundary edges `creases`
+    /// (`[u0, u1, v0, v1]`), leaving its Euclidean control points in
+    /// `points`.
+    fn verdict(&mut self, node: &Subpatch, creases: [bool; 4]) -> Verdict {
+        let (rows, cols, h) = (self.rows, self.cols, self.surface.h);
+        let net = &self.nets[node.slot..node.slot + self.size];
+        math::net_points(net, h, &mut self.points);
+        let q = [self.point.x, self.point.y, self.point.z];
+        // The side each direction's gradient pins the minimum to; a
+        // collapsed net stays on its edge.
+        let pinned = |gradient: [math::Interval; 2]| -> [Option<usize>; 2] {
+            std::array::from_fn(|direction| match node.edge {
+                Some((d, side)) if d == direction => Some(side),
+                _ => {
+                    let g = gradient[direction];
+                    if g.lo > 0.0 {
+                        Some(0)
+                    } else if g.hi < 0.0 {
+                        Some(1)
+                    } else {
+                        None
+                    }
+                }
+            })
+        };
+        // Visiting every patch, most of which only the gradient rules out:
+        // try it alone first.
+        if self.all {
+            let gradient =
+                math::distance_bounds(net, &self.points, rows, cols, h, q, false).gradient;
+            let smooth = |direction: usize, side: usize| !creases[2 * direction + side];
+            if pinned(gradient)
+                .iter()
+                .enumerate()
+                .any(|(direction, side)| side.is_some_and(|side| smooth(direction, side)))
+            {
+                return Verdict::None;
+            }
+        }
+        let bounds = math::distance_bounds(net, &self.points, rows, cols, h, q, true);
+        let [fss, fst, ftt] = bounds.hessian;
+        let pinned = pinned(bounds.gradient);
+        for direction in 0..2 {
+            let crease = |side: usize| creases[2 * direction + side];
+            // Descending through a smooth edge, or curving down towards
+            // two of them: the minima are elsewhere.
+            let concave = bounds.hessian[2 * direction].hi < 0.0;
+            if pinned[direction].is_some_and(|side| !crease(side))
+                || (concave && !crease(0) && !crease(1))
+            {
+                return Verdict::None;
+            }
+        }
+        if !creases.contains(&true) && nowhere_convex([fss, fst, ftt]) {
+            return Verdict::None;
+        }
+        match pinned {
+            [Some(s), Some(t)] => Verdict::Corner([s, t]),
+            [Some(s), None] if ftt.lo > 0.0 => Verdict::Edge(0, s),
+            [None, Some(t)] if fss.lo > 0.0 => Verdict::Edge(1, t),
+            // Along the edge, as a curve.
+            [Some(s), None] if node.edge.is_none() => Verdict::Pinned(0, s),
+            [None, Some(t)] if node.edge.is_none() => Verdict::Pinned(1, t),
+            [Some(_), None] => Verdict::Unknown(false),
+            [None, Some(_)] => Verdict::Unknown(true),
+            [None, None]
+                if fss.lo > 0.0 && ftt.lo > 0.0 && fss.lo * ftt.lo > fst.magnitude().powi(2) =>
+            {
+                Verdict::Convex
+            }
+            // Along the direction the patch stretches most.
+            _ => Verdict::Unknown(bounds.stretch[0] >= bounds.stretch[1]),
+        }
+    }
+
+    /// The parameters, as fractions `(s, t)` of the subpatch, of its
+    /// control point closest to the point, among those on edge `side` of
+    /// `direction` if given.
+    fn closest_control_point(&self, edge: Option<(usize, usize)>) -> (f64, f64) {
+        let (p, q) = (self.rows - 1, self.cols - 1);
+        let target = [self.point.x, self.point.y, self.point.z];
+        let distance = |i: usize, j: usize| {
+            let x = self.points[i * self.cols + j];
+            (0..3).map(|c| (x[c] - target[c]).powi(2)).sum::<f64>()
+        };
+        let candidates: Vec<(usize, usize)> = match edge {
+            Some((0, side)) => (0..=q).map(|j| (side * p, j)).collect(),
+            Some((_, side)) => (0..=p).map(|i| (i, side * q)).collect(),
+            None => (0..=p).flat_map(|i| (0..=q).map(move |j| (i, j))).collect(),
+        };
+        let (i, j) = candidates
+            .into_iter()
+            .min_by(|a, b| distance(a.0, a.1).total_cmp(&distance(b.0, b.1)))
+            .unwrap_or((0, 0));
+        (i as f64 / p as f64, j as f64 / q as f64)
+    }
+
+    /// Newton minimisation within the subpatch from the fractions `(s, t)`.
+    fn minimise(&mut self, node: &Subpatch, (s, t): (f64, f64)) {
+        let r = node.rect;
+        let (u, v) = self.surface.refine_projection(
+            self.point,
+            r[0] + s * (r[1] - r[0]),
+            r[2] + t * (r[3] - r[2]),
+            [Some((r[0], r[1])), Some((r[2], r[3]))],
+        );
+        let distance = self.surface.eval_point(u, v).distance(self.point);
+        self.found(distance, u, v);
+    }
+
+    /// Records a minimum at `(u, v)`, `distance` from the point.
+    fn found(&mut self, distance: f64, u: f64, v: f64) {
+        if distance < self.best.0 {
+            self.best = (distance, u, v);
+        }
+        if self.all {
+            self.minima.push((u, v));
+        }
+    }
+
+    /// Halves the subpatch along `u` (else `v`) and queues both halves.
+    fn split(&mut self, node: &Subpatch, along_u: bool) {
+        self.scratch
+            .copy_from_slice(&self.nets[node.slot..node.slot + self.size]);
+        let (left, right) = (self.slot(), self.slot());
+        let (lo, hi) = if left < right {
+            let (a, b) = self.nets.split_at_mut(right);
+            (&mut a[left..left + self.size], &mut b[..self.size])
+        } else {
+            let (a, b) = self.nets.split_at_mut(left);
+            (&mut b[..self.size], &mut a[right..right + self.size])
+        };
+        math::halve_net(
+            &self.scratch,
+            self.rows,
+            self.cols,
+            self.surface.h,
+            along_u,
+            lo,
+            hi,
+        );
+        let r = node.rect;
+        let (first, second) = if along_u {
+            let mid = 0.5 * (r[0] + r[1]);
+            ([r[0], mid, r[2], r[3]], [mid, r[1], r[2], r[3]])
+        } else {
+            let mid = 0.5 * (r[2] + r[3]);
+            ([r[0], r[1], r[2], mid], [r[0], r[1], mid, r[3]])
+        };
+        self.push(left, first, node.depth + 1, node.edge);
+        self.push(right, second, node.depth + 1, node.edge);
+    }
+}
+
+/// Whether none of the symmetric matrices `[[a, b], [b, c]]` with entries
+/// in `[a, b, c]` is positive semidefinite, as the Hessian at a local
+/// minimum is: their determinant stays negative, or they all curve down
+/// along one direction (the eigenvector of the central matrix's lower
+/// eigenvalue).
+fn nowhere_convex([a, b, c]: [math::Interval; 3]) -> bool {
+    let largest_ac = (a.lo * c.lo)
+        .max(a.lo * c.hi)
+        .max(a.hi * c.lo)
+        .max(a.hi * c.hi);
+    let smallest_b = if b.lo > 0.0 {
+        b.lo
+    } else if b.hi < 0.0 {
+        -b.hi
+    } else {
+        0.0
+    };
+    if largest_ac < smallest_b * smallest_b {
+        return true;
+    }
+    let (am, bm, cm) = (a.mid(), b.mid(), c.mid());
+    let lower = 0.5 * (am + cm) - (0.25 * (am - cm).powi(2) + bm * bm).sqrt();
+    let (x, y) = if (am - lower).abs() > (cm - lower).abs() {
+        (bm, lower - am)
+    } else {
+        (lower - cm, bm)
+    };
+    let along = if x * y >= 0.0 { b.hi } else { b.lo };
+    (x != 0.0 || y != 0.0) && x * x * a.hi + 2.0 * x * y * along + y * y * c.hi < 0.0
 }
 
 /// Packs the pole grid (and, if rational, weights) into a flat, row-major
@@ -1494,5 +1965,302 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(surface.eval_point(u, v)), tol));
         }
         assert_eq!(mirrored.transformed(m), surface);
+    }
+
+    // ---- exact projection ----
+
+    /// A Bernstein net evaluated by de Casteljau, `[rows][cols][h]`.
+    fn bernstein_point(net: &[f64], rows: usize, cols: usize, h: usize, s: f64, t: f64) -> Point3D {
+        let lerp = |a: &[f64], n: usize, x: f64| {
+            let mut a = a.to_vec();
+            for r in 1..n {
+                for k in 0..(n - r) * h {
+                    a[k] = (1.0 - x) * a[k] + x * a[k + h];
+                }
+            }
+            a[..h].to_vec()
+        };
+        let column: Vec<f64> = (0..rows)
+            .flat_map(|i| lerp(&net[i * cols * h..(i + 1) * cols * h], cols, t))
+            .collect();
+        let p = lerp(&column, rows, s);
+        let w = if h == 4 { p[3] } else { 1.0 };
+        Point3D::new(p[0] / w, p[1] / w, p[2] / w)
+    }
+
+    /// An extruded degree-6 profile `z(x)`, `x` linear in `u`, with two
+    /// dips of nearly equal depth, the right one deeper: one knot span.
+    fn two_basins() -> BSplineSurface {
+        let z = [1.0, 1.0, -1.0, 1.2, -1.04, 1.0, 1.0];
+        let poles = (0..7)
+            .map(|i| {
+                (0..2)
+                    .map(|j| Point3D::new(i as f64 / 6.0, j as f64, z[i]))
+                    .collect()
+            })
+            .collect();
+        BSplineSurface::new(
+            6,
+            1,
+            poles,
+            vec![0.0, 1.0],
+            vec![7, 7],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    /// The distance from `point` to the profile of [`two_basins`] at
+    /// `v = 0.5`, by dense sampling then golden-section refinement.
+    fn profile_distance(s: &BSplineSurface, point: Point3D) -> f64 {
+        let d = |u: f64| s.eval_point(u.clamp(0.0, 1.0), 0.5).distance(point);
+        let n = 20_000;
+        let best = (0..=n)
+            .map(|i| i as f64 / n as f64)
+            .min_by(|a, b| d(*a).total_cmp(&d(*b)))
+            .unwrap();
+        let (mut a, mut b) = (best - 1.0 / n as f64, best + 1.0 / n as f64);
+        let g = 0.5 * (5f64.sqrt() - 1.0);
+        for _ in 0..80 {
+            let (x, y) = (b - g * (b - a), a + g * (b - a));
+            if d(x) < d(y) {
+                b = y;
+            } else {
+                a = x;
+            }
+        }
+        d(0.5 * (a + b))
+    }
+
+    #[test]
+    fn test_project_point_two_basins_in_one_patch() {
+        let s = two_basins();
+        let tol = Tolerance::DEFAULT;
+        // Points above and between the dips, some nearer the shallower one.
+        for x in [0.38, 0.42, 0.45, 0.48, 0.5, 0.55] {
+            let query = Point3D::new(x, 0.5, 0.6);
+            let proj = s.project_point(query, tol);
+            let reference = profile_distance(&s, query);
+            assert!(
+                (proj.distance - reference).abs() < 1e-12,
+                "x = {x}: {} vs {reference}",
+                proj.distance
+            );
+            // The foot is a critical point: the residual is normal there.
+            let (p, su, sv) = s.eval_surface_d1(proj.u, proj.v);
+            let r = p - query;
+            assert!(r.dot(su).abs() < 1e-9 * su.magnitude() * r.magnitude());
+            assert!(r.dot(sv).abs() < 1e-9 * sv.magnitude() * r.magnitude());
+            let extrema = s.extrema(query, tol);
+            assert_eq!(extrema[0].distance, proj.distance);
+            // Both dips are local minima.
+            assert!(extrema.len() >= 2, "x = {x}: {extrema:?}");
+        }
+    }
+
+    /// A folded net of degree 2 by 5, three `u` spans and two `v` spans,
+    /// whose sheets pass close to each other: many points have a second
+    /// local minimum a short distance away in the same patch.
+    fn folded_net() -> BSplineSurface {
+        let row = |p: &[(f64, f64, f64)]| -> Vec<Point3D> {
+            p.iter().map(|&(x, y, z)| Point3D::new(x, y, z)).collect()
+        };
+        #[rustfmt::skip]
+        let poles = vec![
+            row(&[(4.52, -4.72, -0.97), (0.94, -2.11, -2.98), (0.99, -4.89, 0.49), (4.03, 2.02, 2.08), (2.35, -4.38, -1.07),
+                  (-2.22, -2.8, -3.92), (-4.6, 2.81, -3.13), (3.21, 2.17, 2.1), (0.74, 0.06, -3.3), (3.03, 3.51, 1.31)]),
+            row(&[(2.04, -4.83, 3.15), (-4.97, 1.53, 2.88), (0.8, 4.4, 3.79), (-3.33, -3.15, -4.61), (3.81, -4.51, 1.64),
+                  (0.84, -1.12, -4.38), (-1.41, -3.42, -4.87), (-1.57, -3.53, 0.75), (-4.0, 4.32, -1.94), (-2.98, 4.31, -3.09)]),
+            row(&[(-4.47, 0.45, 0.78), (0.81, -0.98, 2.47), (4.44, 2.43, 2.29), (-1.33, -4.42, 0.08), (1.79, -2.52, -1.4),
+                  (-0.55, -4.36, -4.45), (-4.85, 3.25, -2.06), (0.55, 3.93, -4.22), (2.3, 0.75, 0.34), (2.87, 3.87, -3.4)]),
+            row(&[(-1.7, 2.4, -2.3), (-0.07, -0.04, 1.97), (-4.41, -0.31, -0.26), (0.5, 1.27, 2.44), (4.69, -2.87, -4.96),
+                  (3.99, -1.46, 4.44), (-4.07, 2.78, -0.86), (3.23, -2.36, -2.98), (1.69, -2.35, 4.7), (-3.49, -0.13, -0.89)]),
+            row(&[(4.62, -2.18, -3.87), (4.1, -0.82, 0.15), (3.88, -2.59, 4.99), (0.8, 3.99, -0.12), (-3.78, 1.26, -0.58),
+                  (3.27, -1.56, 0.59), (-0.55, 0.41, -2.35), (-2.7, 3.86, 4.63), (-1.19, -3.46, 2.63), (-1.62, -1.04, 1.81)]),
+        ];
+        BSplineSurface::new(
+            2,
+            5,
+            poles,
+            vec![0.0, 1.0, 2.0, 3.0],
+            vec![3, 1, 1, 3],
+            vec![0.0, 0.56, 1.0],
+            vec![6, 4, 6],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_project_point_close_basins_on_a_folded_net() {
+        let s = folded_net();
+        let tol = Tolerance::DEFAULT;
+        // In patch `[0, 1] x [0, 0.56]`: the foot is the point itself, and a
+        // second minimum lies on the edge `u = 0` about 0.08 away.
+        let on = s.eval_point(0.05, 0.1);
+        let proj = s.project_point(on, tol);
+        assert_eq!(proj.distance, 0.0);
+        let extrema = s.extrema(on, tol);
+        assert_eq!(extrema[0].distance, 0.0);
+        assert!(
+            extrema[1..]
+                .iter()
+                .any(|e| e.u == 0.0 && e.distance > 0.05 && e.distance < 0.1),
+            "{extrema:?}"
+        );
+        // Every point of the surface projects onto itself.
+        let n = 40;
+        for i in 0..=n {
+            for j in 0..=n {
+                let (u, v) = (3.0 * i as f64 / n as f64, j as f64 / n as f64);
+                let on = s.eval_point(u, v);
+                let proj = s.project_point(on, tol);
+                assert!(proj.distance < 1e-12, "({u}, {v}): {proj:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_project_point_on_surface_is_zero() {
+        let tube = periodic_tube();
+        let (u0, u1) = ParametricSurface::u_bounds(&tube);
+        let tol = Tolerance::DEFAULT;
+        for s in [two_basins(), tube, rational_quarter_cylinder(2.0)] {
+            let (u0, u1) = if s.is_u_periodic() {
+                (u0, u1)
+            } else {
+                ParametricSurface::u_bounds(&s)
+            };
+            let (v0, v1) = ParametricSurface::v_bounds(&s);
+            for i in 0..=7 {
+                for j in 0..=5 {
+                    let (u, v) = (
+                        u0 + (u1 - u0) * i as f64 / 7.0,
+                        v0 + (v1 - v0) * j as f64 / 5.0,
+                    );
+                    let on = s.eval_point(u, v);
+                    let proj = s.project_point(on, tol);
+                    assert_eq!(proj.distance, 0.0);
+                    assert!(s.eval_point(proj.u, proj.v).distance(on) < 1e-12);
+                }
+            }
+        }
+    }
+
+    /// An exact quarter cylinder of radius `r` about the z axis: a rational
+    /// quadratic arc in `u`, extruded over `z` in `[0, 1]` in `v`.
+    fn rational_quarter_cylinder(r: f64) -> BSplineSurface {
+        let arc = [(r, 0.0), (r, r), (0.0, r)];
+        let poles = arc
+            .iter()
+            .map(|&(x, y)| vec![Point3D::new(x, y, 0.0), Point3D::new(x, y, 1.0)])
+            .collect();
+        let w = std::f64::consts::FRAC_1_SQRT_2;
+        BSplineSurface::new_rational(
+            2,
+            1,
+            poles,
+            vec![vec![1.0, 1.0], vec![w, w], vec![1.0, 1.0]],
+            vec![0.0, 1.0],
+            vec![3, 3],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_project_point_exact_foot_on_rational_cylinder() {
+        let radius = 2.0;
+        let s = rational_quarter_cylinder(radius);
+        let tol = Tolerance::DEFAULT;
+        for (rho, theta, z) in [(0.5, 0.3, 0.2), (3.0, 1.1, 0.7), (7.5, 0.05, 0.5)] {
+            let query = Point3D::new(rho * f64::cos(theta), rho * f64::sin(theta), z);
+            let proj = s.project_point(query, tol);
+            assert!((proj.distance - (rho - radius).abs()).abs() < 1e-12);
+            let foot = s.eval_point(proj.u, proj.v);
+            let expected = Point3D::new(radius * f64::cos(theta), radius * f64::sin(theta), z);
+            assert!(foot.distance(expected) < 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_project_point_exact_foot_on_edge_corner_and_crease() {
+        let tol = Tolerance::DEFAULT;
+        // Bilinear square [0, 2]^2 in z = 0 over [0, 1]^2: an edge foot
+        // and a corner foot.
+        let s = bilinear_patch();
+        let proj = s.project_point(Point3D::new(3.0, 1.0, 1.0), tol);
+        assert_eq!((proj.u, proj.v), (1.0, 0.5));
+        assert!((proj.distance - 2f64.sqrt()).abs() < 1e-12);
+        let proj = s.project_point(Point3D::new(3.0, 3.0, 1.0), tol);
+        assert_eq!((proj.u, proj.v), (1.0, 1.0));
+        assert!((proj.distance - 3f64.sqrt()).abs() < 1e-12);
+        // A ridge: degree 1 across a crease knot, the foot on the crease.
+        let ridge = BSplineSurface::new(
+            1,
+            1,
+            vec![
+                vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+                vec![Point3D::new(1.0, 0.0, 1.0), Point3D::new(1.0, 1.0, 1.0)],
+                vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 1.0, 0.0)],
+            ],
+            vec![0.0, 1.0, 2.0],
+            vec![2, 1, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap();
+        let proj = ridge.project_point(Point3D::new(1.0, 0.25, 3.0), tol);
+        assert_eq!(proj.u, 1.0);
+        assert!((proj.v - 0.25).abs() < 1e-12);
+        assert!((proj.distance - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_patch_nets_match_the_surface_and_halve() {
+        for s in [
+            two_basins(),
+            periodic_tube(),
+            rational_quarter_cylinder(1.5),
+        ] {
+            let patches = s.patch_tree();
+            let mut search = PatchSearch::new(&s, Point3D::ORIGIN, 0.0, true);
+            let (rows, cols, h) = (s.u_degree + 1, s.v_degree + 1, s.h);
+            for k in 0..patches.len() {
+                let (rect, _) = patches.patch(k);
+                let root = search.root(patches, k).unwrap();
+                let net = search.nets[root.slot..root.slot + search.size].to_vec();
+                let mut halves = vec![vec![0.0; net.len()]; 2];
+                let [left, right] = &mut halves[..] else {
+                    unreachable!()
+                };
+                math::halve_net(&net, rows, cols, h, true, left, right);
+                for (a, b) in [(0.0, 0.0), (0.3, 0.8), (1.0, 0.5), (0.7, 1.0)] {
+                    let (u, v) = (
+                        rect[0] + a * (rect[1] - rect[0]),
+                        rect[2] + b * (rect[3] - rect[2]),
+                    );
+                    let expected = s.eval_point(u, v);
+                    let got = bernstein_point(&net, rows, cols, h, a, b);
+                    assert!(got.distance(expected) < 1e-12);
+                    // The halves along `u` cover `[0, 1/2]` and `[1/2, 1]`.
+                    let half = if a < 0.5 {
+                        bernstein_point(left, rows, cols, h, 2.0 * a, b)
+                    } else {
+                        bernstein_point(right, rows, cols, h, 2.0 * a - 1.0, b)
+                    };
+                    assert!(half.distance(expected) < 1e-12);
+                }
+            }
+        }
     }
 }

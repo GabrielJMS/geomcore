@@ -513,18 +513,76 @@ pub(crate) fn span_breaks(knots: &[f64], lo: f64, hi: f64) -> Vec<f64> {
     breaks
 }
 
-/// `per_span` evenly spaced samples of every span between consecutive
-/// `breaks`, closed by the last break unless the direction is periodic
-/// (where it repeats the first).
-pub(crate) fn span_samples(breaks: &[f64], per_span: usize, periodic: bool) -> Vec<f64> {
-    let mut out: Vec<f64> = breaks
-        .windows(2)
-        .flat_map(|w| (0..per_span).map(move |k| w[0] + (w[1] - w[0]) * k as f64 / per_span as f64))
-        .collect();
-    if !periodic {
-        out.push(breaks[breaks.len() - 1]);
+/// Whether the direction fails to be C1 at each of `breaks` (from
+/// [`span_breaks`]): an end of a non-periodic direction, a crease (a knot
+/// of multiplicity `>= degree`), or a periodic seam that is a crease. A
+/// minimum of a smooth function there need not be a critical point.
+pub(crate) fn crease_breaks(
+    knots: &[f64],
+    mults: &[u32],
+    degree: usize,
+    periodic: bool,
+    breaks: &[f64],
+) -> Vec<bool> {
+    let last = breaks.len() - 1;
+    breaks
+        .iter()
+        .enumerate()
+        .map(|(i, &x)| {
+            if i == 0 || i == last {
+                !periodic || mults[0] as usize >= degree
+            } else {
+                knots
+                    .iter()
+                    .position(|&k| k == x)
+                    .is_some_and(|k| mults[k] as usize >= degree)
+            }
+        })
+        .collect()
+}
+
+/// The [`bezier_matrix`] of every span between consecutive `breaks` (from
+/// [`span_breaks`]): the first pole index of each span, and the matrices
+/// row-major, `(degree + 1)^2` values per span.
+pub(crate) fn span_bezier_matrices(
+    breaks: &[f64],
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    n_poles: usize,
+) -> (Vec<usize>, Vec<f64>) {
+    fn fill<const N: usize>(
+        breaks: &[f64],
+        degree: usize,
+        periodic: bool,
+        flat: &[f64],
+        n_poles: usize,
+    ) -> (Vec<usize>, Vec<f64>) {
+        let n = degree + 1;
+        let mut firsts = Vec::with_capacity(breaks.len() - 1);
+        let mut matrices = Vec::with_capacity((breaks.len() - 1) * n * n);
+        let mut matrix = [[0.0f64; N]; N];
+        for w in breaks.windows(2) {
+            let mid = 0.5 * (w[0] + w[1]);
+            firsts.push(bezier_matrix(
+                mid,
+                degree,
+                periodic,
+                flat,
+                n_poles,
+                &mut matrix,
+            ));
+            for row in &matrix[..n] {
+                matrices.extend_from_slice(&row[..n]);
+            }
+        }
+        (firsts, matrices)
     }
-    out
+    if degree < SMALL {
+        fill::<SMALL>(breaks, degree, periodic, flat, n_poles)
+    } else {
+        fill::<LARGE>(breaks, degree, periodic, flat, n_poles)
+    }
 }
 
 /// The parameter intervals of one direction over `[lo, hi]` on which it
@@ -672,9 +730,7 @@ fn boxes<const N: usize>(
 /// `dim = out.len() <= 4` coordinates of `flat_poles` (homogeneous when
 /// `dim == 4`).
 ///
-/// Point `k` is the blossom of the piece at `k` copies of the span end and
-/// `degree - k` of its start, by de Boor's recurrence with the argument
-/// varying by level.
+/// The points are the span's poles mapped by [`bezier_matrix`].
 pub(crate) fn span_bezier(
     u: f64,
     degree: usize,
@@ -690,7 +746,6 @@ pub(crate) fn span_bezier(
     }
 }
 
-#[allow(clippy::needless_range_loop)] // index arithmetic on the triangular recurrence
 fn bezier<const N: usize>(
     u: f64,
     degree: usize,
@@ -701,8 +756,37 @@ fn bezier<const N: usize>(
 ) {
     let dim = out.len();
     debug_assert!(dim <= 4);
-    let p = degree;
     let n_poles = flat_poles.len() / dim;
+    let mut matrix = [[0.0f64; N]; N];
+    let first = bezier_matrix(u, degree, periodic, flat, n_poles, &mut matrix);
+    for (c, o) in out.iter_mut().enumerate() {
+        for (k, row) in matrix.iter().enumerate().take(degree + 1) {
+            o[k] = (0..=degree)
+                .map(|j| row[j] * flat_poles[((first + j) % n_poles) * dim + c])
+                .sum();
+        }
+    }
+}
+
+/// The matrix taking the `degree + 1` poles of the span containing `u`
+/// (pass a parameter inside the span) to its Bernstein control points
+/// over its own interval: point `k` is `sum_j matrix[k][j] * P[first +
+/// j]`, the pole index wrapping modulo `n_poles` in a periodic direction.
+/// Returns `first`. Rows are convex weights, so the map is stable.
+///
+/// Point `k` is the blossom of the piece at `k` copies of the span end and
+/// `degree - k` of its start, by de Boor's recurrence with the argument
+/// varying by level, carried out on the poles' coefficients.
+#[allow(clippy::needless_range_loop)] // index arithmetic on the triangular recurrence
+pub(crate) fn bezier_matrix<const N: usize>(
+    u: f64,
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    n_poles: usize,
+    matrix: &mut [[f64; N]; N],
+) -> usize {
+    let p = degree;
     let mut left = [0.0f64; N];
     let mut right = [0.0f64; N];
     let first = span_knots(u, p, periodic, flat, n_poles, &mut left, &mut right);
@@ -723,29 +807,26 @@ fn bezier<const N: usize>(
             inverse[r][j] = 1.0 / (knot(p + j - r) - knot(j - 1));
         }
     }
-    let mut d = [[0.0f64; 4]; N];
+    // `d[j][i]`: coefficient of pole `i` in the level's point `j`, nonzero
+    // for `i` in `j - r..=j` at level `r`.
+    let mut d = [[0.0f64; N]; N];
     for k in 0..=p {
         for (j, dj) in d.iter_mut().enumerate().take(p + 1) {
-            let index = if periodic {
-                (first + j) % n_poles
-            } else {
-                first + j
-            };
-            dj[..dim].copy_from_slice(&flat_poles[index * dim..(index + 1) * dim]);
+            dj[..=p].fill(0.0);
+            dj[j] = 1.0;
         }
         for r in 1..=p {
             let x = if r <= k { b } else { a };
             for j in (r..=p).rev() {
                 let alpha = (x - knot(j - 1)) * inverse[r][j];
-                for c in 0..dim {
-                    d[j][c] = (1.0 - alpha) * d[j - 1][c] + alpha * d[j][c];
+                for i in j - r..=j {
+                    d[j][i] = (1.0 - alpha) * d[j - 1][i] + alpha * d[j][i];
                 }
             }
         }
-        for (c, o) in out.iter_mut().enumerate() {
-            o[k] = d[p][c];
-        }
+        matrix[k][..=p].copy_from_slice(&d[p][..=p]);
     }
+    first
 }
 
 /// Validates a B-spline direction (shared by curves and surface directions).

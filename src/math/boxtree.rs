@@ -59,6 +59,11 @@ impl BoxTree {
         BoxTree { nodes }
     }
 
+    /// The box around every leaf.
+    pub(crate) fn bounds(&self) -> &Aabb {
+        &self.nodes[0].bbox
+    }
+
     /// Calls `visit` on leaves by increasing box distance from `point`
     /// while that distance is below the best distance so far; `visit`
     /// returns the best distance after processing its leaf. Since every

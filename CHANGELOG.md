@@ -31,19 +31,25 @@ the Python distribution are versioned in lockstep.
   copying all poles per call: 10-30x faster on large control nets,
   results unchanged to 1e-14.
 - `gauss_newton_1d`/`gauss_newton_2d` evaluate each trial residual once.
-- `BSplineSurface::project_point` is a branch and bound over the
-  knot-span patches: a bounding-box hierarchy of the patch control
-  poles (built once per surface, on the first projection) is visited
-  by increasing box distance, and each patch is refined by a
-  box-bounded Newton minimisation of the squared distance with exact
-  second derivatives (minima on edges and corners are reached exactly).
-  Against dense brute force on 6x6 to 80x80 nets the previous version
-  missed the global minimum for 7-15% of query points (by up to 106
-  units); the new one misses none and is 20-80x faster.
-- `BSplineSurface::extrema` seeds from the discrete local minima of a
-  knot-aware sample grid (at least `max(degree, 2)` samples per span,
-  wrapping across periodic seams) and refines them by the same Newton
-  minimisation.
+- `BSplineSurface::project_point` and `extrema` are exact. Each
+  knot-span patch (from a bounding-box hierarchy over the patch poles,
+  built on the first projection and visited by increasing box distance)
+  is converted to Bernstein form and halved, closest control point
+  first. A piece is dropped once its control points are provably
+  farther than the best distance so far, and solved by a box-bounded
+  Newton minimisation with exact second derivatives once interval
+  bounds on the derivatives of the squared distance show it is convex
+  or that its minimum lies on one edge or corner; otherwise it is
+  halved again. Minima on crease and boundary edges are found on the
+  edge curve itself. `extrema` runs the same search on every patch
+  without pruning, so it returns every local minimum, its first entry
+  being `project_point`'s result. Against dense brute force on 6x6 to
+  80x80 nets the previous version missed the global minimum for 7-15%
+  of query points (by up to 106 units); on 5,400 random surfaces
+  (rational, periodic, creased) the new one is never farther than a
+  reference kernel or brute force, at 9-52 us per projection. `extrema`
+  searches every patch, so it costs more on large nets (3.4 ms on
+  80x80).
 - `BSplineCurve3D::project_point` is exact: a branch and bound over the
   knot spans (bounding boxes of the span poles, visited nearest first)
   in which each visited span is scanned exactly. On a span the
@@ -106,8 +112,8 @@ the Python distribution are versioned in lockstep.
 
 - B-spline `extrema`/`project_point` silently dropped seeds whose
   Gauss-Newton refinement did not converge, which could return a far
-  local minimum (e.g. 44.4 instead of 2.35); the surface search now
-  keeps them, and curves no longer seed (see Changed).
+  local minimum (e.g. 44.4 instead of 2.35); neither search seeds any
+  more (see Changed).
 - Periodic B-spline derivatives just below the last parameter came from
   the first span: wrapping the parameter into the period could round it
   onto the first knot. A parameter already inside the period is left
