@@ -20,13 +20,15 @@ use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface,
 use geomcore::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, CircleConic3DIntersection,
     CircleConicHit, CircleSurfaceIntersection, ConeConeIntersection, ConeCylinderIntersection,
-    ConicSurfaceIntersection, CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection,
-    LineCircle3DIntersection, LineConic3DIntersection, LineConicHit, LineLine2DIntersection,
-    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
-    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D,
-    SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection, Tolerance,
-    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
-    TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D, Vector3D,
+    ConicSurfaceIntersection, CylinderCylinderIntersection, EllipseEllipse3DIntersection,
+    EllipseEllipseHit, Frame3D, LineCircle2DIntersection, LineCircle3DIntersection,
+    LineConic3DIntersection, LineConicHit, LineLine2DIntersection, LineLine3DIntersection,
+    LinePlaneIntersection, LineQuadricIntersection, LineTorusHit, LineTorusIntersection,
+    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
+    PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
+    SphereSphereIntersection, Tolerance, TorusConeIntersection, TorusCylinderIntersection,
+    TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D,
+    Vector3D,
 };
 use geomcore::{curve_curve_extrema, intersect_curve_curve};
 
@@ -470,6 +472,13 @@ impl PyPlane {
         PyVector3D(self.0.normal())
     }
 
+    /// Image of this plane under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyPlane(self.0.transformed(transform.0).map_err(val_err)?))
+    }
+
     /// Evaluate the point at surface parameters (u, v).
     fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
         PyPoint3D(self.0.eval_point(u, v))
@@ -713,6 +722,15 @@ impl PyCylinder {
         self.0.radius()
     }
 
+    /// Image of this cylinder under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyCylinder(
+            self.0.transformed(transform.0).map_err(val_err)?,
+        ))
+    }
+
     /// Evaluate the point at surface parameters (u, v).
     fn eval_point(&self, u: f64, v: f64) -> PyPoint3D {
         PyPoint3D(self.0.eval_point(u, v))
@@ -859,6 +877,13 @@ impl PyCone {
     /// The radius of the reference section at v = 0.
     fn ref_radius(&self) -> f64 {
         self.0.ref_radius()
+    }
+
+    /// Image of this cone under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyCone(self.0.transformed(transform.0).map_err(val_err)?))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -1013,6 +1038,13 @@ impl PySphere {
     /// The enclosed volume (`4/3*PI*radius^3`).
     fn volume(&self) -> f64 {
         self.0.volume()
+    }
+
+    /// Image of this sphere under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PySphere(self.0.transformed(transform.0).map_err(val_err)?))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -1209,6 +1241,13 @@ impl PyTorus {
     /// The tube radius.
     fn minor_radius(&self) -> f64 {
         self.0.minor_radius()
+    }
+
+    /// Image of this torus under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyTorus(self.0.transformed(transform.0).map_err(val_err)?))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -1524,6 +1563,12 @@ impl PyBSplineSurface {
         self.0.is_rational()
     }
 
+    /// Image of this surface under `transform` (maps every control pole).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> Self {
+        PyBSplineSurface(self.0.transformed(transform.0))
+    }
+
     /// Returns whether `point` lies on the surface within `tol`
     /// (`Tolerance.default()` when omitted).
     #[pyo3(signature = (point, tol = None))]
@@ -1532,7 +1577,7 @@ impl PyBSplineSurface {
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
-    /// All stationary points of the distance from `point` to the surface,
+    /// The local minima of the distance from `point` to the surface,
     /// as `(u, v, distance)` tuples ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
     fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64, f64)> {
@@ -1584,7 +1629,7 @@ impl PyBSplineSurface {
             .collect()
     }
 
-    /// Evaluate the first partial derivative: (du, dv) must be (1, 0) or (0, 1).
+    /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
         PyVector3D(self.0.eval_derivative(u, v, du, dv))
     }
@@ -1840,6 +1885,67 @@ fn circle_conic_to_py(
     }
 }
 
+fn line_torus_hit(py: Python<'_>, h: &LineTorusHit) -> PyResult<Py<PyAny>> {
+    (
+        h.line_param,
+        PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+        h.surface_params,
+        h.multiplicity,
+    )
+        .into_pyobject(py)
+        .map(|o| o.into_any().unbind())
+}
+
+fn line_torus_to_py(py: Python<'_>, hit: LineTorusIntersection) -> PyResult<(String, Py<PyAny>)> {
+    match hit {
+        LineTorusIntersection::Hits(hits) => {
+            let mut out = Vec::with_capacity(hits.len());
+            for h in &hits {
+                out.push(line_torus_hit(py, h)?);
+            }
+            Ok((
+                "hits".to_string(),
+                out.into_pyobject(py)?.into_any().unbind(),
+            ))
+        }
+        LineTorusIntersection::Empty => Ok(("empty".to_string(), py.None())),
+    }
+}
+
+fn ellipse_ellipse_hit(py: Python<'_>, h: &EllipseEllipseHit) -> PyResult<Py<PyAny>> {
+    (
+        h.first_param,
+        PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+        h.second_param,
+    )
+        .into_pyobject(py)
+        .map(|o| o.into_any().unbind())
+}
+
+fn ellipse_ellipse_to_py(
+    py: Python<'_>,
+    hit: EllipseEllipse3DIntersection,
+) -> PyResult<(String, Py<PyAny>)> {
+    match hit {
+        EllipseEllipse3DIntersection::Points(hits) => {
+            let mut out = Vec::with_capacity(hits.len());
+            for h in &hits {
+                out.push(ellipse_ellipse_hit(py, h)?);
+            }
+            Ok((
+                "points".to_string(),
+                out.into_pyobject(py)?.into_any().unbind(),
+            ))
+        }
+        EllipseEllipse3DIntersection::Tangent(h) => {
+            Ok(("tangent".to_string(), ellipse_ellipse_hit(py, &h)?))
+        }
+        EllipseEllipse3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
+        EllipseEllipse3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        EllipseEllipse3DIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+    }
+}
+
 fn quadric_hit_to_py(
     py: Python<'_>,
     hit: LineQuadricIntersection,
@@ -1961,6 +2067,13 @@ impl PyLine3D {
     /// The unit direction of the line.
     fn direction(&self) -> PyVector3D {
         PyVector3D(self.0.direction())
+    }
+
+    /// Image of this line under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyLine3D(self.0.transformed(transform.0).map_err(val_err)?))
     }
 
     /// Evaluate the point at parameter `u`.
@@ -2193,6 +2306,21 @@ impl PyLine3D {
         line_conic_to_py(py, self.0.intersect_hyperbola(&hyperbola.0, tol))
     }
 
+    /// Intersects this line with a torus.
+    ///
+    /// Returns `("hits", [(t, Point3D, (u, v), multiplicity)])` (up to
+    /// four hits ordered by line parameter) or `("empty", None)`.
+    #[pyo3(signature = (torus, tol = None))]
+    fn intersect_torus(
+        &self,
+        py: Python<'_>,
+        torus: &PyTorus,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        line_torus_to_py(py, self.0.intersect_torus(&torus.0, tol))
+    }
+
     /// Compute this line's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
@@ -2266,6 +2394,15 @@ impl PyCircle3D {
     /// The unit normal of the circle's plane.
     fn normal(&self) -> PyVector3D {
         PyVector3D(self.0.normal())
+    }
+
+    /// Image of this circle under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyCircle3D(
+            self.0.transformed(transform.0).map_err(val_err)?,
+        ))
     }
 
     /// Evaluate the point at angle `u` (radians).
@@ -2530,6 +2667,15 @@ impl PyEllipse3D {
         self.0.area()
     }
 
+    /// Image of this ellipse under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyEllipse3D(
+            self.0.transformed(transform.0).map_err(val_err)?,
+        ))
+    }
+
     /// Evaluate the point at angle `u` (radians).
     fn eval_point(&self, u: f64) -> PyPoint3D {
         PyPoint3D(self.0.eval_point(u))
@@ -2649,6 +2795,23 @@ impl PyEllipse3D {
         conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
     }
 
+    /// Intersects this ellipse with another 3D ellipse.
+    ///
+    /// Only coplanar pairs admit a closed form. Returns
+    /// `("points", [(s, Point3D, t)])`, `("tangent", (s, Point3D, t))`,
+    /// `("empty", None)`, `("coincident", None)` or
+    /// `("not_analytic", None)`.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect_ellipse(
+        &self,
+        py: Python<'_>,
+        other: &PyEllipse3D,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<(String, Py<PyAny>)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        ellipse_ellipse_to_py(py, self.0.intersect_ellipse(&other.0, tol))
+    }
+
     /// Not available for ellipses in this release; always raises `ValueError`.
     fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
@@ -2687,6 +2850,15 @@ impl PyParabola3D {
     /// The focal distance.
     fn focal(&self) -> f64 {
         self.0.focal()
+    }
+
+    /// Image of this parabola under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyParabola3D(
+            self.0.transformed(transform.0).map_err(val_err)?,
+        ))
     }
 
     /// Evaluate the point at parameter `u`.
@@ -2873,6 +3045,15 @@ impl PyHyperbola3D {
     /// The semi-minor (conjugate) radius.
     fn minor_radius(&self) -> f64 {
         self.0.minor_radius()
+    }
+
+    /// Image of this hyperbola under `transform` (raises ValueError for a
+    /// collapsing transform).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
+        Ok(PyHyperbola3D(
+            self.0.transformed(transform.0).map_err(val_err)?,
+        ))
     }
 
     /// Evaluate the point at parameter `u`.
@@ -3100,8 +3281,9 @@ impl PyBSplineCurve3D {
             .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
     }
 
-    /// All stationary points of the distance from `point` to the curve,
-    /// as `(parameter, distance)` tuples ordered by ascending distance.
+    /// The local minima of the distance from `point` to the curve (plus
+    /// the interval ends of an open curve), as `(parameter, distance)`
+    /// tuples ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
     fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
@@ -3132,6 +3314,12 @@ impl PyBSplineCurve3D {
             .iter()
             .map(|p| (p.parameter, p.distance))
             .collect()
+    }
+
+    /// Image of this curve under `transform` (maps every control pole).
+    #[pyo3(signature = (transform,))]
+    fn transformed(&self, transform: &PyTransform) -> Self {
+        PyBSplineCurve3D(self.0.transformed(transform.0))
     }
 
     /// Evaluate the point at parameter `u`.

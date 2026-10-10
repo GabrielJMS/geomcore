@@ -7,7 +7,7 @@ use crate::surface_math::analytic;
 use crate::tol;
 use crate::{
     Circle3D, ConeConeIntersection, ConeCylinderIntersection, Cylinder, Frame3D, Point3D,
-    Tolerance, Vector3D,
+    Tolerance, Transform, Vector3D,
 };
 use std::fmt;
 
@@ -246,6 +246,33 @@ impl Cone {
     pub fn apex(&self) -> Point3D {
         let v = -self.ref_radius / self.semi_angle.tan();
         self.frame.point_at(0.0, 0.0, v)
+    }
+
+    /// Returns the image of this cone under `transform`: the frame origin
+    /// and directions map point-wise, the semi-angle is unchanged (a
+    /// similarity preserves angles), and the reference radius scales by
+    /// the transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the angular direction
+    /// reverses. Fails with [`ConeConstructionError::NullNormal`] only
+    /// when the transform collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Transform, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+    /// let moved = cone.transformed(Transform::translation(Vector3D::new(1.0, 0.0, 0.0))).unwrap();
+    /// assert_eq!(moved.semi_angle(), 0.4);
+    /// assert_eq!(moved.ref_radius(), 2.0);
+    /// assert_eq!(moved.eval_point(0.0, 0.0), Point3D::new(3.0, 0.0, 0.0));
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Cone, ConeConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| ConeConstructionError::NullNormal)?;
+        Cone::from_frame(frame, self.semi_angle(), self.ref_radius() * scale)
     }
 
     /// Evaluates the point on the cone at `(u, v)`. See the type-level docs
@@ -859,5 +886,45 @@ mod tests {
             c1.intersect_cone(&tilted, tol),
             ConeConeIntersection::NotAnalytic
         );
+    }
+
+    // ---- transformed ----
+
+    #[test]
+    fn test_cone_transformed_translation_spot_check() {
+        let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+        let t = Transform::translation(Vector3D::new(0.0, 3.0, 0.0));
+        let moved = cone.transformed(t).unwrap();
+        assert_eq!(moved.semi_angle(), 0.4);
+        assert_eq!(moved.ref_radius(), 2.0);
+        // Hand-computed evaluation, shifted; the apex shifts identically.
+        assert_eq!(moved.eval_point(0.0, 0.0), Point3D::new(2.0, 3.0, 0.0));
+        assert_eq!(moved.apex(), t.apply_point(cone.apex()));
+    }
+
+    #[test]
+    fn test_cone_transformed_round_trip_and_mirror() {
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let t = Transform::translation(Vector3D::new(1.0, -1.0, 2.0))
+            .then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = cone.transformed(t).unwrap();
+        assert_eq!(moved.semi_angle(), 0.4);
+        assert_eq!(moved.ref_radius(), 4.0);
+        let tol = Tolerance::DEFAULT;
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0), (4.0, 0.5)] {
+            assert!(moved.contains(t.apply_point(cone.eval_point(u, v)), tol));
+        }
+        let inv = Transform::scaling(Point3D::ORIGIN, 0.5)
+            .then(Transform::translation(Vector3D::new(-1.0, 1.0, -2.0)));
+        let back = moved.transformed(inv).unwrap();
+        assert!((back.ref_radius() - cone.ref_radius()).abs() < 1e-9);
+        assert!(back.apex().distance(cone.apex()) < 1e-9);
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = cone.transformed(m).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0)] {
+            assert!(mirrored.contains(m.apply_point(cone.eval_point(u, v)), tol));
+        }
+        assert_eq!(mirrored.transformed(m).unwrap(), cone);
     }
 }

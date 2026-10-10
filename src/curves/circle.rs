@@ -15,7 +15,7 @@ use crate::tol;
 use crate::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, Cone, Cylinder, Ellipse3D,
     Frame2D, Frame3D, Hyperbola3D, Parabola3D, Plane, Point2D, Point3D, Sphere, Tolerance,
-    Vector2D, Vector3D,
+    Transform, Vector2D, Vector3D,
 };
 use std::fmt;
 
@@ -255,6 +255,31 @@ impl Circle3D {
         self.frame.z_direction()
     }
 
+    /// Returns the image of this circle under `transform`: the center and
+    /// frame directions map point-wise while the radius scales by the
+    /// transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the angular direction
+    /// reverses. Fails with [`CircleConstructionError::NullNormal`] only
+    /// when the transform collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Point3D, Transform, Vector3D};
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let moved = circle.transformed(Transform::translation(Vector3D::new(0.0, 0.0, 5.0))).unwrap();
+    /// assert_eq!(moved.center(), Point3D::new(0.0, 0.0, 5.0));
+    /// assert_eq!(moved.radius(), 2.0);
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Circle3D, CircleConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| CircleConstructionError::NullNormal)?;
+        Circle3D::from_frame(frame, self.radius() * scale)
+    }
+
     /// Evaluates the point on the circle at angular parameter `u`:
     /// `center + radius*cos(u)*x_dir + radius*sin(u)*y_dir`.
     ///
@@ -427,7 +452,8 @@ impl Circle3D {
     /// Shared solve for [`Circle3D::intersect_ellipse`],
     /// [`Circle3D::intersect_parabola`], and
     /// [`Circle3D::intersect_hyperbola`]: only coplanar pairs admit a
-    /// closed form (anything else reports
+    /// closed form (distinct parallel planes report
+    /// [`CircleConic3DIntersection::Empty`], anything else
     /// [`CircleConic3DIntersection::NotAnalytic`]). The circle parametrizes
     /// into the conic's implicit equation and the trigonometric candidates
     /// verify against the conic, so roots on the unmodeled hyperbola
@@ -444,17 +470,21 @@ impl Circle3D {
         }
         let plane = Plane::from_frame(self.frame());
         if !plane.contains(conic.origin, tol) {
-            return CircleConic3DIntersection::NotAnalytic;
+            // Distinct parallel planes.
+            return CircleConic3DIntersection::Empty;
         }
         let w = self.center() - conic.origin;
+        let r = self.radius();
         let (a2, b2, c1, d1, e) =
             conic
                 .implicit
-                .circle_substitute(w.dot(conic.x), w.dot(conic.y), self.radius());
+                .circle_substitute(w.dot(conic.x), w.dot(conic.y), r);
         let hits: Vec<CircleConicHit> = solve_trig(a2, b2, c1, d1, e, tol)
             .into_iter()
             .filter_map(|(s, _)| {
-                let p = self.eval_point(s);
+                // `s` is the angle from the conic's x axis, not the
+                // circle's own parameter.
+                let p = self.center() + conic.x * (r * s.cos()) + conic.y * (r * s.sin());
                 if contains(p) {
                     Some(CircleConicHit {
                         circle_param: self.parameter_of(p),
@@ -1154,7 +1184,8 @@ mod tests {
     use crate::{
         Circle2D, Circle3D, CircleCircle2DIntersection, CircleCircle3DIntersection,
         CircleConic3DIntersection, CircleConstructionError, CircleSurfaceIntersection, Ellipse3D,
-        Frame2D, Frame3D, Hyperbola3D, Parabola3D, Point2D, Point3D, Tolerance, Vector2D, Vector3D,
+        Frame2D, Frame3D, Hyperbola3D, Parabola3D, Point2D, Point3D, Tolerance, Transform,
+        Vector2D, Vector3D,
     };
 
     // ---- Circle3D construction ----
@@ -1584,6 +1615,49 @@ mod tests {
             circle.intersect_ellipse(&far, tol),
             CircleConic3DIntersection::Empty
         );
+        // Parallel but offset plane: nothing.
+        let lifted = Ellipse3D::new(
+            Point3D::new(0.0, 0.0, 1.0),
+            Vector3D::Z,
+            Vector3D::X,
+            3.0,
+            1.5,
+        )
+        .unwrap();
+        assert_eq!(
+            circle.intersect_ellipse(&lifted, tol),
+            CircleConic3DIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_circle3d_intersect_ellipse_rotated_frames() {
+        // The circle's x axis differs from the ellipse's (it used to be
+        // solved in one frame and evaluated in the other, losing every hit).
+        let tol = Tolerance::DEFAULT;
+        let x = Vector3D::new(0.1f64.cos(), 0.1f64.sin(), 0.0);
+        let circle =
+            Circle3D::from_frame(Frame3D::new(Point3D::ORIGIN, Vector3D::Z, x).unwrap(), 2.0)
+                .unwrap();
+        let ellipse = Ellipse3D::new(
+            Point3D::new(0.5, 0.0, 0.0),
+            Vector3D::Z,
+            Vector3D::X,
+            3.0,
+            1.0,
+        )
+        .unwrap();
+        match circle.intersect_ellipse(&ellipse, tol) {
+            CircleConic3DIntersection::Points(hits) => {
+                assert_eq!(hits.len(), 4);
+                for h in &hits {
+                    assert!(circle.contains(h.point, tol));
+                    assert!(ellipse.contains(h.point, tol));
+                    assert!(circle.eval_point(h.circle_param).distance(h.point) < 1e-12);
+                }
+            }
+            other => panic!("expected four points, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1718,5 +1792,67 @@ mod tests {
             CircleSurfaceIntersection::Circle(_) => {}
             _ => panic!("expected the whole circle"),
         }
+    }
+
+    // ---- Circle3D transformed ----
+
+    #[test]
+    fn test_circle3d_transformed_translation_spot_check() {
+        let circle = Circle3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        let t = Transform::translation(Vector3D::new(0.0, 0.0, 5.0));
+        let moved = circle.transformed(t).unwrap();
+        assert_eq!(moved.center(), Point3D::new(1.0, 0.0, 5.0));
+        assert_eq!(moved.radius(), 2.0);
+        assert_eq!(moved.normal(), Vector3D::Z);
+        // Hand-computed evaluation at u = 0.
+        assert_eq!(moved.eval_point(0.0), Point3D::new(3.0, 0.0, 5.0));
+    }
+
+    #[test]
+    fn test_circle3d_transformed_scale_and_round_trip() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let t = Transform::scaling(Point3D::new(1.0, 0.0, 0.0), 2.0);
+        let moved = circle.transformed(t).unwrap();
+        assert_eq!(moved.center(), Point3D::new(-1.0, 0.0, 0.0));
+        assert_eq!(moved.radius(), 4.0);
+        // Transformed points stay on the transformed circle.
+        let tol = Tolerance::DEFAULT;
+        for u in [0.0, 1.0, 2.5] {
+            assert!(moved.contains(t.apply_point(circle.eval_point(u)), tol));
+        }
+        // Round trip through the inverse scale restores the circle.
+        let back = moved
+            .transformed(Transform::scaling(Point3D::new(1.0, 0.0, 0.0), 0.5))
+            .unwrap();
+        assert!(back.center().distance(circle.center()) < 1e-9);
+        assert!((back.radius() - circle.radius()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_circle3d_transformed_mirror_reverses_orientation() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let moved = circle.transformed(m).unwrap();
+        assert_eq!(moved.center(), Point3D::ORIGIN);
+        assert_eq!(moved.radius(), 2.0);
+        assert_eq!(moved.normal(), -Vector3D::Z);
+        // Same point set, opposite angular direction.
+        let tol = Tolerance::DEFAULT;
+        for u in [0.0, 0.7, 2.1] {
+            let expected = m.apply_point(circle.eval_point(u));
+            assert!(moved.contains(expected, tol));
+            assert!(moved.eval_point(-u).distance(expected) < 1e-9);
+        }
+        // Mirroring twice is the identity.
+        assert_eq!(moved.transformed(m).unwrap(), circle);
+    }
+
+    #[test]
+    fn test_circle3d_transformed_zero_scale_errors() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        assert_eq!(
+            circle.transformed(Transform::scaling(Point3D::ORIGIN, 0.0)),
+            Err(CircleConstructionError::NullNormal)
+        );
     }
 }

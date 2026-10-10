@@ -100,13 +100,14 @@ pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, CircleConic3DIntersection,
     CircleConicHit, CircleSurfaceIntersection, ConeConeIntersection, ConeCylinderIntersection,
     ConicSurfaceHit, ConicSurfaceIntersection, CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit,
-    CylinderCylinderIntersection, LineCircle2DIntersection, LineCircle3DIntersection,
-    LineConic3DIntersection, LineConicHit, LineLine2DIntersection, LineLine3DIntersection,
-    LinePlaneIntersection, LineQuadricIntersection, PlaneConeIntersection,
-    PlaneCylinderIntersection, PlanePlaneIntersection, PlaneSphereIntersection,
-    SphereConeIntersection, SphereCylinderIntersection, SphereSphereIntersection,
-    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
-    TorusSphereIntersection, TorusTorusIntersection,
+    CylinderCylinderIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit,
+    LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection, LineConicHit,
+    LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
+    LineTorusHit, LineTorusIntersection, PlaneConeIntersection, PlaneCylinderIntersection,
+    PlanePlaneIntersection, PlaneSphereIntersection, SphereConeIntersection,
+    SphereCylinderIntersection, SphereSphereIntersection, TorusConeIntersection,
+    TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
+    TorusTorusIntersection,
 };
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};

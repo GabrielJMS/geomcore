@@ -9,6 +9,118 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- `transformed(transform)` on every 3D curve and surface (`Line3D`,
+  `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`,
+  `BSplineCurve3D`, `Plane`, `Cylinder`, `Cone`, `Sphere`, `Torus`,
+  `BSplineSurface`). Analytic types map their frame and scale their
+  radii by the uniform scale factor (a mirror re-derives a right-handed
+  frame, reversing the angular direction) and fail only for a
+  collapsing transform; B-splines map every control pole. Python:
+  same-named methods (analytic types raise `ValueError` on collapse).
+- Second-order derivatives for `BSplineSurface::eval_derivative`
+  (`(2,0)`, `(1,1)`, `(0,2)`, rational via the quotient rule); the
+  fixture goldens now carry them.
+
+### Changed
+
+- B-spline curve and surface evaluation rewritten around the local
+  basis functions (The NURBS Book A2.2/A2.3) over the `p+1` (resp.
+  `(p+1)(q+1)`) affected poles with fixed-size stack tables, instead of
+  copying all poles per call: 10-30x faster on large control nets,
+  results unchanged to 1e-14.
+- `gauss_newton_1d`/`gauss_newton_2d` evaluate each trial residual once.
+- `BSplineSurface::project_point` is a branch and bound over the
+  knot-span patches: a bounding-box hierarchy of the patch control
+  poles (built once per surface, on the first projection) is visited
+  by increasing box distance, and each patch is refined by a
+  box-bounded Newton minimisation of the squared distance with exact
+  second derivatives (minima on edges and corners are reached exactly).
+  Against dense brute force on 6x6 to 80x80 nets the previous version
+  missed the global minimum for 7-15% of query points (by up to 106
+  units); the new one misses none and is 20-80x faster.
+- `BSplineSurface::extrema` seeds from the discrete local minima of a
+  knot-aware sample grid (at least `max(degree, 2)` samples per span,
+  wrapping across periodic seams) and refines them by the same Newton
+  minimisation.
+- `BSplineCurve3D::project_point` is exact: a branch and bound over the
+  knot spans (bounding boxes of the span poles, visited nearest first)
+  in which each visited span is scanned exactly. On a span the
+  derivative of the squared distance has the sign of a polynomial
+  (degree `2p - 1`, `3p - 1` if rational); its rising roots are
+  bracketed in Bernstein form (Descartes' rule of signs with de
+  Casteljau halving) and refined by a Newton minimisation bounded to
+  the bracket, so every minimum is found however close basins sit, and
+  the foot point is exact to rounding. On 9,900 random curves (degree
+  1-5, rational, periodic, interior knots of any multiplicity) none is
+  farther than a dense brute-force search; the previous sampling-based
+  search missed 3.9% of them. Speed is unchanged (1-8 us at degree <= 5).
+- `BSplineCurve3D::extrema` returns the local minima of the distance
+  (plus the ends of an open curve), found by the same exact scan over
+  every span; a knot is a minimum when the distance falls into it and
+  rises out of it. Its documentation (and `BSplineSurface::extrema`'s,
+  in Python) promised all stationary points, which neither returns.
+- The bounded Newton minimisation behind B-spline projection accepts a
+  step that shrinks the gradient once the squared distance is flat to
+  rounding, so the foot converges to full precision (it stalled near
+  `sqrt(eps)` in the parameter).
+- `Circle3D` intersection with a conic in a parallel, offset plane
+  returns `Empty` (it returned `NotAnalytic`).
+- `real_roots` (behind every analytic intersection and conic
+  projection) scales the polynomial exactly by powers of two, splits it
+  into real linear and quadratic factors refined by Newton, and solves
+  roots of very different magnitudes each at its own scale. It is about
+  2x slower (150-630 ns) for far fewer failures (below).
+- Line intersections with spheres, cylinders, cones, tori and in-plane
+  conics form their equation about the line's closest approach to the
+  geometry, so the tangency band is `tol.confusion` around the chord's
+  midpoint wherever the line's origin lies.
+
+### Fixed
+
+- B-spline `extrema`/`project_point` silently dropped seeds whose
+  Gauss-Newton refinement did not converge, which could return a far
+  local minimum (e.g. 44.4 instead of 2.35); the surface search now
+  keeps them, and curves no longer seed (see Changed).
+- Periodic B-spline derivatives just below the last parameter came from
+  the first span: wrapping the parameter into the period could round it
+  onto the first knot. A parameter already inside the period is left
+  unchanged.
+- `Circle3D` intersection with an ellipse, parabola or hyperbola whose
+  frame's x-axis differs from the circle's lost every hit: the angles
+  were solved in the conic's frame but evaluated in the circle's.
+- `Ellipse3D`/`Parabola3D`/`Hyperbola3D::contains` agree with
+  `project_point`: a point within tolerance of the curve but where
+  parameter inversion lands elsewhere (far out on an arm, say)
+  was rejected (38, 285 and 54 wrong answers in 1,800 randomized checks
+  per curve type).
+- `real_roots`: a small nonzero leading coefficient was treated as zero,
+  dropping the large root it implies; small roots next to large ones lost
+  their precision; huge coefficients produced NaN and panicked; tiny ones
+  underflowed into false double roots. Exact triple and quadruple roots
+  now report their full multiplicity. On about 7,200 stress polynomials
+  per seed, failures against 80-digit arithmetic drop from about 2,000
+  (and about 115 panics) to 2, both errors of the reference itself.
+- Removed a leftover debug `eprintln!` from the quartic solver that
+  printed to stderr on every call since 0.24.0.
+- Periodic B-spline curves and surfaces with a seam multiplicity above
+  1 evaluated against the wrong poles: pole 0 now starts at the span
+  opened by the last copy of the first knot. Pinned by new fixture
+  cases verified in exact arithmetic.
+- B-spline derivatives exactly on an interior knot now come from the
+  span to its right (they came from the left one, which differs at
+  C0/C1 knots); on a periodic curve only exactly the last parameter
+  closes the last span, other seam copies wrap to the first.
+- `Ellipse3D` projection/`extrema` near the parameter `pi`: the
+  `tan(t/2)` quartic degenerates there, so on-curve points could
+  project up to 10.6 away on a flat ellipse. The reversed quartic now
+  covers that half, and every root is Newton-polished on the
+  trigonometric stationarity equation.
+- `Hyperbola3D` projection/`extrema` roots are Newton-polished on the
+  hyperbolic stationarity equation (on-curve points of a thin
+  hyperbola projected 3.4e-6 away).
+
 ## [0.25.0] - 2026-09-30
 
 ### Added

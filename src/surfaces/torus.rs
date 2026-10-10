@@ -7,7 +7,7 @@ use crate::surface_math::analytic;
 use crate::{
     Circle3D, Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, TorusConeIntersection,
     TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
-    TorusTorusIntersection, Vector3D,
+    TorusTorusIntersection, Transform, Vector3D,
 };
 use std::fmt;
 
@@ -169,6 +169,35 @@ impl Torus {
     /// ```
     pub fn minor_radius(&self) -> f64 {
         self.minor_radius
+    }
+
+    /// Returns the image of this torus under `transform`: the center and
+    /// frame directions map point-wise while both radii scale by the
+    /// transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the angular direction
+    /// reverses. Fails with [`TorusConstructionError::NullNormal`] only
+    /// when the transform collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Transform, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let moved = torus.transformed(Transform::scaling(Point3D::ORIGIN, 2.0)).unwrap();
+    /// assert_eq!(moved.major_radius(), 10.0);
+    /// assert_eq!(moved.minor_radius(), 3.0);
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Torus, TorusConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| TorusConstructionError::NullNormal)?;
+        Torus::from_frame(
+            frame,
+            self.major_radius() * scale,
+            self.minor_radius() * scale,
+        )
     }
 
     /// Evaluates the point on the torus at `(u, v)`. See the type-level
@@ -989,5 +1018,49 @@ mod tests {
             t1.intersect_torus(&crossed, tol),
             TorusTorusIntersection::NotAnalytic
         );
+    }
+
+    // ---- transformed ----
+
+    #[test]
+    fn test_torus_transformed_translation_spot_check() {
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+        let t = Transform::translation(Vector3D::new(0.0, 0.0, 2.0));
+        let moved = torus.transformed(t).unwrap();
+        assert_eq!(moved.center(), Point3D::new(0.0, 0.0, 2.0));
+        assert_eq!(moved.major_radius(), 5.0);
+        assert_eq!(moved.minor_radius(), 1.5);
+        // Hand-computed evaluation at (0, 0), shifted.
+        assert_eq!(moved.eval_point(0.0, 0.0), Point3D::new(6.5, 0.0, 2.0));
+    }
+
+    #[test]
+    fn test_torus_transformed_round_trip_and_mirror() {
+        use crate::Axis3D;
+        use std::f64::consts::PI;
+        let torus = Torus::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 5.0, 1.5).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let t = Transform::rotation(axis, PI / 2.0).then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = torus.transformed(t).unwrap();
+        assert_eq!(moved.major_radius(), 10.0);
+        assert_eq!(moved.minor_radius(), 3.0);
+        assert!(moved.center().distance(Point3D::new(0.0, 4.0, 0.0)) < 1e-9);
+        let tol = Tolerance::DEFAULT;
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3), (4.0, -0.5)] {
+            assert!(moved.contains(t.apply_point(torus.eval_point(u, v)), tol));
+        }
+        let inv =
+            Transform::scaling(Point3D::ORIGIN, 0.5).then(Transform::rotation(axis, -PI / 2.0));
+        let back = moved.transformed(inv).unwrap();
+        assert!((back.major_radius() - torus.major_radius()).abs() < 1e-9);
+        assert!((back.minor_radius() - torus.minor_radius()).abs() < 1e-9);
+        assert!(back.center().distance(torus.center()) < 1e-9);
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = torus.transformed(m).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3)] {
+            assert!(mirrored.contains(m.apply_point(torus.eval_point(u, v)), tol));
+        }
+        assert_eq!(mirrored.transformed(m).unwrap(), torus);
     }
 }

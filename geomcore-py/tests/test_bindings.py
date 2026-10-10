@@ -723,3 +723,114 @@ def test_circle_conic_intersections():
     assert kind == "points"
     assert len(hits) == 2
     assert all(p.x > 0.0 for _, p, _ in hits)
+
+
+def test_line_torus_intersections():
+    from geomcore.curves import Line3D
+    from geomcore.surfaces import Torus
+
+    torus = Torus(Point3D.origin(), Vector3D.z(), 4.0, 1.0)
+    kind, hits = Line3D(Point3D.origin(), Vector3D.x()).intersect_torus(torus)
+    assert kind == "hits"
+    assert [t for t, _, _, _ in hits] == pytest.approx([-5.0, -3.0, 3.0, 5.0])
+    for t, p, (u, v), mult in hits:
+        assert mult == 1
+        assert torus.contains(p)
+        uu, vv, dist = torus.project_point(p)
+        assert dist == pytest.approx(0.0)
+        assert (u, v) == pytest.approx((uu, vv))
+
+    kind, hits = Line3D(Point3D(0.0, 5.0, 0.0), Vector3D.x()).intersect_torus(torus)
+    assert kind == "hits"
+    assert len(hits) == 1
+    assert hits[0][0] == pytest.approx(0.0)
+    assert hits[0][3] == 2
+
+    assert Line3D(Point3D(0.0, 6.0, 0.0), Vector3D.x()).intersect_torus(torus) == (
+        "empty",
+        None,
+    )
+
+
+def test_ellipse_ellipse_intersections():
+    from geomcore.curves import Ellipse3D
+
+    e1 = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    e2 = Ellipse3D(Point3D(0.5, 0.0, 0.0), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
+    kind, hits = e1.intersect_ellipse(e2)
+    assert kind == "points"
+    assert len(hits) == 4
+    for s, p, t in hits:
+        assert e1.contains(p)
+        assert e2.contains(p)
+
+    grazing = Ellipse3D(Point3D(5.0, 0.0, 0.0), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
+    kind, (s, p, t) = e1.intersect_ellipse(grazing)
+    assert kind == "tangent"
+    assert (p.x, p.y, p.z) == pytest.approx((3.0, 0.0, 0.0))
+
+    far = Ellipse3D(Point3D(10.0, 0.0, 0.0), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    assert e1.intersect_ellipse(far) == ("empty", None)
+    assert e1.intersect_ellipse(e1) == ("coincident", None)
+    tilted = Ellipse3D(Point3D.origin(), Vector3D.x(), Vector3D.z(), 3.0, 1.5)
+    assert e1.intersect_ellipse(tilted) == ("not_analytic", None)
+
+
+def _rigid_motion():
+    axis = Axis3D(Point3D(0.5, -1.0, 0.0), Vector3D(1.0, 2.0, 2.0))
+    return Transform.translation(Vector3D(3.0, -1.0, 2.0)).then(Transform.rotation(axis, 0.7))
+
+
+def _assert_same_point(a, b):
+    assert (a.x, a.y, a.z) == pytest.approx((b.x, b.y, b.z), abs=1e-9)
+
+
+def test_curves_transformed_commute_with_eval():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Line3D, Parabola3D
+
+    t = _rigid_motion()
+    curves = [
+        Line3D(Point3D(1.0, -2.0, 0.5), Vector3D(1.0, 2.0, 2.0)),
+        Circle3D(Point3D(1.0, 0.0, 0.0), Vector3D.z(), 2.0),
+        Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5),
+        Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 0.5),
+        Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0),
+        BSplineCurve3D(
+            2,
+            [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 2.0, 0.0), Point3D(3.0, 1.0, 1.0)],
+            [0.0, 1.0],
+            [3, 3],
+            False,
+        ),
+    ]
+    for curve in curves:
+        moved = curve.transformed(t)
+        assert type(moved) is type(curve)
+        for u in (0.0, 0.3, 0.9):
+            _assert_same_point(moved.eval_point(u), t.apply_point(curve.eval_point(u)))
+
+
+def test_surfaces_transformed_commute_with_eval():
+    from geomcore.surfaces import Cone, Plane, Torus
+
+    t = _rigid_motion()
+    surfaces = [
+        Plane(Point3D(0.0, 0.0, 1.0), Vector3D(0.0, 1.0, 1.0)),
+        Cylinder(Point3D.origin(), Vector3D.z(), 2.0),
+        Cone(Point3D.origin(), Vector3D.z(), 0.4, 1.0),
+        Sphere(Point3D(1.0, 2.0, 3.0), 2.0),
+        Torus(Point3D.origin(), Vector3D.z(), 3.0, 1.0),
+        _bilinear_patch(),
+    ]
+    for surface in surfaces:
+        moved = surface.transformed(t)
+        assert type(moved) is type(surface)
+        for u, v in ((0.0, 0.0), (0.3, 0.6), (0.9, 0.2)):
+            _assert_same_point(moved.eval_point(u, v), t.apply_point(surface.eval_point(u, v)))
+
+
+def test_transformed_scales_radius_and_rejects_collapse():
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    assert cylinder.transformed(Transform.scaling(Point3D.origin(), 3.0)).radius() == pytest.approx(6.0)
+    with pytest.raises(ValueError):
+        cylinder.transformed(Transform.scaling(Point3D.origin(), 0.0))

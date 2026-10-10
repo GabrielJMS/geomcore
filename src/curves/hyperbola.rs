@@ -11,7 +11,7 @@ use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
-use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Vector3D};
+use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Transform, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Hyperbola3D`] cannot be constructed from the
@@ -250,6 +250,39 @@ impl Hyperbola3D {
         self.minor_radius
     }
 
+    /// Returns the image of this hyperbola under `transform`: the center
+    /// and frame directions map point-wise while both radii scale by the
+    /// transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the transverse
+    /// direction reverses. Fails with
+    /// [`HyperbolaConstructionError::NullNormal`] only when the transform
+    /// collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Hyperbola3D, Point3D, Transform, Vector3D};
+    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+    /// let moved = hyperbola.transformed(Transform::translation(Vector3D::new(0.0, 3.0, 0.0))).unwrap();
+    /// assert_eq!(moved.center(), Point3D::new(0.0, 3.0, 0.0));
+    /// assert_eq!(moved.major_radius(), 2.0);
+    /// ```
+    pub fn transformed(
+        &self,
+        transform: Transform,
+    ) -> Result<Hyperbola3D, HyperbolaConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| HyperbolaConstructionError::NullNormal)?;
+        Hyperbola3D::from_frame(
+            frame,
+            self.major_radius() * scale,
+            self.minor_radius() * scale,
+        )
+    }
+
     /// Evaluates the point on the hyperbola at parameter `u`:
     /// `center + major*cosh(u)*x_dir + minor*sinh(u)*y_dir`.
     ///
@@ -321,10 +354,11 @@ impl Hyperbola3D {
         analytic::hyperbola_parameter(&self.frame, self.minor_radius, point)
     }
 
-    /// Returns whether `point` lies on the hyperbola: the inverse
-    /// parameter is recovered with [`Hyperbola3D::parameter_of`] and
-    /// re-evaluated, and the point counts as contained when the
-    /// re-evaluated point is within `tol.confusion` of it.
+    /// Returns whether `point` lies on the hyperbola: within `tol.confusion`
+    /// of it, exactly when [`Hyperbola3D::project_point`] reports distance `0.0`.
+    /// The inverse parameter of [`Hyperbola3D::parameter_of`] (exact on the
+    /// curve, cheap) accepts most contained points; the projection settles
+    /// the rest, since off the curve that parameter is not the closest.
     ///
     /// # Examples
     ///
@@ -338,13 +372,16 @@ impl Hyperbola3D {
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+            || self.project_point(point, tol).distance <= tol.confusion
     }
 
     /// All stationary points of the distance from `point` to the (single)
     /// hyperbola branch, ordered by ascending distance.
     ///
     /// The stationarity condition becomes a quartic in `u = e^t` (solved
-    /// by `real_roots`; only positive roots give real parameters). The
+    /// by `real_roots`; only positive roots give real parameters). Each
+    /// root is then polished by Newton on the stationarity function in `t`,
+    /// which the quartic's conditioning alone cannot guarantee. The
     /// first entry is the global closest point (see
     /// [`Hyperbola3D::project_point`]).
     ///
@@ -369,11 +406,29 @@ impl Hyperbola3D {
             -2.0 * (a * px + b * py),
             s2,
         ];
+        // The stationarity condition (H(t) - P).H'(t) in frame coordinates,
+        // and its derivative: candidates from the quartic are polished on
+        // it, since near the vertex a complex root pair crowds the real
+        // root and the polynomial alone resolves it only to ~sqrt(eps).
+        let g = |t: f64| s2 * t.sinh() * t.cosh() - a * px * t.sinh() - b * py * t.cosh();
+        let dg = |t: f64| s2 * (2.0 * t).cosh() - a * px * t.cosh() - b * py * t.sinh();
         let mut out: Vec<CurveProjection> = real_roots(&coeffs, tol.confusion)
             .into_iter()
             .filter(|r| r.value > 0.0)
             .map(|r| {
-                let t = r.value.ln();
+                let mut t = r.value.ln();
+                for _ in 0..8 {
+                    let slope = dg(t);
+                    if slope == 0.0 {
+                        break;
+                    }
+                    let next = t - g(t) / slope;
+                    let residual = g(next).abs();
+                    if residual.is_nan() || residual >= g(t).abs() {
+                        break;
+                    }
+                    t = next;
+                }
                 let distance = self.eval_point(t).distance(point);
                 CurveProjection {
                     parameter: t,
@@ -886,6 +941,15 @@ mod tests {
     }
 
     #[test]
+    fn test_hyperbola3d_project_point_polished() {
+        // Thin hyperbola: the raw e^t quartic root left on-curve points
+        // 3.4e-6 away before Newton polishing.
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 0.15, 5.7).unwrap();
+        let proj = h.project_point(h.eval_point(0.0007), Tolerance::DEFAULT);
+        assert!(proj.distance < 1e-12, "{}", proj.distance);
+    }
+
+    #[test]
     fn test_hyperbola3d_intersect_cone_crosscheck() {
         let tol = Tolerance::DEFAULT;
         let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
@@ -949,5 +1013,57 @@ mod dbg_hyp2 {
         eprintln!("roots(scrambled) = {roots:?}");
         let roots2 = real_roots(&[g[0], g[1], g[2], g[3], g[4]], tol.confusion);
         eprintln!("roots(asc) = {roots2:?}");
+    }
+}
+
+#[cfg(test)]
+mod transformed_tests {
+    use super::*;
+    use crate::{Axis3D, Point3D, Tolerance, Transform, Vector3D};
+
+    #[test]
+    fn test_hyperbola3d_transformed_translation_spot_check() {
+        let hyperbola =
+            Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
+        let t = Transform::translation(Vector3D::new(0.0, 0.0, 7.0));
+        let moved = hyperbola.transformed(t).unwrap();
+        assert_eq!(moved.center(), Point3D::new(0.0, 0.0, 7.0));
+        assert_eq!(moved.major_radius(), 2.0);
+        assert_eq!(moved.minor_radius(), 1.0);
+        // Hand-computed: center + 2*cosh(0)*X + sinh(0)*Y, shifted.
+        assert_eq!(moved.eval_point(0.0), Point3D::new(2.0, 0.0, 7.0));
+    }
+
+    #[test]
+    fn test_hyperbola3d_transformed_round_trip_and_mirror() {
+        let hyperbola = Hyperbola3D::new(
+            Point3D::new(1.0, 0.0, 0.0),
+            Vector3D::Z,
+            Vector3D::X,
+            2.0,
+            1.0,
+        )
+        .unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Y).unwrap();
+        let t = Transform::translation(Vector3D::new(0.0, 4.0, 0.0))
+            .then(Transform::rotation(axis, std::f64::consts::FRAC_PI_2));
+        let moved = hyperbola.transformed(t).unwrap();
+        let tol = Tolerance::DEFAULT;
+        for u in [0.0, 0.5, -1.0] {
+            assert!(moved.contains(t.apply_point(hyperbola.eval_point(u)), tol));
+        }
+        let inv = Transform::rotation(axis, -std::f64::consts::FRAC_PI_2)
+            .then(Transform::translation(Vector3D::new(0.0, -4.0, 0.0)));
+        let back = moved.transformed(inv).unwrap();
+        for u in [0.0, 0.5, -1.0] {
+            assert!(back.eval_point(u).distance(hyperbola.eval_point(u)) < 1e-9);
+        }
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = hyperbola.transformed(m).unwrap();
+        for u in [0.0, 0.5, -1.0] {
+            assert!(mirrored.contains(m.apply_point(hyperbola.eval_point(u)), tol));
+        }
+        assert_eq!(mirrored.transformed(m).unwrap(), hyperbola);
     }
 }

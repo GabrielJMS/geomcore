@@ -8,7 +8,7 @@ use crate::tol;
 use crate::{
     Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D,
     PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
-    PlaneSphereIntersection, Point3D, Sphere, Tolerance, Vector3D,
+    PlaneSphereIntersection, Point3D, Sphere, Tolerance, Transform, Vector3D,
 };
 use std::fmt;
 
@@ -221,6 +221,30 @@ impl Plane {
     /// ```
     pub fn normal(&self) -> Vector3D {
         self.frame.z_direction()
+    }
+
+    /// Returns the image of this plane under `transform`: the frame origin
+    /// and directions map point-wise.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed (the normal reverses): the point set is preserved but
+    /// the `(u, v)` orientation reverses. Fails with
+    /// [`PlaneConstructionError::NullNormal`] only when the transform
+    /// collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Transform, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let moved = plane.transformed(Transform::translation(Vector3D::new(0.0, 0.0, 2.0))).unwrap();
+    /// assert_eq!(moved.eval_point(1.0, 1.0), Point3D::new(1.0, 1.0, 2.0));
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Plane, PlaneConstructionError> {
+        let (frame, _) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| PlaneConstructionError::NullNormal)?;
+        Ok(Plane::from_frame(frame))
     }
 
     /// Evaluates the point on the plane at `(u, v)`:
@@ -1112,5 +1136,42 @@ mod tests {
             below.intersect_cone(&cone, tol),
             PlaneConeIntersection::Empty
         );
+    }
+
+    // ---- transformed ----
+
+    #[test]
+    fn test_plane_transformed_translation_spot_check() {
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let t = Transform::translation(Vector3D::new(1.0, -1.0, 2.0));
+        let moved = plane.transformed(t).unwrap();
+        assert_eq!(moved.normal(), Vector3D::Z);
+        // Hand-computed evaluation, shifted.
+        assert_eq!(moved.eval_point(2.0, 3.0), Point3D::new(3.0, 2.0, 2.0));
+    }
+
+    #[test]
+    fn test_plane_transformed_round_trip_and_mirror() {
+        use crate::Axis3D;
+        use std::f64::consts::PI;
+        let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let t = Transform::rotation(axis, PI / 2.0);
+        let moved = plane.transformed(t).unwrap();
+        assert!((moved.normal() - -Vector3D::Y).magnitude() < 1e-9);
+        let tol = Tolerance::DEFAULT;
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0), (-3.0, 0.5)] {
+            assert!(moved.contains(t.apply_point(plane.eval_point(u, v)), tol));
+        }
+        let back = moved
+            .transformed(Transform::rotation(axis, -PI / 2.0))
+            .unwrap();
+        assert!(back.frame().origin().distance(plane.frame().origin()) < 1e-9);
+        assert!((back.normal() - plane.normal()).magnitude() < 1e-9);
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = plane.transformed(m).unwrap();
+        assert!(mirrored.contains(m.apply_point(Point3D::new(4.0, -2.0, 1.0)), tol));
+        assert_eq!(mirrored.transformed(m).unwrap(), plane);
     }
 }

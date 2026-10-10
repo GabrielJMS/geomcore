@@ -5,7 +5,7 @@ use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{
     Circle3D, Cone, Cylinder, Frame3D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
-    SphereSphereIntersection, Tolerance, Vector3D,
+    SphereSphereIntersection, Tolerance, Transform, Vector3D,
 };
 use std::fmt;
 
@@ -132,6 +132,31 @@ impl Sphere {
     /// ```
     pub fn radius(&self) -> f64 {
         self.radius
+    }
+
+    /// Returns the image of this sphere under `transform`: the center and
+    /// frame directions map point-wise while the radius scales by the
+    /// transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the angular direction
+    /// reverses. Fails with [`SphereConstructionError::NullNormal`] only
+    /// when the transform collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, Transform, Vector3D};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let moved = sphere.transformed(Transform::translation(Vector3D::new(1.0, 2.0, 3.0))).unwrap();
+    /// assert_eq!(moved.center(), Point3D::new(1.0, 2.0, 3.0));
+    /// assert_eq!(moved.radius(), 2.0);
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Sphere, SphereConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| SphereConstructionError::NullNormal)?;
+        Sphere::from_frame(frame, self.radius() * scale)
     }
 
     /// Surface area (`4*PI*radius^2`).
@@ -730,5 +755,45 @@ mod tests {
             }
             _ => panic!("expected a tangent circle"),
         }
+    }
+
+    // ---- transformed ----
+
+    #[test]
+    fn test_sphere_transformed_translation_spot_check() {
+        let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+        let t = Transform::translation(Vector3D::new(1.0, 2.0, 3.0));
+        let moved = sphere.transformed(t).unwrap();
+        assert_eq!(moved.center(), Point3D::new(1.0, 2.0, 3.0));
+        assert_eq!(moved.radius(), 3.0);
+        // Hand-computed evaluation at the equator origin, shifted.
+        assert_eq!(moved.eval_point(0.0, 0.0), Point3D::new(4.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn test_sphere_transformed_round_trip_and_mirror() {
+        use crate::Axis3D;
+        let sphere = Sphere::new(Point3D::new(1.0, 0.0, 0.0), 3.0).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let t = Transform::rotation(axis, FRAC_PI_2).then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = sphere.transformed(t).unwrap();
+        assert_eq!(moved.radius(), 6.0);
+        assert!(moved.center().distance(Point3D::new(0.0, 2.0, 0.0)) < 1e-9);
+        let tol = Tolerance::DEFAULT;
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3), (4.0, -0.5)] {
+            assert!(moved.contains(t.apply_point(sphere.eval_point(u, v)), tol));
+        }
+        let inv =
+            Transform::scaling(Point3D::ORIGIN, 0.5).then(Transform::rotation(axis, -FRAC_PI_2));
+        let back = moved.transformed(inv).unwrap();
+        assert!((back.radius() - sphere.radius()).abs() < 1e-9);
+        assert!(back.center().distance(sphere.center()) < 1e-9);
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = sphere.transformed(m).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3)] {
+            assert!(mirrored.contains(m.apply_point(sphere.eval_point(u, v)), tol));
+        }
+        assert_eq!(mirrored.transformed(m).unwrap(), sphere);
     }
 }

@@ -1,6 +1,6 @@
 //! Rigid and affine transformations of points and vectors.
 
-use crate::{Axis3D, Frame3D, Point3D, Vector3D};
+use crate::{Axis3D, Frame3D, FrameConstructionError, Point3D, Vector3D};
 
 /// An affine transformation of 3D space: a linear map plus a translation.
 ///
@@ -293,6 +293,29 @@ impl Transform {
     /// ```
     pub fn apply_vector(self, v: Vector3D) -> Vector3D {
         mat_vec(self.linear, v)
+    }
+
+    /// Applies this transformation to a placement frame, returning the
+    /// image frame and the uniform scale factor applied to lengths.
+    ///
+    /// The linear part of every `Transform` is a uniform scale composed
+    /// with an orthogonal map, so the transformed x/z directions stay
+    /// perpendicular and share one scale factor (the magnitude of the
+    /// transformed x direction). A mirror flips handedness; the image is
+    /// re-derived as a right-handed frame via [`Frame3D::new`], which
+    /// reverses the parametrization direction but preserves the point
+    /// set. Fails only when the transform collapses directions (a zero
+    /// scale factor).
+    pub(crate) fn apply_frame(
+        self,
+        frame: Frame3D,
+    ) -> Result<(Frame3D, f64), FrameConstructionError> {
+        let origin = self.apply_point(frame.origin());
+        let x = self.apply_vector(frame.x_direction());
+        let z = self.apply_vector(frame.z_direction());
+        let scale = x.magnitude();
+        let mapped = Frame3D::new(origin, z, x)?;
+        Ok((mapped, scale))
     }
 }
 

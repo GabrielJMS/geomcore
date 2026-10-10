@@ -5,7 +5,8 @@
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{
-    Axis3D, Circle3D, CylinderCylinderIntersection, Frame3D, Line3D, Point3D, Tolerance, Vector3D,
+    Axis3D, Circle3D, CylinderCylinderIntersection, Frame3D, Line3D, Point3D, Tolerance, Transform,
+    Vector3D,
 };
 use std::fmt;
 
@@ -176,6 +177,33 @@ impl Cylinder {
     /// ```
     pub fn axis(&self) -> Axis3D {
         self.frame.axis()
+    }
+
+    /// Returns the image of this cylinder under `transform`: the frame
+    /// origin and directions map point-wise while the radius scales by
+    /// the transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the angular direction
+    /// reverses. Fails with [`CylinderConstructionError::NullNormal`]
+    /// only when the transform collapses the frame (a zero scale factor).
+    /// `v` is an axial length, so under a scale `s` the image of the
+    /// point at `(u, v)` sits at `(u, s * v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Transform, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let moved = cylinder.transformed(Transform::scaling(Point3D::ORIGIN, 3.0)).unwrap();
+    /// assert_eq!(moved.radius(), 6.0);
+    /// assert_eq!(moved.eval_point(0.0, 3.0), Point3D::new(6.0, 0.0, 3.0));
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Cylinder, CylinderConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| CylinderConstructionError::NullNormal)?;
+        Cylinder::from_frame(frame, self.radius() * scale)
     }
 
     /// Evaluates the point on the cylinder at `(u, v)`:
@@ -585,5 +613,45 @@ mod tests {
             c1.intersect_cylinder(&crossed, tol),
             CylinderCylinderIntersection::NotAnalytic
         );
+    }
+
+    // ---- transformed ----
+
+    #[test]
+    fn test_cylinder_transformed_translation_spot_check() {
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let t = Transform::translation(Vector3D::new(1.0, 0.0, 0.0));
+        let moved = cylinder.transformed(t).unwrap();
+        assert_eq!(moved.radius(), 2.0);
+        assert_eq!(moved.axis().direction(), Vector3D::Z);
+        // Hand-computed evaluation, shifted.
+        assert_eq!(moved.eval_point(0.0, 5.0), Point3D::new(3.0, 0.0, 5.0));
+    }
+
+    #[test]
+    fn test_cylinder_transformed_round_trip_and_mirror() {
+        use crate::Axis3D;
+        let cylinder = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let t = Transform::rotation(axis, PI / 2.0).then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = cylinder.transformed(t).unwrap();
+        assert_eq!(moved.radius(), 4.0);
+        assert!((moved.axis().direction() - Vector3D::Z).magnitude() < 1e-9);
+        let tol = Tolerance::DEFAULT;
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0), (4.0, 0.5)] {
+            assert!(moved.contains(t.apply_point(cylinder.eval_point(u, v)), tol));
+        }
+        let inv =
+            Transform::scaling(Point3D::ORIGIN, 0.5).then(Transform::rotation(axis, -PI / 2.0));
+        let back = moved.transformed(inv).unwrap();
+        assert!((back.radius() - cylinder.radius()).abs() < 1e-9);
+        assert!(back.axis().origin().distance(cylinder.axis().origin()) < 1e-9);
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = cylinder.transformed(m).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0)] {
+            assert!(mirrored.contains(m.apply_point(cylinder.eval_point(u, v)), tol));
+        }
+        assert_eq!(mirrored.transformed(m).unwrap(), cylinder);
     }
 }

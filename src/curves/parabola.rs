@@ -9,7 +9,7 @@ use crate::intersect::{
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
-use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Vector3D};
+use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Transform, Vector3D};
 use std::fmt;
 
 /// Error returned when a [`Parabola3D`] cannot be constructed from the given
@@ -144,6 +144,34 @@ impl Parabola3D {
         self.focal
     }
 
+    /// Returns the image of this parabola under `transform`: the apex and
+    /// frame directions map point-wise while the focal distance scales by
+    /// the transform's uniform scale factor.
+    ///
+    /// A mirror flips handedness, so the image frame is re-derived
+    /// right-handed: the point set is preserved but the axis direction
+    /// reverses. Fails with [`ParabolaConstructionError::NullNormal`]
+    /// only when the transform collapses the frame (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Parabola3D, Point3D, Transform, Vector3D};
+    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+    /// let moved = parabola.transformed(Transform::translation(Vector3D::new(1.0, 0.0, 0.0))).unwrap();
+    /// assert_eq!(moved.apex(), Point3D::new(1.0, 0.0, 0.0));
+    /// assert_eq!(moved.focal(), 1.0);
+    /// ```
+    pub fn transformed(
+        &self,
+        transform: Transform,
+    ) -> Result<Parabola3D, ParabolaConstructionError> {
+        let (frame, scale) = transform
+            .apply_frame(self.frame())
+            .map_err(|_| ParabolaConstructionError::NullNormal)?;
+        Parabola3D::from_frame(frame, self.focal() * scale)
+    }
+
     /// Evaluates the point on the parabola at parameter `u`:
     /// `apex + (u^2 / (4*focal))*x_dir + u*y_dir`.
     ///
@@ -218,10 +246,11 @@ impl Parabola3D {
         analytic::parabola_parameter(&self.frame, point)
     }
 
-    /// Returns whether `point` lies on the parabola: the inverse
-    /// parameter is recovered with [`Parabola3D::parameter_of`] and
-    /// re-evaluated, and the point counts as contained when the
-    /// re-evaluated point is within `tol.confusion` of it.
+    /// Returns whether `point` lies on the parabola: within `tol.confusion`
+    /// of it, exactly when [`Parabola3D::project_point`] reports distance `0.0`.
+    /// The inverse parameter of [`Parabola3D::parameter_of`] (exact on the
+    /// curve, cheap) accepts most contained points; the projection settles
+    /// the rest, since off the curve that parameter is not the closest.
     ///
     /// # Examples
     ///
@@ -235,6 +264,7 @@ impl Parabola3D {
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
+            || self.project_point(point, tol).distance <= tol.confusion
     }
 
     /// All stationary points of the distance from `point` to the
@@ -520,8 +550,8 @@ impl Parabola3D {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ConicSurfaceIntersection, Cylinder, Frame3D, Parabola3D, ParabolaConstructionError, Plane,
-        Point3D, Tolerance, Vector3D, intersect_curve_surface,
+        Axis3D, ConicSurfaceIntersection, Cylinder, Frame3D, Parabola3D, ParabolaConstructionError,
+        Plane, Point3D, Tolerance, Transform, Vector3D, intersect_curve_surface,
     };
 
     // ---- construction ----
@@ -662,6 +692,17 @@ mod tests {
         assert!(p.contains(p.eval_point(2.0), tol));
         assert!(p.contains(p.eval_point(-1.5), tol));
         assert!(!p.contains(Point3D::new(0.0, 2.0, 5.0), tol));
+        // Within tolerance along the normal far out on the arm: the
+        // inverse parameter misses, but the closest point is 3e-8 away, so
+        // `contains` must agree with `project_point`.
+        let normal = p
+            .eval_derivative(49.0, 1)
+            .cross(Vector3D::Z)
+            .normalized()
+            .unwrap();
+        let near = p.eval_point(49.0) + normal * 3e-8;
+        assert_eq!(p.project_point(near, tol).distance, 0.0);
+        assert!(p.contains(near, tol));
     }
 
     #[test]
@@ -720,5 +761,45 @@ mod tests {
             }
             _ => panic!("expected hits"),
         }
+    }
+
+    // ---- Parabola3D transformed ----
+
+    #[test]
+    fn test_parabola3d_transformed_translation_spot_check() {
+        let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let t = Transform::translation(Vector3D::new(1.0, -2.0, 3.0));
+        let moved = parabola.transformed(t).unwrap();
+        assert_eq!(moved.apex(), Point3D::new(1.0, -2.0, 3.0));
+        assert_eq!(moved.focal(), 1.0);
+        // Hand-computed: apex + (u^2 / 4) * X + u * Y, shifted.
+        assert_eq!(moved.eval_point(2.0), Point3D::new(2.0, 0.0, 3.0));
+    }
+
+    #[test]
+    fn test_parabola3d_transformed_round_trip_and_mirror() {
+        use std::f64::consts::PI;
+        let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let t = Transform::rotation(axis, PI / 2.0).then(Transform::scaling(Point3D::ORIGIN, 3.0));
+        let moved = parabola.transformed(t).unwrap();
+        assert_eq!(moved.focal(), 6.0);
+        let tol = Tolerance::DEFAULT;
+        for u in [0.0, 1.0, -2.5] {
+            assert!(moved.contains(t.apply_point(parabola.eval_point(u)), tol));
+        }
+        let inv = Transform::scaling(Point3D::ORIGIN, 1.0 / 3.0)
+            .then(Transform::rotation(axis, -PI / 2.0));
+        let back = moved.transformed(inv).unwrap();
+        for u in [0.0, 1.0, -2.5] {
+            assert!(back.eval_point(u).distance(parabola.eval_point(u)) < 1e-9);
+        }
+        // Mirror across the xy-plane preserves the point set.
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = parabola.transformed(m).unwrap();
+        for u in [0.0, 1.0, -2.5] {
+            assert!(mirrored.contains(m.apply_point(parabola.eval_point(u)), tol));
+        }
+        assert_eq!(mirrored.transformed(m).unwrap(), parabola);
     }
 }
