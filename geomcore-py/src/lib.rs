@@ -653,12 +653,12 @@ impl PyPlane {
         }
     }
 
-    /// Intersects this plane with a cone.
+    /// Intersects this plane with a cone (both nappes).
     ///
     /// Returns `("circle", Circle3D)`, `("ellipse", Ellipse3D)`,
-    /// `("parabola", Parabola3D)`, `("hyperbola", Hyperbola3D)`,
-    /// `("two_lines", (Line3D, Line3D))`, `("tangent_line", Line3D)`,
-    /// `("apex_point", Point3D)` or `("empty", None)`.
+    /// `("parabola", Parabola3D)`, `("hyperbola", (Hyperbola3D, Hyperbola3D))`
+    /// (one branch per nappe), `("two_lines", (Line3D, Line3D))`,
+    /// `("tangent_line", Line3D)` or `("apex_point", Point3D)`.
     #[pyo3(signature = (cone, tol = None))]
     fn intersect_cone(
         &self,
@@ -680,9 +680,15 @@ impl PyPlane {
                 "parabola".to_string(),
                 PyParabola3D(p).into_pyobject(py)?.into_any().unbind(),
             )),
-            PlaneConeIntersection::Hyperbola(h) => Ok((
+            PlaneConeIntersection::Hyperbola(h1, h2) => Ok((
                 "hyperbola".to_string(),
-                PyHyperbola3D(h).into_pyobject(py)?.into_any().unbind(),
+                (
+                    PyHyperbola3D(h1).into_pyobject(py)?.into_any().unbind(),
+                    PyHyperbola3D(h2).into_pyobject(py)?.into_any().unbind(),
+                )
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
             )),
             PlaneConeIntersection::TwoLines(l1, l2) => Ok((
                 "two_lines".to_string(),
@@ -702,7 +708,6 @@ impl PyPlane {
                 "apex_point".to_string(),
                 PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
             )),
-            PlaneConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
         }
     }
 }
@@ -977,7 +982,8 @@ impl PyCone {
 
     /// Intersects this cone with a cylinder.
     ///
-    /// The analytic path needs coaxial axes. Returns `("circle", Circle3D)`,
+    /// The analytic path needs coaxial axes. Returns
+    /// `("two_circles", (Circle3D, Circle3D))` (one ring per nappe),
     /// `("apex_point", Point3D)` or `("not_analytic", None)` (no closed
     /// form; numeric path pending).
     #[pyo3(signature = (cylinder, tol = None))]
@@ -989,10 +995,9 @@ impl PyCone {
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
         match self.0.intersect_cylinder(&cylinder.0, tol) {
-            ConeCylinderIntersection::Circle(c) => Ok((
-                "circle".to_string(),
-                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
-            )),
+            ConeCylinderIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
             ConeCylinderIntersection::ApexPoint(p) => Ok((
                 "apex_point".to_string(),
                 PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
@@ -1004,7 +1009,7 @@ impl PyCone {
     /// Intersects this cone with another cone.
     ///
     /// The analytic path needs coaxial axes. Returns `("circle", Circle3D)`,
-    /// `("apex_point", Point3D)`, `("empty", None)`,
+    /// `("two_circles", (Circle3D, Circle3D))`, `("apex_point", Point3D)`,
     /// `("coincident", None)` or `("not_analytic", None)`.
     #[pyo3(signature = (other, tol = None))]
     fn intersect_cone(
@@ -1019,11 +1024,13 @@ impl PyCone {
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
             )),
+            ConeConeIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
             ConeConeIntersection::ApexPoint(p) => Ok((
                 "apex_point".to_string(),
                 PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
             )),
-            ConeConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
             ConeConeIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
             ConeConeIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
         }
@@ -1200,8 +1207,7 @@ impl PySphere {
     /// Intersects this sphere with a cone.
     ///
     /// The analytic path needs the sphere center on the cone axis.
-    /// Returns `("circle", Circle3D)`,
-    /// `("two_circles", (Circle3D, Circle3D))`,
+    /// Returns `("two_circles", (Circle3D, Circle3D))`,
     /// `("tangent_circle", Circle3D)`, `("empty", None)` or
     /// `("not_analytic", None)` (no closed form; numeric path pending).
     #[pyo3(signature = (cone, tol = None))]
@@ -1213,20 +1219,9 @@ impl PySphere {
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
         match self.0.intersect_cone(&cone.0, tol) {
-            SphereConeIntersection::Circle(c) => Ok((
-                "circle".to_string(),
-                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
-            )),
-            SphereConeIntersection::TwoCircles(c1, c2) => Ok((
-                "two_circles".to_string(),
-                (
-                    PyCircle3D(c1).into_pyobject(py)?.into_any().unbind(),
-                    PyCircle3D(c2).into_pyobject(py)?.into_any().unbind(),
-                )
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
+            SphereConeIntersection::TwoCircles(c1, c2) => {
+                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
+            }
             SphereConeIntersection::TangentCircle(c) => Ok((
                 "tangent_circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1430,12 +1425,11 @@ impl PyTorus {
         }
     }
 
-    /// Intersects this torus with a cone.
+    /// Intersects this torus with a cone (both nappes).
     ///
-    /// The analytic path needs coaxial axes. Returns `("circle", Circle3D)`,
-    /// `("two_circles", (Circle3D, Circle3D))`,
-    /// `("tangent_circle", Circle3D)`, `("empty", None)` or
-    /// `("not_analytic", None)`.
+    /// The analytic path needs coaxial axes. Returns
+    /// `("rings", [(Circle3D, tangent), ...])` with up to four rings sorted
+    /// along the torus axis, `("empty", None)` or `("not_analytic", None)`.
     #[pyo3(signature = (cone, tol = None))]
     fn intersect_cone(
         &self,
@@ -1445,16 +1439,15 @@ impl PyTorus {
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
         match self.0.intersect_cone(&cone.0, tol) {
-            TorusConeIntersection::Circle(c) => Ok((
-                "circle".to_string(),
-                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
-            )),
-            TorusConeIntersection::TwoCircles(c1, c2) => {
-                Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
-            }
-            TorusConeIntersection::TangentCircle(c) => Ok((
-                "tangent_circle".to_string(),
-                PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
+            TorusConeIntersection::Rings(rings) => Ok((
+                "rings".to_string(),
+                rings
+                    .into_iter()
+                    .map(|r| (PyCircle3D(r.circle), r.tangent))
+                    .collect::<Vec<_>>()
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind(),
             )),
             TorusConeIntersection::Empty => Ok(("empty".to_string(), py.None())),
             TorusConeIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),

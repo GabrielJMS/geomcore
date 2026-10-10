@@ -433,7 +433,7 @@ impl Parabola3D {
     }
 
     /// Intersects this parabola with a cylinder; hits verified on the
-    /// cylinder (single nappe is automatic here). See
+    /// cylinder. See
     /// [`Parabola3D::intersect_plane`] for the calling shape.
     ///
     /// # Examples
@@ -485,7 +485,8 @@ impl Parabola3D {
         }
     }
 
-    /// Intersects this parabola with a cone; hits verified on the nappe.
+    /// Intersects this parabola with a cone; hits verified on
+    /// either nappe.
     /// See [`Parabola3D::intersect_plane`] for the calling shape.
     ///
     /// # Examples

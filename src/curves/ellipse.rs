@@ -665,8 +665,8 @@ impl Ellipse3D {
         }
     }
 
-    /// Intersects this ellipse with a cone; hits verified on the cone
-    /// (nappe included). See [`Ellipse3D::intersect_plane`] for the
+    /// Intersects this ellipse with a cone (both nappes); hits verified on
+    /// the cone. See [`Ellipse3D::intersect_plane`] for the
     /// calling shape.
     ///
     /// # Examples
@@ -713,7 +713,8 @@ impl Ellipse3D {
     ///
     /// Only coplanar pairs admit a closed form (parallel normals within
     /// `tol.angular` plus the other center in this plane within
-    /// `tol.confusion`); anything else reports
+    /// `tol.confusion`). Distinct parallel planes report
+    /// [`EllipseEllipse3DIntersection::Empty`]; crossing planes report
     /// [`EllipseEllipse3DIntersection::NotAnalytic`]. Whole-curve
     /// coincidence (same center, plane, and radii within tolerance)
     /// reports [`EllipseEllipse3DIntersection::Coincident`].
@@ -751,10 +752,12 @@ impl Ellipse3D {
     ) -> EllipseEllipse3DIntersection {
         let n1 = self.frame().z_direction();
         let n2 = other.frame().z_direction();
-        if n1.cross(n2).magnitude() > tol.angular
-            || !Plane::from_frame(self.frame()).contains(other.center(), tol)
-        {
+        if n1.cross(n2).magnitude() > tol.angular {
             return EllipseEllipse3DIntersection::NotAnalytic;
+        }
+        if !Plane::from_frame(self.frame()).contains(other.center(), tol) {
+            // Distinct parallel planes.
+            return EllipseEllipse3DIntersection::Empty;
         }
         if self.center().distance(other.center()) <= tol.confusion
             && (self.major_radius() - other.major_radius()).abs() <= tol.confusion
@@ -1214,7 +1217,7 @@ mod tests {
             e1.intersect_ellipse(&tilted, tol),
             EllipseEllipse3DIntersection::NotAnalytic
         );
-        // Offset plane: no closed form either.
+        // Distinct parallel planes: no meeting.
         let lifted = Ellipse3D::new(
             Point3D::new(0.0, 0.0, 1.0),
             Vector3D::Z,
@@ -1225,7 +1228,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             e1.intersect_ellipse(&lifted, tol),
-            EllipseEllipse3DIntersection::NotAnalytic
+            EllipseEllipse3DIntersection::Empty
         );
     }
 

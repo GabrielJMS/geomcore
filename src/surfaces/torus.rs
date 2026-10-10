@@ -5,9 +5,9 @@ use crate::intersect::{QuadraticSolution, solve_quadratic};
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{
-    Circle3D, Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, TorusConeIntersection,
-    TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
-    TorusTorusIntersection, Transform, Vector3D,
+    Circle3D, Cone, Cylinder, Frame3D, LatitudeRing, Plane, Point3D, Sphere, Tolerance,
+    TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
+    TorusSphereIntersection, TorusTorusIntersection, Transform, Vector3D,
 };
 use std::fmt;
 
@@ -528,9 +528,12 @@ impl Torus {
 
     /// Intersects this torus with a cone.
     ///
-    /// The analytic path needs coaxial axes, reducing to a quadratic in
-    /// the axial coordinate with nappe filtering. Anything else reports
-    /// [`TorusConeIntersection::NotAnalytic`].
+    /// The analytic path needs coaxial axes. On each nappe the cone
+    /// radius is linear in the torus-axial coordinate `z`, `rho = m*(z -
+    /// za)` with `m = ±|tan(phi)|`, so `(rho - R)^2 + z^2 = r^2` is a
+    /// quadratic per nappe; its roots on that nappe's side of the apex
+    /// are rings (a double root a grazing one), up to four in all.
+    /// Anything else reports [`TorusConeIntersection::NotAnalytic`].
     ///
     /// # Examples
     ///
@@ -540,8 +543,8 @@ impl Torus {
     /// let cone = Cone::from_frame(Frame3D::WORLD, 1.1, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
     /// match torus.intersect_cone(&cone, tol) {
-    ///     TorusConeIntersection::TwoCircles(_, _) => {}
-    ///     _ => panic!("expected two circles"),
+    ///     TorusConeIntersection::Rings(rings) => assert_eq!(rings.len(), 2),
+    ///     _ => panic!("expected rings"),
     /// }
     /// ```
     pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> TorusConeIntersection {
@@ -559,39 +562,45 @@ impl Torus {
         if (w - a * w.dot(a)).magnitude() > tol.confusion {
             return TorusConeIntersection::NotAnalytic;
         }
-        // Cone radius at torus-axial z: rho = s*(z - za)*tan(phi).
-        let s = a.dot(ac);
         let za = w.dot(a);
-        let t = cone.semi_angle().tan();
-        let m = s * t;
-        // (m*(z - za) - R)^2 + z^2 = r^2.
-        let aq = m * m + 1.0;
-        let bq = -2.0 * m * (m * za + major);
-        let cq = (m * za + major) * (m * za + major) - minor * minor;
-        let ring = |z: f64| {
-            let alpha = s * (z - za);
-            if alpha >= -tol.confusion {
-                let rho = (alpha * t).max(0.0);
-                Some(Circle3D::new(o + a * z, a, rho).expect("kept radii non-negative"))
-            } else {
-                None
-            }
-        };
-        match solve_quadratic(aq, bq, cq, tol) {
-            QuadraticSolution::Two(z1, z2) => match (ring(z1), ring(z2)) {
-                (Some(c1), Some(c2)) => TorusConeIntersection::TwoCircles(c1, c2),
-                (Some(c), None) | (None, Some(c)) => TorusConeIntersection::Circle(c),
-                (None, None) => TorusConeIntersection::Empty,
-            },
-            QuadraticSolution::One(z) => match ring(z) {
-                Some(c) => TorusConeIntersection::TangentCircle(c),
-                None => TorusConeIntersection::Empty,
-            },
-            QuadraticSolution::Empty => TorusConeIntersection::Empty,
-            QuadraticSolution::Linear(_) | QuadraticSolution::Degenerate => {
-                unreachable!("axial quadratic coefficient exceeds 1")
+        let k = cone.semi_angle().tan().abs();
+        let mut rings: Vec<LatitudeRing> = Vec::new();
+        for m in [k, -k] {
+            // (m*(z - za) - R)^2 + z^2 = r^2, kept where m*(z - za) >= 0.
+            let aq = m * m + 1.0;
+            let bq = -2.0 * m * (m * za + major);
+            let cq = (m * za + major) * (m * za + major) - minor * minor;
+            let mut push = |z: f64, tangent: bool| {
+                let rho = m * (z - za);
+                if rho >= -tol.confusion {
+                    let circle =
+                        Circle3D::new(o + a * z, a, rho.max(0.0)).expect("kept radii non-negative");
+                    // A ring on the apex is found from both nappes.
+                    if !rings.iter().any(|r| r.circle == circle) {
+                        rings.push(LatitudeRing { circle, tangent });
+                    }
+                }
+            };
+            match solve_quadratic(aq, bq, cq, tol) {
+                QuadraticSolution::Two(z1, z2) => {
+                    push(z1, false);
+                    push(z2, false);
+                }
+                QuadraticSolution::One(z) => push(z, true),
+                QuadraticSolution::Empty => {}
+                QuadraticSolution::Linear(_) | QuadraticSolution::Degenerate => {
+                    unreachable!("axial quadratic coefficient exceeds 1")
+                }
             }
         }
+        if rings.is_empty() {
+            return TorusConeIntersection::Empty;
+        }
+        rings.sort_by(|p, q| {
+            let height = |r: &LatitudeRing| (r.circle.center() - o).dot(a);
+            height(p).total_cmp(&height(q))
+        });
+        TorusConeIntersection::Rings(rings)
     }
 
     /// Intersects this torus with another torus.
@@ -968,18 +977,44 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 1.1, 2.0).unwrap();
-        match torus.intersect_cone(&cone, tol) {
-            TorusConeIntersection::TwoCircles(c1, c2) => {
-                for p in c1.eval_points(&[0.0, 2.0]) {
-                    assert!(torus.contains(p, tol));
-                    assert!(cone.contains(p, tol));
-                }
-                for p in c2.eval_points(&[1.0, 3.0]) {
+        let check = |rings: &[LatitudeRing], cone: &Cone| {
+            for ring in rings {
+                for p in ring.circle.eval_points(&[0.0, 1.0, 3.0]) {
                     assert!(torus.contains(p, tol));
                     assert!(cone.contains(p, tol));
                 }
             }
-            _ => panic!("expected two circles"),
+            let heights: Vec<f64> = rings.iter().map(|r| r.circle.center().z).collect();
+            assert!(heights.windows(2).all(|w| w[0] < w[1]), "{heights:?}");
+        };
+        match torus.intersect_cone(&cone, tol) {
+            TorusConeIntersection::Rings(rings) => {
+                assert_eq!(rings.len(), 2);
+                assert!(rings.iter().all(|r| !r.tangent));
+                check(&rings, &cone);
+            }
+            _ => panic!("expected rings"),
+        }
+        // Apex at the centre, generators through the tube: two rings on
+        // each nappe.
+        let flat = Cone::from_frame(Frame3D::WORLD, 1.4, 0.0).unwrap();
+        match torus.intersect_cone(&flat, tol) {
+            TorusConeIntersection::Rings(rings) => {
+                assert_eq!(rings.len(), 4);
+                check(&rings, &flat);
+                assert!(rings[0].circle.center().z < 0.0 && rings[3].circle.center().z > 0.0);
+            }
+            _ => panic!("expected four rings"),
+        }
+        // Generators tangent to the tube: one grazing ring per nappe.
+        let grazing = Cone::from_frame(Frame3D::WORLD, 15f64.sqrt().atan(), 0.0).unwrap();
+        match torus.intersect_cone(&grazing, tol) {
+            TorusConeIntersection::Rings(rings) => {
+                assert_eq!(rings.len(), 2);
+                assert!(rings.iter().all(|r| r.tangent));
+                check(&rings, &grazing);
+            }
+            _ => panic!("expected two grazing rings"),
         }
         // Tilted cone axis: no closed form.
         let tilted = Cone::new(Point3D::ORIGIN, Vector3D::X, 1.1, 2.0).unwrap();

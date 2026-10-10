@@ -564,15 +564,15 @@ impl Plane {
 
     /// Intersects this plane with a cone.
     ///
-    /// With the apex distance `sigma`, the axis/normal cosine `s`, and the
-    /// critical angle `PI/2 - semi_angle`: a plane through the apex
-    /// (`|sigma|` within tolerance) meets just the apex, one generator, or
-    /// two generators; a perpendicular plane cuts a circle (or misses
-    /// behind the apex); otherwise the section is an ellipse, a parabola
-    /// (plane parallel to a generator), or one hyperbola branch, built in
-    /// closed form in the plane's `(M, Y)` basis around the apex foot
-    /// point. Sections falling entirely behind the apex report
-    /// [`PlaneConeIntersection::Empty`].
+    /// The cone is double: both nappes, on either side of the apex,
+    /// belong to it. With the apex distance `sigma`, the axis/normal
+    /// cosine `s`, and the critical angle `PI/2 - |semi_angle|`: a plane
+    /// through the apex (`|sigma|` within tolerance) meets just the apex,
+    /// one generator, or two generators; a perpendicular plane cuts a
+    /// circle; otherwise the section is an ellipse, a parabola (plane
+    /// parallel to a generator), or a hyperbola with one branch on each
+    /// nappe, built in closed form in the plane's `(M, Y)` basis around
+    /// the apex foot point.
     ///
     /// # Examples
     ///
@@ -592,7 +592,8 @@ impl Plane {
     pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> PlaneConeIntersection {
         let n = self.normal();
         let a = cone.frame().z_direction();
-        let phi = cone.semi_angle();
+        // The double cone about `a` with half-angle |semi_angle|.
+        let phi = cone.semi_angle().abs();
         let apex = cone.apex();
         let o = self.frame.origin();
         let sigma = (o - apex).dot(n);
@@ -628,14 +629,10 @@ impl Plane {
             if sin_gamma <= tol.angular {
                 // Perpendicular: circle at axial distance alpha0 (s = +-1).
                 let alpha0 = sigma / s;
-                if alpha0 < -tol.confusion {
-                    PlaneConeIntersection::Empty
-                } else {
-                    let center = apex + a * alpha0;
-                    let circle = Circle3D::new(center, n, alpha0 * phi.tan())
-                        .expect("section radius is positive by construction");
-                    PlaneConeIntersection::Circle(circle)
-                }
+                let center = apex + a * alpha0;
+                let circle = Circle3D::new(center, n, alpha0.abs() * phi.tan())
+                    .expect("section radius is non-negative by construction");
+                PlaneConeIntersection::Circle(circle)
             } else {
                 // In-plane basis: M holds the axis component, Y = N x M.
                 let m = (a - n * s) * (1.0 / sin_gamma);
@@ -649,9 +646,6 @@ impl Plane {
                     let lambda_c = -b2 / (2.0 * a2);
                     let k = (b2 * b2 / (4.0 * a2) - c0).max(0.0);
                     let center = q + m * lambda_c;
-                    if (center - apex).dot(a) < -tol.confusion {
-                        return PlaneConeIntersection::Empty;
-                    }
                     let semi_l = (k / a2).sqrt();
                     let semi_w = k.sqrt();
                     let (major, minor, x) = if semi_l >= semi_w {
@@ -667,23 +661,23 @@ impl Plane {
                     // B2 cannot vanish here (sigma, s, sin_gamma all nonzero).
                     let lambda_v = -c0 / b2;
                     let vertex = q + m * lambda_v;
-                    if (vertex - apex).dot(a) < -tol.confusion {
-                        return PlaneConeIntersection::Empty;
-                    }
                     let x = if b2 >= 0.0 { m * -1.0 } else { m };
                     let parabola = Parabola3D::new(vertex, n, x, b2.abs() / 4.0)
                         .expect("parabola frame valid by construction");
                     PlaneConeIntersection::Parabola(parabola)
                 } else {
-                    // Hyperbola: center at lambda_c; +M holds the live branch
-                    // (alpha grows along +M since sin_gamma > 0).
+                    // Hyperbola: center at lambda_c; the branch opening along
+                    // +M lies on the nappe toward +a (alpha grows along +M
+                    // since sin_gamma > 0), the one along -M on the other.
                     let lambda_c = -b2 / (2.0 * a2);
                     let k = (b2 * b2 / (4.0 * a2) - c0).min(0.0);
                     let center = q + m * lambda_c;
-                    let hyperbola =
-                        Hyperbola3D::new(center, n, m, (k / a2).max(0.0).sqrt(), (-k).sqrt())
-                            .expect("hyperbola radii positive by construction");
-                    PlaneConeIntersection::Hyperbola(hyperbola)
+                    let (major, minor) = ((k / a2).max(0.0).sqrt(), (-k).sqrt());
+                    let branch = |x: Vector3D| {
+                        Hyperbola3D::new(center, n, x, major, minor)
+                            .expect("hyperbola radii positive by construction")
+                    };
+                    PlaneConeIntersection::Hyperbola(branch(m), branch(m * -1.0))
                 }
             }
         }
@@ -1098,10 +1092,15 @@ mod tests {
         let plane = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
         match plane.intersect_cone(&cone, tol) {
-            PlaneConeIntersection::Hyperbola(hyperbola) => {
-                for p in hyperbola.eval_points(&[-2.0, 0.0, 2.0]) {
-                    assert!(plane.contains(p, tol));
-                    assert!(cone.contains(p, tol));
+            PlaneConeIntersection::Hyperbola(upper, lower) => {
+                let apex_height = cone.apex().z;
+                for (branch, side) in [(upper, 1.0), (lower, -1.0)] {
+                    for p in branch.eval_points(&[-2.0, 0.0, 2.0]) {
+                        assert!(plane.contains(p, tol));
+                        assert!(cone.contains(p, tol));
+                        // One branch on each nappe.
+                        assert!(side * (p.z - apex_height) > 0.0);
+                    }
                 }
             }
             _ => panic!("expected a hyperbola"),
@@ -1149,13 +1148,16 @@ mod tests {
             ConicSurfaceIntersection::Coincident
         );
         let steep = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
-        let PlaneConeIntersection::Hyperbola(hyperbola) = steep.intersect_cone(&cone, tol) else {
+        let PlaneConeIntersection::Hyperbola(upper, lower) = steep.intersect_cone(&cone, tol)
+        else {
             panic!("expected a hyperbola");
         };
-        assert_eq!(
-            hyperbola.intersect_cone(&cone, tol),
-            ConicSurfaceIntersection::Coincident
-        );
+        for branch in [upper, lower] {
+            assert_eq!(
+                branch.intersect_cone(&cone, tol),
+                ConicSurfaceIntersection::Coincident
+            );
+        }
         // A circular ellipse on a sphere, and one slightly larger that only
         // crosses it.
         let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
@@ -1195,12 +1197,68 @@ mod tests {
             }
             _ => panic!("expected two lines"),
         }
-        // Section entirely behind the apex misses the single nappe.
-        let below = Plane::new(Point3D::new(0.0, 0.0, -6.0), Vector3D::Z).unwrap();
-        assert_eq!(
-            below.intersect_cone(&cone, tol),
-            PlaneConeIntersection::Empty
-        );
+    }
+
+    #[test]
+    fn test_plane_cone_sections_beyond_the_apex() {
+        // The cone is double: sections past the apex lie on the opposite
+        // nappe, for either sign of the semi-angle.
+        let tol = Tolerance::DEFAULT;
+        for semi_angle in [0.4, -0.4] {
+            let cone = Cone::from_frame(Frame3D::WORLD, semi_angle, 2.0).unwrap();
+            let beyond = 2.0 * (cone.apex().z);
+            let on_both =
+                |p: Point3D, plane: &Plane| plane.contains(p, tol) && cone.contains(p, tol);
+            let flat = Plane::new(Point3D::new(0.0, 0.0, beyond), Vector3D::Z).unwrap();
+            match flat.intersect_cone(&cone, tol) {
+                PlaneConeIntersection::Circle(circle) => {
+                    assert!((circle.radius() - 2.0).abs() < 1e-9);
+                    assert!(
+                        circle
+                            .eval_points(&[0.0, 2.0])
+                            .into_iter()
+                            .all(|p| on_both(p, &flat))
+                    );
+                }
+                _ => panic!("expected a circle"),
+            }
+            let tilted = Plane::new(
+                Point3D::new(0.0, 0.0, beyond),
+                Vector3D::new(0.0, 0.2f64.sin(), 0.2f64.cos()),
+            )
+            .unwrap();
+            match tilted.intersect_cone(&cone, tol) {
+                PlaneConeIntersection::Ellipse(ellipse) => {
+                    let points = ellipse.eval_points(&[0.0, 1.0, 2.0, 4.0]);
+                    assert!(points.into_iter().all(|p| on_both(p, &tilted)));
+                }
+                _ => panic!("expected an ellipse"),
+            }
+            let along = std::f64::consts::FRAC_PI_2 - 0.4;
+            let parallel = Plane::new(
+                Point3D::new(0.0, 0.0, beyond),
+                Vector3D::new(0.0, along.sin(), along.cos()),
+            )
+            .unwrap();
+            match parallel.intersect_cone(&cone, tol) {
+                PlaneConeIntersection::Parabola(parabola) => {
+                    let points = parabola.eval_points(&[-2.0, 0.0, 2.0]);
+                    assert!(points.into_iter().all(|p| on_both(p, &parallel)));
+                }
+                _ => panic!("expected a parabola"),
+            }
+            // Lines through the apex lie on the cone on both sides of it.
+            let apex_plane = Plane::new(cone.apex(), Vector3D::X).unwrap();
+            match apex_plane.intersect_cone(&cone, tol) {
+                PlaneConeIntersection::TwoLines(l1, l2) => {
+                    for t in [-3.0, 3.0] {
+                        assert!(cone.contains(l1.eval_point(t), tol));
+                        assert!(cone.contains(l2.eval_point(t), tol));
+                    }
+                }
+                _ => panic!("expected two lines"),
+            }
+        }
     }
 
     // ---- transformed ----

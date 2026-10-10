@@ -451,11 +451,10 @@ impl Line3D {
     /// Intersects this line with a cone.
     ///
     /// The half-angle equation `((X - A).a)^2 = |X - A|^2*cos^2(phi)`
-    /// along the line is quadratic; roots on the wrong nappe (behind the
-    /// apex) are filtered, leaving two hits, one transversal hit, a
-    /// tangent, or empty. A direction parallel to a generator degrades to
-    /// the linear case; full degeneracy resolves to a generator
-    /// coincidence check.
+    /// along the line is quadratic, and holds on both nappes of the
+    /// (double) cone: two hits, a tangent, or empty. A direction parallel
+    /// to a generator degrades to the linear case (one transversal hit);
+    /// full degeneracy resolves to a generator coincidence check.
     ///
     /// # Examples
     ///
@@ -489,35 +488,18 @@ impl Line3D {
         // Centred at the midpoint of the two roots.
         let t0 = quadratic_centre(qa, coeffs(0.0).0, tol);
         let (qb, qc) = coeffs(t0);
-        // Roots on the wrong nappe (behind the apex) are filtered; a
-        // single surviving transversal root reports as one point.
-        let keep = |t: f64| {
-            let p = self.eval_point(t);
-            if (p - cone.apex()).dot(a) >= -tol.confusion {
-                Some((t, p))
-            } else {
-                None
-            }
-        };
+        let hit = |t: f64| (t, self.eval_point(t));
         // Tangent when the vertex of the quadratic lies within tolerance
         // of the cone.
         let sol = solve_quadratic(qa, qb, qc, tol).touching_at(-qb / (2.0 * qa), |s| {
             cone.contains(self.eval_point(t0 + s), tol)
         });
         match sol.shifted(t0) {
-            QuadraticSolution::Two(t1, t2) => match (keep(t1), keep(t2)) {
-                (Some(q1), Some(q2)) => LineQuadricIntersection::TwoPoints(q1, q2),
-                (Some(q), None) | (None, Some(q)) => LineQuadricIntersection::OnePoint(q.0, q.1),
-                (None, None) => LineQuadricIntersection::Empty,
-            },
-            QuadraticSolution::One(t) => match keep(t) {
-                Some((t, p)) => LineQuadricIntersection::Tangent(t, p),
-                None => LineQuadricIntersection::Empty,
-            },
-            QuadraticSolution::Linear(t) => match keep(t) {
-                Some((t, p)) => LineQuadricIntersection::OnePoint(t, p),
-                None => LineQuadricIntersection::Empty,
-            },
+            QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(hit(t1), hit(t2)),
+            QuadraticSolution::One(t) => LineQuadricIntersection::Tangent(t, self.eval_point(t)),
+            QuadraticSolution::Linear(t) => {
+                LineQuadricIntersection::OnePoint(t, self.eval_point(t))
+            }
             QuadraticSolution::Empty => LineQuadricIntersection::Empty,
             QuadraticSolution::Degenerate => {
                 if cone.contains(self.origin(), tol) {
@@ -1664,14 +1646,17 @@ mod tests {
             generator.intersect_cone(&cone, tol),
             LineQuadricIntersection::Coincident
         );
-        // Vertical line at radial distance 20: one nappe-filtered hit.
+        // Vertical line at radial distance 20: one hit on each nappe.
         let side = Line3D::new(Point3D::new(20.0, 0.0, 0.0), Vector3D::Z).unwrap();
         match side.intersect_cone(&cone, tol) {
-            LineQuadricIntersection::OnePoint(t, p) => {
-                assert!(cone.contains(p, tol));
-                assert_eq!(p, side.eval_point(t));
+            LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
+                assert!(p1.z < apex.z && p2.z > apex.z);
+                for (t, p) in [(t1, p1), (t2, p2)] {
+                    assert!(cone.contains(p, tol));
+                    assert_eq!(p, side.eval_point(t));
+                }
             }
-            _ => panic!("expected one point"),
+            _ => panic!("expected two points"),
         }
         // Horizontal line far from the axis: clear miss.
         let miss = Line3D::new(Point3D::new(0.0, 20.0, 0.0), Vector3D::X).unwrap();

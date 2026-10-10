@@ -266,8 +266,15 @@ def test_intersect_plane_cone():
     assert kind == "circle"
     assert circle.radius() == pytest.approx(2.0)
 
+    # The cone is double: a plane beyond the apex cuts the other nappe.
     below = Plane(Point3D(0.0, 0.0, -6.0), Vector3D.z())
-    assert below.intersect_cone(cone) == ("empty", None)
+    kind, circle = below.intersect_cone(cone)
+    assert kind == "circle"
+    assert circle.radius() == pytest.approx(0.5368, abs=1e-3)
+
+    kind, (h1, h2) = Plane(Point3D(3.0, 0.0, 0.0), Vector3D.x()).intersect_cone(cone)
+    assert kind == "hyperbola"
+    assert h1.center().distance(h2.center()) < 1e-9
 
     apex_plane = Plane(cone.apex(), Vector3D.z())
     kind, payload = apex_plane.intersect_cone(cone)
@@ -323,11 +330,13 @@ def test_intersect_symmetric_quadrics():
     assert kind == "two_circles"
     assert r1.radius() == pytest.approx(2.6188, abs=1e-3)
     assert r2.radius() == pytest.approx(0.7746, abs=1e-3)
-    # Small cone: one root falls behind the apex, leaving a single ring.
+    # Sphere around the apex: one ring on each nappe.
     small = Cone.from_frame(Frame3D.world(), 0.4, 0.5)
-    kind, ring = sphere.intersect_cone(small)
-    assert kind == "circle"
-    assert ring.radius() == pytest.approx(1.5786, abs=1e-3)
+    kind, (upper, lower) = sphere.intersect_cone(small)
+    assert kind == "two_circles"
+    assert upper.radius() == pytest.approx(1.5786, abs=1e-3)
+    assert lower.radius() == pytest.approx(0.7302, abs=1e-3)
+    assert lower.center().z < small.apex().z < upper.center().z
 
     c1 = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
     c2 = Cylinder(Point3D(3.0, 0.0, 0.0), Vector3D.z(), 2.0)
@@ -345,10 +354,11 @@ def test_intersect_cone_cylinder():
 
     cone = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
     cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
-    kind, circle = cone.intersect_cylinder(cylinder)
-    assert kind == "circle"
-    assert circle.radius() == pytest.approx(2.0)
-    assert circle.center().distance(Point3D.origin()) < 1e-9
+    kind, (lower, upper) = cone.intersect_cylinder(cylinder)
+    assert kind == "two_circles"
+    assert (lower.radius(), upper.radius()) == pytest.approx((2.0, 2.0))
+    assert upper.center().distance(Point3D.origin()) < 1e-9
+    assert lower.center().z == pytest.approx(2.0 * cone.apex().z)
 
     off = Cylinder(Point3D(1.0, 0.0, 0.0), Vector3D.z(), 2.0)
     assert cone.intersect_cylinder(off) == ("not_analytic", None)
@@ -361,9 +371,10 @@ def test_intersect_cone_cone():
     c1 = Cone.from_frame(Frame3D.world(), 0.4, 2.0)
     frame2 = Frame3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), Vector3D.x())
     c2 = Cone.from_frame(frame2, 0.6, 1.0)
-    kind, circle = c1.intersect_cone(c2)
-    assert kind == "circle"
-    assert circle.radius() == pytest.approx(4.7245, abs=1e-3)
+    kind, (r1, r2) = c1.intersect_cone(c2)
+    assert kind == "two_circles"
+    assert r1.radius() == pytest.approx(1.1155, abs=1e-3)
+    assert r2.radius() == pytest.approx(4.7245, abs=1e-3)
 
     assert c1.intersect_cone(c1)[0] == "coincident"
     tilted = Cone(Point3D.origin(), Vector3D.x(), 0.4, 2.0)
@@ -389,8 +400,12 @@ def test_intersect_torus_symmetric():
     kind, _ = torus.intersect_cylinder(Cylinder(Point3D.origin(), Vector3D.z(), 4.5))
     assert kind == "two_circles"
 
-    kind, _ = torus.intersect_cone(Cone.from_frame(Frame3D.world(), 1.1, 2.0))
-    assert kind == "two_circles"
+    kind, rings = torus.intersect_cone(Cone.from_frame(Frame3D.world(), 1.1, 2.0))
+    assert kind == "rings"
+    assert [tangent for _, tangent in rings] == [False, False]
+    kind, rings = torus.intersect_cone(Cone.from_frame(Frame3D.world(), 1.4, 0.0))
+    assert kind == "rings"
+    assert len(rings) == 4
 
     other = Torus(Point3D(0.0, 0.0, 1.5), Vector3D.z(), 4.0, 1.0)
     kind, _ = torus.intersect_torus(other)
@@ -588,6 +603,8 @@ def test_intersect_curves_3d():
     tilted = Circle3D(Point3D.origin(), Vector3D.x(), 2.0)
     assert c1.intersect_circle(tilted) == ("not_analytic", None)
     assert c1.intersect_circle(c1)[0] == "coincident"
+    lifted = Circle3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), 2.0)
+    assert c1.intersect_circle(lifted) == ("empty", None)
 
 
 def _bilinear_patch():
@@ -774,6 +791,8 @@ def test_ellipse_ellipse_intersections():
     assert e1.intersect_ellipse(e1) == ("coincident", None)
     tilted = Ellipse3D(Point3D.origin(), Vector3D.x(), Vector3D.z(), 3.0, 1.5)
     assert e1.intersect_ellipse(tilted) == ("not_analytic", None)
+    lifted = Ellipse3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
+    assert e1.intersect_ellipse(lifted) == ("empty", None)
 
 
 def _rigid_motion():

@@ -368,11 +368,10 @@ impl Sphere {
     ///
     /// The analytic path needs the sphere center on the cone axis: axial
     /// offsets `alpha` solve `alpha^2/cos^2(phi) - 2*tc*alpha + tc^2 -
-    /// R^2 = 0`, i.e. latitude rings where the cone radius meets the
-    /// sphere section. Roots behind the apex are dropped, so the result
-    /// is two rings, one ring, a grazing ring, or empty. Anything else is
-    /// a space quartic and reports
-    /// [`SphereConeIntersection::NotAnalytic`].
+    /// R^2 = 0`, i.e. latitude rings where the cone radius `|alpha| *
+    /// |tan(phi)|` meets the sphere section, on either nappe: two rings, a
+    /// grazing ring, or empty. Anything else is a space quartic and
+    /// reports [`SphereConeIntersection::NotAnalytic`].
     ///
     /// # Examples
     ///
@@ -402,27 +401,17 @@ impl Sphere {
         if disc < -band {
             return SphereConeIntersection::Empty;
         }
+        let tan_phi = cone.semi_angle().tan().abs();
         let mk = |alpha: f64| {
-            Circle3D::new(cone.apex() + a * alpha, a, alpha * cone.semi_angle().tan())
+            Circle3D::new(cone.apex() + a * alpha, a, alpha.abs() * tan_phi)
                 .expect("latitude radius is non-negative by construction")
         };
         if disc <= band {
-            let alpha = tc * cos_phi * cos_phi;
-            if alpha < -tol.confusion {
-                SphereConeIntersection::Empty
-            } else {
-                SphereConeIntersection::TangentCircle(mk(alpha.max(0.0)))
-            }
+            SphereConeIntersection::TangentCircle(mk(tc * cos_phi * cos_phi))
         } else {
-            let root = disc.sqrt() * cos_phi;
+            let root = disc.sqrt() * cos_phi.abs();
             let base = tc * cos_phi * cos_phi;
-            let (a1, a2) = (base + root, base - root);
-            match (a1 >= -tol.confusion, a2 >= -tol.confusion) {
-                (true, true) => SphereConeIntersection::TwoCircles(mk(a1), mk(a2)),
-                (true, false) => SphereConeIntersection::Circle(mk(a1)),
-                (false, true) => SphereConeIntersection::Circle(mk(a2)),
-                (false, false) => SphereConeIntersection::Empty,
-            }
+            SphereConeIntersection::TwoCircles(mk(base + root), mk(base - root))
         }
     }
 
@@ -721,18 +710,36 @@ mod tests {
             }
             _ => panic!("expected two circles"),
         }
-        // Small sphere around the origin: no nappe contact.
+        // Small sphere around the origin: clear of both nappes.
         let small = Sphere::new(Point3D::ORIGIN, 0.5).unwrap();
         assert_eq!(
             small.intersect_cone(&cone, tol),
             SphereConeIntersection::Empty
         );
-        // Behind-apex sphere: roots off the nappe.
+        // Beyond the apex: two rings on the opposite nappe.
         let behind = Sphere::new(Point3D::new(0.0, 0.0, -6.0), 0.5).unwrap();
-        assert_eq!(
-            behind.intersect_cone(&cone, tol),
-            SphereConeIntersection::Empty
-        );
+        match behind.intersect_cone(&cone, tol) {
+            SphereConeIntersection::TwoCircles(c1, c2) => {
+                for p in [c1, c2].iter().flat_map(|c| c.eval_points(&[0.0, 2.0])) {
+                    assert!(p.z < cone.apex().z);
+                    assert!(behind.contains(p, tol));
+                    assert!(cone.contains(p, tol));
+                }
+            }
+            _ => panic!("expected two circles"),
+        }
+        // Around the apex: one ring on each nappe.
+        let around = Sphere::new(cone.apex(), 1.0).unwrap();
+        match around.intersect_cone(&cone, tol) {
+            SphereConeIntersection::TwoCircles(c1, c2) => {
+                assert!((c1.center().z - cone.apex().z) * (c2.center().z - cone.apex().z) < 0.0);
+                for p in [c1, c2].iter().flat_map(|c| c.eval_points(&[0.0, 2.0])) {
+                    assert!(around.contains(p, tol));
+                    assert!(cone.contains(p, tol));
+                }
+            }
+            _ => panic!("expected two circles"),
+        }
         // Off-axis center: space quartic, no closed form.
         let off = Sphere::new(Point3D::new(1.0, 0.0, 0.0), 1.0).unwrap();
         assert_eq!(

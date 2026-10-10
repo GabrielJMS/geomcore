@@ -9,6 +9,40 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** cones are double. `v` was already unbounded and
+  evaluation, containment and projection covered both nappes; every
+  analytic intersection now does too, instead of keeping only the
+  nappe in front of the apex.
+  - Line–cone returns the hit on the opposite nappe.
+  - `PlaneConeIntersection::Hyperbola` carries both branches, one per
+    nappe. A plane beyond the apex yields the circle, ellipse or
+    parabola on the other nappe. `PlaneConeIntersection::Empty` is gone.
+  - Sphere–cone finds rings on both nappes, so a single ring is now
+    reported as two. `SphereConeIntersection::Circle` is gone.
+  - `ConeCylinderIntersection::Circle` became `TwoCircles`, one ring
+    per nappe.
+  - Coaxial cone–cone gains `TwoCircles` for unequal angles.
+    `ConeConeIntersection::Empty` is gone. A flipped axis with the
+    opposite semi-angle is `Coincident`.
+  - `TorusConeIntersection` is now `Rings(Vec<LatitudeRing>)`, with up
+    to four rings sorted along the torus axis, each flagged when
+    tangent, plus `Empty` and `NotAnalytic`.
+  - Python: plane–cone `"hyperbola"` returns `(Hyperbola3D, Hyperbola3D)`;
+    cone–cylinder returns `"two_circles"`; cone–cone can return
+    `"two_circles"`; sphere–cone no longer returns `"circle"`;
+    torus–cone returns `("rings", [(Circle3D, tangent), ...])`.
+- `Circle3D::intersect_circle` and `Ellipse3D::intersect_ellipse`
+  return `Empty` instead of `NotAnalytic` for curves in distinct
+  parallel planes, matching circle–conic.
+
+### Fixed
+
+- Cones with a negative semi-angle no longer produce negative ring
+  radii (a panic) in the cone–cylinder, cone–cone, sphere–cone and
+  torus–cone intersections.
+
 ## [0.26.0] - 2026-10-11
 
 ### Added

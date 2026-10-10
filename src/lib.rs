@@ -100,7 +100,7 @@ pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, CircleConic3DIntersection,
     CircleConicHit, CircleSurfaceIntersection, ConeConeIntersection, ConeCylinderIntersection,
     ConicSurfaceHit, ConicSurfaceIntersection, CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit,
-    CylinderCylinderIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit,
+    CylinderCylinderIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit, LatitudeRing,
     LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection, LineConicHit,
     LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
     LineTorusHit, LineTorusIntersection, PlaneConeIntersection, PlaneCylinderIntersection,

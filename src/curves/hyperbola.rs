@@ -600,7 +600,7 @@ impl Hyperbola3D {
     }
 
     /// Intersects this hyperbola with a cylinder; hits verified on the
-    /// cylinder (single nappe is automatic here). See
+    /// cylinder. See
     /// [`Hyperbola3D::intersect_plane`] for the calling shape.
     ///
     /// # Examples
@@ -653,7 +653,8 @@ impl Hyperbola3D {
         }
     }
 
-    /// Intersects this hyperbola with a cone; hits verified on the nappe.
+    /// Intersects this hyperbola with a cone; hits verified on
+    /// either nappe.
     /// See [`Hyperbola3D::intersect_plane`] for the calling shape.
     ///
     /// # Examples

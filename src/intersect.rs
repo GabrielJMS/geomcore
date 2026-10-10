@@ -66,25 +66,27 @@ pub enum PlaneCylinderIntersection {
     Empty,
 }
 
-/// Result of intersecting a plane with a cone.
+/// Result of intersecting a plane with a (double) cone.
+///
+/// A plane missing the apex always meets the cone: in a conic on one
+/// nappe, or a two-branch hyperbola across both.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlaneConeIntersection {
     /// The plane is perpendicular to the axis: a circle.
     Circle(Circle3D),
-    /// The plane meets the cone in an ellipse.
+    /// The plane meets one nappe in an ellipse.
     Ellipse(Ellipse3D),
     /// The plane is parallel to a generator: a parabola.
     Parabola(Parabola3D),
-    /// The plane cuts both nappes' worth of angle: a hyperbola branch.
-    Hyperbola(Hyperbola3D),
-    /// The plane passes through the apex and cuts two generators.
+    /// The plane cuts both nappes: the two branches of a hyperbola, the
+    /// second the first turned half a turn about its centre.
+    Hyperbola(Hyperbola3D, Hyperbola3D),
+    /// The plane passes through the apex and contains two generators.
     TwoLines(Line3D, Line3D),
     /// The plane passes through the apex along a single generator.
     TangentLine(Line3D),
     /// The plane passes through the apex without meeting a generator.
     ApexPoint(Point3D),
-    /// The section lies entirely behind the apex, off the single nappe.
-    Empty,
 }
 
 /// Result of intersecting a line with a plane.
@@ -104,7 +106,7 @@ pub enum LineQuadricIntersection {
     /// Two transversal hits: `(parameter, point)` pairs, ordered.
     TwoPoints((f64, Point3D), (f64, Point3D)),
     /// A single transversal hit: the linear case (line parallel to a
-    /// cylinder axis or cone generator) or a nappe-filtered root.
+    /// cylinder axis or cone generator).
     OnePoint(f64, Point3D),
     /// Grazing contact: the line parameter and the point.
     Tangent(f64, Point3D),
@@ -173,13 +175,11 @@ pub enum SphereCylinderIntersection {
 /// numeric surface-surface path.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SphereConeIntersection {
-    /// Latitude circle on the nappe.
-    Circle(Circle3D),
-    /// Two latitude circles on the nappe.
+    /// Two latitude circles (on one nappe or one on each).
     TwoCircles(Circle3D, Circle3D),
-    /// Grazing contact ring on the nappe.
+    /// Grazing contact ring.
     TangentCircle(Circle3D),
-    /// No latitude circle lies on the single nappe.
+    /// The sphere misses the cone.
     Empty,
     /// No closed form: the pair is not in analytic configuration.
     NotAnalytic,
@@ -208,16 +208,16 @@ pub enum CylinderCylinderIntersection {
 /// Result of intersecting a cone with a cylinder.
 ///
 /// The analytic path needs coaxial axes (within tolerance): the tube of
-/// radius `r` meets the nappe at axial `r/tan(phi)`, always a single
-/// latitude circle (or the apex for a degenerate tube). Anything else is
-/// a space quartic and reports
+/// radius `r` meets each nappe at axial distance `r/|tan(phi)|` from the
+/// apex, two latitude circles (or the apex for a degenerate tube).
+/// Anything else is a space quartic and reports
 /// [`ConeCylinderIntersection::NotAnalytic`], reserved for the numeric
 /// surface-surface path.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConeCylinderIntersection {
-    /// Latitude circle on the nappe.
-    Circle(Circle3D),
-    /// Degenerate tube (its axis) meeting the nappe at the apex.
+    /// One latitude circle on each nappe, the first along the cone axis.
+    TwoCircles(Circle3D, Circle3D),
+    /// Degenerate tube (its axis) meeting the cone at the apex.
     ApexPoint(Point3D),
     /// No closed form: the pair is not in analytic configuration.
     NotAnalytic,
@@ -278,20 +278,25 @@ pub enum TorusCylinderIntersection {
     NotAnalytic,
 }
 
+/// One latitude ring of a coaxial intersection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatitudeRing {
+    /// The ring.
+    pub circle: Circle3D,
+    /// Whether the surfaces graze along it instead of crossing.
+    pub tangent: bool,
+}
+
 /// Result of intersecting a torus with a cone.
 ///
 /// The analytic path needs coaxial axes, reducing to a quadratic in the
-/// axial coordinate with nappe filtering. Anything else reports
+/// axial coordinate per nappe. Anything else reports
 /// [`TorusConeIntersection::NotAnalytic`].
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TorusConeIntersection {
-    /// Latitude ring on the nappe.
-    Circle(Circle3D),
-    /// Two latitude rings on the nappe.
-    TwoCircles(Circle3D, Circle3D),
-    /// Grazing ring on the nappe.
-    TangentCircle(Circle3D),
-    /// No ring on the single nappe.
+    /// Latitude rings, up to two per nappe, ordered along the torus axis.
+    Rings(Vec<LatitudeRing>),
+    /// The cone misses the torus.
     Empty,
     /// No closed form: the pair is not in analytic configuration.
     NotAnalytic,
@@ -321,17 +326,17 @@ pub enum TorusTorusIntersection {
 /// Result of intersecting two cones.
 ///
 /// The analytic path needs coaxial axes: equal latitude-ring radii give
-/// one axial position (or apex/coincident degenerates). Anything else is
-/// a space quartic and reports [`ConeConeIntersection::NotAnalytic`].
+/// up to two axial positions (or apex/coincident degenerates). Anything
+/// else is a space quartic and reports
+/// [`ConeConeIntersection::NotAnalytic`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConeConeIntersection {
-    /// Latitude ring on both nappes.
+    /// One latitude ring (equal semi-angles, distinct apexes).
     Circle(Circle3D),
+    /// Two latitude rings, ordered along the first cone's axis.
+    TwoCircles(Circle3D, Circle3D),
     /// The rings collapse to the shared apex.
     ApexPoint(Point3D),
-    /// No ring on the nappes (parallel distinct nappes, or valid roots
-    /// behind an apex).
-    Empty,
     /// Same apex, axis, and semi-angle within tolerance.
     Coincident,
     /// No closed form: the pair is not in analytic configuration.
@@ -425,10 +430,10 @@ pub struct EllipseEllipseHit {
 /// Result of intersecting two 3D ellipses.
 ///
 /// Only coplanar pairs admit a closed form (elimination of one frame
-/// coordinate between the two implicit quadratics gives a quartic);
-/// anything else reports
-/// [`EllipseEllipse3DIntersection::NotAnalytic`], the same rule as
-/// [`CircleCircle3DIntersection`].
+/// coordinate between the two implicit quadratics gives a quartic).
+/// Distinct parallel planes are [`EllipseEllipse3DIntersection::Empty`];
+/// crossing planes report [`EllipseEllipse3DIntersection::NotAnalytic`],
+/// the same rule as [`CircleCircle3DIntersection`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum EllipseEllipse3DIntersection {
     /// Isolated meetings (up to four), ordered by first-ellipse parameter.
@@ -439,14 +444,15 @@ pub enum EllipseEllipse3DIntersection {
     Empty,
     /// Same center, plane, and radii within tolerance.
     Coincident,
-    /// No closed form: the ellipses are not coplanar.
+    /// No closed form: the ellipse planes cross.
     NotAnalytic,
 }
 
 /// Result of intersecting two 3D circles.
 ///
 /// Only coplanar pairs admit a closed form (via 2D images in the shared
-/// plane); anything else reports [`CircleCircle3DIntersection::NotAnalytic`].
+/// plane). Distinct parallel planes are [`CircleCircle3DIntersection::Empty`];
+/// crossing planes report [`CircleCircle3DIntersection::NotAnalytic`].
 /// Parameters are omitted (no natural primary curve); recover them with
 /// [`Circle3D::parameter_of`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -459,7 +465,7 @@ pub enum CircleCircle3DIntersection {
     Empty,
     /// Same center, radius, and plane within tolerance.
     Coincident,
-    /// No closed form: the circles are not coplanar.
+    /// No closed form: the circle planes cross.
     NotAnalytic,
 }
 
@@ -507,8 +513,9 @@ pub struct CircleConicHit {
 /// hyperbola.
 ///
 /// Only coplanar pairs admit a closed form (the circle parametrizes into
-/// the conic's implicit equation, a trigonometric solve); anything else
-/// reports [`CircleConic3DIntersection::NotAnalytic`].
+/// the conic's implicit equation, a trigonometric solve). Distinct
+/// parallel planes are [`CircleConic3DIntersection::Empty`]; crossing
+/// planes report [`CircleConic3DIntersection::NotAnalytic`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum CircleConic3DIntersection {
     /// Isolated hits (up to four).
@@ -519,7 +526,7 @@ pub enum CircleConic3DIntersection {
     Coincident,
     /// No intersection.
     Empty,
-    /// No closed form: the curves are not coplanar.
+    /// No closed form: the curve planes cross.
     NotAnalytic,
 }
 

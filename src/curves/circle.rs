@@ -400,7 +400,8 @@ impl Circle3D {
     /// Only coplanar pairs admit a closed form: both circles map to 2D
     /// images in the shared plane ([`parametrize_on`](Circle3D::parametrize_on)),
     /// the 2D problem solves, and hits map back through the plane
-    /// evaluation. Anything else reports
+    /// evaluation. Distinct parallel planes report
+    /// [`CircleCircle3DIntersection::Empty`]; crossing planes report
     /// [`CircleCircle3DIntersection::NotAnalytic`].
     ///
     /// # Examples
@@ -421,7 +422,8 @@ impl Circle3D {
         }
         let plane = Plane::from_frame(self.frame());
         if !plane.contains(other.center(), tol) {
-            return CircleCircle3DIntersection::NotAnalytic;
+            // Distinct parallel planes.
+            return CircleCircle3DIntersection::Empty;
         }
         if self.center().distance(other.center()) <= tol.confusion
             && (self.radius() - other.radius()).abs() <= tol.confusion
@@ -1564,6 +1566,12 @@ mod tests {
         assert_eq!(
             c1.intersect_circle(&tilted, tol),
             CircleCircle3DIntersection::NotAnalytic
+        );
+        // Distinct parallel planes: no meeting.
+        let lifted = Circle3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z, 2.0).unwrap();
+        assert_eq!(
+            c1.intersect_circle(&lifted, tol),
+            CircleCircle3DIntersection::Empty
         );
         // Coincident.
         assert_eq!(
