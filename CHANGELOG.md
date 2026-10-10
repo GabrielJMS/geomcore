@@ -9,6 +9,8 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-11
+
 ### Added
 
 - `transformed(transform)` on every 3D curve and surface (`Line3D`,
@@ -456,7 +458,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.26.0
 [0.25.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.25.0
 [0.24.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.24.0
 [0.23.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.23.0
