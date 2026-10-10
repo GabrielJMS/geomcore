@@ -438,7 +438,7 @@ fn accumulate<const N: usize, const D: usize>(
     poles: &[f64],
     out: &mut [f64],
 ) {
-    for (k, slot) in out.chunks_exact_mut(D).enumerate() {
+    for (k, slot) in out.as_chunks_mut::<D>().0.iter_mut().enumerate() {
         let mut sum = [0.0f64; D];
         for j in 0..=degree {
             let weight = w.ders[k][j];
@@ -448,7 +448,7 @@ fn accumulate<const N: usize, const D: usize>(
                 sum[c] += weight * pole[c];
             }
         }
-        slot.copy_from_slice(&sum);
+        *slot = sum;
     }
 }
 
