@@ -1724,10 +1724,12 @@ type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
 
 /// Closest-point enumeration between any two 3D curves.
 ///
-/// Samples both curves and refines with Gauss-Newton. Returns
+/// Every local minimum of the distance over the curves' parameter
+/// domains, including minima at the ends of bounded curves, as
 /// `(first_param, second_param, distance)` tuples ordered by distance.
-/// Overlapping curves yield dense sets; use the analytic methods when
-/// classification matters.
+/// Parallel lines, concentric circles and other continuous families of
+/// equal minima report the distance once, with a representative pair.
+/// Use the analytic methods when classification matters.
 #[pyfunction]
 #[pyo3(name = "curve_curve_extrema", signature = (curve_a, curve_b, tol = None))]
 fn py_curve_curve_extrema(

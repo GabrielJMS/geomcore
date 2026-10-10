@@ -166,55 +166,6 @@ pub(crate) fn gauss_newton_1d(
     None
 }
 
-/// Gauss-Newton driver for 3-component residuals in 2 parameters
-/// (surface projection): `delta = -(J'J)^{-1} J'r` with backtracking.
-///
-/// `jacobian` returns both partials `(dr/du, dr/dv)` at once, so callers
-/// evaluate their derivatives in one pass.
-pub(crate) fn gauss_newton_2d(
-    mut residual: impl FnMut(f64, f64) -> [f64; 3],
-    mut jacobian: impl FnMut(f64, f64) -> ([f64; 3], [f64; 3]),
-    mut u: f64,
-    mut v: f64,
-    tol: f64,
-    max_iter: u32,
-) -> Option<(f64, f64)> {
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    // The residual at `(u, v)` is carried over from the accepted trial, so
-    // each point is evaluated once.
-    let mut r = residual(u, v);
-    let mut best = dot(r, r);
-    for _ in 0..max_iter {
-        let (ju, jv) = jacobian(u, v);
-        let lhs = [[dot(ju, ju), dot(ju, jv)], [dot(ju, jv), dot(jv, jv)]];
-        let rhs = [-dot(ju, r), -dot(jv, r)];
-        let delta = solve_2x2(lhs, rhs, tol)?;
-        let (mut su, mut sv) = (delta[0], delta[1]);
-        let mut improved = false;
-        for _ in 0..12 {
-            let trial_r = residual(u + su, v + sv);
-            let value = dot(trial_r, trial_r);
-            if value < best {
-                u += su;
-                v += sv;
-                r = trial_r;
-                best = value;
-                improved = true;
-                break;
-            }
-            su *= 0.5;
-            sv *= 0.5;
-        }
-        if !improved {
-            return Some((u, v));
-        }
-        if su.abs() + sv.abs() <= tol * (2.0 + u.abs() + v.abs()) {
-            return Some((u, v));
-        }
-    }
-    None
-}
-
 /// Box-bounded damped Newton minimisation of a smooth `f(x)` in 2
 /// parameters, from `x0`.
 ///
@@ -517,22 +468,6 @@ mod tests {
         )
         .unwrap();
         assert!((t - 3.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_gauss_newton_2d_plane_fit() {
-        // Closest (u, v) on z = 0 to (1, 2, 3): (1, 2).
-        let (u, v) = gauss_newton_2d(
-            |u, v| [u - 1.0, v - 2.0, -3.0],
-            |_, _| ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            0.0,
-            0.0,
-            1e-12,
-            50,
-        )
-        .unwrap();
-        assert!((u - 1.0).abs() < 1e-9);
-        assert!((v - 2.0).abs() < 1e-9);
     }
 
     #[test]

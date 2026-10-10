@@ -87,6 +87,17 @@ the Python distribution are versioned in lockstep.
   parabola or hyperbola lying entirely on a sphere, cylinder or cone
   (a plane section): these reported one to three isolated hits, or
   none.
+- `curve_curve_extrema` returns the local minima of the distance over
+  the curves' parameter domains, minima at the ends of bounded curves
+  included. Two straight curves are solved in closed form, a full line
+  against another curve reduces to that curve's distance to the line,
+  and other pairs are minimised over the parameter box by a bounded
+  Newton with exact second derivatives, each result checked to be a
+  true minimum on the box. Unbounded parameters are seeded from the
+  curves' own length scale instead of a fixed `[-10, 10]` window.
+  Parallel lines, concentric circles and overlapping curves report the
+  distance once, with a representative pair (they returned nothing).
+  3-16x faster on the pairs measured.
 - Python: `eval_derivative` raises `ValueError` for an unsupported
   order (order 0, or above 2 for B-splines and surfaces) instead of a
   `PanicException`.
@@ -138,6 +149,13 @@ the Python distribution are versioned in lockstep.
   query point with a NaN or infinite coordinate; it now returns a NaN
   parameter and distance (and `extrema` an empty list). A hyperbola
   with both radii zero panicked on every projection.
+- `curve_curve_extrema` on trimmed curves reported points stuck at a
+  domain end as extrema and could miss the true minimum (5.00637
+  instead of 5 for concentric arcs); on random trimmed arc pairs its
+  minimum was worse than a 400-sample grid in 17 of 60 general and 32
+  of 60 concentric pairs. It also missed minima of lines, parabolas and
+  hyperbolas beyond parameter 10, and returned nothing for some pairs
+  of skew ellipses.
 - `Ellipse3D::intersect_ellipse` reported a tangency on an axis vertex
   `sqrt(eps)` off the axis (4.2e-8 for unit-sized ellipses); it is now
   exact.
