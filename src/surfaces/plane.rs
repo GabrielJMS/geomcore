@@ -1109,6 +1109,71 @@ mod tests {
     }
 
     #[test]
+    fn test_plane_sections_lie_on_their_surface() {
+        use crate::{ConicSurfaceIntersection, Ellipse3D, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.5).unwrap();
+        let oblique = Plane::new(
+            Point3D::new(0.0, 0.0, 1.0),
+            Vector3D::new(0.0, 0.2f64.sin(), 0.2f64.cos()),
+        )
+        .unwrap();
+        let PlaneCylinderIntersection::Ellipse(ellipse) =
+            oblique.intersect_cylinder(&cylinder, tol)
+        else {
+            panic!("expected an ellipse");
+        };
+        assert_eq!(
+            ellipse.intersect_cylinder(&cylinder, tol),
+            ConicSurfaceIntersection::Coincident
+        );
+        let PlaneConeIntersection::Ellipse(ellipse) = oblique.intersect_cone(&cone, tol) else {
+            panic!("expected an ellipse");
+        };
+        assert_eq!(
+            ellipse.intersect_cone(&cone, tol),
+            ConicSurfaceIntersection::Coincident
+        );
+        let tilt = std::f64::consts::FRAC_PI_2 - 0.4;
+        let parallel = Plane::new(
+            Point3D::new(0.0, 0.5, 0.0),
+            Vector3D::new(0.0, tilt.sin(), tilt.cos()),
+        )
+        .unwrap();
+        let PlaneConeIntersection::Parabola(parabola) = parallel.intersect_cone(&cone, tol) else {
+            panic!("expected a parabola");
+        };
+        assert_eq!(
+            parabola.intersect_cone(&cone, tol),
+            ConicSurfaceIntersection::Coincident
+        );
+        let steep = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
+        let PlaneConeIntersection::Hyperbola(hyperbola) = steep.intersect_cone(&cone, tol) else {
+            panic!("expected a hyperbola");
+        };
+        assert_eq!(
+            hyperbola.intersect_cone(&cone, tol),
+            ConicSurfaceIntersection::Coincident
+        );
+        // A circular ellipse on a sphere, and one slightly larger that only
+        // crosses it.
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let center = Point3D::new(0.0, 0.0, 1.0);
+        let r = 3.0f64.sqrt();
+        let on = Ellipse3D::new(center, Vector3D::Z, Vector3D::X, r, r).unwrap();
+        assert_eq!(
+            on.intersect_sphere(&sphere, tol),
+            ConicSurfaceIntersection::Coincident
+        );
+        let off = Ellipse3D::new(center, Vector3D::Z, Vector3D::X, r + 1e-3, r).unwrap();
+        assert!(matches!(
+            off.intersect_sphere(&sphere, tol),
+            ConicSurfaceIntersection::Hits(_)
+        ));
+    }
+
+    #[test]
     fn test_plane_cone_intersection_degenerate() {
         let tol = Tolerance::DEFAULT;
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();

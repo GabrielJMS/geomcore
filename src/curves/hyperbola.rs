@@ -5,8 +5,8 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::intersect::{
-    ConicSurfaceIntersection, QuadraticSolution, roots_with_tangency, solve_quadratic,
-    verify_conic_hits,
+    ConicSurfaceIntersection, QuadraticSolution, conic_lies_on, roots_with_tangency,
+    solve_quadratic, verify_conic_hits,
 };
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
@@ -386,6 +386,8 @@ impl Hyperbola3D {
     /// first entry is the global closest point (see
     /// [`Hyperbola3D::project_point`]).
     ///
+    /// A query point with a non-finite coordinate has no extrema.
+    ///
     /// # Examples
     ///
     /// ```
@@ -395,11 +397,23 @@ impl Hyperbola3D {
     /// assert!(!extrema.is_empty());
     /// ```
     pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        if ![point.x, point.y, point.z].iter().all(|c| c.is_finite()) {
+            return Vec::new();
+        }
         let rel = point - self.center();
         let px = rel.dot(self.frame.x_direction());
         let py = rel.dot(self.frame.y_direction());
         let (a, b) = (self.major_radius, self.minor_radius);
         let s2 = a * a + b * b;
+        if s2 == 0.0 {
+            // Both radii zero: the branch is its centre, every parameter
+            // equally close.
+            let distance = self.center().distance(point);
+            return vec![CurveProjection {
+                parameter: 0.0,
+                distance: projection::snap_distance(distance, tol.confusion),
+            }];
+        }
         let coeffs = [
             -s2,
             2.0 * (a * px - b * py),
@@ -437,13 +451,16 @@ impl Hyperbola3D {
                 }
             })
             .collect();
-        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }
 
     /// Projects `point` onto the hyperbola: the nearest of
     /// [`Hyperbola3D::extrema`]. Distances within `tol.confusion` snap to
     /// `0.0`, matching [`Hyperbola3D::contains`].
+    ///
+    /// A query point with a non-finite coordinate projects to a NaN
+    /// parameter and distance.
     ///
     /// # Examples
     ///
@@ -458,7 +475,7 @@ impl Hyperbola3D {
         self.extrema(point, tol)
             .into_iter()
             .next()
-            .expect("distance to a hyperbola branch attains its minimum")
+            .unwrap_or(CurveProjection::UNDEFINED)
     }
 
     /// Projects each point in `points` onto the hyperbola.
@@ -652,6 +669,9 @@ impl Hyperbola3D {
     /// }
     /// ```
     pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, cone, [-1.0, -0.5, 0.0, 0.5, 1.0], tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
         let (ra, rb) = (self.major_radius, self.minor_radius);
         let ac = cone.frame().z_direction();
         let cos_phi = cone.semi_angle().cos();
@@ -974,50 +994,30 @@ mod tests {
 }
 
 #[cfg(test)]
-mod dbg_hyp2 {
+mod projection_input_tests {
     use super::*;
-    use crate::math::real_roots;
+
     #[test]
-    fn dbg_roots() {
+    fn test_hyperbola3d_project_non_finite_point_is_nan() {
         let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
-        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
         let tol = Tolerance::DEFAULT;
-        // Recompute the quartic exactly as intersect_cone does.
-        let (ra, rb) = (h.major_radius, h.minor_radius);
-        let ac = cone.frame().z_direction();
-        let cos_phi = cone.semi_angle().cos();
-        let c2 = cos_phi * cos_phi;
-        let v = h.center() - cone.apex();
-        let x = h.frame().x_direction();
-        let y = h.frame().y_direction();
-        let (xa, ya, va) = (x.dot(ac), y.dot(ac), v.dot(ac));
-        let (xv, yv) = (x.dot(v), y.dot(v));
-        let vv = v.dot(v);
-        let p2 = ra * xa + rb * ya;
-        let q2 = ra * xa - rb * ya;
-        let f4 = ra * ra + rb * rb;
-        let f3 = 4.0 * ra * xv + 4.0 * rb * yv;
-        let f2 = 4.0 * vv + 2.0 * ra * ra - 2.0 * rb * rb;
-        let f1 = 4.0 * ra * xv - 4.0 * rb * yv;
-        let f0 = ra * ra + rb * rb;
-        let h4 = p2 * p2;
-        let h3 = 4.0 * va * p2;
-        let h2 = 4.0 * va * va + 2.0 * p2 * q2;
-        let h1 = 4.0 * va * q2;
-        let h0 = q2 * q2;
-        let g = [
-            h4 - c2 * f4,
-            h3 - c2 * f3,
-            h2 - c2 * f2,
-            h1 - c2 * f1,
-            h0 - c2 * f0,
-        ];
-        eprintln!("g = {g:?}");
-        // NOTE: intersect_cone passes [g4..g0] scrambled — see below.
-        let roots = real_roots(&[g[4], g[3], g[2], g[1], g[0]], tol.confusion);
-        eprintln!("roots(scrambled) = {roots:?}");
-        let roots2 = real_roots(&[g[0], g[1], g[2], g[3], g[4]], tol.confusion);
-        eprintln!("roots(asc) = {roots2:?}");
+        for p in [
+            Point3D::new(f64::NAN, 0.0, 0.0),
+            Point3D::new(f64::INFINITY, 0.0, 0.0),
+        ] {
+            assert!(h.extrema(p, tol).is_empty());
+            let proj = h.project_point(p, tol);
+            assert!(proj.parameter.is_nan() && proj.distance.is_nan());
+        }
+    }
+
+    #[test]
+    fn test_hyperbola3d_zero_radii_projects_to_centre() {
+        let center = Point3D::new(1.0, 2.0, 3.0);
+        let h = Hyperbola3D::new(center, Vector3D::Z, Vector3D::X, 0.0, 0.0).unwrap();
+        let proj = h.project_point(Point3D::new(1.0, 2.0, 8.0), Tolerance::DEFAULT);
+        assert_eq!(proj.parameter, 0.0);
+        assert_eq!(proj.distance, 5.0);
     }
 }
 

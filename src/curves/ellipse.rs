@@ -5,8 +5,8 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::intersect::{
-    ConicSurfaceIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit, solve_trig,
-    solve_trig_linear, verify_conic_hits,
+    ConicSurfaceIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit, conic_lies_on,
+    solve_trig, solve_trig_linear, verify_conic_hits,
 };
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
@@ -51,6 +51,16 @@ impl fmt::Display for EllipseConstructionError {
 }
 
 impl std::error::Error for EllipseConstructionError {}
+
+/// Five equally spaced parameters, enough to decide whether a whole
+/// ellipse lies on a quadric (see `conic_lies_on`).
+const ELLIPSE_SAMPLES: [f64; 5] = [
+    0.0,
+    0.4 * std::f64::consts::PI,
+    0.8 * std::f64::consts::PI,
+    1.2 * std::f64::consts::PI,
+    1.6 * std::f64::consts::PI,
+];
 
 /// An ellipse in 3D: a plane [`Frame3D`] (origin plus local x/y directions
 /// defining the plane, the major axis, and the angular origin), a semi-major
@@ -399,6 +409,8 @@ impl Ellipse3D {
     /// the trigonometric condition itself. The first entry is the global
     /// closest point (see [`Ellipse3D::project_point`]).
     ///
+    /// A query point with a non-finite coordinate has no extrema.
+    ///
     /// # Examples
     ///
     /// ```
@@ -409,6 +421,9 @@ impl Ellipse3D {
     /// assert_eq!(extrema[0].distance, 1.0);
     /// ```
     pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        if ![point.x, point.y, point.z].iter().all(|c| c.is_finite()) {
+            return Vec::new();
+        }
         let rel = point - self.center();
         let px = rel.dot(self.frame.x_direction());
         let py = rel.dot(self.frame.y_direction());
@@ -485,13 +500,16 @@ impl Ellipse3D {
                 }
             })
             .collect();
-        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }
 
     /// Projects `point` onto the ellipse: the nearest of
     /// [`Ellipse3D::extrema`]. Distances within `tol.confusion` snap to
     /// `0.0`, matching [`Ellipse3D::contains`].
+    ///
+    /// A query point with a non-finite coordinate projects to a NaN
+    /// parameter and distance.
     ///
     /// # Examples
     ///
@@ -506,7 +524,7 @@ impl Ellipse3D {
         self.extrema(point, tol)
             .into_iter()
             .next()
-            .expect("a compact smooth curve attains its minimum distance")
+            .unwrap_or(CurveProjection::UNDEFINED)
     }
 
     /// Projects each point in `points` onto the ellipse.
@@ -578,6 +596,9 @@ impl Ellipse3D {
     /// }
     /// ```
     pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, sphere, ELLIPSE_SAMPLES, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
         let (a, b) = (self.major_radius, self.minor_radius);
         let w = self.center() - sphere.center();
         let x = self.frame().x_direction();
@@ -616,6 +637,9 @@ impl Ellipse3D {
         cylinder: &Cylinder,
         tol: Tolerance,
     ) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, cylinder, ELLIPSE_SAMPLES, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
         let (a, b) = (self.major_radius, self.minor_radius);
         let ax = cylinder.axis().direction();
         let w = self.center() - cylinder.axis().origin();
@@ -658,6 +682,9 @@ impl Ellipse3D {
     /// }
     /// ```
     pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, cone, ELLIPSE_SAMPLES, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
         let (a, b) = (self.major_radius, self.minor_radius);
         let ax = cone.frame().z_direction();
         let cos_phi = cone.semi_angle().cos();
@@ -806,8 +833,16 @@ impl Ellipse3D {
                     continue;
                 }
                 let y = delta.max(0.0).sqrt();
-                push(x, y, &mut hits);
-                push(x, -y, &mut hits);
+                // The pair `±y` merging into one point is a tangency on
+                // this ellipse's axis: `delta` vanishes there to first
+                // order, so its square root amplifies the rounding in `x`
+                // (`y ~ sqrt(eps)`). The symmetric pair's midpoint is exact.
+                if 2.0 * y <= tol.confusion {
+                    push(x, 0.0, &mut hits);
+                } else {
+                    push(x, y, &mut hits);
+                    push(x, -y, &mut hits);
+                }
             }
         }
         hits.sort_by(|a, b| a.first_param.partial_cmp(&b.first_param).unwrap());
@@ -1149,7 +1184,7 @@ mod tests {
         .unwrap();
         match e1.intersect_ellipse(&grazing, tol) {
             EllipseEllipse3DIntersection::Tangent(hit) => {
-                assert!(hit.point.distance(Point3D::new(3.0, 0.0, 0.0)) < 1e-6);
+                assert!(hit.point.distance(Point3D::new(3.0, 0.0, 0.0)) < 1e-12);
                 assert_eq!(hit.first_param, e1.parameter_of(hit.point));
                 assert_eq!(hit.second_param, grazing.parameter_of(hit.point));
             }
@@ -1326,5 +1361,24 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(ellipse.eval_point(u)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), ellipse);
+    }
+}
+
+#[cfg(test)]
+mod projection_input_tests {
+    use super::*;
+
+    #[test]
+    fn test_ellipse3d_project_non_finite_point_is_nan() {
+        let curve = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        for p in [
+            Point3D::new(f64::NAN, 0.0, 0.0),
+            Point3D::new(f64::INFINITY, 0.0, 0.0),
+        ] {
+            assert!(curve.extrema(p, tol).is_empty());
+            let proj = curve.project_point(p, tol);
+            assert!(proj.parameter.is_nan() && proj.distance.is_nan());
+        }
     }
 }

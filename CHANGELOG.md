@@ -76,6 +76,20 @@ the Python distribution are versioned in lockstep.
   conics form their equation about the line's closest approach to the
   geometry, so the tangency band is `tol.confusion` around the chord's
   midpoint wherever the line's origin lies.
+- Tangency in curve-surface intersections is decided by distance: a
+  line, parabola or hyperbola whose closest approach to a plane, sphere,
+  cylinder, cone or torus is within `tol.confusion` of it reports a
+  single tangent hit at the touching point. It was decided by how far
+  apart the roots fell in parameter space, which construction rounding
+  splits into two hits or none (a line tangent to a torus equator was
+  missed in 43 of 300 randomized cases).
+- `ConicSurfaceIntersection::Coincident` also covers an ellipse,
+  parabola or hyperbola lying entirely on a sphere, cylinder or cone
+  (a plane section): these reported one to three isolated hits, or
+  none.
+- Python: `eval_derivative` raises `ValueError` for an unsupported
+  order (order 0, or above 2 for B-splines and surfaces) instead of a
+  `PanicException`.
 
 ### Fixed
 
@@ -120,6 +134,16 @@ the Python distribution are versioned in lockstep.
 - `Hyperbola3D` projection/`extrema` roots are Newton-polished on the
   hyperbolic stationarity equation (on-curve points of a thin
   hyperbola projected 3.4e-6 away).
+- `Ellipse3D`/`Parabola3D`/`Hyperbola3D::project_point` panicked on a
+  query point with a NaN or infinite coordinate; it now returns a NaN
+  parameter and distance (and `extrema` an empty list). A hyperbola
+  with both radii zero panicked on every projection.
+- `Ellipse3D::intersect_ellipse` reported a tangency on an axis vertex
+  `sqrt(eps)` off the axis (4.2e-8 for unit-sized ellipses); it is now
+  exact.
+- `Parabola3D` intersections with a plane missed roots far out on the
+  arms (around `u = 3.4e9`), where checking the hit on the surface
+  rounds by more than `tol.confusion`.
 
 ## [0.25.0] - 2026-09-30
 

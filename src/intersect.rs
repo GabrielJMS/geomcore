@@ -728,12 +728,13 @@ pub(crate) fn solve_trig(
 
 /// Result of intersecting an ellipse, parabola, or hyperbola with a
 /// plane, sphere, cylinder, or cone: isolated hits, whole-curve
-/// coincidence (planar curves in coincident planes only), or nothing.
+/// coincidence, or nothing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConicSurfaceIntersection {
     /// Isolated hits with multiplicity (≥ 2 marks tangency).
     Hits(Vec<ConicSurfaceHit>),
-    /// The whole curve lies in the section plane.
+    /// The whole curve lies on the surface: in the plane, or a plane
+    /// section of the sphere, cylinder, or cone.
     Coincident,
     /// No intersection.
     Empty,
@@ -773,6 +774,20 @@ where
             }
         })
         .collect()
+}
+
+/// Whether the whole conic lies on a quadric surface. On a conic, the
+/// surface's equation is a polynomial of degree at most 4 (in `t`,
+/// `e^t`, or `tan(t/2)` for the parabola, hyperbola, and ellipse), so
+/// five distinct `params` on the surface force it to vanish identically.
+pub(crate) fn conic_lies_on<C, S>(curve: &C, surface: &S, params: [f64; 5], tol: Tolerance) -> bool
+where
+    C: ParametricCurve3D,
+    S: ParametricSurface,
+{
+    params
+        .iter()
+        .all(|&t| surface.contains(curve.eval_point(t), tol))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

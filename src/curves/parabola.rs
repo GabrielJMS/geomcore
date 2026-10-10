@@ -4,8 +4,8 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::intersect::{
-    ConicSurfaceIntersection, QuadraticSolution, roots_with_tangency, solve_quadratic,
-    verify_conic_hits,
+    ConicSurfaceIntersection, QuadraticSolution, conic_lies_on, roots_with_tangency,
+    solve_quadratic, verify_conic_hits,
 };
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
@@ -276,6 +276,8 @@ impl Parabola3D {
     /// (solved by `real_roots`). The first entry is the global closest
     /// point (see [`Parabola3D::project_point`]).
     ///
+    /// A query point with a non-finite coordinate has no extrema.
+    ///
     /// # Examples
     ///
     /// ```
@@ -285,6 +287,9 @@ impl Parabola3D {
     /// assert!(!extrema.is_empty());
     /// ```
     pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        if ![point.x, point.y, point.z].iter().all(|c| c.is_finite()) {
+            return Vec::new();
+        }
         let rel = point - self.apex();
         let px = rel.dot(self.frame.x_direction());
         let py = rel.dot(self.frame.y_direction());
@@ -300,13 +305,16 @@ impl Parabola3D {
                 }
             })
             .collect();
-        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }
 
     /// Projects `point` onto the parabola: the nearest of
     /// [`Parabola3D::extrema`]. Distances within `tol.confusion` snap to
     /// `0.0`, matching [`Parabola3D::contains`].
+    ///
+    /// A query point with a non-finite coordinate projects to a NaN
+    /// parameter and distance.
     ///
     /// # Examples
     ///
@@ -320,7 +328,7 @@ impl Parabola3D {
         self.extrema(point, tol)
             .into_iter()
             .next()
-            .expect("distance to a parabola attains its minimum")
+            .unwrap_or(CurveProjection::UNDEFINED)
     }
 
     /// Projects each point in `points` onto the parabola.
@@ -493,9 +501,12 @@ impl Parabola3D {
     /// }
     /// ```
     pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+        let f = self.focal();
+        if conic_lies_on(self, cone, [-8.0 * f, -4.0 * f, 0.0, 4.0 * f, 8.0 * f], tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
         let x = self.frame().x_direction();
         let y = self.frame().y_direction();
-        let f = self.focal();
         let a = cone.frame().z_direction();
         let cos_phi = cone.semi_angle().cos();
         let c2 = cos_phi * cos_phi;
@@ -910,5 +921,24 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(parabola.eval_point(u)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), parabola);
+    }
+}
+
+#[cfg(test)]
+mod projection_input_tests {
+    use super::*;
+
+    #[test]
+    fn test_parabola3d_project_non_finite_point_is_nan() {
+        let curve = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let tol = Tolerance::DEFAULT;
+        for p in [
+            Point3D::new(f64::NAN, 0.0, 0.0),
+            Point3D::new(f64::INFINITY, 0.0, 0.0),
+        ] {
+            assert!(curve.extrema(p, tol).is_empty());
+            let proj = curve.project_point(p, tol);
+            assert!(proj.parameter.is_nan() && proj.distance.is_nan());
+        }
     }
 }

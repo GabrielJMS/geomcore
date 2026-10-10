@@ -17,6 +17,15 @@ pub struct CurveProjection {
     pub distance: f64,
 }
 
+impl CurveProjection {
+    /// The projection of a query point with a non-finite coordinate:
+    /// parameter and distance are both NaN.
+    pub(crate) const UNDEFINED: CurveProjection = CurveProjection {
+        parameter: f64::NAN,
+        distance: f64::NAN,
+    };
+}
+
 /// Closest point of a query point on a surface: the parameters and the distance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SurfaceProjection {

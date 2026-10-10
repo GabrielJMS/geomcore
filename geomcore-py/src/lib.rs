@@ -36,6 +36,34 @@ fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
+/// Checks a curve derivative order lies in `1..=max`.
+fn check_curve_order(order: u32, max: u32) -> PyResult<()> {
+    if (1..=max).contains(&order) {
+        Ok(())
+    } else if order == 0 {
+        Err(PyValueError::new_err(
+            "order must be >= 1 (use eval_point for order 0)",
+        ))
+    } else {
+        Err(PyValueError::new_err(format!(
+            "order {order} is not supported (at most {max})"
+        )))
+    }
+}
+
+/// Checks a surface derivative order satisfies `1 <= du + dv <= 2`.
+fn check_surface_order(du: u32, dv: u32) -> PyResult<()> {
+    match du.checked_add(dv) {
+        Some(1 | 2) => Ok(()),
+        Some(0) => Err(PyValueError::new_err(
+            "du + dv must be >= 1 (use eval_point for the (0, 0) order)",
+        )),
+        _ => Err(PyValueError::new_err(format!(
+            "order du={du}, dv={dv} is not supported (du + dv must be <= 2)"
+        ))),
+    }
+}
+
 fn parse_parametrization(s: &str) -> PyResult<InterpParametrization> {
     match s {
         "chordal" => Ok(InterpParametrization::Chordal),
@@ -494,8 +522,9 @@ impl PyPlane {
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyResult<PyVector3D> {
+        check_surface_order(du, dv)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, v, du, dv)))
     }
 
     /// Recover the (u, v) parameters of a point lying on the plane.
@@ -746,8 +775,9 @@ impl PyCylinder {
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyResult<PyVector3D> {
+        check_surface_order(du, dv)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, v, du, dv)))
     }
 
     /// Recover the (u, v) parameters of a point lying on the cylinder.
@@ -901,8 +931,9 @@ impl PyCone {
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyResult<PyVector3D> {
+        check_surface_order(du, dv)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, v, du, dv)))
     }
 
     /// Recover the (u, v) parameters of a point lying on the cone.
@@ -1062,8 +1093,9 @@ impl PySphere {
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyResult<PyVector3D> {
+        check_surface_order(du, dv)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, v, du, dv)))
     }
 
     /// Recover the (u, v) parameters of a point lying on the sphere.
@@ -1265,8 +1297,9 @@ impl PyTorus {
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyResult<PyVector3D> {
+        check_surface_order(du, dv)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, v, du, dv)))
     }
 
     /// Recover the (u, v) parameters of a point lying on the torus.
@@ -1630,8 +1663,9 @@ impl PyBSplineSurface {
     }
 
     /// Evaluate the partial derivative of order (du, dv), with 1 <= du+dv <= 2.
-    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, v, du, dv))
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> PyResult<PyVector3D> {
+        check_surface_order(du, dv)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, v, du, dv)))
     }
 }
 
@@ -2087,8 +2121,9 @@ impl PyLine3D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter of a point lying on the line.
@@ -2416,8 +2451,9 @@ impl PyCircle3D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter in [0, 2*pi) of a point lying on the circle.
@@ -2687,8 +2723,9 @@ impl PyEllipse3D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter in [0, 2*pi) of a point lying on the ellipse.
@@ -2872,8 +2909,9 @@ impl PyParabola3D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter of a point lying on the parabola.
@@ -3067,8 +3105,9 @@ impl PyHyperbola3D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter of a point lying on the hyperbola.
@@ -3333,8 +3372,9 @@ impl PyBSplineCurve3D {
     }
 
     /// Evaluate the derivative at `u`; orders 1 and 2 are supported.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector3D {
-        PyVector3D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, 2)?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
     }
 
     /// Not available for B-spline curves in this release; always raises `ValueError`.
@@ -3380,8 +3420,9 @@ impl PyLine2D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector2D {
-        PyVector2D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector2D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector2D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter of a point lying on the line.
@@ -3517,8 +3558,9 @@ impl PyCircle2D {
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
-    fn eval_derivative(&self, u: f64, order: u32) -> PyVector2D {
-        PyVector2D(self.0.eval_derivative(u, order))
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector2D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector2D(self.0.eval_derivative(u, order)))
     }
 
     /// Recover the parameter in [0, 2*pi) of a point lying on the circle.

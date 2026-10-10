@@ -834,3 +834,30 @@ def test_transformed_scales_radius_and_rejects_collapse():
     assert cylinder.transformed(Transform.scaling(Point3D.origin(), 3.0)).radius() == pytest.approx(6.0)
     with pytest.raises(ValueError):
         cylinder.transformed(Transform.scaling(Point3D.origin(), 0.0))
+
+
+def test_eval_derivative_rejects_unsupported_orders():
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    with pytest.raises(ValueError):
+        circle.eval_derivative(0.0, 0)
+    assert circle.eval_derivative(0.0, 5).components()[1] == pytest.approx(2.0)
+    curve = BSplineCurve3D.interpolate(
+        [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 1.0, 0.0), Point3D(2.0, 0.0, 0.0)], 2
+    )
+    with pytest.raises(ValueError):
+        curve.eval_derivative(0.5, 3)
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 1.0)
+    for du, dv in [(0, 0), (3, 0), (2, 1)]:
+        with pytest.raises(ValueError):
+            cylinder.eval_derivative(0.0, 0.0, du, dv)
+
+
+def test_conic_projection_of_non_finite_point_is_nan():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Parabola3D
+
+    o, z, x = Point3D.origin(), Vector3D.z(), Vector3D.x()
+    for curve in [Ellipse3D(o, z, x, 3.0, 2.0), Hyperbola3D(o, z, x, 3.0, 2.0), Parabola3D(o, z, x, 1.0)]:
+        for p in [Point3D(math.nan, 0.0, 0.0), Point3D(math.inf, 0.0, 0.0)]:
+            u, d = curve.project_point(p)
+            assert math.isnan(u) and math.isnan(d)
+            assert curve.extrema(p) == []
