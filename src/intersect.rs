@@ -8,7 +8,7 @@
 //! robustly instead of collapsing to noise.
 
 use crate::curves::{BSplineCurve3D, InterpParametrization, ParametricCurve3D};
-use crate::math::{gauss_newton_2d, newton_3d};
+use crate::math::{RealRoot, gauss_newton_2d, newton_3d, real_roots};
 use crate::surfaces::ParametricSurface;
 use crate::{
     Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Plane, Point2D, Point3D, Tolerance,
@@ -739,7 +739,10 @@ pub enum ConicSurfaceIntersection {
     Empty,
 }
 
-/// Keep trig/quartic candidates verified on the surface.
+/// Keep trig/quartic candidates verified on the surface. A point far
+/// from the origin cannot be placed (nor its surface distance measured)
+/// more finely than its coordinates' rounding, so the check's tolerance
+/// is at least a few ulps of the point's largest coordinate.
 pub(crate) fn verify_conic_hits<C, S>(
     curve: &C,
     surface: &S,
@@ -754,6 +757,11 @@ where
         .into_iter()
         .filter_map(|(t, multiplicity)| {
             let p = curve.eval_point(t);
+            let coord = p.x.abs().max(p.y.abs()).max(p.z.abs());
+            let tol = Tolerance {
+                confusion: tol.confusion.max(16.0 * f64::EPSILON * coord),
+                ..tol
+            };
             if surface.contains(p, tol) {
                 Some(ConicSurfaceHit {
                     parameter: t,
@@ -792,6 +800,97 @@ impl QuadraticSolution {
             other => other,
         }
     }
+
+    /// Geometric tangency at the quadratic's vertex `t*` (its critical
+    /// point): when `touches(t*)` — the curve point there is within
+    /// tolerance of the surface — two close roots or a near-real complex
+    /// pair are one double root at `t*`. The tolerance is a distance, so
+    /// this (not the roots' separation in parameter space, which input
+    /// rounding of `δ` widens to about `sqrt(2*rho*δ)`) decides contact.
+    pub(crate) fn touching_at(self, vertex: f64, touches: impl Fn(f64) -> bool) -> Self {
+        match self {
+            Self::Two(..) | Self::Empty if vertex.is_finite() && touches(vertex) => {
+                Self::One(vertex)
+            }
+            other => other,
+        }
+    }
+}
+
+/// Real roots of the ascending polynomial `poly` in a curve parameter,
+/// with geometric tangency. Roots come from [`real_roots`] (clustering
+/// within `tol.confusion` in parameter space); then every critical point
+/// `t*` of `poly` where `touches(t*)` holds (the curve is within
+/// tolerance of the surface there) marks a grazing contact: the roots it
+/// connects — consecutive in parameter order, with no non-touching
+/// critical point between — merge into one root at `t*` whose
+/// multiplicity counts them (`1 +` the critical points' multiplicities,
+/// so a near-real complex pair also reports as a double root). This is
+/// what keeps exact tangencies tangent when input rounding splits their
+/// double root by more than the parameter band.
+pub(crate) fn roots_with_tangency(
+    poly: &[f64],
+    tol: Tolerance,
+    touches: impl Fn(f64) -> bool,
+) -> Vec<RealRoot> {
+    let roots = real_roots(poly, tol.confusion);
+    let mut deriv = [0.0; 4];
+    let n = poly.len().min(5);
+    for (i, (d, &c)) in deriv
+        .iter_mut()
+        .zip(poly.iter().take(n).skip(1))
+        .enumerate()
+    {
+        *d = (i + 1) as f64 * c;
+    }
+    let crits = real_roots(&deriv[..n.saturating_sub(1)], tol.confusion);
+    // (value, multiplicity, kind): 0 = root, 1 = touching critical point,
+    // 2 = other critical point (separates clusters).
+    let mut items: Vec<(f64, u32, u8)> = roots
+        .iter()
+        .map(|r| (r.value, r.multiplicity, 0))
+        .chain(crits.iter().map(|c| {
+            let kind = if touches(c.value) { 1 } else { 2 };
+            (c.value, c.multiplicity, kind)
+        }))
+        .collect();
+    if !items.iter().any(|it| it.2 == 1) {
+        return roots;
+    }
+    items.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = Vec::with_capacity(roots.len() + 2);
+    let mut k = 0;
+    while k < items.len() {
+        if items[k].2 == 2 {
+            k += 1;
+            continue;
+        }
+        // A cluster: consecutive roots and touching critical points, each
+        // pair of neighbours linked through a touching critical point.
+        let start = k;
+        while k + 1 < items.len() && items[k + 1].2 != 2 && (items[k].2 == 1 || items[k + 1].2 == 1)
+        {
+            k += 1;
+        }
+        let cluster = &items[start..=k];
+        let touching: Vec<&(f64, u32, u8)> = cluster.iter().filter(|it| it.2 == 1).collect();
+        match touching.as_slice() {
+            [] => out.push(RealRoot {
+                value: cluster[0].0,
+                multiplicity: cluster[0].1,
+            }),
+            [one] => out.push(RealRoot {
+                value: one.0,
+                multiplicity: 1 + one.1,
+            }),
+            many => out.push(RealRoot {
+                value: 0.5 * (cluster[0].0 + cluster[cluster.len() - 1].0),
+                multiplicity: 1 + many.iter().map(|it| it.1).sum::<u32>(),
+            }),
+        }
+        k += 1;
+    }
+    out
 }
 
 /// Midpoint `-b / (2a)` of the roots of `a*t^2 + b*t + c`, or 0 when the

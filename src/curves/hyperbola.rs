@@ -5,7 +5,8 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::intersect::{
-    ConicSurfaceIntersection, QuadraticSolution, solve_quadratic, verify_conic_hits,
+    ConicSurfaceIntersection, QuadraticSolution, roots_with_tangency, solve_quadratic,
+    verify_conic_hits,
 };
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
@@ -512,7 +513,8 @@ impl Hyperbola3D {
         let bq = 2.0 * e;
         let cq = a * x.dot(n) - b * y.dot(n);
         let mut candidates = Vec::new();
-        match solve_quadratic(aq, bq, cq, tol) {
+        let touches = |u: f64| u > 0.0 && plane.contains(self.eval_point(u.ln()), tol);
+        match solve_quadratic(aq, bq, cq, tol).touching_at(-bq / (2.0 * aq), touches) {
             QuadraticSolution::Two(u1, u2) => {
                 for u in [u1, u2] {
                     if u > 0.0 {
@@ -570,7 +572,8 @@ impl Hyperbola3D {
         let g2 = 2.0 * (a * a - b * b) + 4.0 * (ww - r * r);
         let g1 = 4.0 * a * xw - 4.0 * b * yw;
         let g0 = a * a + b * b;
-        let roots = real_roots(&[g0, g1, g2, g3, g4], tol.confusion);
+        let touches = |u: f64| u > 0.0 && sphere.contains(self.eval_point(u.ln()), tol);
+        let roots = roots_with_tangency(&[g0, g1, g2, g3, g4], tol, touches);
         let hits = verify_conic_hits(self, sphere, self.params_from_u(roots), tol);
         if hits.is_empty() {
             ConicSurfaceIntersection::Empty
@@ -623,7 +626,8 @@ impl Hyperbola3D {
         let h1 = 4.0 * wa * q;
         let h0 = q * q;
         let g = [f0 - h0, f1 - h1, f2 - h2, f3 - h3, f4 - h4];
-        let roots = real_roots(&g, tol.confusion);
+        let touches = |u: f64| u > 0.0 && cylinder.contains(self.eval_point(u.ln()), tol);
+        let roots = roots_with_tangency(&g, tol, touches);
         let hits = verify_conic_hits(self, cylinder, self.params_from_u(roots), tol);
         if hits.is_empty() {
             ConicSurfaceIntersection::Empty
@@ -680,7 +684,8 @@ impl Hyperbola3D {
         ];
         // Ascending order for the solver.
         let q = [g[4], g[3], g[2], g[1], g[0]];
-        let roots = real_roots(&q, tol.confusion);
+        let touches = |u: f64| u > 0.0 && cone.contains(self.eval_point(u.ln()), tol);
+        let roots = roots_with_tangency(&q, tol, touches);
         let hits = verify_conic_hits(self, cone, self.params_from_u(roots), tol);
         if hits.is_empty() {
             ConicSurfaceIntersection::Empty

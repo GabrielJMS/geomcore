@@ -8,9 +8,9 @@ use crate::intersect::{
     ImplicitConic, LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection,
     LineConicHit, LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
     LineQuadricIntersection, LineTorusHit, LineTorusIntersection, PlacedConic, QuadraticSolution,
-    quadratic_centre, solve_quadratic,
+    quadratic_centre, roots_with_tangency, solve_quadratic,
 };
-use crate::math::{real_roots, solve_2x2};
+use crate::math::solve_2x2;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{
@@ -341,8 +341,9 @@ impl Line3D {
     /// gives a quadratic (leading coefficient exactly 1), classified with
     /// `solve_quadratic`: two ordered hits, a grazing tangent, or empty.
     /// The quadratic is formed about the line's closest approach to the
-    /// centre, so the tangency band is `tol.confusion` around the chord's
-    /// midpoint wherever the line's origin lies.
+    /// centre; the line is tangent when that closest point lies within
+    /// `tol.confusion` of the sphere (`|dist(centre, line) - R| <= tol`),
+    /// and the tangent hit reports there.
     ///
     /// # Examples
     ///
@@ -365,7 +366,9 @@ impl Line3D {
         let t0 = -d.dot(self.origin() - sphere.center());
         let w = self.eval_point(t0) - sphere.center();
         // A is exactly 1: the direction is unit by construction.
-        let sol = solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - sphere.radius().powi(2), tol);
+        let qb = 2.0 * d.dot(w);
+        let sol = solve_quadratic(1.0, qb, w.dot(w) - sphere.radius().powi(2), tol)
+            .touching_at(-0.5 * qb, |s| sphere.contains(self.eval_point(t0 + s), tol));
         match sol.shifted(t0) {
             QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(
                 (t1, self.eval_point(t1)),
@@ -418,10 +421,14 @@ impl Line3D {
                 w.dot(w) - wa * wa - cylinder.radius().powi(2),
             )
         };
-        // Centred at the closest approach to the axis.
+        // Centred at the closest approach to the axis; tangent when that
+        // point lies within tolerance of the cylinder.
         let t0 = quadratic_centre(qa, coeffs(0.0).0, tol);
         let (qb, qc) = coeffs(t0);
-        match solve_quadratic(qa, qb, qc, tol).shifted(t0) {
+        let sol = solve_quadratic(qa, qb, qc, tol).touching_at(-qb / (2.0 * qa), |s| {
+            cylinder.contains(self.eval_point(t0 + s), tol)
+        });
+        match sol.shifted(t0) {
             QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(
                 (t1, self.eval_point(t1)),
                 (t2, self.eval_point(t2)),
@@ -492,7 +499,12 @@ impl Line3D {
                 None
             }
         };
-        match solve_quadratic(qa, qb, qc, tol).shifted(t0) {
+        // Tangent when the vertex of the quadratic lies within tolerance
+        // of the cone.
+        let sol = solve_quadratic(qa, qb, qc, tol).touching_at(-qb / (2.0 * qa), |s| {
+            cone.contains(self.eval_point(t0 + s), tol)
+        });
+        match sol.shifted(t0) {
             QuadraticSolution::Two(t1, t2) => match (keep(t1), keep(t2)) {
                 (Some(q1), Some(q2)) => LineQuadricIntersection::TwoPoints(q1, q2),
                 (Some(q), None) | (None, Some(q)) => LineQuadricIntersection::OnePoint(q.0, q.1),
@@ -531,7 +543,10 @@ impl Line3D {
     /// as [`solve_quadratic`]). The quartic is formed about the line's
     /// closest approach to the centre (`O` there, `t` measured from it),
     /// so neither the band nor the coefficients' accuracy depend on
-    /// where the line's origin lies. Candidates verify with
+    /// where the line's origin lies. A critical point of the quartic
+    /// whose line point lies within `tol.confusion` of the torus is a
+    /// grazing contact: the roots around it report as one tangent hit
+    /// there (multiplicity 2 or more). Candidates verify with
     /// [`Torus::contains`], so spurious polynomial roots are dropped, and
     /// each hit also reports the torus `(u, v)` parameters.
     ///
@@ -574,7 +589,8 @@ impl Line3D {
             2.0 * b1,
             1.0,
         ];
-        let mut hits: Vec<LineTorusHit> = real_roots(&coeffs, tol.confusion)
+        let touches = |s: f64| torus.contains(self.eval_point(t0 + s), tol);
+        let mut hits: Vec<LineTorusHit> = roots_with_tangency(&coeffs, tol, touches)
             .into_iter()
             .filter_map(|r| {
                 let t = t0 + r.value;
@@ -798,7 +814,9 @@ impl Line3D {
                         });
                     }
                 };
-                match solve_quadratic(qa, qb, qc, tol).shifted(t0) {
+                let sol = solve_quadratic(qa, qb, qc, tol)
+                    .touching_at(-qb / (2.0 * qa), |s| contains(self.eval_point(t0 + s)));
+                match sol.shifted(t0) {
                     QuadraticSolution::Two(t1, t2) => {
                         push(t1);
                         push(t2);
@@ -1217,8 +1235,8 @@ impl Line2D {
     /// Substituting the unit-speed parametrization into
     /// `|X - C|^2 = r^2` gives a quadratic with leading coefficient
     /// exactly 1, classified with `solve_quadratic` about the line's
-    /// closest approach to the centre (so the tangency band does not
-    /// depend on where the line's origin lies).
+    /// closest approach to the centre; the line is tangent when that
+    /// closest point lies within `tol.confusion` of the circle.
     ///
     /// # Examples
     ///
@@ -1239,7 +1257,9 @@ impl Line2D {
         let t0 = -d.dot(self.origin() - circle.center());
         let w = self.eval_point(t0) - circle.center();
         // A is exactly 1: the direction is unit by construction.
-        let sol = solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - circle.radius().powi(2), tol);
+        let qb = 2.0 * d.dot(w);
+        let sol = solve_quadratic(1.0, qb, w.dot(w) - circle.radius().powi(2), tol)
+            .touching_at(-0.5 * qb, |s| circle.contains(self.eval_point(t0 + s), tol));
         match sol.shifted(t0) {
             QuadraticSolution::Two(t1, t2) => LineCircle2DIntersection::Points(
                 (t1, self.eval_point(t1)),
@@ -1980,6 +2000,167 @@ mod tests {
                     generic.is_empty(),
                     "generic found hits for line {origin:?} {dir:?}"
                 ),
+            }
+        }
+    }
+
+    #[test]
+    fn test_line3d_sphere_tangent_with_rounded_construction() {
+        // A line built tangent to the sphere (its foot point placed at
+        // distance r from the centre, then rounded): the closest approach is
+        // within tolerance of the sphere, so the hit is a tangent even though
+        // rounding pushed the double root apart in parameter space.
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(
+            Point3D::new(-3.66014770679811, 2.1882136950508135, 0.8308364993480888),
+            4.576151540371945,
+        )
+        .unwrap();
+        let line = Line3D::new(
+            Point3D::new(-7.265034215586097, 4.063943363277678, 3.160556308883224),
+            Vector3D::new(
+                -0.029375202317363944,
+                -0.9552316968774335,
+                0.2943968457192993,
+            ),
+        )
+        .unwrap();
+        match line.intersect_sphere(&sphere, tol) {
+            LineQuadricIntersection::Tangent(t, p) => {
+                assert_eq!(p, line.eval_point(t));
+                assert!((p.distance(sphere.center()) - sphere.radius()).abs() < 1e-7);
+            }
+            other => panic!("expected a tangent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line3d_sphere_tangency_is_a_distance_criterion() {
+        // Unit sphere, lines along X at height 1 + h: within tolerance of the
+        // surface the contact is a tangent at the closest point, beyond it
+        // the line misses or crosses.
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+        for (h, expect) in [
+            (5e-8, "tangent"),
+            (-5e-8, "tangent"),
+            (1e-6, "empty"),
+            (-1e-6, "two"),
+        ] {
+            let line = Line3D::new(Point3D::new(-3.0, 1.0 + h, 0.0), Vector3D::X).unwrap();
+            let got = line.intersect_sphere(&sphere, tol);
+            match (expect, got) {
+                ("tangent", LineQuadricIntersection::Tangent(t, _)) => {
+                    assert!((t - 3.0).abs() < 1e-12)
+                }
+                ("empty", LineQuadricIntersection::Empty) => {}
+                ("two", LineQuadricIntersection::TwoPoints(..)) => {}
+                (_, other) => panic!("h = {h}: expected {expect}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_line3d_cylinder_tangent_with_rounded_construction() {
+        // A line through a point at distance r from the axis, perpendicular to
+        // both the axis and the radial direction (all rounded).
+        let tol = Tolerance::DEFAULT;
+        let frame = Frame3D::new(
+            Point3D::new(-4.5491502150862, 3.488975760746989, 4.505226342025091),
+            Vector3D::new(
+                0.3378045276092872,
+                -0.8749064394010623,
+                -0.34702568121281996,
+            ),
+            Vector3D::new(
+                -0.9411459179864347,
+                -0.31849077016586064,
+                -0.11317239228994093,
+            ),
+        )
+        .unwrap();
+        let cylinder = Cylinder::from_frame(frame, 4.790993298008813).unwrap();
+        let line = Line3D::new(
+            Point3D::new(-9.058174000607561, 1.9630886154046856, 3.96301816904436),
+            Vector3D::new(
+                -0.011509221699911018,
+                0.36483194982582373,
+                -0.9310022482261524,
+            ),
+        )
+        .unwrap();
+        match line.intersect_cylinder(&cylinder, tol) {
+            LineQuadricIntersection::Tangent(t, p) => {
+                assert!(t.abs() < 1e-9);
+                assert!(cylinder.contains(p, tol));
+            }
+            other => panic!("expected a tangent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line3d_torus_equator_tangents_with_rounded_construction() {
+        // Lines tangent to the outer or inner equator of a tilted torus, three
+        // units from their origin: one double hit at parameter 3 (plus the two
+        // transversal crossings of the far side for the inner equator).
+        let tol = Tolerance::DEFAULT;
+        let cases = [
+            (
+                [-3.151766078083671, 1.7612911834316094, -3.8732580004320094],
+                [0.591615246726186, -0.1992663849953292, 0.7812069557114858],
+                [-0.11806191907195286, 0.9371156800331439, 0.3284441893245577],
+                2.57900662578319,
+                2.1693570817529384,
+                [-1.3197794883641474, 7.070687415724088, -3.9063439891962752],
+                [-0.7975291738276172, -0.2865433824866865, 0.5308861524347069],
+                [-3.7123670098469996, 6.211057268264029, -2.313685531892154],
+                1,
+            ),
+            (
+                [
+                    -0.42406925077418656,
+                    -1.5070564593366398,
+                    -1.7711640354794786,
+                ],
+                [0.8814613008971334, 0.29475868487218504, 0.3689760056062631],
+                [-0.4162021275760656, 0.8540654733307351, 0.3120063401046585],
+                5.377738053276436,
+                1.313893854677209,
+                [-1.4459605871845431, 3.249502898666323, -3.1297334451352716],
+                [
+                    -0.22316308839476426,
+                    -0.4285901129946508,
+                    0.8755048549387623,
+                ],
+                [-2.115449852368836, 1.9637325596823705, -0.5032188803189848],
+                3,
+            ),
+        ];
+        for (o, z, x, major, minor, lo, ld, contact, count) in cases {
+            let frame = Frame3D::new(
+                Point3D::new(o[0], o[1], o[2]),
+                Vector3D::new(z[0], z[1], z[2]),
+                Vector3D::new(x[0], x[1], x[2]),
+            )
+            .unwrap();
+            let torus = Torus::from_frame(frame, major, minor).unwrap();
+            let line = Line3D::new(
+                Point3D::new(lo[0], lo[1], lo[2]),
+                Vector3D::new(ld[0], ld[1], ld[2]),
+            )
+            .unwrap();
+            let contact = Point3D::new(contact[0], contact[1], contact[2]);
+            match line.intersect_torus(&torus, tol) {
+                LineTorusIntersection::Hits(hits) => {
+                    assert_eq!(hits.len(), count, "{hits:?}");
+                    let touch = hits
+                        .iter()
+                        .find(|h| h.multiplicity == 2)
+                        .unwrap_or_else(|| panic!("no tangent hit in {hits:?}"));
+                    assert!((touch.line_param - 3.0).abs() < 1e-6);
+                    assert!(touch.point.distance(contact) < 1e-6);
+                }
+                other => panic!("expected hits, got {other:?}"),
             }
         }
     }

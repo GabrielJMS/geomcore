@@ -4,7 +4,8 @@
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::intersect::{
-    ConicSurfaceIntersection, QuadraticSolution, solve_quadratic, verify_conic_hits,
+    ConicSurfaceIntersection, QuadraticSolution, roots_with_tangency, solve_quadratic,
+    verify_conic_hits,
 };
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
@@ -366,7 +367,8 @@ impl Parabola3D {
         let c = x.dot(n) / (4.0 * f);
         let d = y.dot(n);
         let e = (self.apex() - plane.frame().origin()).dot(n);
-        let roots = solve_quadratic(c, d, e, tol);
+        let roots = solve_quadratic(c, d, e, tol)
+            .touching_at(-d / (2.0 * c), |t| plane.contains(self.eval_point(t), tol));
         let candidates: Vec<(f64, u32)> = match roots {
             QuadraticSolution::Two(t1, t2) => vec![(t1, 1), (t2, 1)],
             QuadraticSolution::One(t) => vec![(t, 2)],
@@ -409,7 +411,8 @@ impl Parabola3D {
             0.0,
             1.0 / (16.0 * f * f),
         ];
-        let candidates: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+        let touches = |t: f64| sphere.contains(self.eval_point(t), tol);
+        let candidates: Vec<(f64, u32)> = roots_with_tangency(&q, tol, touches)
             .into_iter()
             .map(|root| (root.value, root.multiplicity))
             .collect();
@@ -461,7 +464,8 @@ impl Parabola3D {
             -2.0 * alpha * beta,
             1.0 / (16.0 * f * f) - alpha * alpha,
         ];
-        let candidates: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+        let touches = |t: f64| cylinder.contains(self.eval_point(t), tol);
+        let candidates: Vec<(f64, u32)> = roots_with_tangency(&q, tol, touches)
             .into_iter()
             .map(|root| (root.value, root.multiplicity))
             .collect();
@@ -510,7 +514,8 @@ impl Parabola3D {
             2.0 * alpha * beta,
             alpha * alpha - c2 / (16.0 * f * f),
         ];
-        let candidates: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+        let touches = |t: f64| cone.contains(self.eval_point(t), tol);
+        let candidates: Vec<(f64, u32)> = roots_with_tangency(&q, tol, touches)
             .into_iter()
             .map(|root| (root.value, root.multiplicity))
             .collect();
@@ -551,7 +556,7 @@ impl Parabola3D {
 mod tests {
     use crate::{
         Axis3D, ConicSurfaceIntersection, Cylinder, Frame3D, Parabola3D, ParabolaConstructionError,
-        Plane, Point3D, Tolerance, Transform, Vector3D, intersect_curve_surface,
+        Plane, Point3D, Sphere, Tolerance, Transform, Vector3D, intersect_curve_surface,
     };
 
     // ---- construction ----
@@ -725,6 +730,110 @@ mod tests {
         assert!(proj.distance <= best);
         assert!(best - proj.distance < 1e-3);
         assert!(p.contains(p.eval_point(proj.parameter), tol));
+    }
+
+    #[test]
+    fn test_parabola3d_apex_tangent_to_sphere() {
+        // The apex sits on the sphere and the parabola opens into it: the
+        // apex is a tangency (double root), which input rounding must not
+        // split into nothing; the second case also crosses the sphere twice.
+        let tol = Tolerance::DEFAULT;
+        let cases = [
+            (
+                [-1.731231704419697, -0.7340958362561167, 4.433406474277298],
+                [-0.9529764985851513, 0.1260554568656934, 0.2755826825814103],
+                [0.3021731849933078, 0.4641631581607747, 0.8326127124162926],
+                2.05398299873137,
+                1.114835151487306,
+                1,
+            ),
+            (
+                [-3.686261961698878, 2.2461263633249473, 0.025839678441132108],
+                [
+                    -0.28025499704197765,
+                    -0.9386923410260545,
+                    -0.20078303098625241,
+                ],
+                [
+                    -0.04967289504831476,
+                    0.22306643447753607,
+                    -0.9735368351053791,
+                ],
+                3.172852261703441,
+                1.4836846217149213,
+                3,
+            ),
+        ];
+        for (o, z, x, r, focal, count) in cases {
+            let centre = Point3D::new(o[0], o[1], o[2]);
+            let normal = Vector3D::new(z[0], z[1], z[2]);
+            let xdir = Vector3D::new(x[0], x[1], x[2]);
+            let sphere =
+                Sphere::from_frame(Frame3D::new(centre, normal, xdir).unwrap(), r).unwrap();
+            let apex = centre - xdir * r;
+            let parabola =
+                Parabola3D::from_frame(Frame3D::new(apex, normal, xdir).unwrap(), focal).unwrap();
+            match parabola.intersect_sphere(&sphere, tol) {
+                ConicSurfaceIntersection::Hits(hits) => {
+                    assert_eq!(hits.len(), count, "{hits:?}");
+                    let touch = hits
+                        .iter()
+                        .find(|h| h.multiplicity == 2)
+                        .unwrap_or_else(|| panic!("no tangent hit in {hits:?}"));
+                    assert!(touch.parameter.abs() < 1e-6);
+                    assert!(touch.point.distance(apex) < 1e-9);
+                }
+                other => panic!("expected hits, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parabola3d_plane_far_root() {
+        // The plane is nearly parallel to the parabola's axis: the second
+        // crossing is about 3.4e9 from the origin, where the point's own
+        // rounding exceeds the tolerance; it must still be reported.
+        let tol = Tolerance::DEFAULT;
+        let parabola = Parabola3D::from_frame(
+            Frame3D::new(
+                Point3D::new(-1.846934674952041, -3.3584204401499695, -2.27622906393242),
+                Vector3D::new(
+                    -0.06113599293430543,
+                    0.9818338297888833,
+                    -0.17962383207701216,
+                ),
+                Vector3D::new(
+                    0.008163240668319863,
+                    -0.1794625991638955,
+                    -0.983730927135632,
+                ),
+            )
+            .unwrap(),
+            1.6472512486455413,
+        )
+        .unwrap();
+        let plane = Plane::from_frame(
+            Frame3D::new(
+                Point3D::new(-0.7209761248595257, -0.9220441826499641, 1.8828489881612174),
+                Vector3D::new(
+                    -0.5111262109292593,
+                    -0.8462850182163955,
+                    0.15017211606544442,
+                ),
+                Vector3D::new(0.14562539970239027, 0.08692546117230952, 0.9855136768008349),
+            )
+            .unwrap(),
+        );
+        match parabola.intersect_plane(&plane, tol) {
+            ConicSurfaceIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 2, "{hits:?}");
+                assert!((hits[0].parameter + 3.576729279665239).abs() < 1e-9);
+                assert!((hits[1].parameter / 148960.13911146074 - 1.0).abs() < 1e-9);
+                let far = Point3D::new(27341838.29244079, -604367152.2404089, -3312810312.8581567);
+                assert!(hits[1].point.distance(far) < 1e-6 * 3.4e9);
+            }
+            other => panic!("expected hits, got {other:?}"),
+        }
     }
 
     #[test]
