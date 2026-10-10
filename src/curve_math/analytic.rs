@@ -169,7 +169,14 @@ pub(crate) fn hyperbola_parameter(frame: &Frame3D, min: f64, p: Point3D) -> f64 
 /// integer), so `ceil` is a no-op there and the formula wraps `last` down to
 /// `first` rather than leaving it fixed — i.e. the interval really is
 /// half-open `[first, last)`, with `last` folding back to `first`.
+///
+/// A `u` already in `[first, last)` is returned unchanged: just below
+/// `last`, `(first - u) / period` can round to `-1` and the formula would
+/// fold `u` onto `first`, a different span of a periodic B-spline.
 pub(crate) fn in_period(u: f64, first: f64, last: f64) -> f64 {
+    if (first..last).contains(&u) {
+        return u;
+    }
     let period = last - first;
     f64::max(first, u + period * ((first - u) / period).ceil())
 }
@@ -549,6 +556,14 @@ mod tests {
         // period above first, so ceil((first - u) / period) == -1 exactly
         // and the formula folds it back down to first, not left at last.
         assert_eq!(in_period(TAU, 0.0, TAU), 0.0);
+    }
+
+    #[test]
+    fn test_in_period_just_below_last_is_identity() {
+        // Here `(first - u) / period` rounds to exactly -1.
+        let (first, last): (f64, f64) = (-1.3389725790171088, 14.958972242141693);
+        let u = last.next_down();
+        assert_eq!(in_period(u, first, last), u);
     }
 
     // ---- 2D twins ----

@@ -885,6 +885,9 @@ struct BSplineSurfaceSample {
     point: [f64; 3],
     d1u: [f64; 3],
     d1v: [f64; 3],
+    d2u: [f64; 3],
+    d2v: [f64; 3],
+    d2uv: [f64; 3],
 }
 
 #[derive(Deserialize)]
@@ -955,6 +958,9 @@ fn bspline_surfaces_match_golden_fixture() {
             assert_point3(surface.eval_point(u, v), sample.point);
             assert_vector3(surface.eval_derivative(u, v, 1, 0), sample.d1u);
             assert_vector3(surface.eval_derivative(u, v, 0, 1), sample.d1v);
+            assert_vector3(surface.eval_derivative(u, v, 2, 0), sample.d2u);
+            assert_vector3(surface.eval_derivative(u, v, 1, 1), sample.d2uv);
+            assert_vector3(surface.eval_derivative(u, v, 0, 2), sample.d2v);
         }
     }
 }

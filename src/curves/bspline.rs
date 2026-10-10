@@ -10,10 +10,11 @@ use std::fmt;
 
 use crate::curve_math::bspline as math;
 use crate::curves::{Curve2D, ParametrizeError};
-use crate::math::gauss_newton_1d;
+use crate::math::boxtree::{BoxTree, Lazy};
+use crate::math::newton_min_1d;
 use crate::projection::CurveProjection;
 use crate::surfaces::Surface;
-use crate::{Point3D, Tolerance, Vector3D};
+use crate::{Point3D, Tolerance, Transform, Vector3D};
 
 /// Error returned when a [`BSplineCurve3D`] cannot be constructed from the
 /// given degree, poles, knots, multiplicities, and (for rational curves)
@@ -127,6 +128,16 @@ pub struct BSplineCurve3D {
     /// Cached flat pole buffer: `dim` coordinates per pole, where
     /// `dim = 4` (homogeneous `(x*w, y*w, z*w, w)`) if rational, else `3`.
     flat_poles: Vec<f64>,
+    /// Bounding-box hierarchy of the knot spans, built on the first
+    /// projection.
+    spans: Lazy<SpanTree>,
+}
+
+/// The knot-span boundaries of a curve and the box hierarchy over its spans.
+#[derive(Clone)]
+struct SpanTree {
+    breaks: Vec<f64>,
+    tree: BoxTree,
 }
 
 /// Point parametrization for [`BSplineCurve3D::interpolate`].
@@ -369,6 +380,7 @@ impl BSplineCurve3D {
             mults: multiplicities,
             flat,
             flat_poles,
+            spans: Lazy::default(),
         })
     }
 
@@ -669,6 +681,44 @@ impl BSplineCurve3D {
         &self.mults
     }
 
+    /// Returns the image of this curve under `transform`: every control
+    /// pole maps point-wise while degree, knots, multiplicities,
+    /// periodicity, and weights are unchanged.
+    ///
+    /// B-spline evaluation is affinely invariant, so mapping the poles is
+    /// exact for every rigid, mirrored, or uniformly scaled transform.
+    /// Infallible: pole images always form a valid net over the unchanged
+    /// knot vector, even for a collapsing (zero-scale) transform.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Transform, Vector3D};
+    /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// let moved = curve.transformed(Transform::translation(Vector3D::new(0.0, 5.0, 0.0)));
+    /// assert_eq!(moved.eval_point(0.5), Point3D::new(1.0, 5.0, 0.0));
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> BSplineCurve3D {
+        let poles: Vec<Point3D> = self
+            .poles
+            .iter()
+            .map(|&p| transform.apply_point(p))
+            .collect();
+        let flat_poles = pack_flat_poles(&poles, self.weights.as_deref());
+        BSplineCurve3D {
+            degree: self.degree,
+            periodic: self.periodic,
+            poles,
+            weights: self.weights.clone(),
+            knots: self.knots.clone(),
+            mults: self.mults.clone(),
+            flat: self.flat.clone(),
+            flat_poles,
+            spans: Lazy::default(),
+        }
+    }
+
     /// Returns the curve's parameter bounds `(first, last)`.
     ///
     /// For a clamped (non-periodic) curve this is the active span
@@ -796,14 +846,15 @@ impl BSplineCurve3D {
         self.project_point(point, tol).distance <= tol.confusion
     }
 
-    /// All stationary points of the distance from `point` to the curve,
-    /// ordered by ascending distance.
+    /// The local minima of the distance from `point` to the curve, ordered
+    /// by ascending distance, plus the interval ends of an open curve.
     ///
-    /// Dense uniform seeds over [`BSplineCurve3D::bounds`] are refined
-    /// with Gauss-Newton on `(C(t) - P).C'(t) = 0` (first derivatives
-    /// only); distinct seeds converging to the same point merge, and the
-    /// interval ends join as candidates on open curves. The first entry
-    /// is the global closest point (see [`BSplineCurve3D::project_point`]).
+    /// Every knot span is scanned exactly (see
+    /// [`BSplineCurve3D::project_point`]): its interior minima are
+    /// bracketed and refined by a Newton minimisation bounded to the
+    /// bracket, and a knot is a minimum when the distance falls into it and
+    /// rises out of it (a crease). Minima at the same point merge. The
+    /// first entry is the global closest point.
     ///
     /// # Examples
     ///
@@ -818,74 +869,54 @@ impl BSplineCurve3D {
     pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
         use crate::projection::snap_distance;
         let (first, last) = self.bounds();
-        let clamp = |t: f64| {
-            if self.is_periodic() {
-                t
-            } else {
-                t.clamp(first, last)
-            }
-        };
-        // Dense seeds; keep only well-separated ones for refinement.
-        const SEEDS: usize = 64;
-        const KEEP: usize = 8;
-        let mut samples: Vec<(f64, f64)> = (0..SEEDS)
-            .map(|i| {
-                let u = first + (last - first) * i as f64 / (SEEDS - 1) as f64;
-                (u, self.eval_point(u).distance(point))
-            })
+        let breaks = &self.span_tree().breaks;
+        let n = breaks.len() - 1;
+        let mut params = vec![self.project_point(point, tol).parameter];
+        let ends: Vec<SpanEnds> = (0..n)
+            .map(|k| self.scan_span(point, breaks[k], breaks[k + 1], &mut params))
             .collect();
-        samples.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let mut params: Vec<f64> = Vec::new();
-        for (u, _) in samples.into_iter().take(KEEP) {
-            let p = self.eval_point(u);
-            if params
-                .iter()
-                .any(|&t| self.eval_point(t).distance(p) <= tol.confusion)
-            {
-                continue;
-            }
-            let residual = |t: f64| {
-                let q = self.eval_point(clamp(t)) - point;
-                [q.x, q.y, q.z]
-            };
-            let jacobian = |t: f64| {
-                let v = self.eval_derivative(clamp(t), 1);
-                [v.x, v.y, v.z]
-            };
-            if let Some(t) = gauss_newton_1d(residual, jacobian, u, tol.confusion, 50) {
-                params.push(clamp(t));
+        for k in 1..n {
+            if ends[k - 1].end_falling && ends[k].start_rising {
+                params.push(breaks[k]);
             }
         }
-        // Interval ends are candidates on open curves; the best raw sample
-        // guarantees a non-empty answer when nothing converges.
-        if !self.is_periodic() {
+        if !self.periodic {
             params.push(first);
             params.push(last);
-        }
-        if params.is_empty() {
+        } else if ends[n - 1].end_falling && ends[0].start_rising {
             params.push(first);
         }
         let mut out: Vec<CurveProjection> = Vec::new();
+        let mut kept: Vec<Point3D> = Vec::new();
         for t in params {
             let p = self.eval_point(t);
-            if out.iter().any(|e: &CurveProjection| {
-                self.eval_point(e.parameter).distance(p) <= tol.confusion
-            }) {
+            if kept.iter().any(|q| q.distance(p) <= tol.confusion) {
                 continue;
             }
-            let distance = p.distance(point);
+            kept.push(p);
             out.push(CurveProjection {
                 parameter: t,
-                distance: snap_distance(distance, tol.confusion),
+                distance: snap_distance(p.distance(point), tol.confusion),
             });
         }
-        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }
 
-    /// Projects `point` onto the curve: the nearest of
-    /// [`BSplineCurve3D::extrema`]. Distances within `tol.confusion` snap
-    /// to `0.0`, matching [`BSplineCurve3D::contains`].
+    /// Projects `point` onto the curve: the global minimum of the distance,
+    /// the first entry of [`BSplineCurve3D::extrema`]. Distances within
+    /// `tol.confusion` snap to `0.0`, matching [`BSplineCurve3D::contains`].
+    ///
+    /// Branch and bound over the knot spans: each span lies in the bounding
+    /// box of its poles (convex hull property), so spans are visited by
+    /// increasing box distance (through a box hierarchy built once per
+    /// curve) until no remaining box can hold a closer point. A visited
+    /// span is scanned exactly: on it the curve is a polynomial (or
+    /// rational) piece, so the derivative of the squared distance has the
+    /// sign of a polynomial whose roots are bracketed in Bernstein form.
+    /// Every interior minimum is found however close basins sit, then
+    /// refined to full precision by a Newton minimisation bounded to its
+    /// bracket.
     ///
     /// # Examples
     ///
@@ -898,10 +929,39 @@ impl BSplineCurve3D {
     /// assert_eq!(proj.distance, 1.0);
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
-        self.extrema(point, tol)
-            .into_iter()
-            .next()
-            .expect("seeding guarantees a non-empty candidate list")
+        use crate::projection::snap_distance;
+        let spans = self.span_tree();
+        let breaks = &spans.breaks;
+        // (distance, parameter) of the closest point so far.
+        let mut best = (f64::INFINITY, breaks[0]);
+        let mut minima = Vec::new();
+        spans.tree.nearest_first(point, |k| {
+            let (a, b) = (breaks[k], breaks[k + 1]);
+            minima.clear();
+            let ends = self.scan_span(point, a, b, &mut minima);
+            let interior = minima
+                .iter()
+                .map(|&t| (self.eval_point(t).distance(point), t));
+            for (d, t) in [(ends.distance[0], a), (ends.distance[1], b)]
+                .into_iter()
+                .chain(interior)
+            {
+                if d < best.0 {
+                    best = (d, t);
+                }
+            }
+            best.0
+        });
+        let (first, last) = self.bounds();
+        let t = if self.periodic && best.1 == last {
+            first
+        } else {
+            best.1
+        };
+        CurveProjection {
+            parameter: t,
+            distance: snap_distance(self.eval_point(t).distance(point), tol.confusion),
+        }
     }
 
     /// Projects each point in `points` onto the curve.
@@ -912,12 +972,167 @@ impl BSplineCurve3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// The knot-span box hierarchy, built on first use.
+    fn span_tree(&self) -> &SpanTree {
+        self.spans.get_or_init(|| {
+            let (first, last) = self.bounds();
+            let breaks = math::span_breaks(&self.knots, first, last);
+            let dim = if self.is_rational() { 4 } else { 3 };
+            let boxes = math::span_boxes(
+                &breaks,
+                self.degree,
+                self.periodic,
+                &self.flat,
+                &self.flat_poles,
+                dim,
+            );
+            SpanTree {
+                tree: BoxTree::new(&boxes, 1),
+                breaks,
+            }
+        })
+    }
+
+    /// Scans the knot span `[a, b]` for minima of the distance to `point`:
+    /// pushes every interior local minimum (refined) to `minima` and
+    /// returns how the distance behaves at the span ends.
+    ///
+    /// With the span's Bernstein control points, the homogeneous offset
+    /// `A = P_w - point * w` and the weight `w` are polynomials of the
+    /// degree `p`, and `d/dt |A / w|^2` has the sign of
+    /// `G = (A' . A) w - |A|^2 w'` (`A' . A` if nonrational), of degree
+    /// `3p - 1` (`2p - 1`). Interior minima are the roots where `G` rises
+    /// through zero.
+    fn scan_span(&self, point: Point3D, a: f64, b: f64, minima: &mut Vec<f64>) -> SpanEnds {
+        // `G` has up to `3 * degree` coefficients.
+        const SMALL: usize = 3 * math::SMALL;
+        if self.degree < math::SMALL {
+            self.scan_span_sized::<SMALL>(point, a, b, minima)
+        } else {
+            self.scan_span_sized::<{ crate::math::bernstein::CAPACITY }>(point, a, b, minima)
+        }
+    }
+
+    fn scan_span_sized<const N: usize>(
+        &self,
+        point: Point3D,
+        a: f64,
+        b: f64,
+        minima: &mut Vec<f64>,
+    ) -> SpanEnds {
+        use crate::math::bernstein::{add_product, rising_roots, scale, unscale};
+        let p = self.degree;
+        let rational = self.is_rational();
+        let dim = if rational { 4 } else { 3 };
+        let mut bezier = [[0.0; N]; 3];
+        let mut weight = [1.0; N];
+        {
+            let [x, y, z] = &mut bezier;
+            let mut out: [&mut [f64]; 4] = [x, y, z, &mut weight];
+            math::span_bezier(
+                0.5 * (a + b),
+                p,
+                self.periodic,
+                &self.flat,
+                &self.flat_poles,
+                &mut out[..dim],
+            );
+        }
+        let q = [point.x, point.y, point.z];
+        // Offsets `A` per coordinate and their differences (`A'` up to the
+        // factor `p`, as `w'`), scaled; `magnitude` bounds their rounding.
+        let mut offset = [[0.0; N]; 3];
+        let mut slope = [[0.0; N]; 3];
+        let mut magnitude: f64 = 0.0;
+        for c in 0..3 {
+            for k in 0..=p {
+                offset[c][k] = bezier[c][k] - q[c] * weight[k];
+                magnitude = magnitude.max(bezier[c][k].abs() + q[c].abs() * weight[k]);
+            }
+            for k in 0..p {
+                slope[c][k] = offset[c][k + 1] - offset[c][k];
+            }
+            scale(&mut offset[c][..=p]);
+            scale(&mut slope[c][..p]);
+        }
+        // `A' . A` (degree `2p - 1`) and, if rational, `|A|^2` (`2p`).
+        let mut g = [0.0; N];
+        let degree_g = if rational { 3 * p - 1 } else { 2 * p - 1 };
+        if rational {
+            let mut dot = [0.0; N];
+            let mut square = [0.0; N];
+            for c in 0..3 {
+                add_product(&slope[c][..p], &offset[c][..=p], 1.0, &mut dot);
+                add_product(&offset[c][..=p], &offset[c][..=p], 1.0, &mut square);
+            }
+            let mut weight_slope = [0.0; N];
+            for k in 0..p {
+                weight_slope[k] = weight[k + 1] - weight[k];
+            }
+            let mut scaled_weight = weight;
+            scale(&mut scaled_weight[..=p]);
+            scale(&mut weight_slope[..p]);
+            add_product(&dot[..2 * p], &scaled_weight[..=p], 1.0, &mut g);
+            add_product(&square[..=2 * p], &weight_slope[..p], -1.0, &mut g);
+        } else {
+            for c in 0..3 {
+                add_product(&slope[c][..p], &offset[c][..=p], 1.0, &mut g);
+            }
+        }
+        let g = &mut g[..=degree_g];
+        unscale(g);
+        let max_weight = weight[..=p].iter().fold(0.0f64, |m, &w| m.max(w));
+        let tiny = 1e3 * f64::EPSILON * magnitude * magnitude * max_weight;
+        let h = b - a;
+        rising_roots::<N>(g, tiny, |s0, s1, s| {
+            let bounds = (a + s0 * h, if s1 == 1.0 { b } else { a + s1 * h });
+            minima.push(self.refine_projection(point, a + s * h, Some(bounds)));
+        });
+        // The curve passes through the end control points (whose scaled
+        // offsets are unscaled: `C(p, 0) = C(p, p) = 1`).
+        let end_distance = |k: usize| {
+            (0..3)
+                .map(|c| (offset[c][k] / weight[k]).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        };
+        SpanEnds {
+            distance: [end_distance(0), end_distance(p)],
+            start_rising: g[0] >= -tiny,
+            end_falling: g[degree_g] <= tiny,
+        }
+    }
+
+    /// Bounded Newton minimisation of `|C(t) - point|^2` from `t` with
+    /// exact second derivatives, within `bounds` (`None`: unbounded, for a
+    /// smooth periodic curve); a periodic result is wrapped into
+    /// [`BSplineCurve3D::bounds`].
+    fn refine_projection(&self, point: Point3D, t: f64, bounds: Option<(f64, f64)>) -> f64 {
+        let objective = |t: f64| {
+            let e = self.eval_euclidean(math::inward(t, bounds), 2);
+            let r = [e[0] - point.x, e[1] - point.y, e[2] - point.z];
+            let dot = |a: &[f64], b: &[f64]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+            (
+                0.5 * dot(&r, &r),
+                dot(&e[3..6], &r),
+                dot(&e[3..6], &e[3..6]) + dot(&e[6..9], &r),
+            )
+        };
+        let t = newton_min_1d(objective, t, bounds, 1e-14, 100);
+        if self.periodic {
+            let (first, last) = self.bounds();
+            first + (t - first).rem_euclid(last - first)
+        } else {
+            t
+        }
+    }
+
     /// Evaluates the value and derivatives up to `n` (`n <= 2`) at `u`,
     /// returning Euclidean coordinates as `[f, f', f'']` flattened (9
     /// values, trailing ones zero if `n < 2`).
     fn eval_euclidean(&self, u: f64, n: usize) -> [f64; 9] {
         let dim = if self.is_rational() { 4 } else { 3 };
-        let mut raw = vec![0.0f64; 3 * dim];
+        let mut raw = [0.0f64; 3 * 4];
         math::eval_dn(
             u,
             self.degree,
@@ -932,10 +1147,21 @@ impl BSplineCurve3D {
         if self.is_rational() {
             math::rational_derivatives(&raw, n, &mut euc);
         } else {
-            euc.copy_from_slice(&raw);
+            euc.copy_from_slice(&raw[..9]);
         }
         euc
     }
+}
+
+/// How the distance to a point behaves at the ends of one knot span.
+struct SpanEnds {
+    /// Distances at the span start and end.
+    distance: [f64; 2],
+    /// Whether the distance does not fall moving into the span from its
+    /// start.
+    start_rising: bool,
+    /// Whether the distance does not rise moving to the span end.
+    end_falling: bool,
 }
 
 /// Packs poles (and, if rational, weights) into a flat coordinate buffer:
@@ -955,6 +1181,7 @@ fn pack_flat_poles(poles: &[Point3D], weights: Option<&[f64]>) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Axis3D, Frame3D};
 
     // ---- construction / accessors ----
 
@@ -1229,6 +1456,99 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)] // random pole data, not an approximation of PI
+    fn test_bspline_project_point_close_basins_in_one_span() {
+        // On the span [6.12, 7.5] the distance to points of the curve near
+        // t = 6.55 has a second, shallow basin 0.15 away; a sampling of the
+        // span lands in the wrong one.
+        let poles: Vec<Point3D> = [
+            (-2.25, 3.33, -1.92),
+            (1.71, 1.64, 0.97),
+            (1.34, 1.35, 2.74),
+            (4.44, 4.84, -0.38),
+            (-1.01, -3.14, 0.75),
+            (3.09, 2.88, -2.34),
+            (-2.89, -2.3, 1.67),
+            (-2.52, -0.25, -2.4),
+            (-0.46, -4.8, 2.63),
+            (-1.1, -3.33, 3.21),
+            (1.66, 0.37, -3.9),
+            (1.89, -4.08, 4.82),
+            (2.57, 0.13, 4.41),
+            (1.98, 0.86, -3.55),
+            (1.38, -3.48, -2.22),
+            (1.78, -0.64, -4.31),
+            (3.03, 2.35, 4.74),
+            (-2.61, -1.25, -2.56),
+            (-1.6, 4.56, -3.09),
+            (4.73, -3.44, -0.01),
+            (-4.69, 3.97, -3.48),
+            (-3.26, 3.84, 0.16),
+        ]
+        .iter()
+        .map(|&(x, y, z)| Point3D::new(x, y, z))
+        .collect();
+        let weights = vec![
+            2.85, 3.49, 0.48, 4.48, 2.42, 0.46, 4.03, 4.34, 4.38, 2.57, 4.8, 0.85, 1.9, 1.18, 4.07,
+            2.17, 1.43, 1.28, 3.19, 4.94, 1.84, 1.29,
+        ];
+        let knots = vec![2.07, 2.56, 3.15, 4.75, 5.48, 6.12, 7.5, 8.3, 9.67];
+        let curve = BSplineCurve3D::new_rational(
+            5,
+            poles,
+            weights,
+            knots,
+            vec![6, 1, 1, 1, 4, 3, 2, 4, 6],
+            false,
+        )
+        .unwrap();
+        for i in 0..=200 {
+            let t = 6.12 + 1.38 * i as f64 / 200.0;
+            let q = curve.eval_point(t);
+            let proj = curve.project_point(q, Tolerance::DEFAULT);
+            assert_eq!(proj.distance, 0.0, "t = {t}: {proj:?}");
+            assert_eq!(curve.extrema(q, Tolerance::DEFAULT)[0].distance, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_bspline_project_point_exact_foot() {
+        // Cubic Bezier with x = 3u, y = 3u(1 - u): the foot of
+        // (1.526, -0.65) is exactly u = 0.6 (C'(0.6) = (3, -0.6) is normal
+        // to the residual (0.274, 1.37)). The old first-order refinement
+        // stopped at the seed sample u = 0.59375.
+        let poles = vec![
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 1.0, 0.0),
+            Point3D::new(2.0, 1.0, 0.0),
+            Point3D::new(3.0, 0.0, 0.0),
+        ];
+        let curve = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+        let proj = curve.project_point(Point3D::new(1.526, -0.65, 0.0), Tolerance::DEFAULT);
+        assert!((proj.parameter - 0.6).abs() < 1e-12);
+        assert!((proj.distance - 1.951976f64.sqrt()).abs() < 1e-12);
+        // Quadratic on an offset knot range: the minimum is a stationary
+        // point (u = 1.756876, d = 5.349035), not a raw sample.
+        let poles = vec![
+            Point3D::new(2.0, 0.0, 0.0),
+            Point3D::new(0.66, 3.437, 1.22),
+            Point3D::new(-4.644, 1.852, 2.439),
+        ];
+        let curve = BSplineCurve3D::new(2, poles, vec![1.0242, 2.3891], vec![3, 3], false).unwrap();
+        let query = Point3D::new(1.436, 5.4066, 5.122);
+        let proj = curve.project_point(query, Tolerance::DEFAULT);
+        assert!((proj.parameter - 1.756876).abs() < 1e-6);
+        assert!((proj.distance - 5.349035).abs() < 1e-6);
+        let r = curve.eval_point(proj.parameter) - query;
+        let d1 = curve.eval_derivative(proj.parameter, 1);
+        assert!(
+            r.dot(d1).abs() < 1e-12 * r.magnitude() * d1.magnitude(),
+            "{}",
+            r.dot(d1)
+        );
+    }
+
+    #[test]
     fn test_interpolate_line_points() {
         let tol = Tolerance::DEFAULT;
         let points = vec![
@@ -1360,5 +1680,89 @@ mod tests {
             BSplineCurve3D::approximate(&four, 4, 3, InterpParametrization::Chordal),
             Err(BSplineConstructionError::DegreeTooHigh)
         );
+    }
+
+    // ---- transformed ----
+
+    fn transformed_test_curve() -> BSplineCurve3D {
+        let poles = vec![
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 2.0, 0.0),
+            Point3D::new(3.0, 2.0, 1.0),
+            Point3D::new(4.0, 0.0, 1.0),
+        ];
+        BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap()
+    }
+
+    #[test]
+    fn test_bspline_curve3d_transformed_translation_spot_check() {
+        let curve = transformed_test_curve();
+        let t = Transform::translation(Vector3D::new(1.0, 1.0, 1.0));
+        let moved = curve.transformed(t);
+        // Poles map point-wise; the knot structure is unchanged.
+        assert_eq!(moved.poles().len(), curve.poles().len());
+        for (a, b) in moved.poles().iter().zip(curve.poles()) {
+            assert_eq!(*a, t.apply_point(*b));
+        }
+        assert_eq!(moved.knots(), curve.knots());
+        assert_eq!(moved.bounds(), curve.bounds());
+        // Hand-computed: translation shifts every evaluation.
+        let p = moved.eval_point(0.5);
+        let q = curve.eval_point(0.5);
+        assert_eq!(p, Point3D::new(q.x + 1.0, q.y + 1.0, q.z + 1.0));
+    }
+
+    #[test]
+    fn test_bspline_curve3d_transformed_round_trip_and_mirror() {
+        use std::f64::consts::PI;
+        let curve = transformed_test_curve();
+        let axis = Axis3D::new(Point3D::new(0.0, 1.0, 0.0), Vector3D::Z).unwrap();
+        let t = Transform::rotation(axis, PI / 3.0).then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = curve.transformed(t);
+        let tol = Tolerance::DEFAULT;
+        for i in 0..=10 {
+            let u = i as f64 / 10.0;
+            assert!(moved.contains(t.apply_point(curve.eval_point(u)), tol));
+        }
+        let inv =
+            Transform::scaling(Point3D::ORIGIN, 0.5).then(Transform::rotation(axis, -PI / 3.0));
+        let back = moved.transformed(inv);
+        for i in 0..=10 {
+            let u = i as f64 / 10.0;
+            assert!(back.eval_point(u).distance(curve.eval_point(u)) < 1e-9);
+        }
+        // Mirror preserves the point set (as a fresh pole net).
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = curve.transformed(m);
+        for i in 0..=10 {
+            let u = i as f64 / 10.0;
+            assert!(mirrored.contains(m.apply_point(curve.eval_point(u)), tol));
+        }
+        assert_eq!(mirrored.transformed(m), curve);
+    }
+
+    #[test]
+    fn test_bspline_curve3d_transformed_rational_keeps_weights() {
+        let w = std::f64::consts::FRAC_1_SQRT_2;
+        let poles = vec![
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(1.0, 1.0, 0.0),
+            Point3D::new(0.0, 1.0, 0.0),
+        ];
+        let curve = BSplineCurve3D::new_rational(
+            2,
+            poles,
+            vec![1.0, w, 1.0],
+            vec![0.0, 1.0],
+            vec![3, 3],
+            false,
+        )
+        .unwrap();
+        let t = Transform::translation(Vector3D::new(5.0, 0.0, 0.0));
+        let moved = curve.transformed(t);
+        assert_eq!(moved.weights(), curve.weights());
+        assert!(moved.is_rational());
+        let p = moved.eval_point(1.0);
+        assert!((p.x - 5.0).abs() < 1e-9 && (p.y - 1.0).abs() < 1e-9);
     }
 }

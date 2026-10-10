@@ -8,11 +8,12 @@
 //! direction, so evaluation never re-derives them.
 
 use crate::curve_math::bspline as curve;
-use crate::math::gauss_newton_2d;
+use crate::math::boxtree::{BoxTree, Lazy};
+use crate::math::newton_min_2d;
 use crate::projection::SurfaceProjection;
 use crate::surface_math::bspline as math;
 use crate::surfaces::ParametricSurface;
-use crate::{Point3D, Tolerance, Vector3D};
+use crate::{Point3D, Tolerance, Transform, Vector3D};
 
 pub use crate::curves::BSplineConstructionError;
 
@@ -27,7 +28,7 @@ pub use crate::curves::BSplineConstructionError;
 /// carries a `weight` per pole and is evaluated in homogeneous coordinates,
 /// then projected back to Euclidean space via the quotient rule.
 ///
-/// Only first derivatives are supported (this is a proof-of-concept); see
+/// Derivatives up to second order are supported; see
 /// [`BSplineSurface::eval_derivative`].
 ///
 /// # Examples
@@ -80,6 +81,18 @@ pub struct BSplineSurface {
     n_v: usize,
     /// Per-pole coordinate stride (`4` rational, `3` otherwise).
     h: usize,
+    /// Bounding-box hierarchy of the knot-span patches, built on the first
+    /// projection.
+    patches: Lazy<PatchTree>,
+}
+
+/// The knot-span boundaries of each direction and the box hierarchy over
+/// the patches (`i_u * (v_breaks.len() - 1) + i_v`).
+#[derive(Clone)]
+struct PatchTree {
+    u_breaks: Vec<f64>,
+    v_breaks: Vec<f64>,
+    tree: BoxTree,
 }
 
 impl BSplineSurface {
@@ -263,6 +276,7 @@ impl BSplineSurface {
             n_u,
             n_v,
             h,
+            patches: Lazy::default(),
         })
     }
 
@@ -356,6 +370,56 @@ impl BSplineSurface {
         self.weights.is_some()
     }
 
+    /// Returns the image of this surface under `transform`: every control
+    /// pole maps point-wise while degrees, knots, multiplicities,
+    /// periodicity, and weights are unchanged.
+    ///
+    /// B-spline evaluation is affinely invariant, so mapping the poles is
+    /// exact for every rigid, mirrored, or uniformly scaled transform.
+    /// Infallible: pole images always form a valid net over the unchanged
+    /// knot vectors, even for a collapsing (zero-scale) transform.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::{Point3D, Transform, Vector3D};
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// let moved = surface.transformed(Transform::translation(Vector3D::new(0.0, 0.0, 4.0)));
+    /// assert_eq!(moved.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 4.25));
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> BSplineSurface {
+        let poles: Vec<Vec<Point3D>> = self
+            .poles
+            .iter()
+            .map(|row| row.iter().map(|&p| transform.apply_point(p)).collect())
+            .collect();
+        let flat_poles = pack_flat_poles(&poles, self.weights.as_ref(), self.h);
+        BSplineSurface {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+            poles,
+            weights: self.weights.clone(),
+            u_knots: self.u_knots.clone(),
+            u_mults: self.u_mults.clone(),
+            v_knots: self.v_knots.clone(),
+            v_mults: self.v_mults.clone(),
+            u_flat: self.u_flat.clone(),
+            v_flat: self.v_flat.clone(),
+            flat_poles,
+            n_u: self.n_u,
+            n_v: self.n_v,
+            h: self.h,
+            patches: Lazy::default(),
+        }
+    }
+
     /// Evaluates the point on the surface at parameters `(u, v)`.
     ///
     /// For periodic directions, a parameter outside the bounds is wrapped into
@@ -409,16 +473,14 @@ impl BSplineSurface {
         uvs.iter().map(|&(u, v)| self.eval_point(u, v)).collect()
     }
 
-    /// Evaluates the first partial derivative of order `(du, dv)` at `(u, v)`.
-    ///
-    /// Exactly one of `du`, `dv` must be `1` and the other `0`: `(1, 0)`
-    /// returns `∂S/∂u`, `(0, 1)` returns `∂S/∂v`.
+    /// Evaluates the partial derivative of order `(du, dv)` at `(u, v)`,
+    /// for `1 <= du + dv <= 2`: `(1, 0)` is `∂S/∂u`, `(1, 1)` is
+    /// `∂²S/∂u∂v`, and so on.
     ///
     /// # Panics
     ///
     /// Panics if `du + dv == 0` (use [`BSplineSurface::eval_point`] for the
-    /// position itself), or if `du + dv >= 2`, with a message stating that
-    /// only first derivatives are supported (this is a proof-of-concept).
+    /// position itself), or if `du + dv > 2`.
     ///
     /// # Examples
     ///
@@ -443,8 +505,16 @@ impl BSplineSurface {
                 let (_s, su, sv) = self.eval_surface_d1(u, v);
                 if du == 1 { su } else { sv }
             }
+            (2, 0) | (1, 1) | (0, 2) => {
+                let [_, _, _, suu, suv, svv] = self.eval_surface_d2(u, v);
+                match du {
+                    2 => suu,
+                    1 => suv,
+                    _ => svv,
+                }
+            }
             _ => panic!(
-                "eval_derivative: order du={du}, dv={dv} is not supported (only first derivatives are supported)"
+                "eval_derivative: order du={du}, dv={dv} is not supported (du + dv must be <= 2)"
             ),
         }
     }
@@ -474,15 +544,19 @@ impl BSplineSurface {
         self.project_point(point, tol).distance <= tol.confusion
     }
 
-    /// All stationary points of the distance from `point` to the surface,
+    /// All local minima of the distance from `point` to the surface,
     /// ordered by ascending distance.
     ///
-    /// A dense grid over the parameter bounds (edges and corners included,
-    /// so boundary minima on open patches survive) seeds Gauss-Newton
-    /// refinement on `|(S(u,v) - P)|^2` (first derivatives only, clamped
-    /// into non-periodic directions). Distinct seeds converging to the
-    /// same point merge; the first entry is the global closest point (see
-    /// [`BSplineSurface::project_point`]).
+    /// Seeding follows the knot structure: each direction is sampled at least `max(degree, 2)` times per
+    /// knot span (16 samples minimum), boundaries included, and the
+    /// discrete local minima of the sampled distance (wrapping across
+    /// periodic seams) seed a box-bounded Newton minimisation of
+    /// `|S(u,v) - P|^2` with exact second derivatives, within the C1
+    /// region around each seed (C0 crease knots bound it). Minima on an
+    /// edge, corner or crease are reached exactly. Seeds converging to
+    /// the same point merge; the first entry is the global closest point
+    /// ([`BSplineSurface::project_point`] is always a candidate).
+    /// Periodic parameters are reported within their period.
     ///
     /// # Examples
     ///
@@ -502,89 +576,108 @@ impl BSplineSurface {
     /// ```
     pub fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<SurfaceProjection> {
         use crate::projection::snap_distance;
-        let (u0, u1) = ParametricSurface::u_bounds(self);
-        let (v0, v1) = ParametricSurface::v_bounds(self);
-        let clamp_u = |u: f64| {
-            if self.is_u_periodic() {
-                u
-            } else {
-                u.clamp(u0, u1)
+        // Refined seeds beyond this many (by sampled distance) are dropped.
+        const MAX_SEEDS: usize = 32;
+        let (u0, u1) = self.u_param_range();
+        let (v0, v1) = self.v_param_range();
+        let ub = curve::span_breaks(&self.u_knots, u0, u1);
+        let vb = curve::span_breaks(&self.v_knots, v0, v1);
+        let us = curve::span_samples(
+            &ub,
+            samples_per_span(self.u_degree, ub.len() - 1),
+            self.u_periodic,
+        );
+        let vs = curve::span_samples(
+            &vb,
+            samples_per_span(self.v_degree, vb.len() - 1),
+            self.v_periodic,
+        );
+        let (nu, nv) = (us.len(), vs.len());
+        let dist: Vec<f64> = math::surface_grid(
+            &us,
+            &vs,
+            self.u_degree,
+            self.v_degree,
+            self.u_periodic,
+            self.v_periodic,
+            &self.u_flat,
+            &self.v_flat,
+            &self.flat_poles,
+            self.n_u,
+            self.n_v,
+            self.h,
+        )
+        .into_iter()
+        .map(|p| p.distance(point))
+        .collect();
+        let mut seeds: Vec<(f64, usize, usize)> =
+            grid_minima(&dist, nu, nv, [self.u_periodic, self.v_periodic])
+                .map(|(i, j)| (dist[i * nv + j], i, j))
+                .collect();
+        seeds.sort_by(|a, b| a.0.total_cmp(&b.0));
+        seeds.truncate(MAX_SEEDS);
+        let u_regions = curve::smooth_regions(
+            &self.u_knots,
+            &self.u_mults,
+            self.u_degree,
+            self.u_periodic,
+            u0,
+            u1,
+        );
+        let v_regions = curve::smooth_regions(
+            &self.v_knots,
+            &self.v_mults,
+            self.v_degree,
+            self.v_periodic,
+            v0,
+            v1,
+        );
+        let (u_period, v_period) = (
+            self.u_periodic.then_some(u1 - u0),
+            self.v_periodic.then_some(v1 - v0),
+        );
+        let global = self.project_point(point, tol);
+        let mut candidates = vec![(global.u, global.v)];
+        for (_, i, j) in seeds {
+            for (ubounds, u) in curve::regions_at(&u_regions, us[i], u_period) {
+                for (vbounds, v) in curve::regions_at(&v_regions, vs[j], v_period) {
+                    candidates.push(self.refine_projection(point, u, v, [ubounds, vbounds]));
+                }
             }
-        };
-        let clamp_v = |v: f64| {
-            if self.is_v_periodic() {
-                v
-            } else {
-                v.clamp(v0, v1)
-            }
-        };
-        // Dense seeds over the patch, boundaries included.
-        const NU: usize = 16;
-        const NV: usize = 16;
-        const KEEP: usize = 12;
-        let mut samples: Vec<(f64, f64, f64)> = Vec::with_capacity((NU + 1) * (NV + 1));
-        for j in 0..=NV {
-            for i in 0..=NU {
-                let u = u0 + (u1 - u0) * i as f64 / NU as f64;
-                let v = v0 + (v1 - v0) * j as f64 / NV as f64;
-                samples.push((u, v, self.eval_point(u, v).distance(point)));
-            }
-        }
-        samples.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
-        let mut params: Vec<(f64, f64)> = Vec::new();
-        for (u, v, _) in samples.into_iter().take(KEEP) {
-            let p = self.eval_point(u, v);
-            if params
-                .iter()
-                .any(|&(su, sv)| self.eval_point(su, sv).distance(p) <= tol.confusion)
-            {
-                continue;
-            }
-            let residual = |u: f64, v: f64| {
-                let q = self.eval_point(clamp_u(u), clamp_v(v)) - point;
-                [q.x, q.y, q.z]
-            };
-            let jac_u = |u: f64, v: f64| {
-                let d = self.eval_derivative(clamp_u(u), clamp_v(v), 1, 0);
-                [d.x, d.y, d.z]
-            };
-            let jac_v = |u: f64, v: f64| {
-                let d = self.eval_derivative(clamp_u(u), clamp_v(v), 0, 1);
-                [d.x, d.y, d.z]
-            };
-            if let Some((ru, rv)) = gauss_newton_2d(residual, jac_u, jac_v, u, v, tol.confusion, 50)
-            {
-                params.push((clamp_u(ru), clamp_v(rv)));
-            }
-        }
-        // The best raw sample guarantees a non-empty answer when nothing
-        // converges.
-        if params.is_empty() {
-            params.push((u0, v0));
         }
         let mut out: Vec<SurfaceProjection> = Vec::new();
-        for (u, v) in params {
+        let mut kept: Vec<Point3D> = Vec::new();
+        for (u, v) in candidates {
             let p = self.eval_point(u, v);
-            if out
-                .iter()
-                .any(|e: &SurfaceProjection| self.eval_point(e.u, e.v).distance(p) <= tol.confusion)
-            {
+            if kept.iter().any(|q| q.distance(p) <= tol.confusion) {
                 continue;
             }
-            let distance = p.distance(point);
+            kept.push(p);
             out.push(SurfaceProjection {
                 u,
                 v,
-                distance: snap_distance(distance, tol.confusion),
+                distance: snap_distance(p.distance(point), tol.confusion),
             });
         }
-        out.sort_by(|x, y| x.distance.partial_cmp(&y.distance).unwrap());
+        out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }
 
-    /// Projects `point` onto the surface: the nearest of
-    /// [`BSplineSurface::extrema`]. Distances within `tol.confusion` snap
-    /// to `0.0`, matching [`BSplineSurface::contains`].
+    /// Projects `point` onto the surface: the global minimum of the
+    /// distance, as the first entry of [`BSplineSurface::extrema`] but
+    /// without visiting the whole surface. Distances within
+    /// `tol.confusion` snap to `0.0`, matching [`BSplineSurface::contains`].
+    ///
+    /// Branch and bound over the knot-span patches: each patch lies in the
+    /// bounding box of its control poles (convex hull property), so
+    /// patches are visited by increasing box distance, each seeded from
+    /// its best sample (same density as [`BSplineSurface::extrema`]) and
+    /// refined by the same Newton minimisation bounded to the patch (a
+    /// polynomial piece, so minima on its creases and edges are reached
+    /// exactly), until no remaining
+    /// box can hold a closer point. The boxes form a hierarchy built once
+    /// per surface (on the first projection), so the cost tracks the
+    /// patches near `point`, not the size of the control net.
     ///
     /// # Examples
     ///
@@ -604,10 +697,56 @@ impl BSplineSurface {
     /// assert_eq!(proj.distance, 1.0);
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
-        self.extrema(point, tol)
-            .into_iter()
-            .next()
-            .expect("seeding guarantees a non-empty candidate list")
+        use crate::projection::snap_distance;
+        let patches = self.patch_tree();
+        let (ub, vb) = (&patches.u_breaks, &patches.v_breaks);
+        let (per_u, per_v) = (
+            samples_per_span(self.u_degree, ub.len() - 1),
+            samples_per_span(self.v_degree, vb.len() - 1),
+        );
+        let n_vspans = vb.len() - 1;
+        // (distance, u, v) of the closest point so far.
+        let mut best = (f64::INFINITY, ub[0], vb[0]);
+        patches.tree.nearest_first(point, |k| {
+            let (a, b) = (k / n_vspans, k % n_vspans);
+            let us = curve::span_samples(&ub[a..a + 2], per_u, false);
+            let vs = curve::span_samples(&vb[b..b + 2], per_v, false);
+            let samples = math::surface_grid(
+                &us,
+                &vs,
+                self.u_degree,
+                self.v_degree,
+                self.u_periodic,
+                self.v_periodic,
+                &self.u_flat,
+                &self.v_flat,
+                &self.flat_poles,
+                self.n_u,
+                self.n_v,
+                self.h,
+            );
+            let dist: Vec<f64> = samples.iter().map(|p| p.distance(point)).collect();
+            // A patch can hold several basins: refine from each discrete
+            // local minimum of its samples.
+            for (i, j) in grid_minima(&dist, us.len(), vs.len(), [false, false]) {
+                let (u, v) = self.refine_projection(
+                    point,
+                    us[i],
+                    vs[j],
+                    [Some((ub[a], ub[a + 1])), Some((vb[b], vb[b + 1]))],
+                );
+                let d = self.eval_point(u, v).distance(point);
+                if d < best.0 {
+                    best = (d, u, v);
+                }
+            }
+            best.0
+        });
+        SurfaceProjection {
+            u: best.1,
+            v: best.2,
+            distance: snap_distance(best.0, tol.confusion),
+        }
     }
 
     /// Projects each point in `points` onto the surface.
@@ -616,6 +755,35 @@ impl BSplineSurface {
     /// one native call per batch, mirroring [`BSplineSurface::eval_points`].
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// The patch bounding-box hierarchy, built on first use.
+    fn patch_tree(&self) -> &PatchTree {
+        self.patches.get_or_init(|| {
+            let (u0, u1) = self.u_param_range();
+            let (v0, v1) = self.v_param_range();
+            let u_breaks = curve::span_breaks(&self.u_knots, u0, u1);
+            let v_breaks = curve::span_breaks(&self.v_knots, v0, v1);
+            let boxes = math::patch_boxes(
+                &u_breaks,
+                &v_breaks,
+                self.u_degree,
+                self.v_degree,
+                self.u_periodic,
+                self.v_periodic,
+                &self.u_flat,
+                &self.v_flat,
+                &self.flat_poles,
+                self.n_u,
+                self.n_v,
+                self.h,
+            );
+            PatchTree {
+                tree: BoxTree::new(&boxes, v_breaks.len() - 1),
+                u_breaks,
+                v_breaks,
+            }
+        })
     }
 
     /// Shared first-derivative evaluation, returning `(S, Su, Sv)`.
@@ -633,6 +801,67 @@ impl BSplineSurface {
             self.n_u,
             self.n_v,
             self.h,
+        )
+    }
+
+    /// Shared second-derivative evaluation, returning
+    /// `[S, Su, Sv, Suu, Suv, Svv]` (the point as a vector).
+    fn eval_surface_d2(&self, u: f64, v: f64) -> [Vector3D; 6] {
+        math::surface_d2(
+            u,
+            v,
+            self.u_degree,
+            self.v_degree,
+            self.u_periodic,
+            self.v_periodic,
+            &self.u_flat,
+            &self.v_flat,
+            &self.flat_poles,
+            self.n_u,
+            self.n_v,
+            self.h,
+        )
+    }
+
+    /// Box-bounded Newton minimisation of `|S(u,v) - point|^2` from the
+    /// seed `(u, v)`, with exact second derivatives, within `bounds` per
+    /// direction (`None`: unbounded, for a smooth periodic direction);
+    /// periodic parameters are wrapped into their period on return.
+    fn refine_projection(
+        &self,
+        point: Point3D,
+        u: f64,
+        v: f64,
+        bounds: [Option<(f64, f64)>; 2],
+    ) -> (f64, f64) {
+        let (u0, u1) = self.u_param_range();
+        let (v0, v1) = self.v_param_range();
+        let target = Vector3D::new(point.x, point.y, point.z);
+        let objective = |u: f64, v: f64| {
+            let [s, su, sv, suu, suv, svv] =
+                self.eval_surface_d2(curve::inward(u, bounds[0]), curve::inward(v, bounds[1]));
+            let r = s - target;
+            let huv = su.dot(sv) + suv.dot(r);
+            (
+                0.5 * r.dot(r),
+                [su.dot(r), sv.dot(r)],
+                [
+                    [su.dot(su) + suu.dot(r), huv],
+                    [huv, sv.dot(sv) + svv.dot(r)],
+                ],
+            )
+        };
+        let [u, v] = newton_min_2d(objective, [u, v], bounds, 1e-14, 100);
+        let wrap = |x: f64, periodic: bool, lo: f64, hi: f64| {
+            if periodic {
+                lo + (x - lo).rem_euclid(hi - lo)
+            } else {
+                x
+            }
+        };
+        (
+            wrap(u, self.u_periodic, u0, u1),
+            wrap(v, self.v_periodic, v0, v1),
         )
     }
 
@@ -675,7 +904,7 @@ impl ParametricSurface for BSplineSurface {
     }
 
     /// See [`BSplineSurface::eval_derivative`] for the supported orders and the
-    /// panic conditions (only first derivatives are supported).
+    /// panic conditions (`du + dv` must be 1 or 2).
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         BSplineSurface::eval_derivative(self, u, v, du, dv)
     }
@@ -709,6 +938,50 @@ impl ParametricSurface for BSplineSurface {
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         BSplineSurface::eval_points(self, uvs)
     }
+}
+
+/// The discrete local minima `(i, j)` of a row-major `nu x nv` grid of
+/// values, against all 8 neighbours (wrapping in a periodic direction),
+/// ties broken by index so a plateau yields one minimum.
+fn grid_minima(
+    values: &[f64],
+    nu: usize,
+    nv: usize,
+    periodic: [bool; 2],
+) -> impl Iterator<Item = (usize, usize)> + '_ {
+    let step = |k: usize, delta: isize, n: usize, periodic: bool| {
+        let m = k as isize + delta;
+        if periodic {
+            Some(m.rem_euclid(n as isize) as usize)
+        } else {
+            (0..n as isize).contains(&m).then_some(m as usize)
+        }
+    };
+    (0..nu)
+        .flat_map(move |i| (0..nv).map(move |j| (i, j)))
+        .filter(move |&(i, j)| {
+            let k = i * nv + j;
+            let d = values[k];
+            (-1..=1).all(|di| {
+                (-1..=1).all(|dj| {
+                    match (step(i, di, nu, periodic[0]), step(j, dj, nv, periodic[1])) {
+                        (Some(a), Some(b)) => {
+                            let n = a * nv + b;
+                            n == k || values[n] > d || (values[n] == d && n > k)
+                        }
+                        _ => true,
+                    }
+                })
+            })
+        })
+}
+
+/// Samples per knot span: at least `max(degree, 2)`, and 16 over all
+/// `spans`, so dense control nets are sampled as finely as their spans
+/// demand.
+fn samples_per_span(degree: usize, spans: usize) -> usize {
+    const MIN_SAMPLES: usize = 16;
+    degree.max(2).max(MIN_SAMPLES.div_ceil(spans))
 }
 
 /// Packs the pole grid (and, if rational, weights) into a flat, row-major
@@ -807,15 +1080,27 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "only first derivatives are supported")]
-    fn test_eval_derivative_second_order_uu_panics() {
-        bilinear().eval_derivative(0.5, 0.5, 2, 0);
+    fn test_eval_derivative_second_order_bilinear() {
+        // S = (u, v, u*v): Suu = Svv = 0, Suv = (0, 0, 1).
+        let s = bilinear();
+        assert_eq!(
+            s.eval_derivative(0.5, 0.5, 2, 0),
+            Vector3D::new(0.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            s.eval_derivative(0.5, 0.5, 1, 1),
+            Vector3D::new(0.0, 0.0, 1.0)
+        );
+        assert_eq!(
+            s.eval_derivative(0.5, 0.5, 0, 2),
+            Vector3D::new(0.0, 0.0, 0.0)
+        );
     }
 
     #[test]
-    #[should_panic(expected = "only first derivatives are supported")]
-    fn test_eval_derivative_mixed_second_order_panics() {
-        bilinear().eval_derivative(0.5, 0.5, 1, 1);
+    #[should_panic(expected = "du + dv must be <= 2")]
+    fn test_eval_derivative_third_order_panics() {
+        bilinear().eval_derivative(0.5, 0.5, 2, 1);
     }
 
     // ---- bounds / periods ----
@@ -1150,5 +1435,64 @@ mod tests {
         }
         assert!(proj.distance <= best + 1e-9);
         assert!(best - proj.distance < 1e-2);
+    }
+
+    // ---- transformed ----
+
+    fn transformed_test_patch() -> BSplineSurface {
+        let poles = vec![
+            vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+            vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+        ];
+        BSplineSurface::new(
+            1,
+            1,
+            poles,
+            vec![0.0, 1.0],
+            vec![2, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_bspline_surface_transformed_translation_spot_check() {
+        let surface = transformed_test_patch();
+        let t = Transform::translation(Vector3D::new(0.0, 0.0, 4.0));
+        let moved = surface.transformed(t);
+        // Hand-computed patch midpoint, shifted.
+        assert_eq!(moved.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 4.25));
+        assert_eq!(moved.u_degree(), surface.u_degree());
+        assert_eq!(moved.v_degree(), surface.v_degree());
+    }
+
+    #[test]
+    fn test_bspline_surface_transformed_round_trip_and_mirror() {
+        use crate::{Axis3D, Frame3D};
+        use std::f64::consts::PI;
+        let surface = transformed_test_patch();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let t = Transform::rotation(axis, PI / 2.0).then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = surface.transformed(t);
+        let tol = Tolerance::DEFAULT;
+        for (u, v) in [(0.0, 0.0), (0.5, 0.5), (1.0, 0.25)] {
+            assert!(moved.contains(t.apply_point(surface.eval_point(u, v)), tol));
+        }
+        let inv =
+            Transform::scaling(Point3D::ORIGIN, 0.5).then(Transform::rotation(axis, -PI / 2.0));
+        let back = moved.transformed(inv);
+        for (u, v) in [(0.0, 0.0), (0.5, 0.5), (1.0, 0.25)] {
+            assert!(back.eval_point(u, v).distance(surface.eval_point(u, v)) < 1e-9);
+        }
+        // Mirror preserves the point set (as a fresh pole net).
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let mirrored = surface.transformed(m);
+        for (u, v) in [(0.0, 0.0), (0.5, 0.5), (1.0, 0.25)] {
+            assert!(mirrored.contains(m.apply_point(surface.eval_point(u, v)), tol));
+        }
+        assert_eq!(mirrored.transformed(m), surface);
     }
 }

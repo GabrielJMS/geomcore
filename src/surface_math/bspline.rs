@@ -8,22 +8,12 @@
 //! `h = 4` for the homogeneous coordinates `(x*w, y*w, z*w, w)` of a rational
 //! surface).
 //!
-//! Evaluation reuses the curve evaluator [`eval_dn`] twice, in two passes:
-//!
-//! 1. **u-pass** — treat each u-index's *entire* v-row (`n_v * h` floats) as a
-//!    single "mega-point" of dimension `n_v * h`, and run [`eval_dn`] in `u`
-//!    over the `n_u` mega-points at degree `u_degree`. The curve engine's
-//!    per-coordinate recursion and (for periodic curves) modulo-pole-count
-//!    wrapping are dimension-agnostic, so a mega-point is handled exactly like
-//!    an ordinary pole — the periodic wrap is over the *mega-point count*
-//!    `n_u`, which is what we want. This produces `nu + 1` intermediate
-//!    v-curves (the value curve and, for `nu == 1`, the `u`-derivative curve),
-//!    each with `n_v` poles of stride `h`.
-//! 2. **v-pass** — run [`eval_dn`] in `v` at degree `v_degree` on each
-//!    intermediate v-curve. The value curve is evaluated to order `nv` (giving
-//!    the homogeneous value and, for `nv == 1`, the `v`-derivative); the
-//!    `u`-derivative curve is evaluated to order `0` (giving the homogeneous
-//!    `u`-derivative).
+//! Evaluation is a direct tensor product: [`curve::window`] gives the
+//! non-zero basis functions (and derivatives) in each direction with the
+//! pole indices they weight, already wrapped for periodic directions, and
+//! only the `(u_degree + 1) * (v_degree + 1)` poles they select are summed.
+//! The cost depends on the degrees only, never on the pole counts, and
+//! nothing is allocated.
 //!
 //! For rational surfaces the whole computation is carried out in homogeneous
 //! coordinates (`h = 4`), and the quotient rule is applied per output at the
@@ -36,8 +26,7 @@ use crate::{Point3D, Vector3D};
 ///
 /// `poles_homog` is the flat, row-major `[i_u][i_v][h]` pole buffer with `h`
 /// coordinates per pole (`h = 3` polynomial, `h = 4` homogeneous). `u_flat` /
-/// `v_flat` are the plain [`curve::flat_knots`] of each direction. See the
-/// module docs for the two-pass strategy.
+/// `v_flat` are the plain [`curve::flat_knots`] of each direction.
 #[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
 pub(crate) fn surface_d0(
     u: f64,
@@ -54,41 +43,53 @@ pub(crate) fn surface_d0(
     h: usize,
 ) -> Point3D {
     debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
-    // u-pass, order 0: collapse the u direction into one v-curve of homogeneous
-    // poles.
-    let mega = n_v * h;
-    let mut v_curve = vec![0.0f64; mega];
-    curve::eval_dn(
-        u,
-        u_degree,
-        u_periodic,
-        u_flat,
-        poles_homog,
-        mega,
-        0,
-        &mut v_curve,
-    );
-
-    // v-pass, order 0: evaluate the resulting v-curve at v.
-    let mut homog = vec![0.0f64; h];
-    curve::eval_dn(v, v_degree, v_periodic, v_flat, &v_curve, h, 0, &mut homog);
-
-    if h == 4 {
-        let w = homog[3];
-        Point3D::new(homog[0] / w, homog[1] / w, homog[2] / w)
+    let [hs, ..] = if u_degree.max(v_degree) < curve::SMALL {
+        tensor::<{ curve::SMALL }>(
+            u,
+            v,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+            0,
+        )
     } else {
-        Point3D::new(homog[0], homog[1], homog[2])
+        tensor::<{ curve::LARGE }>(
+            u,
+            v,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+            0,
+        )
+    };
+    if h == 4 {
+        let w = hs[3];
+        Point3D::new(hs[0] / w, hs[1] / w, hs[2] / w)
+    } else {
+        Point3D::new(hs[0], hs[1], hs[2])
     }
 }
 
 /// Evaluates the surface value and both first partial derivatives,
 /// returning `(S, Su, Sv)`.
 ///
-/// Layout of `poles_homog` and the knot flats is as for [`surface_d0`]. See
-/// the module docs for the two-pass strategy; the rational quotient rule is
-/// applied inline here (the homogeneous layout of the intermediate results
-/// does not match [`curve::rational_derivatives`]'s contiguous
-/// `H, H', ...` expectation, so we compute the first-order quotient directly).
+/// Layout of `poles_homog` and the knot flats is as for [`surface_d0`]. For
+/// rational surfaces the first-order quotient rule is applied to the
+/// homogeneous results.
 #[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
 pub(crate) fn surface_d1(
     u: f64,
@@ -105,32 +106,39 @@ pub(crate) fn surface_d1(
     h: usize,
 ) -> (Point3D, Vector3D, Vector3D) {
     debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
-    let mega = n_v * h;
-
-    // u-pass, order 1: two v-curves — value (k=0) and u-derivative (k=1).
-    let mut u_pass = vec![0.0f64; 2 * mega];
-    curve::eval_dn(
-        u,
-        u_degree,
-        u_periodic,
-        u_flat,
-        poles_homog,
-        mega,
-        1,
-        &mut u_pass,
-    );
-    let (value_curve, du_curve) = u_pass.split_at(mega);
-
-    // v-pass on the value curve, order 1: homogeneous S and Sv.
-    let mut val = vec![0.0f64; 2 * h];
-    curve::eval_dn(v, v_degree, v_periodic, v_flat, value_curve, h, 1, &mut val);
-    let h_s = &val[..h]; // homogeneous S
-    let h_sv = &val[h..]; // homogeneous Sv
-
-    // v-pass on the u-derivative curve, order 0: homogeneous Su.
-    let mut du = vec![0.0f64; h];
-    curve::eval_dn(v, v_degree, v_periodic, v_flat, du_curve, h, 0, &mut du);
-    let h_su = &du[..]; // homogeneous Su
+    let [h_s, h_su, h_sv, ..] = if u_degree.max(v_degree) < curve::SMALL {
+        tensor::<{ curve::SMALL }>(
+            u,
+            v,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+            1,
+        )
+    } else {
+        tensor::<{ curve::LARGE }>(
+            u,
+            v,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+            1,
+        )
+    };
 
     if h == 4 {
         // Rational quotient rule, first order:
@@ -156,6 +164,375 @@ pub(crate) fn surface_d1(
         let sv = Vector3D::new(h_sv[0], h_sv[1], h_sv[2]);
         (s, su, sv)
     }
+}
+
+/// Evaluates the surface value with its first and second partial
+/// derivatives, returning `[S, Su, Sv, Suu, Suv, Svv]` (the point as a
+/// vector from the origin).
+///
+/// Layout of `poles_homog` and the knot flats is as for [`surface_d0`]. For
+/// rational surfaces the second-order quotient rule is applied to the
+/// homogeneous results:
+/// `Suu = (Huu - 2 w_u Su - w_uu S)/w`,
+/// `Suv = (Huv - w_u Sv - w_v Su - w_uv S)/w`,
+/// `Svv = (Hvv - 2 w_v Sv - w_vv S)/w`.
+#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
+pub(crate) fn surface_d2(
+    u: f64,
+    v: f64,
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles_homog: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> [Vector3D; 6] {
+    debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
+    let hs = if u_degree.max(v_degree) < curve::SMALL {
+        tensor::<{ curve::SMALL }>(
+            u,
+            v,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+            2,
+        )
+    } else {
+        tensor::<{ curve::LARGE }>(
+            u,
+            v,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+            2,
+        )
+    };
+    let xyz = |a: [f64; 4]| Vector3D::new(a[0], a[1], a[2]);
+    let [s, su, sv, suu, suv, svv] = hs.map(xyz);
+    if h != 4 {
+        return [s, su, sv, suu, suv, svv];
+    }
+    let [w, wu, wv, wuu, wuv, wvv] = hs.map(|a| a[3]);
+    let inv = 1.0 / w;
+    let s = s * inv;
+    let su = (su - wu * s) * inv;
+    let sv = (sv - wv * s) * inv;
+    let suu = (suu - 2.0 * wu * su - wuu * s) * inv;
+    let suv = (suv - wu * sv - wv * su - wuv * s) * inv;
+    let svv = (svv - 2.0 * wv * sv - wvv * s) * inv;
+    [s, su, sv, suu, suv, svv]
+}
+
+/// Evaluates the surface points on the tensor grid `us x vs`, returned
+/// row-major (`us` outer, `vs` inner).
+///
+/// The basis functions of each `u` and each `v` are computed once and
+/// shared across the grid, so a point costs a single local tensor sum.
+#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
+pub(crate) fn surface_grid(
+    us: &[f64],
+    vs: &[f64],
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles_homog: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> Vec<Point3D> {
+    debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
+    if u_degree.max(v_degree) < curve::SMALL {
+        grid::<{ curve::SMALL }>(
+            us,
+            vs,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+        )
+    } else {
+        grid::<{ curve::LARGE }>(
+            us,
+            vs,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
+fn grid<const N: usize>(
+    us: &[f64],
+    vs: &[f64],
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles_homog: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> Vec<Point3D> {
+    let v_windows: Vec<curve::Window<N>> = vs
+        .iter()
+        .map(|&v| {
+            let mut w = curve::Window::<N>::new();
+            curve::window(v, v_degree, v_periodic, v_flat, n_v, 0, &mut w);
+            w
+        })
+        .collect();
+    let mut out = Vec::with_capacity(us.len() * vs.len());
+    let mut wu = curve::Window::<N>::new();
+    for &u in us {
+        curve::window(u, u_degree, u_periodic, u_flat, n_u, 0, &mut wu);
+        for wv in &v_windows {
+            let [hs, ..] = if h == 3 {
+                sum::<N, 3, 0>(&wu, wv, u_degree, v_degree, poles_homog, n_v)
+            } else {
+                sum::<N, 4, 0>(&wu, wv, u_degree, v_degree, poles_homog, n_v)
+            };
+            out.push(if h == 4 {
+                Point3D::new(hs[0] / hs[3], hs[1] / hs[3], hs[2] / hs[3])
+            } else {
+                Point3D::new(hs[0], hs[1], hs[2])
+            });
+        }
+    }
+    out
+}
+
+/// Axis-aligned bounding boxes `[min_x, min_y, min_z, max_x, max_y,
+/// max_z]` of the Euclidean control poles of every knot-span patch,
+/// row-major over the spans between consecutive `u_breaks` (outer) and
+/// `v_breaks` (inner).
+///
+/// By the convex hull property (weights are positive) each patch lies in
+/// its box, so the distance to the box bounds the distance to the patch
+/// from below.
+#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
+pub(crate) fn patch_boxes(
+    u_breaks: &[f64],
+    v_breaks: &[f64],
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles_homog: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> Vec<[f64; 6]> {
+    if u_degree.max(v_degree) < curve::SMALL {
+        boxes::<{ curve::SMALL }>(
+            u_breaks,
+            v_breaks,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+        )
+    } else {
+        boxes::<{ curve::LARGE }>(
+            u_breaks,
+            v_breaks,
+            u_degree,
+            v_degree,
+            u_periodic,
+            v_periodic,
+            u_flat,
+            v_flat,
+            poles_homog,
+            n_u,
+            n_v,
+            h,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
+fn boxes<const N: usize>(
+    u_breaks: &[f64],
+    v_breaks: &[f64],
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles_homog: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> Vec<[f64; 6]> {
+    // The window at a span's midpoint selects exactly the poles of that
+    // span's patch.
+    let span_window = |w: &[f64], degree, periodic, flat, n| {
+        let mut out = curve::Window::<N>::new();
+        curve::window(0.5 * (w[0] + w[1]), degree, periodic, flat, n, 0, &mut out);
+        out
+    };
+    let v_windows: Vec<curve::Window<N>> = v_breaks
+        .windows(2)
+        .map(|w| span_window(w, v_degree, v_periodic, v_flat, n_v))
+        .collect();
+    let mut out = Vec::with_capacity((u_breaks.len() - 1) * v_windows.len());
+    for w in u_breaks.windows(2) {
+        let wu = span_window(w, u_degree, u_periodic, u_flat, n_u);
+        for wv in &v_windows {
+            let mut b = [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ];
+            for i in 0..=u_degree {
+                let row = wu.pole(i) * n_v;
+                for j in 0..=v_degree {
+                    let base = (row + wv.pole(j)) * h;
+                    let inv = if h == 4 {
+                        1.0 / poles_homog[base + 3]
+                    } else {
+                        1.0
+                    };
+                    for c in 0..3 {
+                        let x = poles_homog[base + c] * inv;
+                        b[c] = b[c].min(x);
+                        b[c + 3] = b[c + 3].max(x);
+                    }
+                }
+            }
+            out.push(b);
+        }
+    }
+    out
+}
+
+/// Homogeneous `[H, Hu, Hv, Huu, Huv, Hvv]` at `(u, v)`, each in the first
+/// `h` slots; the derivatives beyond `order` are zero.
+#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
+fn tensor<const N: usize>(
+    u: f64,
+    v: f64,
+    u_degree: usize,
+    v_degree: usize,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles_homog: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+    order: usize,
+) -> [[f64; 4]; 6] {
+    let mut wu = curve::Window::<N>::new();
+    let mut wv = curve::Window::<N>::new();
+    curve::window(u, u_degree, u_periodic, u_flat, n_u, order, &mut wu);
+    curve::window(v, v_degree, v_periodic, v_flat, n_v, order, &mut wv);
+    // Fixed strides and orders let the loops unroll.
+    match (h, order) {
+        (3, 0) => sum::<N, 3, 0>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+        (3, 1) => sum::<N, 3, 1>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+        (3, _) => sum::<N, 3, 2>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+        (_, 0) => sum::<N, 4, 0>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+        (_, 1) => sum::<N, 4, 1>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+        _ => sum::<N, 4, 2>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+    }
+}
+
+/// `Σ_i Σ_j Nu_i Nv_j P_ij` over the local poles, with the mixed basis
+/// derivatives up to total order `D` in the slots of [`tensor`].
+fn sum<const N: usize, const H: usize, const D: usize>(
+    wu: &curve::Window<N>,
+    wv: &curve::Window<N>,
+    u_degree: usize,
+    v_degree: usize,
+    poles: &[f64],
+    n_v: usize,
+) -> [[f64; 4]; 6] {
+    let mut out = [[0.0f64; 4]; 6];
+    for i in 0..=u_degree {
+        let row = wu.pole(i) * n_v;
+        // Along v: the value row and its v-derivatives up to order D.
+        let mut along = [[0.0f64; H]; 3];
+        for j in 0..=v_degree {
+            let base = (row + wv.pole(j)) * H;
+            let pole: &[f64; H] = poles[base..base + H].try_into().unwrap();
+            for (k, acc) in along.iter_mut().enumerate().take(D + 1) {
+                let n = wv.ders[k][j];
+                for c in 0..H {
+                    acc[c] += n * pole[c];
+                }
+            }
+        }
+        let nu = wu.ders[0][i];
+        for c in 0..H {
+            out[0][c] += nu * along[0][c];
+        }
+        if D >= 1 {
+            let du = wu.ders[1][i];
+            for c in 0..H {
+                out[1][c] += du * along[0][c];
+                out[2][c] += nu * along[1][c];
+            }
+        }
+        if D >= 2 {
+            let (du, duu) = (wu.ders[1][i], wu.ders[2][i]);
+            for c in 0..H {
+                out[3][c] += duu * along[0][c];
+                out[4][c] += du * along[1][c];
+                out[5][c] += nu * along[2][c];
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -305,6 +682,13 @@ mod tests {
                 n_v, h,
             );
 
+            let [_, _, _, suu, suv, svv] = surface_d2(
+                u, v, u_degree, v_degree, u_periodic, v_periodic, &u_flat, &v_flat, &poles, n_u,
+                n_v, h,
+            );
+            for (key, d) in [("d2u", suu), ("d2uv", suv), ("d2v", svv)] {
+                check(name, u, v, key, &[d.x, d.y, d.z], &arr_f64(&sample[key]));
+            }
             // d0 and d1 agree on the point.
             check(name, u, v, "d0", &[s0.x, s0.y, s0.z], &[s.x, s.y, s.z]);
             check(

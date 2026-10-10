@@ -130,9 +130,12 @@ pub(crate) fn gauss_newton_1d(
     max_iter: u32,
 ) -> Option<f64> {
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let mut best = dot(residual(t), residual(t));
+    // The residual at `t` is carried over from the accepted trial, so each
+    // point is evaluated once.
+    let mut r = residual(t);
+    let mut best = dot(r, r);
     for _ in 0..max_iter {
-        let (r, j) = (residual(t), jacobian(t));
+        let j = jacobian(t);
         let jj = dot(j, j);
         if jj <= f64::MIN_POSITIVE * (1.0 + best) {
             return None;
@@ -142,9 +145,11 @@ pub(crate) fn gauss_newton_1d(
         let mut improved = false;
         for _ in 0..12 {
             let trial = t + step;
-            let value = dot(residual(trial), residual(trial));
+            let trial_r = residual(trial);
+            let value = dot(trial_r, trial_r);
             if value < best {
                 t = trial;
+                r = trial_r;
                 best = value;
                 improved = true;
                 break;
@@ -163,29 +168,36 @@ pub(crate) fn gauss_newton_1d(
 
 /// Gauss-Newton driver for 3-component residuals in 2 parameters
 /// (surface projection): `delta = -(J'J)^{-1} J'r` with backtracking.
+///
+/// `jacobian` returns both partials `(dr/du, dr/dv)` at once, so callers
+/// evaluate their derivatives in one pass.
 pub(crate) fn gauss_newton_2d(
     mut residual: impl FnMut(f64, f64) -> [f64; 3],
-    mut jac_u: impl FnMut(f64, f64) -> [f64; 3],
-    mut jac_v: impl FnMut(f64, f64) -> [f64; 3],
+    mut jacobian: impl FnMut(f64, f64) -> ([f64; 3], [f64; 3]),
     mut u: f64,
     mut v: f64,
     tol: f64,
     max_iter: u32,
 ) -> Option<(f64, f64)> {
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    let mut best = dot(residual(u, v), residual(u, v));
+    // The residual at `(u, v)` is carried over from the accepted trial, so
+    // each point is evaluated once.
+    let mut r = residual(u, v);
+    let mut best = dot(r, r);
     for _ in 0..max_iter {
-        let (r, ju, jv) = (residual(u, v), jac_u(u, v), jac_v(u, v));
+        let (ju, jv) = jacobian(u, v);
         let lhs = [[dot(ju, ju), dot(ju, jv)], [dot(ju, jv), dot(jv, jv)]];
         let rhs = [-dot(ju, r), -dot(jv, r)];
         let delta = solve_2x2(lhs, rhs, tol)?;
         let (mut su, mut sv) = (delta[0], delta[1]);
         let mut improved = false;
         for _ in 0..12 {
-            let value = dot(residual(u + su, v + sv), residual(u + su, v + sv));
+            let trial_r = residual(u + su, v + sv);
+            let value = dot(trial_r, trial_r);
             if value < best {
                 u += su;
                 v += sv;
+                r = trial_r;
                 best = value;
                 improved = true;
                 break;
@@ -201,6 +213,165 @@ pub(crate) fn gauss_newton_2d(
         }
     }
     None
+}
+
+/// Box-bounded damped Newton minimisation of a smooth `f(x)` in 2
+/// parameters, from `x0`.
+///
+/// `eval` returns `(f, gradient, hessian)` at a point; `bounds[i]` is
+/// `None` for an unbounded (e.g. periodic) parameter. Each step solves
+/// the Newton system on the parameters not pinned at a bound by an
+/// outward gradient (so a minimum on an edge or corner of the box is
+/// reached exactly instead of stalling against the clamp), shifting an
+/// indefinite Hessian to positive definite. The step is projected onto
+/// the box and halved until `f` decreases (or, once `f` is flat to
+/// rounding, the gradient shrinks, so the minimiser is located to full
+/// precision rather than `sqrt(eps)`); the accepted trial's derivatives
+/// are reused, so each point is evaluated once.
+///
+/// Unlike the root finders above this never fails: it returns its last
+/// (best) iterate once the (damped) step drops below `tol * (1 + |x|)`
+/// per parameter without decreasing `f`, or `max_iter` runs out.
+pub(crate) fn newton_min_2d(
+    mut eval: impl FnMut(f64, f64) -> (f64, [f64; 2], [[f64; 2]; 2]),
+    x0: [f64; 2],
+    bounds: [Option<(f64, f64)>; 2],
+    tol: f64,
+    max_iter: u32,
+) -> [f64; 2] {
+    let project = |x: [f64; 2]| {
+        let mut y = x;
+        for (yi, b) in y.iter_mut().zip(bounds) {
+            if let Some((lo, hi)) = b {
+                *yi = yi.clamp(lo, hi);
+            }
+        }
+        y
+    };
+    let mut x = project(x0);
+    let (mut f, mut g, mut h) = eval(x[0], x[1]);
+    for _ in 0..max_iter {
+        let free = [0, 1].map(|i| match bounds[i] {
+            Some((lo, hi)) => !((x[i] <= lo && g[i] > 0.0) || (x[i] >= hi && g[i] < 0.0)),
+            None => true,
+        });
+        let d = newton_direction(g, h, free);
+        let mut alpha = 1.0;
+        let mut accepted = false;
+        for _ in 0..40 {
+            let y = project([x[0] + alpha * d[0], x[1] + alpha * d[1]]);
+            // A step below resolution: converged, or no descent left to find.
+            if (0..2).all(|i| (y[i] - x[i]).abs() <= tol * (1.0 + x[i].abs())) {
+                break;
+            }
+            let (fy, gy, hy) = eval(y[0], y[1]);
+            // Near the minimum `f` is flat to rounding long before `x`
+            // converges; there a step that shrinks the (free) gradient is
+            // progress too, so Newton converges on the gradient instead.
+            let norm = |g: [f64; 2]| {
+                (0..2)
+                    .filter(|&i| free[i])
+                    .map(|i| g[i] * g[i])
+                    .sum::<f64>()
+            };
+            if fy < f || (fy <= f + flat_band(f) && norm(gy) < norm(g)) {
+                (x, f, g, h) = (y, fy, gy, hy);
+                accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if !accepted {
+            break;
+        }
+    }
+    x
+}
+
+/// Bounded damped Newton minimisation of a smooth `f(x)` in 1 parameter,
+/// from `x0`: the one-dimensional [`newton_min_2d`]. `eval` returns
+/// `(f, f', f'')`; `bounds` is `None` for an unbounded (e.g. periodic)
+/// parameter. Returns the last (best) iterate.
+pub(crate) fn newton_min_1d(
+    mut eval: impl FnMut(f64) -> (f64, f64, f64),
+    x0: f64,
+    bounds: Option<(f64, f64)>,
+    tol: f64,
+    max_iter: u32,
+) -> f64 {
+    let project = |x: f64| match bounds {
+        Some((lo, hi)) => x.clamp(lo, hi),
+        None => x,
+    };
+    let mut x = project(x0);
+    let (mut f, mut g, mut h) = eval(x);
+    for _ in 0..max_iter {
+        let pinned = match bounds {
+            Some((lo, hi)) => (x <= lo && g > 0.0) || (x >= hi && g < 0.0),
+            None => false,
+        };
+        if pinned {
+            break;
+        }
+        let d = -g / curvature(h, g);
+        let mut alpha = 1.0;
+        let mut accepted = false;
+        for _ in 0..40 {
+            let y = project(x + alpha * d);
+            if (y - x).abs() <= tol * (1.0 + x.abs()) {
+                break;
+            }
+            let (fy, gy, hy) = eval(y);
+            if fy < f || (fy <= f + flat_band(f) && gy.abs() < g.abs()) {
+                (x, f, g, h) = (y, fy, gy, hy);
+                accepted = true;
+                break;
+            }
+            alpha *= 0.5;
+        }
+        if !accepted {
+            break;
+        }
+    }
+    x
+}
+
+/// Rounding band of an objective value: changes of `f` within it are
+/// noise, not information.
+fn flat_band(f: f64) -> f64 {
+    8.0 * f64::EPSILON * f.abs().max(f64::MIN_POSITIVE)
+}
+
+/// Descent direction `-(H + mu I)^{-1} g` restricted to the `free`
+/// parameters (zero on the others), with `mu` the smallest shift making
+/// the reduced Hessian safely positive definite (`0` when it already is).
+fn newton_direction(g: [f64; 2], h: [[f64; 2]; 2], free: [bool; 2]) -> [f64; 2] {
+    match free {
+        [true, true] => {
+            let (a, b, c) = (h[0][0], 0.5 * (h[0][1] + h[1][0]), h[1][1]);
+            let mean = 0.5 * (a + c);
+            let radius = (0.25 * (a - c) * (a - c) + b * b).sqrt();
+            let (lo, hi) = (mean - radius, mean + radius);
+            let floor = 1e-10 * (lo.abs() + hi.abs()) + f64::MIN_POSITIVE;
+            let mu = if lo > floor { 0.0 } else { floor - lo };
+            let (a, c) = (a + mu, c + mu);
+            let det = a * c - b * b;
+            [-(c * g[0] - b * g[1]) / det, -(a * g[1] - b * g[0]) / det]
+        }
+        [true, false] => [-g[0] / curvature(h[0][0], g[0]), 0.0],
+        [false, true] => [0.0, -g[1] / curvature(h[1][1], g[1])],
+        [false, false] => [0.0, 0.0],
+    }
+}
+
+/// A positive 1D Newton denominator: the curvature when positive, else a
+/// tiny one so the step heads downhill and the line search sizes it.
+fn curvature(hh: f64, g: f64) -> f64 {
+    if hh > 0.0 {
+        hh
+    } else {
+        hh.abs().max(g.abs()).max(f64::MIN_POSITIVE) * 1e-6
+    }
 }
 
 /// Brent's minimum of `f` on `[a, b]` (no bracket requirement beyond the
@@ -353,8 +524,7 @@ mod tests {
         // Closest (u, v) on z = 0 to (1, 2, 3): (1, 2).
         let (u, v) = gauss_newton_2d(
             |u, v| [u - 1.0, v - 2.0, -3.0],
-            |_, _| [1.0, 0.0, 0.0],
-            |_, _| [0.0, 1.0, 0.0],
+            |_, _| ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
             0.0,
             0.0,
             1e-12,

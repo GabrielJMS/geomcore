@@ -1,4 +1,4 @@
-//! Internal B-spline curve evaluation: de Boor recursion with derivatives,
+//! Internal B-spline curve evaluation: basis functions with derivatives,
 //! rational (NURBS) support, and periodic (closed) curves.
 //!
 //! Poles are handled as flat `&[f64]` buffers with a `dim` coordinate stride
@@ -6,13 +6,13 @@
 //! `(x*w, y*w, z*w, w)` of a rational curve). Values and derivatives are
 //! written into caller-provided output slices laid out the same way.
 //!
-//! The evaluation strategy is the canonical de Boor triangular scheme on a
-//! *flat* (expanded) knot sequence. Derivatives are obtained by forming the
-//! poles of the derivative curve via divided differences and recursing at one
-//! lower degree; rational derivatives apply the quotient rule to homogeneous
-//! derivatives. Periodic curves are evaluated by tiling one period's worth of
-//! flat knots into three-plus period-shifted copies and evaluating in the
-//! middle copy, wrapping pole indices modulo the pole count.
+//! Evaluation computes the `degree + 1` non-zero basis functions and their
+//! derivatives at the parameter (The NURBS Book, A2.3) and sums the poles
+//! they weight, so its cost depends on the degree only, never on the pole
+//! count, and nothing is allocated. Rational derivatives apply the quotient
+//! rule to homogeneous derivatives. Periodic curves see one period's flat
+//! knots tiled endlessly, each copy shifted by the period, with pole indices
+//! wrapping modulo the pole count; tiled knots are computed on demand.
 
 use super::analytic::in_period;
 
@@ -63,9 +63,10 @@ pub(crate) fn param_range(
 /// region, returning `(span, u_clamped_or_wrapped)`.
 ///
 /// For non-periodic curves `u` is clamped into the active range; for periodic
-/// curves `u` is wrapped via [`in_period`]. Ties at a knot resolve to the left
-/// span except at the range start, and the span is nudged so it has nonzero
-/// width and a full window of `degree + 1` poles exists.
+/// curves `u` is wrapped via [`in_period`]. A `u` exactly on an interior
+/// knot belongs to the span on its right, and the range end to the last nonzero-width
+/// span; this only matters for derivatives across a knot where they are
+/// discontinuous.
 pub(crate) fn locate_span(flat: &[f64], degree: usize, periodic: bool, u: f64) -> (usize, f64) {
     let lo = degree;
     let hi = flat.len() - 1 - degree;
@@ -89,78 +90,277 @@ pub(crate) fn locate_span(flat: &[f64], degree: usize, periodic: bool, u: f64) -
             right = mid;
         }
     }
-    // Resolve knot ties to the left span, but never below the range start.
-    while span > lo && flat[span] == flat[span - 1] {
+    // The rightmost such `s` already opens a nonzero-width span, except at
+    // the range end (`u == last`), which steps back to the last real span.
+    while span > lo && flat[span] >= flat[span + 1] {
         span -= 1;
-    }
-    // Guarantee a nonzero-width span (flat[span] < flat[span+1]).
-    while span < hi - 1 && flat[span] >= flat[span + 1] {
-        span += 1;
     }
     (span, u)
 }
 
-/// de Boor triangular recursion at `span` on flat knots `flat`, writing the
-/// point into `out[..dim]`.
-///
-/// `poles` is a flat buffer with `dim` coordinates per pole; the window
-/// `poles[(span - degree)..=span]` is used (all indices must be in range —
-/// the caller guarantees this for non-periodic curves, and pre-tiles the pole
-/// buffer for periodic ones).
-fn deboor(
-    u: f64,
-    degree: usize,
-    flat: &[f64],
-    poles: &[f64],
-    dim: usize,
-    span: usize,
-    out: &mut [f64],
-) {
-    // Local pole copies d_0..d_degree.
-    let mut d = vec![0.0f64; (degree + 1) * dim];
-    for i in 0..=degree {
-        let idx = span - degree + i;
-        d[i * dim..(i + 1) * dim].copy_from_slice(&poles[idx * dim..(idx + 1) * dim]);
-    }
-    for r in 1..=degree {
-        for i in (r..=degree).rev() {
-            let j = span - degree + i;
-            let alpha = (u - flat[j]) / (flat[j + degree - r + 1] - flat[j]);
-            for c in 0..dim {
-                let lo = d[(i - 1) * dim + c];
-                let hi = d[i * dim + c];
-                d[i * dim + c] = (1.0 - alpha) * lo + alpha * hi;
-            }
-        }
-    }
-    out[..dim].copy_from_slice(&d[degree * dim..degree * dim + dim]);
+/// Highest derivative order the evaluator computes.
+pub(crate) const MAX_DERIVATIVE: usize = 2;
+
+/// Basis-table width for degrees below 8: covers every curve and surface
+/// seen in practice, and zeroing an 8-wide table is far cheaper than a
+/// `MAX_DEGREE + 1`-wide one.
+pub(crate) const SMALL: usize = 8;
+
+/// Basis-table width for every supported degree.
+pub(crate) const LARGE: usize = MAX_DEGREE + 1;
+
+/// The `degree + 1` basis functions that are non-zero at a parameter, with
+/// their derivatives, and the poles they weight.
+pub(crate) struct Window<const N: usize> {
+    /// `ders[k][j]`: `k`-th derivative of the `j`-th non-zero basis function.
+    pub(crate) ders: [[f64; N]; MAX_DERIVATIVE + 1],
+    /// Index of the pole weighted by the first non-zero basis function.
+    first: usize,
+    /// Pole count, by which indices wrap in a periodic direction.
+    n_poles: usize,
+    /// Whether pole indices wrap.
+    periodic: bool,
 }
 
-/// Poles of the derivative curve via divided differences:
-/// `Q_i = degree * (P_{i+1} - P_i) / (flat[i + degree + 1] - flat[i + 1])`.
-///
-/// Returns the new pole buffer (one fewer pole) and the new flat-knot array
-/// (first and last knots dropped), i.e. the degree-`(degree - 1)` curve.
-fn derivative_curve(
-    degree: usize,
-    flat: &[f64],
-    poles: &[f64],
-    dim: usize,
-) -> (Vec<f64>, Vec<f64>) {
-    let n = poles.len() / dim;
-    let mut q = vec![0.0f64; (n - 1) * dim];
-    for i in 0..n - 1 {
-        let denom = flat[i + degree + 1] - flat[i + 1];
-        if denom != 0.0 {
-            let scale = degree as f64 / denom;
-            for c in 0..dim {
-                q[i * dim + c] = scale * (poles[(i + 1) * dim + c] - poles[i * dim + c]);
-            }
+impl<const N: usize> Window<N> {
+    /// An empty window, filled by [`window`].
+    pub(crate) fn new() -> Self {
+        Window {
+            ders: [[0.0; N]; MAX_DERIVATIVE + 1],
+            first: 0,
+            n_poles: 0,
+            periodic: false,
         }
-        // denom == 0 leaves Q_i at zero (repeated knots contribute nothing).
     }
-    let new_flat = flat[1..flat.len() - 1].to_vec();
-    (q, new_flat)
+
+    /// Index of the pole weighted by the `j`-th non-zero basis function,
+    /// wrapped modulo the pole count in a periodic direction.
+    #[inline]
+    pub(crate) fn pole(&self, j: usize) -> usize {
+        let index = self.first + j;
+        if self.periodic && index >= self.n_poles {
+            index % self.n_poles
+        } else {
+            index
+        }
+    }
+}
+
+/// Locates `u` and evaluates into `w` the non-zero basis functions there,
+/// with derivatives up to `order`, touching only the `2 * degree` knots
+/// around the span.
+///
+/// Non-periodic directions use [`locate_span`] on the plain flat knots.
+/// Periodic directions behave as if one period's flat knots (all but the
+/// trailing seam run) were tiled endlessly, each copy shifted by the period,
+/// with poles wrapping modulo `n_poles`; the tiled knot at any index is
+/// computed on demand, so nothing is allocated.
+pub(crate) fn window<const N: usize>(
+    u: f64,
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    n_poles: usize,
+    order: usize,
+    w: &mut Window<N>,
+) {
+    let mut left = [0.0f64; N];
+    let mut right = [0.0f64; N];
+    w.n_poles = n_poles;
+    w.periodic = periodic;
+    w.first = span_knots(u, degree, periodic, flat, n_poles, &mut left, &mut right);
+    match order {
+        0 => basis_values(degree, &left, &right, &mut w.ders[0]),
+        1 => basis_first(degree, &left, &right, &mut w.ders),
+        _ => basis_derivatives(degree, &left, &right, order, &mut w.ders),
+    }
+}
+
+/// Locates `u` and writes the knots around its span relative to it,
+/// `left[j] = u - U[span + 1 - j]` and `right[j] = U[span + j] - u` for `j`
+/// in `1..=degree`; returns the index of the span's first pole (see
+/// [`window`] for the periodic tiling).
+fn span_knots<const N: usize>(
+    u: f64,
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    n_poles: usize,
+    left: &mut [f64; N],
+    right: &mut [f64; N],
+) -> usize {
+    debug_assert!(degree < N, "basis table too narrow for degree {degree}");
+    if periodic {
+        let first = flat[0];
+        let last = flat[flat.len() - 1];
+        let period = last - first;
+        // Exactly `last` closes the last span instead of wrapping
+        // to the first (they differ only in derivatives across the seam).
+        let uw = if u == last {
+            last
+        } else {
+            in_period(u, first, last)
+        };
+        let mut block_len = flat.len();
+        while block_len > 0 && flat[block_len - 1] == last {
+            block_len -= 1;
+        }
+        let block = &flat[..block_len];
+        // Rightmost knot of the period block at or below `uw`; the next tiled
+        // knot is then strictly above it, so the span has nonzero width.
+        let local = block
+            .partition_point(|&k| k <= uw)
+            .saturating_sub(1)
+            .min(block_len - 1);
+        let len = block_len as isize;
+        let knot = |offset: isize| {
+            let k = local as isize + offset;
+            block[k.rem_euclid(len) as usize] + period * k.div_euclid(len) as f64
+        };
+        for j in 1..=degree {
+            left[j] = uw - knot(1 - j as isize);
+            right[j] = knot(j as isize) - uw;
+        }
+        // Periodic convention: pole 0 starts the span opening at the
+        // *last* copy of the first knot, so
+        // a seam multiplicity `m` shifts the pole index back by `m - 1`.
+        let seam_mult = block.iter().take_while(|&&k| k == first).count();
+        (local + n_poles + 1 - seam_mult) % n_poles
+    } else {
+        let (span, uu) = locate_span(flat, degree, false, u);
+        for j in 1..=degree {
+            left[j] = uu - flat[span + 1 - j];
+            right[j] = flat[span + j] - uu;
+        }
+        span - degree
+    }
+}
+
+/// Non-zero basis functions alone (The NURBS Book, A2.2): the value-only
+/// fast path of [`basis_derivatives`], without its triangular table.
+fn basis_values<const N: usize>(
+    degree: usize,
+    left: &[f64; N],
+    right: &[f64; N],
+    out: &mut [f64; N],
+) {
+    out[0] = 1.0;
+    for j in 1..=degree {
+        let mut saved = 0.0;
+        for r in 0..j {
+            let temp = out[r] / (right[r + 1] + left[j - r]);
+            out[r] = saved + right[r + 1] * temp;
+            saved = left[j - r] * temp;
+        }
+        out[j] = saved;
+    }
+}
+
+/// Non-zero basis functions and their first derivatives: A2.2, whose last
+/// step divides each degree-`(p - 1)` function by exactly the knot span its
+/// derivative needs, `N'_j = p * (temp_{j-1} - temp_j)`.
+fn basis_first<const N: usize>(
+    degree: usize,
+    left: &[f64; N],
+    right: &[f64; N],
+    ders: &mut [[f64; N]; MAX_DERIVATIVE + 1],
+) {
+    let p = degree;
+    let [values, firsts, _] = ders;
+    values[0] = 1.0;
+    for j in 1..p {
+        let mut saved = 0.0;
+        for r in 0..j {
+            let temp = values[r] / (right[r + 1] + left[j - r]);
+            values[r] = saved + right[r + 1] * temp;
+            saved = left[j - r] * temp;
+        }
+        values[j] = saved;
+    }
+    let mut saved = 0.0;
+    let mut previous = 0.0;
+    for r in 0..p {
+        let temp = values[r] / (right[r + 1] + left[p - r]);
+        values[r] = saved + right[r + 1] * temp;
+        saved = left[p - r] * temp;
+        firsts[r] = p as f64 * (previous - temp);
+        previous = temp;
+    }
+    values[p] = saved;
+    firsts[p] = p as f64 * previous;
+}
+
+/// Non-zero basis functions and their derivatives up to `order` (The NURBS
+/// Book, A2.3), from `left[j] = u - U[span + 1 - j]` and
+/// `right[j] = U[span + j] - u` for `j` in `1..=degree`.
+///
+/// Every divisor is a difference of two knots on either side of a
+/// nonzero-width span, so none is zero. Derivatives above the degree vanish
+/// and are left at zero.
+fn basis_derivatives<const N: usize>(
+    degree: usize,
+    left: &[f64; N],
+    right: &[f64; N],
+    order: usize,
+    ders: &mut [[f64; N]; MAX_DERIVATIVE + 1],
+) {
+    let p = degree;
+    // ndu: basis functions in the upper triangle, knot differences in the
+    // lower one.
+    let mut ndu = [[0.0f64; N]; N];
+    ndu[0][0] = 1.0;
+    for j in 1..=p {
+        let mut saved = 0.0;
+        for r in 0..j {
+            ndu[j][r] = right[r + 1] + left[j - r];
+            let temp = ndu[r][j - 1] / ndu[j][r];
+            ndu[r][j] = saved + right[r + 1] * temp;
+            saved = left[j - r] * temp;
+        }
+        ndu[j][j] = saved;
+    }
+    for j in 0..=p {
+        ders[0][j] = ndu[j][p];
+    }
+    let order = order.min(p).min(MAX_DERIVATIVE);
+    if order == 0 {
+        return;
+    }
+    let mut a = [[0.0f64; MAX_DERIVATIVE + 1]; 2];
+    for r in 0..=p {
+        let (mut s1, mut s2) = (0, 1);
+        a[0][0] = 1.0;
+        for k in 1..=order {
+            let mut d = 0.0;
+            let pk = p - k;
+            if r >= k {
+                let rk = r - k;
+                a[s2][0] = a[s1][0] / ndu[pk + 1][rk];
+                d = a[s2][0] * ndu[rk][pk];
+            }
+            let j1 = if r + 1 >= k { 1 } else { k - r };
+            let j2 = if r <= pk + 1 { k - 1 } else { p - r };
+            for j in j1..=j2 {
+                // r + j >= k holds for every j in j1..=j2.
+                let rkj = r + j - k;
+                a[s2][j] = (a[s1][j] - a[s1][j - 1]) / ndu[pk + 1][rkj];
+                d += a[s2][j] * ndu[rkj][pk];
+            }
+            if r <= pk {
+                a[s2][k] = -a[s1][k - 1] / ndu[pk + 1][r];
+                d += a[s2][k] * ndu[r][pk];
+            }
+            ders[k][r] = d;
+            std::mem::swap(&mut s1, &mut s2);
+        }
+    }
+    let mut factor = p as f64;
+    for (k, row) in ders.iter_mut().enumerate().take(order + 1).skip(1) {
+        for value in row.iter_mut().take(p + 1) {
+            *value *= factor;
+        }
+        factor *= (p - k) as f64;
+    }
 }
 
 /// Evaluates the curve value into `out[..dim]` (see module docs for layout).
@@ -183,15 +383,13 @@ pub(crate) fn eval_d0(
     eval_dn(u, degree, periodic, flat, poles, dim, 0, out);
 }
 
-/// Evaluates the value and first `n` derivatives, writing `f, f', ..., f^n`
-/// consecutively into `out`, each occupying `dim` coordinates
-/// (so `out` must hold `(n + 1) * dim` values).
+/// Evaluates the value and first `n` derivatives (`n <=`
+/// [`MAX_DERIVATIVE`]), writing `f, f', ..., f^n` consecutively into `out`,
+/// each occupying `dim` coordinates (so `out` must hold `(n + 1) * dim`
+/// values).
 ///
-/// `flat` is the plain [`flat_knots`] of the full knots/mults. Non-periodic
-/// evaluation uses it directly; periodic evaluation ignores it and rebuilds a
-/// tiled flat-knot sequence internally, so callers pass the same `flat` in
-/// both cases. For periodic curves the caller must also pass the *plain* flat
-/// knots — the period is derived from its endpoints.
+/// `flat` is the plain [`flat_knots`] of the full knots/mults, for periodic
+/// curves too: the period is derived from its endpoints.
 #[allow(clippy::too_many_arguments)] // dim-generic flat-buffer evaluation signature
 pub(crate) fn eval_dn(
     u: f64,
@@ -203,129 +401,74 @@ pub(crate) fn eval_dn(
     n: usize,
     out: &mut [f64],
 ) {
-    if periodic {
-        eval_dn_periodic(u, degree, flat, poles, dim, n, out);
+    if degree < SMALL {
+        eval_dn_sized::<SMALL>(u, degree, periodic, flat, poles, dim, n, out);
     } else {
-        eval_dn_nonperiodic(u, degree, flat, poles, dim, n, out);
+        eval_dn_sized::<LARGE>(u, degree, periodic, flat, poles, dim, n, out);
     }
 }
 
-/// Non-periodic value + derivatives on the plain flat knots.
-fn eval_dn_nonperiodic(
+#[allow(clippy::too_many_arguments)] // see `eval_dn`
+fn eval_dn_sized<const N: usize>(
     u: f64,
     degree: usize,
+    periodic: bool,
     flat: &[f64],
     poles: &[f64],
     dim: usize,
     n: usize,
     out: &mut [f64],
 ) {
-    let (span, uu) = locate_span(flat, degree, false, u);
-
-    let mut cur_poles = poles.to_vec();
-    let mut cur_flat = flat.to_vec();
-    let mut cur_degree = degree;
-    for k in 0..=n {
-        let slot = &mut out[k * dim..(k + 1) * dim];
-        if k > degree {
-            // Derivatives beyond the degree of a polynomial curve vanish.
-            slot.iter_mut().for_each(|c| *c = 0.0);
-            continue;
-        }
-        // Dropping k front knots shifts the span index left by k.
-        let sp = span - k;
-        deboor(uu, cur_degree, &cur_flat, &cur_poles, dim, sp, slot);
-        if cur_degree >= 1 && k < n {
-            let (q, nf) = derivative_curve(cur_degree, &cur_flat, &cur_poles, dim);
-            cur_poles = q;
-            cur_flat = nf;
-            cur_degree -= 1;
-        }
+    debug_assert!(n <= MAX_DERIVATIVE, "derivative order {n} not supported");
+    let mut w = Window::<N>::new();
+    window(u, degree, periodic, flat, poles.len() / dim, n, &mut w);
+    let out = &mut out[..(n + 1) * dim];
+    // Fixed strides let the coordinate loop unroll.
+    match dim {
+        3 => accumulate::<N, 3>(&w, degree, poles, out),
+        4 => accumulate::<N, 4>(&w, degree, poles, out),
+        _ => accumulate_dyn(&w, degree, poles, dim, out),
     }
 }
 
-/// Periodic value + derivatives.
-///
-/// Builds one period's flat-knot *block* (the flat knots of all but the last
-/// knot, so the seam knot is not duplicated), tiles it into four period-shifted
-/// copies (offsets `-P, 0, +P, +2P`), and evaluates in the middle copy. Poles
-/// are tiled to align with the extended knots; the alignment offset is
-/// `+degree` (see the derivation at the pole-tiling loop) so that the located
-/// span consumes the correct wrapped poles.
-fn eval_dn_periodic(
-    u: f64,
+/// `out[k] = Σ_j ders[k][j] * poles[j]` with a compile-time stride `D`.
+fn accumulate<const N: usize, const D: usize>(
+    w: &Window<N>,
     degree: usize,
-    flat: &[f64],
     poles: &[f64],
-    dim: usize,
-    n: usize,
     out: &mut [f64],
 ) {
-    let n_poles = poles.len() / dim;
-    let first = flat[0];
-    let last = flat[flat.len() - 1];
-    let period = last - first;
-    let uw = in_period(u, first, last);
-
-    // Period block: flat knots of all knots except the last (the seam).
-    // `flat` is a plain repetition, so the block is `flat` with its trailing
-    // run of the last knot value removed (so the seam is not duplicated when
-    // period-shifted copies are concatenated).
-    let mut block_len = flat.len();
-    while block_len > 0 && flat[block_len - 1] == last {
-        block_len -= 1;
-    }
-    let block = &flat[..block_len];
-
-    // Extended flat knots: four period-shifted copies.
-    let mut ext_flat = Vec::with_capacity(block_len * 4);
-    for shift in [-period, 0.0, period, 2.0 * period] {
-        ext_flat.extend(block.iter().map(|&k| k + shift));
-    }
-    let mid_off = block_len; // start of the middle copy
-
-    // Locate span within the middle copy.
-    let mut span = mid_off + block_len - 1;
-    for s in mid_off..mid_off + block_len {
-        if ext_flat[s] <= uw && uw < ext_flat[s + 1] {
-            span = s;
-            break;
+    for (k, slot) in out.chunks_exact_mut(D).enumerate() {
+        let mut sum = [0.0f64; D];
+        for j in 0..=degree {
+            let weight = w.ders[k][j];
+            let base = w.pole(j) * D;
+            let pole: &[f64; D] = poles[base..base + D].try_into().unwrap();
+            for c in 0..D {
+                sum[c] += weight * pole[c];
+            }
         }
+        slot.copy_from_slice(&sum);
     }
+}
 
-    // Extended pole buffer aligned with ext_flat, wrapping modulo n_poles.
-    //
-    // The middle copy starts at ext index `mid_off` (knot value `first`),
-    // whose first span consumes poles `ext_poles[mid_off - degree ..= mid_off]`;
-    // these must be the logical poles `P_0..P_degree`. Solving
-    // `ext_poles[mid_off - degree + t] = P_t` for `t = 0..=degree` gives
-    // `ext_poles[k] = P_{k - mid_off + degree}` — hence the `+ degree` offset
-    // (with wrapping via `rem_euclid`). A previous `- degree` offset was
-    // coincidentally correct only when `2 * degree` was a multiple of `n_poles`.
-    let n_ext = ext_flat.len() - degree - 1;
-    let mut ext_poles = vec![0.0f64; n_ext * dim];
-    for k in 0..n_ext {
-        let logical = k as isize - mid_off as isize + degree as isize;
-        let pidx = logical.rem_euclid(n_poles as isize) as usize;
-        ext_poles[k * dim..(k + 1) * dim].copy_from_slice(&poles[pidx * dim..(pidx + 1) * dim]);
-    }
-
-    let mut cur_poles = ext_poles;
-    let mut cur_flat = ext_flat;
-    let mut cur_degree = degree;
-    for k in 0..=n {
-        let slot = &mut out[k * dim..(k + 1) * dim];
-        if k > degree {
-            slot.iter_mut().for_each(|c| *c = 0.0);
-            continue;
-        }
-        let sp = span - k;
-        deboor(uw, cur_degree, &cur_flat, &cur_poles, dim, sp, slot);
-        if cur_degree >= 1 && k < n {
-            let (q, nf) = derivative_curve(cur_degree, &cur_flat, &cur_poles, dim);
-            cur_poles = q;
-            cur_flat = nf;
-            cur_degree -= 1;
+/// [`accumulate`] for any stride.
+fn accumulate_dyn<const N: usize>(
+    w: &Window<N>,
+    degree: usize,
+    poles: &[f64],
+    dim: usize,
+    out: &mut [f64],
+) {
+    out.fill(0.0);
+    for (k, slot) in out.chunks_exact_mut(dim).enumerate() {
+        for j in 0..=degree {
+            let weight = w.ders[k][j];
+            let index = w.pole(j);
+            let pole = &poles[index * dim..(index + 1) * dim];
+            for (o, &c) in slot.iter_mut().zip(pole) {
+                *o += weight * c;
+            }
         }
     }
 }
@@ -357,6 +500,250 @@ pub(crate) fn rational_derivatives(homog: &[f64], n: usize, out: &mut [f64]) {
         let w2 = homog[8 + 3];
         for c in 0..3 {
             out[6 + c] = (homog[8 + c] - 2.0 * out[3 + c] * w1 - out[c] * w2) / w0;
+        }
+    }
+}
+
+/// `lo`, the knots strictly inside `(lo, hi)`, and `hi`: the boundaries
+/// of the knot spans (polynomial pieces) of one direction.
+pub(crate) fn span_breaks(knots: &[f64], lo: f64, hi: f64) -> Vec<f64> {
+    let mut breaks = vec![lo];
+    breaks.extend(knots.iter().copied().filter(|&k| k > lo && k < hi));
+    breaks.push(hi);
+    breaks
+}
+
+/// `per_span` evenly spaced samples of every span between consecutive
+/// `breaks`, closed by the last break unless the direction is periodic
+/// (where it repeats the first).
+pub(crate) fn span_samples(breaks: &[f64], per_span: usize, periodic: bool) -> Vec<f64> {
+    let mut out: Vec<f64> = breaks
+        .windows(2)
+        .flat_map(|w| (0..per_span).map(move |k| w[0] + (w[1] - w[0]) * k as f64 / per_span as f64))
+        .collect();
+    if !periodic {
+        out.push(breaks[breaks.len() - 1]);
+    }
+    out
+}
+
+/// The parameter intervals of one direction over `[lo, hi]` on which it
+/// is at least C1, so that a local refinement bounded to one of them
+/// minimises a smooth function: the range cut at every knot of
+/// multiplicity `>= degree` (a C0 crease). `None` for a periodic
+/// direction smooth everywhere, where refinement may run unbounded. On a
+/// periodic direction with a smooth seam, the interval across the seam
+/// runs from the last crease past `hi` to the first crease plus the
+/// period.
+pub(crate) fn smooth_regions(
+    knots: &[f64],
+    mults: &[u32],
+    degree: usize,
+    periodic: bool,
+    lo: f64,
+    hi: f64,
+) -> Option<Vec<(f64, f64)>> {
+    let creases: Vec<f64> = knots
+        .iter()
+        .zip(mults)
+        .filter(|&(&k, &m)| k > lo && k < hi && m as usize >= degree)
+        .map(|(&k, _)| k)
+        .collect();
+    let smooth_seam = periodic && (mults[0] as usize) < degree;
+    if smooth_seam {
+        if creases.is_empty() {
+            return None;
+        }
+        let mut regions: Vec<(f64, f64)> = creases.windows(2).map(|w| (w[0], w[1])).collect();
+        regions.push((creases[creases.len() - 1], creases[0] + (hi - lo)));
+        return Some(regions);
+    }
+    let mut cuts = vec![lo];
+    cuts.extend(creases);
+    cuts.push(hi);
+    Some(cuts.windows(2).map(|w| (w[0], w[1])).collect())
+}
+
+/// The bounds for refining from `t` (within `[lo, lo + period]`): each
+/// region of [`smooth_regions`] containing `t` (two at a crease), with
+/// `t` shifted by the period into those crossing a periodic seam; a
+/// single unbounded entry when `regions` is `None`.
+pub(crate) fn regions_at(
+    regions: &Option<Vec<(f64, f64)>>,
+    t: f64,
+    period: Option<f64>,
+) -> Vec<(Option<(f64, f64)>, f64)> {
+    let Some(regions) = regions else {
+        return vec![(None, t)];
+    };
+    let mut out = Vec::new();
+    for &(a, b) in regions {
+        let shifted = std::iter::once(t).chain(period.map(|p| t + p));
+        if let Some(x) = shifted.into_iter().find(|&x| a <= x && x <= b) {
+            out.push((Some((a, b)), x));
+        }
+    }
+    out
+}
+
+/// The parameter at which to evaluate derivatives for a refinement
+/// bounded to `bounds`: `x` itself, except exactly at the upper bound,
+/// where the next float down selects the span on the left (evaluation
+/// takes the span on the right of a knot, which beyond a crease is not
+/// the region being refined).
+pub(crate) fn inward(x: f64, bounds: Option<(f64, f64)>) -> f64 {
+    match bounds {
+        Some((_, hi)) if x >= hi => x.next_down(),
+        _ => x,
+    }
+}
+
+/// Euclidean bounding box `[min.., max..]` of the `degree + 1` poles of
+/// every span between consecutive `breaks` (each span lies in it, by the
+/// convex hull property; weights are positive). `flat_poles` holds `dim`
+/// coordinates per pole (`4`: homogeneous).
+pub(crate) fn span_boxes(
+    breaks: &[f64],
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    flat_poles: &[f64],
+    dim: usize,
+) -> Vec<[f64; 6]> {
+    if degree < SMALL {
+        boxes::<SMALL>(breaks, degree, periodic, flat, flat_poles, dim)
+    } else {
+        boxes::<LARGE>(breaks, degree, periodic, flat, flat_poles, dim)
+    }
+}
+
+fn boxes<const N: usize>(
+    breaks: &[f64],
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    flat_poles: &[f64],
+    dim: usize,
+) -> Vec<[f64; 6]> {
+    let n_poles = flat_poles.len() / dim;
+    let mut w = Window::<N>::new();
+    breaks
+        .windows(2)
+        .map(|span| {
+            // The window at the midpoint selects exactly the span's poles.
+            window(
+                0.5 * (span[0] + span[1]),
+                degree,
+                periodic,
+                flat,
+                n_poles,
+                0,
+                &mut w,
+            );
+            let mut b = [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ];
+            for j in 0..=degree {
+                let base = w.pole(j) * dim;
+                let inv = if dim == 4 {
+                    1.0 / flat_poles[base + 3]
+                } else {
+                    1.0
+                };
+                for c in 0..3 {
+                    let x = flat_poles[base + c] * inv;
+                    b[c] = b[c].min(x);
+                    b[c + 3] = b[c + 3].max(x);
+                }
+            }
+            b
+        })
+        .collect()
+}
+
+/// Bernstein control points, over its own parameter interval, of the
+/// polynomial piece on the span containing `u` (pass a parameter inside
+/// the span): coordinate `c` of point `k` goes to `out[c][k]`, for the
+/// `dim = out.len() <= 4` coordinates of `flat_poles` (homogeneous when
+/// `dim == 4`).
+///
+/// Point `k` is the blossom of the piece at `k` copies of the span end and
+/// `degree - k` of its start, by de Boor's recurrence with the argument
+/// varying by level.
+pub(crate) fn span_bezier(
+    u: f64,
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    flat_poles: &[f64],
+    out: &mut [&mut [f64]],
+) {
+    if degree < SMALL {
+        bezier::<SMALL>(u, degree, periodic, flat, flat_poles, out);
+    } else {
+        bezier::<LARGE>(u, degree, periodic, flat, flat_poles, out);
+    }
+}
+
+#[allow(clippy::needless_range_loop)] // index arithmetic on the triangular recurrence
+fn bezier<const N: usize>(
+    u: f64,
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    flat_poles: &[f64],
+    out: &mut [&mut [f64]],
+) {
+    let dim = out.len();
+    debug_assert!(dim <= 4);
+    let p = degree;
+    let n_poles = flat_poles.len() / dim;
+    let mut left = [0.0f64; N];
+    let mut right = [0.0f64; N];
+    let first = span_knots(u, p, periodic, flat, n_poles, &mut left, &mut right);
+    // The span's `2p` surrounding knots relative to `u`, the span itself
+    // being `[knot(p - 1), knot(p)]`.
+    let knot = |m: usize| {
+        if m < p {
+            -left[p - m]
+        } else {
+            right[m + 1 - p]
+        }
+    };
+    let (a, b) = (knot(p - 1), knot(p));
+    // Level `r`, index `j` blends between `knot(j - 1)` and `knot(p + j - r)`.
+    let mut inverse = [[0.0f64; N]; N];
+    for r in 1..=p {
+        for j in r..=p {
+            inverse[r][j] = 1.0 / (knot(p + j - r) - knot(j - 1));
+        }
+    }
+    let mut d = [[0.0f64; 4]; N];
+    for k in 0..=p {
+        for (j, dj) in d.iter_mut().enumerate().take(p + 1) {
+            let index = if periodic {
+                (first + j) % n_poles
+            } else {
+                first + j
+            };
+            dj[..dim].copy_from_slice(&flat_poles[index * dim..(index + 1) * dim]);
+        }
+        for r in 1..=p {
+            let x = if r <= k { b } else { a };
+            for j in (r..=p).rev() {
+                let alpha = (x - knot(j - 1)) * inverse[r][j];
+                for c in 0..dim {
+                    d[j][c] = (1.0 - alpha) * d[j - 1][c] + alpha * d[j][c];
+                }
+            }
+        }
+        for (c, o) in out.iter_mut().enumerate() {
+            o[k] = d[p][c];
         }
     }
 }
@@ -525,6 +912,111 @@ mod tests {
             eval_dn(u + 6.0, 3, true, &flat, &poles, 3, 2, &mut b);
             assert_close(&a, &b);
         }
+    }
+
+    // ---- span_bezier ----
+
+    /// The Bernstein form of every span matches the evaluator inside it.
+    fn assert_bezier_matches(
+        degree: usize,
+        periodic: bool,
+        knots: &[f64],
+        mults: &[u32],
+        poles: &[f64],
+        dim: usize,
+    ) {
+        let flat = flat_knots(knots, mults);
+        let binomial =
+            |n: usize, k: usize| (0..k).fold(1.0, |c, i| c * (n - i) as f64 / (i + 1) as f64);
+        for span in knots.windows(2) {
+            let (a, b) = (span[0], span[1]);
+            let mut coords = vec![vec![0.0; degree + 1]; dim];
+            let mut out: Vec<&mut [f64]> = coords.iter_mut().map(|c| c.as_mut_slice()).collect();
+            span_bezier(0.5 * (a + b), degree, periodic, &flat, poles, &mut out);
+            for s in [0.0, 0.2, 0.5, 0.9, 1.0] {
+                let mut expected = vec![0.0; dim];
+                eval_dn(
+                    a + s * (b - a),
+                    degree,
+                    periodic,
+                    &flat,
+                    poles,
+                    dim,
+                    0,
+                    &mut expected,
+                );
+                for c in 0..dim {
+                    let got: f64 = (0..=degree)
+                        .map(|k| {
+                            binomial(degree, k)
+                                * s.powi(k as i32)
+                                * (1.0 - s).powi((degree - k) as i32)
+                                * coords[c][k]
+                        })
+                        .sum();
+                    assert!(
+                        (got - expected[c]).abs() < 1e-12,
+                        "span [{a}, {b}] s {s}: {got} vs {}",
+                        expected[c]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_span_bezier_nonuniform_with_interior_multiplicity() {
+        let poles: Vec<f64> = (0..8)
+            .flat_map(|i| [i as f64, (i * i % 5) as f64, (i % 3) as f64 - 1.0])
+            .collect();
+        assert_bezier_matches(
+            3,
+            false,
+            &[0.0, 0.7, 1.0, 2.5, 4.0],
+            &[4, 1, 2, 1, 4],
+            &poles,
+            3,
+        );
+    }
+
+    #[test]
+    fn test_span_bezier_rational_homogeneous() {
+        let weights = [1.0, 0.4, 2.5, 1.2, 0.8, 3.0];
+        let poles: Vec<f64> = (0..6)
+            .flat_map(|i| {
+                let w = weights[i];
+                [i as f64 * w, ((i * 7) % 4) as f64 * w, -(i as f64) * w, w]
+            })
+            .collect();
+        assert_bezier_matches(
+            2,
+            false,
+            &[-1.0, 0.5, 1.5, 3.0, 3.5],
+            &[3, 1, 1, 1, 3],
+            &poles,
+            4,
+        );
+    }
+
+    #[test]
+    fn test_span_bezier_periodic_with_seam_multiplicity() {
+        let poles = periodic_ring_poles();
+        assert_bezier_matches(
+            3,
+            true,
+            &[0.0, 1.0, 2.0, 3.5, 4.0, 5.0, 6.0],
+            &[1, 1, 1, 1, 1, 1, 1],
+            &poles,
+            3,
+        );
+        assert_bezier_matches(
+            3,
+            true,
+            &[0.0, 1.5, 3.0, 4.0, 5.0, 6.0],
+            &[2, 1, 1, 1, 1, 2],
+            &poles,
+            3,
+        );
     }
 
     fn periodic_ring_poles() -> Vec<f64> {
