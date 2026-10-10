@@ -7,14 +7,15 @@ use crate::curves::parametrize::{self, ParametrizeError};
 use crate::intersect::{
     ImplicitConic, LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection,
     LineConicHit, LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
-    LineQuadricIntersection, PlacedConic, QuadraticSolution, solve_quadratic,
+    LineQuadricIntersection, LineTorusHit, LineTorusIntersection, PlacedConic, QuadraticSolution,
+    quadratic_centre, solve_quadratic,
 };
-use crate::math::solve_2x2;
+use crate::math::{real_roots, solve_2x2};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{
     Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Ellipse3D, Hyperbola3D, Parabola3D, Plane,
-    Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
+    Point2D, Point3D, Sphere, Tolerance, Torus, Transform, Vector2D, Vector3D,
 };
 use std::fmt;
 
@@ -151,6 +152,30 @@ impl Line3D {
     /// ```
     pub fn axis(&self) -> Axis3D {
         self.axis
+    }
+
+    /// Returns the image of this line under `transform`: the origin maps
+    /// point-wise while the direction maps as a free vector (and is
+    /// re-normalized).
+    ///
+    /// A uniform scale leaves the normalized direction unchanged. Fails
+    /// with [`LineConstructionError::NullDirection`] only when the
+    /// transform collapses the direction (a zero scale factor).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, Point3D, Transform, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let moved = line.transformed(Transform::translation(Vector3D::new(1.0, 2.0, 3.0))).unwrap();
+    /// assert_eq!(moved.origin(), Point3D::new(1.0, 2.0, 3.0));
+    /// assert_eq!(moved.direction(), Vector3D::X);
+    /// ```
+    pub fn transformed(&self, transform: Transform) -> Result<Line3D, LineConstructionError> {
+        Line3D::new(
+            transform.apply_point(self.origin()),
+            transform.apply_vector(self.direction()),
+        )
     }
 
     /// Evaluates the point on the line at parameter `u`: `origin + u * direction`.
@@ -315,6 +340,9 @@ impl Line3D {
     /// Substituting the unit-speed parametrization into `|X - C|^2 = R^2`
     /// gives a quadratic (leading coefficient exactly 1), classified with
     /// `solve_quadratic`: two ordered hits, a grazing tangent, or empty.
+    /// The quadratic is formed about the line's closest approach to the
+    /// centre, so the tangency band is `tol.confusion` around the chord's
+    /// midpoint wherever the line's origin lies.
     ///
     /// # Examples
     ///
@@ -334,9 +362,11 @@ impl Line3D {
     /// ```
     pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> LineQuadricIntersection {
         let d = self.direction();
-        let w = self.origin() - sphere.center();
+        let t0 = -d.dot(self.origin() - sphere.center());
+        let w = self.eval_point(t0) - sphere.center();
         // A is exactly 1: the direction is unit by construction.
-        match solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - sphere.radius().powi(2), tol) {
+        let sol = solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - sphere.radius().powi(2), tol);
+        match sol.shifted(t0) {
             QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(
                 (t1, self.eval_point(t1)),
                 (t2, self.eval_point(t2)),
@@ -377,13 +407,21 @@ impl Line3D {
     ) -> LineQuadricIntersection {
         let d = self.direction();
         let a = cylinder.axis().direction();
-        let w = self.origin() - cylinder.axis().origin();
         let da = d.dot(a);
-        let wa = w.dot(a);
         let qa = 1.0 - da * da;
-        let qb = 2.0 * (d.dot(w) - da * wa);
-        let qc = w.dot(w) - wa * wa - cylinder.radius().powi(2);
-        match solve_quadratic(qa, qb, qc, tol) {
+        // Coefficients about the line point at parameter t0.
+        let coeffs = |t0: f64| {
+            let w = self.eval_point(t0) - cylinder.axis().origin();
+            let wa = w.dot(a);
+            (
+                2.0 * (d.dot(w) - da * wa),
+                w.dot(w) - wa * wa - cylinder.radius().powi(2),
+            )
+        };
+        // Centred at the closest approach to the axis.
+        let t0 = quadratic_centre(qa, coeffs(0.0).0, tol);
+        let (qb, qc) = coeffs(t0);
+        match solve_quadratic(qa, qb, qc, tol).shifted(t0) {
             QuadraticSolution::Two(t1, t2) => LineQuadricIntersection::TwoPoints(
                 (t1, self.eval_point(t1)),
                 (t2, self.eval_point(t2)),
@@ -430,12 +468,20 @@ impl Line3D {
         let d = self.direction();
         let a = cone.frame().z_direction();
         let cos_phi = cone.semi_angle().cos();
-        let m = self.origin() - cone.apex();
         let da = d.dot(a);
-        let ma = m.dot(a);
         let qa = da * da - cos_phi * cos_phi;
-        let qb = 2.0 * (da * ma - cos_phi * cos_phi * d.dot(m));
-        let qc = ma * ma - cos_phi * cos_phi * m.dot(m);
+        // Coefficients about the line point at parameter t0.
+        let coeffs = |t0: f64| {
+            let m = self.eval_point(t0) - cone.apex();
+            let ma = m.dot(a);
+            (
+                2.0 * (da * ma - cos_phi * cos_phi * d.dot(m)),
+                ma * ma - cos_phi * cos_phi * m.dot(m),
+            )
+        };
+        // Centred at the midpoint of the two roots.
+        let t0 = quadratic_centre(qa, coeffs(0.0).0, tol);
+        let (qb, qc) = coeffs(t0);
         // Roots on the wrong nappe (behind the apex) are filtered; a
         // single surviving transversal root reports as one point.
         let keep = |t: f64| {
@@ -446,7 +492,7 @@ impl Line3D {
                 None
             }
         };
-        match solve_quadratic(qa, qb, qc, tol) {
+        match solve_quadratic(qa, qb, qc, tol).shifted(t0) {
             QuadraticSolution::Two(t1, t2) => match (keep(t1), keep(t2)) {
                 (Some(q1), Some(q2)) => LineQuadricIntersection::TwoPoints(q1, q2),
                 (Some(q), None) | (None, Some(q)) => LineQuadricIntersection::OnePoint(q.0, q.1),
@@ -468,6 +514,88 @@ impl Line3D {
                     LineQuadricIntersection::Empty
                 }
             }
+        }
+    }
+
+    /// Intersects this line with a torus.
+    ///
+    /// The torus implicit equation
+    /// `(|X - C|^2 + R^2 - r^2)^2 = 4*R^2*(|X - C|^2 - ((X - C).a)^2)`
+    /// along the unit-speed line `X = O + t*d` is a quartic in `t` with
+    /// leading coefficient exactly 1: with `w = O - C`, `b1 = 2*(w.d)`,
+    /// `c1 = w.w + R^2 - r^2`, and the radial part
+    /// `qa*t^2 + qb*t + qc`, the ascending coefficients are
+    /// `[c1^2 - 4*R^2*qc, 2*b1*c1 - 4*R^2*qb,
+    /// b1^2 + 2*c1 - 4*R^2*qa, 2*b1, 1]`, solved by `real_roots` with
+    /// clustering inside `tol.confusion * (1 + |t|)` (the same band rule
+    /// as [`solve_quadratic`]). The quartic is formed about the line's
+    /// closest approach to the centre (`O` there, `t` measured from it),
+    /// so neither the band nor the coefficients' accuracy depend on
+    /// where the line's origin lies. Candidates verify with
+    /// [`Torus::contains`], so spurious polynomial roots are dropped, and
+    /// each hit also reports the torus `(u, v)` parameters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, LineTorusIntersection, Point3D, Tolerance, Torus, Vector3D};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match line.intersect_torus(&torus, tol) {
+    ///     LineTorusIntersection::Hits(hits) => {
+    ///         assert_eq!(hits.len(), 4);
+    ///         assert_eq!(
+    ///             [hits[0].line_param, hits[1].line_param, hits[2].line_param, hits[3].line_param],
+    ///             [-5.0, -3.0, 3.0, 5.0]
+    ///         );
+    ///     }
+    ///     _ => panic!("expected four hits"),
+    /// }
+    /// ```
+    pub fn intersect_torus(&self, torus: &Torus, tol: Tolerance) -> LineTorusIntersection {
+        let a = torus.frame().z_direction();
+        let (major, minor) = (torus.major_radius(), torus.minor_radius());
+        let d = self.direction();
+        let t0 = -d.dot(self.origin() - torus.center());
+        let w = self.eval_point(t0) - torus.center();
+        let wd = w.dot(d);
+        let (da, wa) = (d.dot(a), w.dot(a));
+        let b1 = 2.0 * wd;
+        let c1 = w.dot(w) + major * major - minor * minor;
+        let qa = 1.0 - da * da;
+        let qb = 2.0 * (wd - wa * da);
+        let qc = w.dot(w) - wa * wa;
+        let rr = 4.0 * major * major;
+        let coeffs = [
+            c1 * c1 - rr * qc,
+            2.0 * b1 * c1 - rr * qb,
+            b1 * b1 + 2.0 * c1 - rr * qa,
+            2.0 * b1,
+            1.0,
+        ];
+        let mut hits: Vec<LineTorusHit> = real_roots(&coeffs, tol.confusion)
+            .into_iter()
+            .filter_map(|r| {
+                let t = t0 + r.value;
+                let p = self.eval_point(t);
+                if torus.contains(p, tol) {
+                    Some(LineTorusHit {
+                        line_param: t,
+                        point: p,
+                        surface_params: torus.parameters_of(p),
+                        multiplicity: r.multiplicity,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        hits.sort_by(|x, y| x.line_param.partial_cmp(&y.line_param).unwrap());
+        if hits.is_empty() {
+            LineTorusIntersection::Empty
+        } else {
+            LineTorusIntersection::Hits(hits)
         }
     }
 
@@ -644,14 +772,21 @@ impl Line3D {
             }
             LinePlaneIntersection::Parallel => LineConic3DIntersection::Empty,
             LinePlaneIntersection::Coincident => {
-                let w = self.origin() - conic.origin;
                 let d = self.direction();
-                let (qa, qb, qc) = conic.implicit.line_substitute(
-                    w.dot(conic.x),
-                    w.dot(conic.y),
-                    d.dot(conic.x),
-                    d.dot(conic.y),
-                );
+                // Coefficients about the line point at parameter t0,
+                // centred at the midpoint of the two roots.
+                let coeffs = |t0: f64| {
+                    let w = self.eval_point(t0) - conic.origin;
+                    conic.implicit.line_substitute(
+                        w.dot(conic.x),
+                        w.dot(conic.y),
+                        d.dot(conic.x),
+                        d.dot(conic.y),
+                    )
+                };
+                let (qa, qb, _) = coeffs(0.0);
+                let t0 = quadratic_centre(qa, qb, tol);
+                let (qa, qb, qc) = coeffs(t0);
                 let mut hits = Vec::new();
                 let mut push = |t: f64| {
                     let p = self.eval_point(t);
@@ -663,7 +798,7 @@ impl Line3D {
                         });
                     }
                 };
-                match solve_quadratic(qa, qb, qc, tol) {
+                match solve_quadratic(qa, qb, qc, tol).shifted(t0) {
                     QuadraticSolution::Two(t1, t2) => {
                         push(t1);
                         push(t2);
@@ -1081,7 +1216,9 @@ impl Line2D {
     ///
     /// Substituting the unit-speed parametrization into
     /// `|X - C|^2 = r^2` gives a quadratic with leading coefficient
-    /// exactly 1, classified with `solve_quadratic`.
+    /// exactly 1, classified with `solve_quadratic` about the line's
+    /// closest approach to the centre (so the tangency band does not
+    /// depend on where the line's origin lies).
     ///
     /// # Examples
     ///
@@ -1099,9 +1236,11 @@ impl Line2D {
     /// ```
     pub fn intersect_circle(&self, circle: &Circle2D, tol: Tolerance) -> LineCircle2DIntersection {
         let d = self.direction();
-        let w = self.origin() - circle.center();
+        let t0 = -d.dot(self.origin() - circle.center());
+        let w = self.eval_point(t0) - circle.center();
         // A is exactly 1: the direction is unit by construction.
-        match solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - circle.radius().powi(2), tol) {
+        let sol = solve_quadratic(1.0, 2.0 * d.dot(w), w.dot(w) - circle.radius().powi(2), tol);
+        match sol.shifted(t0) {
             QuadraticSolution::Two(t1, t2) => LineCircle2DIntersection::Points(
                 (t1, self.eval_point(t1)),
                 (t2, self.eval_point(t2)),
@@ -1121,8 +1260,9 @@ mod tests {
         Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D,
         Line2D, Line3D, LineCircle2DIntersection, LineCircle3DIntersection,
         LineConic3DIntersection, LineConstructionError, LineLine2DIntersection,
-        LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, Parabola3D, Plane,
-        Point2D, Point3D, Sphere, Tolerance, Vector2D, Vector3D,
+        LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
+        LineTorusIntersection, Parabola3D, Plane, Point2D, Point3D, Sphere, Tolerance, Torus,
+        Transform, Vector2D, Vector3D, intersect_curve_surface,
     };
 
     // ---- Line3D construction ----
@@ -1749,6 +1889,291 @@ mod tests {
         assert_eq!(
             miss.intersect_hyperbola(&hyperbola, tol),
             LineConic3DIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_torus() {
+        let tol = Tolerance::DEFAULT;
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
+        // Equatorial line through the tube: four transversal hits.
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        match line.intersect_torus(&torus, tol) {
+            LineTorusIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 4);
+                let params: Vec<f64> = hits.iter().map(|h| h.line_param).collect();
+                assert_eq!(params, vec![-5.0, -3.0, 3.0, 5.0]);
+                for h in &hits {
+                    assert_eq!(h.point, line.eval_point(h.line_param));
+                    assert!(torus.contains(h.point, tol));
+                    assert_eq!(h.multiplicity, 1);
+                    let (u, v) = torus.parameters_of(h.point);
+                    assert!((h.surface_params.0 - u).abs() < 1e-12);
+                    assert!((h.surface_params.1 - v).abs() < 1e-12);
+                }
+            }
+            _ => panic!("expected four hits"),
+        }
+        // Grazing the outer equator: a lone double hit.
+        let graze = Line3D::new(Point3D::new(0.0, 5.0, 0.0), Vector3D::X).unwrap();
+        match graze.intersect_torus(&torus, tol) {
+            LineTorusIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0].line_param, 0.0);
+                assert_eq!(hits[0].point, Point3D::new(0.0, 5.0, 0.0));
+                assert_eq!(hits[0].multiplicity, 2);
+            }
+            _ => panic!("expected a tangent hit"),
+        }
+        // Clear miss outside the tube.
+        let miss = Line3D::new(Point3D::new(0.0, 6.0, 0.0), Vector3D::X).unwrap();
+        assert_eq!(
+            miss.intersect_torus(&torus, tol),
+            LineTorusIntersection::Empty
+        );
+        // Through the hole: no contact.
+        let hole = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        assert_eq!(
+            hole.intersect_torus(&torus, tol),
+            LineTorusIntersection::Empty
+        );
+    }
+
+    #[test]
+    fn test_line3d_intersect_torus_matches_generic() {
+        // Deterministic pseudo-random lines (LCG) cross-checked against the
+        // generic curve-surface solver: same count, same parameters.
+        let tol = Tolerance::DEFAULT;
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
+        let mut state: u64 = 0x1234_5678_9abc_def0;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as f64 / 2147483648.0
+        };
+        for _ in 0..25 {
+            let origin = Point3D::new(12.0 * next() - 6.0, 12.0 * next() - 6.0, 6.0 * next() - 3.0);
+            let dir = Vector3D::new(2.0 * next() - 1.0, 2.0 * next() - 1.0, 2.0 * next() - 1.0);
+            let Some(dir) = dir.normalized() else {
+                continue;
+            };
+            let line = Line3D::new(origin, dir).unwrap();
+            let analytic = line.intersect_torus(&torus, tol);
+            let generic = intersect_curve_surface(&line, &torus, tol);
+            match analytic {
+                LineTorusIntersection::Hits(hits) => {
+                    assert_eq!(
+                        hits.len(),
+                        generic.len(),
+                        "count mismatch for line {origin:?} {dir:?}"
+                    );
+                    for (h, g) in hits.iter().zip(generic.iter()) {
+                        assert!(
+                            (h.line_param - g.curve_param).abs() < 1e-6,
+                            "param mismatch for line {origin:?} {dir:?}"
+                        );
+                        assert!(h.point.distance(g.point) < 1e-6);
+                    }
+                }
+                LineTorusIntersection::Empty => assert!(
+                    generic.is_empty(),
+                    "generic found hits for line {origin:?} {dir:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn test_line3d_far_origin_small_sphere_two_points() {
+        // The line starts a million units away from a sphere of radius
+        // 0.05: the chord is still two points, not a grazing contact.
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::ORIGIN, 0.05).unwrap();
+        let line = Line3D::new(Point3D::new(-1e6, 0.0, 0.0), Vector3D::X).unwrap();
+        match line.intersect_sphere(&sphere, tol) {
+            LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
+                assert!((t1 - (1e6 - 0.05)).abs() < 1e-9);
+                assert!((t2 - (1e6 + 0.05)).abs() < 1e-9);
+                assert!((p1.x + 0.05).abs() < 1e-9 && (p2.x - 0.05).abs() < 1e-9);
+            }
+            other => panic!("expected two points, got {other:?}"),
+        }
+        // A genuine graze far from the origin stays a tangent.
+        let graze = Line3D::new(Point3D::new(-1e6, 0.05, 0.0), Vector3D::X).unwrap();
+        match graze.intersect_sphere(&sphere, tol) {
+            LineQuadricIntersection::Tangent(t, p) => {
+                assert!((t - 1e6).abs() < 1e-9);
+                assert!(p.distance(Point3D::new(0.0, 0.05, 0.0)) < 1e-9);
+            }
+            other => panic!("expected a tangent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line2d_far_origin_small_circle_two_points() {
+        let tol = Tolerance::DEFAULT;
+        let circle = Circle2D::new(Point2D::ORIGIN, 0.05).unwrap();
+        let line = Line2D::new(Point2D::new(-1e6, 0.0), Vector2D::X).unwrap();
+        match line.intersect_circle(&circle, tol) {
+            LineCircle2DIntersection::Points((t1, _), (t2, _)) => {
+                assert!((t1 - (1e6 - 0.05)).abs() < 1e-9);
+                assert!((t2 - (1e6 + 0.05)).abs() < 1e-9);
+            }
+            other => panic!("expected two points, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line3d_far_origin_thin_cylinder_two_points() {
+        let tol = Tolerance::DEFAULT;
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 0.05).unwrap();
+        let line = Line3D::new(Point3D::new(-1e6, 0.0, 3.0), Vector3D::X).unwrap();
+        match line.intersect_cylinder(&cylinder, tol) {
+            LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
+                assert!((t1 - (1e6 - 0.05)).abs() < 1e-9);
+                assert!((t2 - (1e6 + 0.05)).abs() < 1e-9);
+            }
+            other => panic!("expected two points, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line3d_torus_hits_from_offset_origin() {
+        // The line's origin sits outside the torus: the parameters of the
+        // four hits are offset by 300 but must stay exact.
+        let tol = Tolerance::DEFAULT;
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 100.0, 25.0).unwrap();
+        let line = Line3D::new(Point3D::new(-300.0, 0.0, 0.0), Vector3D::X).unwrap();
+        match line.intersect_torus(&torus, tol) {
+            LineTorusIntersection::Hits(hits) => {
+                let params: Vec<f64> = hits.iter().map(|h| h.line_param).collect();
+                assert_eq!(params, vec![175.0, 225.0, 375.0, 425.0]);
+                assert!(hits.iter().all(|h| h.multiplicity == 1));
+            }
+            other => panic!("expected four hits, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line3d_far_origin_small_torus_four_hits() {
+        // A torus far smaller than the line's offset from it: four distinct
+        // hits, none merged into tangencies by an offset-scaled band.
+        let tol = Tolerance::DEFAULT;
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 0.04, 0.01).unwrap();
+        let line = Line3D::new(Point3D::new(-1e5, 0.0, 0.0), Vector3D::X).unwrap();
+        match line.intersect_torus(&torus, tol) {
+            LineTorusIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 4);
+                let expected = [-0.05, -0.03, 0.03, 0.05];
+                for (h, x) in hits.iter().zip(expected) {
+                    assert!((h.line_param - (1e5 + x)).abs() < 1e-9);
+                    assert_eq!(h.multiplicity, 1);
+                }
+            }
+            other => panic!("expected four hits, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_line3d_in_plane_thin_ellipse_far_origin() {
+        // A nearly vertical in-plane line crossing a thin, elongated
+        // ellipse near the end of its major axis, the line's origin about
+        // 30 units away, at a loose 1e-3 tolerance: the short chord is two
+        // points, not a tangency.
+        let tol = Tolerance {
+            confusion: 1e-3,
+            ..Tolerance::DEFAULT
+        };
+        let ellipse = Ellipse3D::new(
+            Point3D::new(-610.348096534595, -710.720096056787, 0.0),
+            Vector3D::Z,
+            Vector3D::new(0.999999902285153, 0.000442074298181498, 0.0),
+            15.0066332711999,
+            0.291884102212871,
+        )
+        .unwrap();
+        let line = Line3D::new(
+            Point3D::new(-625.34430362036, -680.713463264921, 0.0),
+            Vector3D::new(-0.000252749178714602, -0.999999968058926, 0.0),
+        )
+        .unwrap();
+        match line.intersect_ellipse(&ellipse, tol) {
+            LineConic3DIntersection::Points(h1, h2) => {
+                let expected = Point3D::new(-625.3518880129151, -710.7210476574684, 0.0);
+                let near = h1.point.distance(expected).min(h2.point.distance(expected));
+                assert!(near < 1e-6, "{h1:?} {h2:?}");
+                assert!(h1.line_param < h2.line_param);
+            }
+            other => panic!("expected two points, got {other:?}"),
+        }
+    }
+
+    // ---- Line3D transformed ----
+
+    #[test]
+    fn test_line3d_transformed_translation_spot_check() {
+        let line = Line3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Y).unwrap();
+        let t = Transform::translation(Vector3D::new(0.0, 5.0, -2.0));
+        let moved = line.transformed(t).unwrap();
+        assert_eq!(moved.origin(), Point3D::new(1.0, 5.0, -2.0));
+        assert_eq!(moved.direction(), Vector3D::Y);
+        // Hand-computed evaluation: origin + 2 * direction.
+        assert_eq!(moved.eval_point(2.0), Point3D::new(1.0, 7.0, -2.0));
+    }
+
+    #[test]
+    fn test_line3d_transformed_rotation_spot_check() {
+        use std::f64::consts::PI;
+        let line = Line3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let moved = line
+            .transformed(Transform::rotation(axis, PI / 2.0))
+            .unwrap();
+        assert!(moved.origin().distance(Point3D::new(0.0, 1.0, 0.0)) < 1e-9);
+        assert!((moved.direction() - Vector3D::Y).magnitude() < 1e-9);
+    }
+
+    #[test]
+    fn test_line3d_transformed_round_trip() {
+        let line = Line3D::new(Point3D::new(1.0, -2.0, 0.5), Vector3D::new(1.0, 2.0, 2.0)).unwrap();
+        let axis = Axis3D::new(Point3D::new(0.5, 0.5, 0.0), Vector3D::Z).unwrap();
+        let t = Transform::translation(Vector3D::new(3.0, -1.0, 2.0))
+            .then(Transform::rotation(axis, 0.7))
+            .then(Transform::scaling(Point3D::ORIGIN, 2.0));
+        let moved = line.transformed(t).unwrap();
+        // Transformed points stay on the transformed line.
+        let tol = Tolerance::DEFAULT;
+        for u in [0.0, 1.5, -2.5] {
+            assert!(moved.contains(t.apply_point(line.eval_point(u)), tol));
+        }
+        // Round trip through the inverse restores the line.
+        let inv = Transform::scaling(Point3D::ORIGIN, 0.5)
+            .then(Transform::rotation(axis, -0.7))
+            .then(Transform::translation(Vector3D::new(-3.0, 1.0, -2.0)));
+        let back = moved.transformed(inv).unwrap();
+        assert!(back.origin().distance(line.origin()) < 1e-9);
+        assert!((back.direction().dot(line.direction()) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_line3d_transformed_mirror() {
+        let line = Line3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::X).unwrap();
+        let m = Transform::mirror_plane(Frame3D::WORLD);
+        let moved = line.transformed(m).unwrap();
+        assert_eq!(moved.origin(), Point3D::new(1.0, 2.0, -3.0));
+        assert_eq!(moved.direction(), Vector3D::X);
+        // Mirroring twice is the identity.
+        let back = moved.transformed(m).unwrap();
+        assert_eq!(back, line);
+    }
+
+    #[test]
+    fn test_line3d_transformed_zero_scale_errors() {
+        let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        assert_eq!(
+            line.transformed(Transform::scaling(Point3D::ORIGIN, 0.0)),
+            Err(LineConstructionError::NullDirection)
         );
     }
 }

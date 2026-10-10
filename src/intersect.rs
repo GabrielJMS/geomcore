@@ -116,6 +116,37 @@ pub enum LineQuadricIntersection {
     Coincident,
 }
 
+/// Result of intersecting a 3D line with a torus: up to four hits.
+///
+/// Substituting the unit-speed parametrization into the torus implicit
+/// equation gives a quartic with leading coefficient exactly 1 (so, unlike
+/// [`solve_quadratic`], there is no linear/degenerate arm); roots cluster
+/// within `tol.confusion * (1 + |t|)`, `t` measured from the line's
+/// closest approach to the torus centre, and verify with
+/// [`crate::Torus::contains`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineTorusIntersection {
+    /// Isolated hits with multiplicity, ordered by line parameter.
+    Hits(Vec<LineTorusHit>),
+    /// No intersection.
+    Empty,
+}
+
+/// One hit of an analytic line-vs-torus solve: the line parameter, the
+/// hit point, the torus `(u, v)` parameters, and the root multiplicity
+/// (2+ marks grazing tangency).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineTorusHit {
+    /// Parameter on the line.
+    pub line_param: f64,
+    /// The hit point.
+    pub point: Point3D,
+    /// Parameters on the torus.
+    pub surface_params: (f64, f64),
+    /// Root multiplicity (≥ 2 signals tangency).
+    pub multiplicity: u32,
+}
+
 /// Result of intersecting a sphere with a cylinder.
 ///
 /// The analytic path requires the cylinder axis through the sphere
@@ -377,6 +408,39 @@ pub enum LineCircle3DIntersection {
     Tangent(f64, Point3D),
     /// No intersection.
     Empty,
+}
+
+/// One meeting of two coplanar 3D ellipses: the parameter on the first
+/// ellipse, the meeting point, and the parameter on the second.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EllipseEllipseHit {
+    /// Parameter on the first ellipse.
+    pub first_param: f64,
+    /// The meeting point.
+    pub point: Point3D,
+    /// Parameter on the second ellipse.
+    pub second_param: f64,
+}
+
+/// Result of intersecting two 3D ellipses.
+///
+/// Only coplanar pairs admit a closed form (elimination of one frame
+/// coordinate between the two implicit quadratics gives a quartic);
+/// anything else reports
+/// [`EllipseEllipse3DIntersection::NotAnalytic`], the same rule as
+/// [`CircleCircle3DIntersection`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum EllipseEllipse3DIntersection {
+    /// Isolated meetings (up to four), ordered by first-ellipse parameter.
+    Points(Vec<EllipseEllipseHit>),
+    /// A single grazing contact.
+    Tangent(EllipseEllipseHit),
+    /// No intersection.
+    Empty,
+    /// Same center, plane, and radii within tolerance.
+    Coincident,
+    /// No closed form: the ellipses are not coplanar.
+    NotAnalytic,
 }
 
 /// Result of intersecting two 3D circles.
@@ -717,14 +781,43 @@ pub(crate) enum QuadraticSolution {
     Empty,
 }
 
+impl QuadraticSolution {
+    /// The same solution with every root moved by `t0` (undoing a
+    /// substitution `t = t0 + s` made to centre the parameter).
+    pub(crate) fn shifted(self, t0: f64) -> Self {
+        match self {
+            Self::Two(t1, t2) => Self::Two(t0 + t1, t0 + t2),
+            Self::One(t) => Self::One(t0 + t),
+            Self::Linear(t) => Self::Linear(t0 + t),
+            other => other,
+        }
+    }
+}
+
+/// Midpoint `-b / (2a)` of the roots of `a*t^2 + b*t + c`, or 0 when the
+/// equation is (near) linear for [`solve_quadratic`]. Line callers
+/// re-form their quadratic about this parameter so the band and the
+/// constant term do not depend on where the line's origin happens to be.
+pub(crate) fn quadratic_centre(a: f64, b: f64, tol: Tolerance) -> f64 {
+    let t0 = -b / (2.0 * a);
+    if a.abs() > tol.angular && t0.is_finite() {
+        t0
+    } else {
+        0.0
+    }
+}
+
 /// Solve `a*t^2 + b*t + c = 0`, classifying with `tol`.
 ///
 /// Near-zero `a` (against `tol.angular`, the coefficients being unit
 /// scale for unit-direction lines) falls back to the linear equation.
 /// Otherwise the root half-separation `sqrt(|disc|) / (2|a|)` decides:
-/// separations within `tol.confusion * (1 + |t0|)` of the double root
-/// report grazing contact, wider positive discriminants two ordered
-/// roots, wider negative ones empty.
+/// separations within `tol.confusion * (1 + |t0|)` of the double root,
+/// widened by the rounding-noise radius of the discriminant
+/// (`sqrt(4*eps*(b^2 + 4|ac|)) / (2|a|)`), report grazing contact; wider
+/// positive discriminants give two ordered roots, wider negative ones
+/// empty. The band grows with `|t0|`: callers whose parameter is an
+/// arbitrary offset (a line's) centre it first ([`quadratic_centre`]).
 pub(crate) fn solve_quadratic(a: f64, b: f64, c: f64, tol: Tolerance) -> QuadraticSolution {
     if a.abs() <= tol.angular {
         if b.abs() <= tol.confusion {
@@ -735,13 +828,17 @@ pub(crate) fn solve_quadratic(a: f64, b: f64, c: f64, tol: Tolerance) -> Quadrat
     let disc = b * b - 4.0 * a * c;
     let mid = -b / (2.0 * a);
     let sep = disc.abs().sqrt() / (2.0 * a.abs());
-    if sep <= tol.confusion * (1.0 + mid.abs()) {
+    let noise = (4.0 * f64::EPSILON * (b * b + 4.0 * (a * c).abs())).sqrt() / (2.0 * a.abs());
+    if sep <= tol.confusion * (1.0 + mid.abs()) + noise {
         QuadraticSolution::One(mid)
     } else if disc < 0.0 {
         QuadraticSolution::Empty
     } else {
-        let (t1, t2) = (mid - sep, mid + sep);
-        QuadraticSolution::Two(t1, t2)
+        // Cancellation-free: the larger-magnitude root first, the other
+        // from the product c/a.
+        let q = -0.5 * (b + disc.sqrt().copysign(b));
+        let (r1, r2) = (q / a, c / q);
+        QuadraticSolution::Two(r1.min(r2), r1.max(r2))
     }
 }
 
@@ -828,15 +925,12 @@ where
             let d = a.eval_point(clamp_param(s, ba)) - b.eval_point(clamp_param(t, bb));
             [d.x, d.y, d.z]
         };
-        let jac_s = |s: f64, _t: f64| {
-            let v = a.eval_derivative(clamp_param(s, ba), 1);
-            [v.x, v.y, v.z]
+        let jacobian = |s: f64, t: f64| {
+            let da = a.eval_derivative(clamp_param(s, ba), 1);
+            let db = b.eval_derivative(clamp_param(t, bb), 1);
+            ([da.x, da.y, da.z], [-db.x, -db.y, -db.z])
         };
-        let jac_t = |_s: f64, t: f64| {
-            let v = b.eval_derivative(clamp_param(t, bb), 1);
-            [-v.x, -v.y, -v.z]
-        };
-        if let Some((rs, rt)) = gauss_newton_2d(residual, jac_s, jac_t, s, t, tol.confusion, 50) {
+        if let Some((rs, rt)) = gauss_newton_2d(residual, jacobian, s, t, tol.confusion, 50) {
             let (cs, ct) = (clamp_param(rs, ba), clamp_param(rt, bb));
             let distance = a.eval_point(cs).distance(b.eval_point(ct));
             if !out.iter().any(|e: &CurveCurveExtremum| {
@@ -1301,6 +1395,45 @@ mod tests {
             solve_quadratic(1.0, 0.0, 1.0, Tolerance::DEFAULT),
             QuadraticSolution::Empty
         );
+    }
+
+    #[test]
+    fn test_solve_quadratic_rounded_double_root_is_tangent() {
+        // a*(t - r)^2 with rounded coefficients: the discriminant is pure
+        // rounding noise (negative in one case, positive in the other), so
+        // even a 1e-12 band reports the double root.
+        let tight = Tolerance {
+            confusion: 1e-12,
+            ..Tolerance::DEFAULT
+        };
+        for (a, r) in [(7.0, 2.3), (11.0, 0.7)] {
+            match solve_quadratic(a, -2.0 * a * r, a * r * r, tight) {
+                QuadraticSolution::One(t) => assert!((t - r).abs() < 1e-14),
+                other => panic!("expected a double root near {r}, got {other:?}"),
+            }
+        }
+        // A real gap of 1e-6 is still two roots (to the accuracy the
+        // rounded constant term allows).
+        match solve_quadratic(1.0, -2.0, 1.0 - 1e-12, tight) {
+            QuadraticSolution::Two(t1, t2) => {
+                assert!((t1 - (1.0 - 1e-6)).abs() < 1e-9);
+                assert!((t2 - (1.0 + 1e-6)).abs() < 1e-9);
+            }
+            other => panic!("expected two roots, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_solve_quadratic_widely_separated_roots_are_accurate() {
+        // t^2 - 1e8*t + 1 = 0: roots 1e-8 and 1e8; the small one must not
+        // be lost to cancellation.
+        match solve_quadratic(1.0, -1e8, 1.0, Tolerance::DEFAULT) {
+            QuadraticSolution::Two(t1, t2) => {
+                assert!((t1 - 1e-8).abs() < 1e-22);
+                assert!((t2 - 1e8).abs() < 1e-7);
+            }
+            other => panic!("expected two roots, got {other:?}"),
+        }
     }
 
     #[test]
