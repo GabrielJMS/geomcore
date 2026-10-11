@@ -549,6 +549,19 @@ def test_intersect_marching():
     assert intersect_marching(miss, sphere) == []
 
 
+@pytest.mark.parametrize("height", [0.3, 0.8, -0.45])
+def test_intersect_marching_off_grid_plane(height: float) -> None:
+    # Planes between the seed grid lines used to find no curve (#6).
+    from geomcore import intersect_marching
+    from geomcore.surfaces import Plane
+
+    plane = Plane(Point3D(0.0, 0.0, height), Vector3D.z())
+    curves = intersect_marching(plane, Sphere(Point3D.origin(), 1.0))
+    assert len(curves) == 1
+    p = curves[0].eval_point(0.5)
+    assert math.hypot(p.x, p.y) == pytest.approx(math.sqrt(1.0 - height**2), abs=1e-3)
+
+
 def test_curve_curve_generic():
     from geomcore import curve_curve_extrema, intersect_curve_curve
     from geomcore.curves import Circle3D, Line3D

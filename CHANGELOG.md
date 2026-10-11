@@ -64,6 +64,21 @@ the Python distribution are versioned in lockstep.
 - `Plane::new` with a NaN normal and `Sphere::new` or `Circle2D::new`
   with a non-finite center no longer panic; they return `NonFinite`.
 
+- `marching_intersection` (#6):
+  - Finds curves that run between its seed grid lines, e.g. a sphere
+    against a plane at most heights, or a cylinder against an offset
+    sphere. It used to return nothing for them. Grid samples where the
+    distance to the other surface is a local minimum are now converged
+    onto the intersection by Newton's method.
+  - Closed loops are traced once and closed on their seed. They used to
+    wind around until the step limit, about 30 times for a radius-2 circle.
+  - Open curves, such as a plane–plane line, are no longer fitted as
+    loops back to their start.
+  - Each step is corrected by Newton's method on both surfaces in the
+    plane normal to the tangent, instead of alternating projections, and
+    the step length follows the curvature, so small loops and shallow
+    crossings trace too.
+
 - Cones with a negative semi-angle no longer produce negative ring
   radii (a panic) in the cone–cylinder, cone–cone, sphere–cone and
   torus–cone intersections.

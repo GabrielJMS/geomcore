@@ -8,7 +8,9 @@
 //! robustly instead of collapsing to noise.
 
 use crate::curves::{BSplineCurve3D, InterpParametrization, ParametricCurve3D};
-use crate::math::{RealRoot, newton_3d, newton_min_1d, newton_min_2d, real_roots};
+use crate::math::{
+    RealRoot, newton_3d, newton_min_1d, newton_min_2d, real_roots, solve_2x2, solve_3x3, solve_4x4,
+};
 use crate::surfaces::ParametricSurface;
 use crate::{
     Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Plane, Point2D, Point3D, Tolerance,
@@ -1806,19 +1808,25 @@ where
 
 /// Marching surface-surface intersection for any two parametric surfaces.
 ///
-/// Seeds come from both grids projected onto the other surface; each seed
-/// traces along the `N1 x N2` tangent with adaptive steps, corrected by
-/// alternating projections, until it closes a loop, leaves the parameter
-/// bounds, or stalls. Traces fit [`BSplineCurve3D`] interpolants
-/// (degree 3, closed loops by repeated end points).
+/// Seeds come from both parameter grids: the samples where the distance
+/// to the other surface is a local minimum are converged onto the
+/// intersection by Newton's method on `S1(u1, v1) = S2(u2, v2)`, so curves
+/// running between grid lines are found too. Each seed traces both ways
+/// along the `N1 x N2` tangent; every step is corrected by Newton's method
+/// on the same system plus the plane through the predicted point normal to
+/// the tangent, and the step length follows the curvature (a chord
+/// deviation of about `1000 * confusion`, at most 0.1). A trace ends when
+/// it closes a loop, reaches a parameter bound, or stalls. Traces fit
+/// [`BSplineCurve3D`] interpolants (degree 3, closed loops by repeated end
+/// points).
 ///
 /// The fits are APPROXIMATIONS (interpolation error, typically ~1e-4 at
 /// default tolerance — assert residuals, not containment): exact
 /// classification stays with the analytic `intersect_*` methods. Likewise
 /// no tangency classification (grazing pairs may trace partially or not
 /// at all), no marching through singular points (poles, apexes), and a
-/// fixed seed density — v1 heuristics, documented so callers can judge
-/// fit.
+/// fixed seed grid (a loop that leaves no distance minimum on either grid
+/// is missed) — v1 heuristics, documented so callers can judge fit.
 ///
 /// # Examples
 ///
@@ -1834,114 +1842,30 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    // Seed both directions: grid samples projected onto the other surface.
-    // Unbounded directions seed a documented default window.
-    let mut seeds: Vec<(Point3D, f64)> = Vec::new();
-    {
-        let (u0, u1) = seed_window(a.u_bounds());
-        let (v0, v1) = seed_window(a.v_bounds());
-        const NU: usize = 24;
-        const NV: usize = 24;
-        for j in 0..=NV {
-            for i in 0..=NU {
-                let (u, v) = (
-                    u0 + (u1 - u0) * i as f64 / NU as f64,
-                    v0 + (v1 - v0) * j as f64 / NV as f64,
-                );
-                let p = a.eval_point(u, v);
-                let d = b.project_point(p, tol).distance;
-                if d <= 100.0 * tol.confusion {
-                    seeds.push((p, d));
-                }
-            }
-        }
-    }
-    {
-        let (u0, u1) = seed_window(b.u_bounds());
-        let (v0, v1) = seed_window(b.v_bounds());
-        const NU: usize = 24;
-        const NV: usize = 24;
-        for j in 0..=NV {
-            for i in 0..=NU {
-                let (u, v) = (
-                    u0 + (u1 - u0) * i as f64 / NU as f64,
-                    v0 + (v1 - v0) * j as f64 / NV as f64,
-                );
-                let p = b.eval_point(u, v);
-                let d = a.project_point(p, tol).distance;
-                if d <= 100.0 * tol.confusion {
-                    seeds.push((p, d));
-                }
-            }
-        }
-    }
-    // Union-find chaining so each connected seed set traces once: a seed
-    // joins any cluster with a member in radius (5% of the seed bbox
-    // diagonal), transitively linking extended structures like lines.
-    let mut leaders: Vec<Point3D> = Vec::new();
-    if !seeds.is_empty() {
-        let mut lo = seeds[0].0;
-        let mut hi = seeds[0].0;
-        for &(p, _) in &seeds[1..] {
-            lo = Point3D::new(lo.x.min(p.x), lo.y.min(p.y), lo.z.min(p.z));
-            hi = Point3D::new(hi.x.max(p.x), hi.y.max(p.y), hi.z.max(p.z));
-        }
-        let radius = (0.05 * lo.distance(hi)).max(100.0 * tol.confusion);
-        let mut parent: Vec<usize> = (0..seeds.len()).collect();
-        fn find(parent: &mut [usize], mut x: usize) -> usize {
-            while parent[x] != x {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            x
-        }
-        for i in 0..seeds.len() {
-            for j in (i + 1)..seeds.len() {
-                if seeds[i].0.distance(seeds[j].0) <= radius {
-                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
-                    parent[ri] = rj;
-                }
-            }
-        }
-        // Best (closest) seed per cluster, clusters ordered by it.
-        let mut best: std::collections::HashMap<usize, (f64, Point3D)> =
-            std::collections::HashMap::new();
-        for (i, &(p, d)) in seeds.iter().enumerate() {
-            let r = find(&mut parent, i);
-            best.entry(r)
-                .and_modify(|e| {
-                    if d < e.0 {
-                        *e = (d, p);
-                    }
-                })
-                .or_insert((d, p));
-        }
-        let mut ordered: Vec<(f64, Point3D)> = best.into_values().collect();
-        ordered.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        leaders = ordered.into_iter().map(|(_, p)| p).collect();
-    }
+    let mut seeds = grid_seeds(a, b, tol);
+    seeds.extend(
+        grid_seeds(b, a, tol)
+            .into_iter()
+            .map(|x| [x[2], x[3], x[0], x[1]]),
+    );
     let mut curves: Vec<BSplineCurve3D> = Vec::new();
-    // Seeds near an already traced loop are suppressed by projection
-    // onto its fit (raw spacing and fit error both exceed confusion, so
-    // neither raw points nor tight containment can decide duplication).
-    // Near-tangent distinct loops (closer than this) are out of scope.
+    // Seeds on an already traced curve are suppressed by projection onto
+    // its fit (the fit error exceeds confusion, so tight containment
+    // cannot decide duplication). Near-tangent distinct curves (closer
+    // than this) are out of scope.
     let suppress = 1000.0 * tol.confusion;
-    let mut step = 0.02f64;
-    for seed in leaders {
+    for seed in seeds {
+        let p = a.eval_point(seed[0], seed[1]);
         if curves
             .iter()
-            .any(|c| c.project_point(seed, tol).distance <= suppress)
+            .any(|c| c.project_point(p, tol).distance <= suppress)
         {
             continue;
         }
-        if let Some(loop_pts) = trace_loop(a, b, seed, &mut step, tol)
-            && loop_pts.len() >= 4
-        {
-            let mut closed = loop_pts;
-            closed.push(closed[0]);
-            let degree = 3.min(closed.len() - 1);
+        if let Some(points) = trace(a, b, seed, tol) {
+            let degree = 3.min(points.len() - 1);
             if let Ok(fit) =
-                BSplineCurve3D::interpolate(&closed, degree, InterpParametrization::Centripetal)
+                BSplineCurve3D::interpolate(&points, degree, InterpParametrization::Centripetal)
             {
                 curves.push(fit);
             }
@@ -1950,115 +1874,252 @@ where
     curves
 }
 
-/// Trace one loop (or open arc) through `seed`; adaptive step in `step`.
-fn trace_loop<A, B>(
-    a: &A,
-    b: &B,
-    seed: Point3D,
-    step: &mut f64,
-    tol: Tolerance,
-) -> Option<Vec<Point3D>>
+/// Parameters `[s_u, s_v, other_u, other_v]` of intersection points
+/// converged from the samples of a grid on `s` where the distance to
+/// `other` is a local minimum. Unbounded directions sample a documented
+/// default window.
+fn grid_seeds<S, T>(s: &S, other: &T, tol: Tolerance) -> Vec<[f64; 4]>
 where
-    A: ParametricSurface,
-    B: ParametricSurface,
+    S: ParametricSurface,
+    T: ParametricSurface,
 {
-    let normal_at = |s: &dyn ParametricSurface, u: f64, v: f64| {
-        let su = s.eval_derivative(u, v, 1, 0);
-        let sv = s.eval_derivative(u, v, 0, 1);
-        let n = su.cross(sv);
-        let scale = su.magnitude() * sv.magnitude();
-        if n.magnitude() <= tol.angular * scale.max(f64::MIN_POSITIVE) {
-            None
-        } else {
-            Some(n * (1.0 / n.magnitude()))
-        }
-    };
-    // Seed must project cleanly onto both surfaces for tangents.
-    let mut fwd: Vec<Point3D> = vec![seed];
-    let mut bwd: Vec<Point3D> = Vec::new();
-    // March both directions from the seed.
-    for (chain, dir) in [(&mut fwd, 1.0), (&mut bwd, -1.0)] {
-        let mut p = seed;
-        let mut h = *step;
-        for _ in 0..2000 {
-            let qa = a.project_point(p, tol);
-            let qb = b.project_point(p, tol);
-            let (Some(na), Some(nb)) = (normal_at(a, qa.u, qa.v), normal_at(b, qb.u, qb.v)) else {
-                break;
-            };
-            let t = na.cross(nb);
-            if t.magnitude() <= tol.angular {
-                break;
-            }
-            let t = t * (dir / t.magnitude());
-            // Adaptive predict-correct.
-            let mut accepted = false;
-            for _ in 0..10 {
-                let q = correct(a, b, p + t * h, tol);
-                match q {
-                    Some(q) if b.project_point(q, tol).distance <= 10.0 * tol.confusion => {
-                        p = q;
-                        h = (h * 1.25).min(0.1);
-                        accepted = true;
-                        break;
-                    }
-                    _ => {
-                        h *= 0.5;
-                        if h < tol.confusion {
-                            break;
-                        }
-                    }
-                }
-            }
-            if !accepted {
-                break;
-            }
-            // Closed loop?
-            if chain.len() > 10 && p.distance(chain[0]) <= 10.0 * tol.confusion {
-                chain.push(chain[0]);
-                break;
-            }
-            // Left the parameter domain on an open direction?
-            let ra = a.project_point(p, tol);
-            let rb = b.project_point(p, tol);
-            if off_bounds(a, ra.u, ra.v) || off_bounds(b, rb.u, rb.v) {
-                chain.push(p);
-                break;
-            }
-            chain.push(p);
+    const N: usize = 24;
+    let (u0, u1) = seed_window(s.u_bounds());
+    let (v0, v1) = seed_window(s.v_bounds());
+    let mut samples: Vec<([f64; 4], f64)> = Vec::with_capacity((N + 1) * (N + 1));
+    for j in 0..=N {
+        for i in 0..=N {
+            let (u, v) = (
+                u0 + (u1 - u0) * i as f64 / N as f64,
+                v0 + (v1 - v0) * j as f64 / N as f64,
+            );
+            let q = other.project_point(s.eval_point(u, v), tol);
+            samples.push(([u, v, q.u, q.v], q.distance));
         }
     }
-    *step = (*step).clamp(tol.confusion, 1.0);
-    // Stitch backward (reversed, seed duplicates dropped) + forward.
-    bwd.reverse();
-    let mut pts = bwd;
-    pts.extend(fwd.into_iter().skip(1));
-    if pts.len() < 4 { None } else { Some(pts) }
+    let distance = |i: usize, j: usize| samples[j * (N + 1) + i].1;
+    let mut seeds = Vec::new();
+    for j in 0..=N {
+        for i in 0..=N {
+            let d = distance(i, j);
+            let neighbours = [
+                (i > 0).then(|| distance(i - 1, j)),
+                (i < N).then(|| distance(i + 1, j)),
+                (j > 0).then(|| distance(i, j - 1)),
+                (j < N).then(|| distance(i, j + 1)),
+            ];
+            if neighbours.into_iter().flatten().all(|e| d <= e)
+                && let Some(x) = meet(s, other, samples[j * (N + 1) + i].0, None, tol)
+            {
+                seeds.push(x);
+            }
+        }
+    }
+    seeds
 }
 
-/// Alternating-projection correction onto both surfaces.
-fn correct<A, B>(a: &A, b: &B, p: Point3D, tol: Tolerance) -> Option<Point3D>
+/// Trace the intersection curve through `seed` both ways. Returns its
+/// points in order (a closed loop ends on its first point), or `None`
+/// when fewer than four were traced.
+fn trace<A, B>(a: &A, b: &B, seed: [f64; 4], tol: Tolerance) -> Option<Vec<Point3D>>
 where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let mut q = p;
-    for _ in 0..8 {
-        let pa = a.project_point(q, tol);
-        let qa = a.eval_point(pa.u, pa.v);
-        let pb = b.project_point(qa, tol);
-        let qb = b.eval_point(pb.u, pb.v);
-        if qb.distance(q) <= tol.confusion {
-            return Some(qb);
+    // Chord deviation allowed per step, and the longest step.
+    let sag = 1000.0 * tol.confusion;
+    const H_MAX: f64 = 0.1;
+    let start = a.eval_point(seed[0], seed[1]);
+    let t0 = tangent(a, b, seed, tol)?;
+    let mut halves: [Vec<Point3D>; 2] = [Vec::new(), Vec::new()];
+    let mut closed = false;
+    for (half, dir) in halves.iter_mut().zip([1.0, -1.0]) {
+        if closed {
+            break;
         }
-        q = qb;
+        let (mut x, mut p, mut t) = (seed, start, t0 * dir);
+        let mut h = (8.0 * sag).sqrt().min(H_MAX);
+        for _ in 0..2000 {
+            // Predict along the tangent, correct onto both surfaces in the
+            // plane normal to it; halve the step until the result stays on
+            // this branch with a small chord deviation.
+            let mut step = None;
+            while h >= tol.confusion {
+                let target = p + t * h;
+                if let Some(y) = meet(a, b, predict(a, b, x, t * h), Some((target, t)), tol)
+                    && let Some(ty) = tangent(a, b, y, tol).map(|ty| ty * dir)
+                {
+                    let q = a.eval_point(y[0], y[1]);
+                    let chord = q.distance(p);
+                    let turn = t.cross(ty).magnitude().atan2(t.dot(ty));
+                    if ty.dot(t) > 0.0 && chord <= 2.0 * h && chord * turn <= 32.0 * sag {
+                        step = Some((y, q, ty, turn / chord.max(f64::MIN_POSITIVE)));
+                        break;
+                    }
+                }
+                h *= 0.5;
+            }
+            let Some((y, q, ty, curvature)) = step else {
+                break;
+            };
+            // Back at the seed: close the loop on it.
+            let along = (start - p).dot(q - p) / (q - p).dot(q - p).max(f64::MIN_POSITIVE);
+            if half.len() >= 3
+                && (0.0..=1.0).contains(&along)
+                && (p + (q - p) * along).distance(start) <= 4.0 * sag + 10.0 * tol.confusion
+            {
+                if p.distance(start) < 0.1 * h {
+                    half.pop();
+                }
+                half.push(start);
+                closed = true;
+                break;
+            }
+            half.push(q);
+            (x, p, t) = (y, q, ty);
+            h = (2.0 * h)
+                .min(H_MAX)
+                .min((8.0 * sag / curvature.max(f64::MIN_POSITIVE)).sqrt());
+        }
     }
-    let residual = a.project_point(q, tol).distance + b.project_point(q, tol).distance;
-    if residual <= 10.0 * tol.confusion {
-        Some(q)
-    } else {
+    let [forward, backward] = halves;
+    let mut points: Vec<Point3D> = backward.into_iter().rev().collect();
+    points.push(start);
+    points.extend(forward);
+    (points.len() >= 4).then_some(points)
+}
+
+/// Unit tangent `N1 x N2` of the intersection at parameters `x`, or `None`
+/// where the surfaces are tangent or a normal degenerates.
+fn tangent<A, B>(a: &A, b: &B, x: [f64; 4], tol: Tolerance) -> Option<Vector3D>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let na = a
+        .eval_derivative(x[0], x[1], 1, 0)
+        .cross(a.eval_derivative(x[0], x[1], 0, 1));
+    let nb = b
+        .eval_derivative(x[2], x[3], 1, 0)
+        .cross(b.eval_derivative(x[2], x[3], 0, 1));
+    let t = na.cross(nb);
+    let scale = na.magnitude() * nb.magnitude();
+    if t.magnitude() <= tol.angular * scale.max(f64::MIN_POSITIVE) {
         None
+    } else {
+        Some(t * (1.0 / t.magnitude()))
     }
+}
+
+/// Parameters `x` moved to first order by the displacement `d` on both
+/// surfaces (unchanged on a surface whose tangent plane degenerates).
+fn predict<A, B>(a: &A, b: &B, x: [f64; 4], d: Vector3D) -> [f64; 4]
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let shift = |s: &dyn ParametricSurface, u: f64, v: f64| {
+        let (su, sv) = (s.eval_derivative(u, v, 1, 0), s.eval_derivative(u, v, 0, 1));
+        let m = [[su.dot(su), su.dot(sv)], [su.dot(sv), sv.dot(sv)]];
+        solve_2x2(m, [su.dot(d), sv.dot(d)], 1e-12).unwrap_or([0.0, 0.0])
+    };
+    let [du1, dv1] = shift(a, x[0], x[1]);
+    let [du2, dv2] = shift(b, x[2], x[3]);
+    [x[0] + du1, x[1] + dv1, x[2] + du2, x[3] + dv2]
+}
+
+/// Newton's method for a point on both surfaces from parameters
+/// `x = [u1, v1, u2, v2]`: solves `S1(u1, v1) = S2(u2, v2)`, together with
+/// `(S1 - origin) . normal = 0` when `plane` is given; without it the
+/// minimum-norm step heads for the nearest intersection point. Steps are
+/// halved until the residual drops, and non-periodic parameters stay in
+/// their bounds. `None` when it does not converge to `confusion`.
+fn meet<A, B>(
+    a: &A,
+    b: &B,
+    x: [f64; 4],
+    plane: Option<(Point3D, Vector3D)>,
+    tol: Tolerance,
+) -> Option<[f64; 4]>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let clamp = |s: &dyn ParametricSurface, u: f64, v: f64| {
+        let (u0, u1) = s.u_bounds();
+        let (v0, v1) = s.v_bounds();
+        (
+            if s.u_period().is_none() {
+                u.clamp(u0, u1)
+            } else {
+                u
+            },
+            if s.v_period().is_none() {
+                v.clamp(v0, v1)
+            } else {
+                v
+            },
+        )
+    };
+    let bounded = |x: [f64; 4]| {
+        let (u1, v1) = clamp(a, x[0], x[1]);
+        let (u2, v2) = clamp(b, x[2], x[3]);
+        [u1, v1, u2, v2]
+    };
+    let residual = |x: [f64; 4]| {
+        let pa = a.eval_point(x[0], x[1]);
+        let f = pa - b.eval_point(x[2], x[3]);
+        let r = plane.map_or(0.0, |(origin, normal)| (pa - origin).dot(normal));
+        (f, r, f.dot(f) + r * r)
+    };
+    let mut x = bounded(x);
+    let (mut f, mut r, mut merit) = residual(x);
+    for _ in 0..32 {
+        if f.magnitude() <= 0.1 * tol.confusion && r.abs() <= 0.1 * tol.confusion {
+            return Some(x);
+        }
+        let cols = [
+            a.eval_derivative(x[0], x[1], 1, 0),
+            a.eval_derivative(x[0], x[1], 0, 1),
+            -b.eval_derivative(x[2], x[3], 1, 0),
+            -b.eval_derivative(x[2], x[3], 0, 1),
+        ];
+        let delta = match plane {
+            Some((_, normal)) => {
+                let m = [
+                    cols.map(|c| c.x),
+                    cols.map(|c| c.y),
+                    cols.map(|c| c.z),
+                    [cols[0].dot(normal), cols[1].dot(normal), 0.0, 0.0],
+                ];
+                solve_4x4(m, [-f.x, -f.y, -f.z, -r], 1e-12)?
+            }
+            None => {
+                // Minimum-norm step `J^T y` with `J J^T y = -f`.
+                let rows = [cols.map(|c| c.x), cols.map(|c| c.y), cols.map(|c| c.z)];
+                let dot = |p: [f64; 4], q: [f64; 4]| (0..4).map(|k| p[k] * q[k]).sum::<f64>();
+                let m = rows.map(|p| rows.map(|q| dot(p, q)));
+                let y = solve_3x3(m, [-f.x, -f.y, -f.z], 1e-12)?;
+                cols.map(|c| c.dot(Vector3D::new(y[0], y[1], y[2])))
+            }
+        };
+        let mut scale = 1.0;
+        let mut improved = false;
+        for _ in 0..12 {
+            let trial = bounded([0, 1, 2, 3].map(|k| x[k] + scale * delta[k]));
+            let (tf, tr, tm) = residual(trial);
+            if tm < merit {
+                (x, f, r, merit) = (trial, tf, tr, tm);
+                improved = true;
+                break;
+            }
+            scale *= 0.5;
+        }
+        if !improved {
+            break;
+        }
+    }
+    (f.magnitude() <= tol.confusion && r.abs() <= tol.confusion).then_some(x)
 }
 
 /// Clamp a parameter bound pair to a finite seed window.
@@ -2068,13 +2129,6 @@ fn seed_window((lo, hi): (f64, f64)) -> (f64, f64) {
         if lo.is_finite() { lo } else { -WINDOW },
         if hi.is_finite() { hi } else { WINDOW },
     )
-}
-
-/// Whether `(u, v)` left a non-periodic direction's bounds.
-fn off_bounds<S: ParametricSurface + ?Sized>(s: &S, u: f64, v: f64) -> bool {
-    let (u0, u1) = s.u_bounds();
-    let (v0, v1) = s.v_bounds();
-    (s.u_period().is_none() && (u < u0 || u > u1)) || (s.v_period().is_none() && (v < v0 || v > v1))
 }
 
 #[cfg(test)]
@@ -2239,6 +2293,125 @@ mod tests {
             assert!(plane.project_point(p, tol).distance < 1e-3, "{p:?}");
             assert!(sphere.project_point(p, tol).distance < 1e-3, "{p:?}");
         }
+    }
+
+    #[test]
+    fn test_marching_loop_is_traced_once() {
+        use crate::{Plane, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        let curves = marching_intersection(&plane, &sphere, tol);
+        let curve = assert_one_curve_on_both(&curves, &plane, &sphere);
+        let (t0, t1) = curve.bounds();
+        let n = 2000;
+        let length: f64 = (0..n)
+            .map(|k| {
+                let at = |k: usize| curve.eval_point(t0 + (t1 - t0) * k as f64 / n as f64);
+                at(k).distance(at(k + 1))
+            })
+            .sum();
+        let circumference = 4.0 * std::f64::consts::PI;
+        assert!(
+            (length - circumference).abs() < 1e-3 * circumference,
+            "{length}"
+        );
+    }
+
+    /// Asserts one traced curve whose samples lie on both surfaces.
+    fn assert_one_curve_on_both<A, B>(curves: &[BSplineCurve3D], a: &A, b: &B) -> BSplineCurve3D
+    where
+        A: ParametricSurface,
+        B: ParametricSurface,
+    {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(curves.len(), 1);
+        let curve = curves[0].clone();
+        let (t0, t1) = curve.bounds();
+        for k in 0..=40 {
+            let p = curve.eval_point(t0 + (t1 - t0) * k as f64 / 40.0);
+            assert!(a.project_point(p, tol).distance < 1e-3, "{p:?}");
+            assert!(b.project_point(p, tol).distance < 1e-3, "{p:?}");
+        }
+        curve
+    }
+
+    #[test]
+    fn test_marching_plane_sphere_off_grid_heights() {
+        use crate::{Plane, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+        // No grid row of either surface lands on these circles.
+        for h in [0.3, 0.8, -0.45, 0.123] {
+            let plane = Plane::new(Point3D::new(0.0, 0.0, h), Vector3D::Z).unwrap();
+            let curves = marching_intersection(&plane, &sphere, tol);
+            let curve = assert_one_curve_on_both(&curves, &plane, &sphere);
+            let r = (1.0 - h * h).sqrt();
+            for t in [0.0, 0.3, 0.6, 0.9] {
+                let p = curve.eval_point(t);
+                assert!((p.x.hypot(p.y) - r).abs() < 1e-3, "h = {h}: {p:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_marching_cylinder_offset_sphere() {
+        use crate::{Cylinder, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        let sphere = Sphere::new(Point3D::new(0.8, 0.0, 0.0), 1.78).unwrap();
+        let curves = marching_intersection(&cylinder, &sphere, tol);
+        assert_one_curve_on_both(&curves, &cylinder, &sphere);
+    }
+
+    #[test]
+    fn test_marching_shallow_angle_spheres() {
+        use crate::Sphere;
+        let tol = Tolerance::DEFAULT;
+        // Unit spheres whose centers are `d` apart meet at about `d`
+        // radians, on the circle z = d/2.
+        let a = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+        for d in [0.05, 0.0175] {
+            let b = Sphere::new(Point3D::new(0.0, 0.0, d), 1.0).unwrap();
+            let curves = marching_intersection(&a, &b, tol);
+            let curve = assert_one_curve_on_both(&curves, &a, &b);
+            let r = (1.0 - d * d / 4.0).sqrt();
+            for t in [0.0, 0.3, 0.6, 0.9] {
+                let p = curve.eval_point(t);
+                assert!((p.z - d / 2.0).abs() < 1e-3, "d = {d}: {p:?}");
+                assert!((p.x.hypot(p.y) - r).abs() < 1e-3, "d = {d}: {p:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_marching_small_loop() {
+        // A loop much smaller than the default step: the step follows the
+        // curvature.
+        use crate::{Plane, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::new(0.0, 0.0, 0.003), Vector3D::Z).unwrap();
+        let sphere = Sphere::new(Point3D::ORIGIN, 0.01).unwrap();
+        let curves = marching_intersection(&plane, &sphere, tol);
+        let curve = assert_one_curve_on_both(&curves, &plane, &sphere);
+        let r = (1e-4f64 - 9e-6).sqrt();
+        for t in [0.0, 0.3, 0.6, 0.9] {
+            let p = curve.eval_point(t);
+            assert!((p.x.hypot(p.y) - r).abs() < 1e-4, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn test_marching_open_trace_is_not_closed() {
+        use crate::Plane;
+        let tol = Tolerance::DEFAULT;
+        let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let curves = marching_intersection(&xy, &zy, tol);
+        assert_eq!(curves.len(), 1);
+        let (t0, t1) = curves[0].bounds();
+        let gap = curves[0].eval_point(t0).distance(curves[0].eval_point(t1));
+        assert!(gap > 10.0, "open line fitted as a loop: end gap {gap}");
     }
 
     #[test]

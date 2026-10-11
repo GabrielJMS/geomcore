@@ -25,4 +25,4 @@ pub(crate) use poly::RealRoot;
 pub(crate) use poly::real_roots;
 #[allow(dead_code, unused_imports)]
 pub(crate) use solve::{brent_minimum, gauss_newton_1d, newton_1d};
-pub(crate) use solve::{newton_3d, newton_min_1d, newton_min_2d, solve_2x2};
+pub(crate) use solve::{newton_3d, newton_min_1d, newton_min_2d, solve_2x2, solve_3x3, solve_4x4};

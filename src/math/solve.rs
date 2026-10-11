@@ -1,4 +1,5 @@
-//! Small iterative solvers: Newton, Gauss-Newton, Brent, and 2x2 systems.
+//! Small iterative solvers: Newton, Gauss-Newton, Brent, and 2x2 to 4x4
+//! linear systems.
 //!
 //! All routines are allocation-free, take plain closures and stack
 //! arrays, and report `None` (rather than a best effort) when they do
@@ -44,35 +45,48 @@ pub(crate) fn newton_1d(
 /// Solve the 3x3 system `a*x = b` by Gaussian elimination with partial
 /// pivoting, or `None` when near-singular.
 pub(crate) fn solve_3x3(a: [[f64; 3]; 3], b: [f64; 3], tol: f64) -> Option<[f64; 3]> {
-    let mut m = [
-        [a[0][0], a[0][1], a[0][2], b[0]],
-        [a[1][0], a[1][1], a[1][2], b[1]],
-        [a[2][0], a[2][1], a[2][2], b[2]],
-    ];
-    let scale: f64 = a.iter().flatten().map(|v| v.abs()).sum();
-    for col in 0..3 {
+    solve_square(a, b, tol)
+}
+
+/// Solve the 4x4 system `a*x = b` by Gaussian elimination with partial
+/// pivoting, or `None` when near-singular.
+pub(crate) fn solve_4x4(a: [[f64; 4]; 4], b: [f64; 4], tol: f64) -> Option<[f64; 4]> {
+    solve_square(a, b, tol)
+}
+
+/// Gaussian elimination with partial pivoting; a pivot below `tol` times
+/// the sum of `|a|` counts as singular.
+fn solve_square<const N: usize>(
+    mut m: [[f64; N]; N],
+    mut b: [f64; N],
+    tol: f64,
+) -> Option<[f64; N]> {
+    let scale: f64 = m.iter().flatten().map(|v| v.abs()).sum();
+    for col in 0..N {
         let mut pivot = col;
-        for row in col + 1..3 {
+        for row in col + 1..N {
             if m[row][col].abs() > m[pivot][col].abs() {
                 pivot = row;
             }
         }
         m.swap(col, pivot);
+        b.swap(col, pivot);
         if m[col][col].abs() <= tol * scale.max(f64::MIN_POSITIVE) {
             return None;
         }
-        for row in col + 1..3 {
+        for row in col + 1..N {
             let factor = m[row][col] / m[col][col];
             let pivot_row = m[col];
             for (k, cell) in m[row].iter_mut().enumerate().skip(col) {
                 *cell -= factor * pivot_row[k];
             }
+            b[row] -= factor * b[col];
         }
     }
-    let mut x = [0.0; 3];
-    for row in (0..3).rev() {
-        let mut acc = m[row][3];
-        for k in row + 1..3 {
+    let mut x = [0.0; N];
+    for row in (0..N).rev() {
+        let mut acc = b[row];
+        for k in row + 1..N {
             acc -= m[row][k] * x[k];
         }
         x[row] = acc / m[row][row];
@@ -425,6 +439,22 @@ mod tests {
         assert!((x[1] + 2.0).abs() < 1e-9);
         assert!((x[2] + 2.0).abs() < 1e-9);
         assert!(solve_3x3([[1.0, 2.0, 3.0]; 3], [1.0, 2.0, 3.0], 1e-12).is_none());
+    }
+
+    #[test]
+    fn test_solve_4x4() {
+        // Needs a row swap: the first pivot is zero.
+        let a = [
+            [0.0, 1.0, 2.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [2.0, 1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0, 3.0],
+        ];
+        let x = solve_4x4(a, [10.0, 4.0, 6.0, 16.0], 1e-12).unwrap();
+        for (xi, want) in x.iter().zip([1.0, 0.0, 3.0, 4.0]) {
+            assert!((xi - want).abs() < 1e-12, "{x:?}");
+        }
+        assert!(solve_4x4([[1.0, 2.0, 3.0, 4.0]; 4], [1.0; 4], 1e-12).is_none());
     }
 
     #[test]
