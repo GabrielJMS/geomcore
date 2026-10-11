@@ -228,12 +228,14 @@ pub enum ConeCylinderIntersection {
 /// Result of intersecting a torus with a plane.
 ///
 /// The analytic path needs the plane through the axis (two meridian
-/// circles) or perpendicular to it (latitude circles). Anything else is
-/// a quartic spiric section and reports
+/// circles), perpendicular to it (latitude circles), or through the
+/// center and tangent to the tube twice (two Villarceau circles).
+/// Anything else is a quartic spiric section and reports
 /// [`TorusPlaneIntersection::NotAnalytic`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TorusPlaneIntersection {
-    /// Two meridian circles (axis-containing plane).
+    /// Two circles: meridian (axis-containing plane), latitude
+    /// (perpendicular plane) or Villarceau (bitangent plane).
     TwoCircles(Circle3D, Circle3D),
     /// Grazing ring (perpendicular plane at tube top/bottom).
     TangentCircle(Circle3D),

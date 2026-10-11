@@ -351,8 +351,10 @@ impl Torus {
     ///
     /// A plane containing the axis cuts two meridian circles; a plane
     /// perpendicular to the axis cuts latitude rings (two, one grazing,
-    /// or one spindle ring). Anything else is a quartic spiric section
-    /// and reports [`TorusPlaneIntersection::NotAnalytic`].
+    /// or one spindle ring); a plane through the center tangent to the
+    /// tube twice (tilted `asin(r / R)` from the equatorial plane) cuts
+    /// two Villarceau circles of radius `R`. Anything else is a quartic
+    /// spiric section and reports [`TorusPlaneIntersection::NotAnalytic`].
     ///
     /// # Examples
     ///
@@ -413,7 +415,21 @@ impl Torus {
                 }
             }
         } else {
-            TorusPlaneIntersection::NotAnalytic
+            // Bitangent plane through the center, tilted asin(r / R) from
+            // the equatorial plane: two Villarceau circles of radius R,
+            // centered r to either side along the line where the two
+            // planes meet.
+            let through_center = ((o - plane.frame().origin()).dot(n)).abs() <= tol.confusion;
+            if through_center && (major * sin - minor).abs() <= tol.confusion {
+                let m = n.cross(a) * (1.0 / sin);
+                let mk = |sgn: f64| {
+                    Circle3D::new(o + m * (sgn * minor), n, major)
+                        .expect("major radius is positive by construction")
+                };
+                TorusPlaneIntersection::TwoCircles(mk(1.0), mk(-1.0))
+            } else {
+                TorusPlaneIntersection::NotAnalytic
+            }
         }
     }
 
@@ -897,6 +913,67 @@ mod tests {
         let tilted = Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, 1.0, 1.0)).unwrap();
         assert_eq!(
             torus.intersect_plane(&tilted, tol),
+            TorusPlaneIntersection::NotAnalytic
+        );
+    }
+
+    /// Torus off the origin with a tilted axis, and the plane through its
+    /// center whose normal makes `asin(r / R) + extra` with the axis.
+    fn tilted_torus_and_plane(extra: f64) -> (Torus, Plane, Vector3D) {
+        let axis = Vector3D::new(1.0, 1.0, 2.0).normalized().unwrap();
+        let torus = Torus::new(Point3D::new(1.0, -2.0, 0.5), axis, 3.0, 1.0).unwrap();
+        let side = axis.cross(Vector3D::X).normalized().unwrap();
+        let tilt = (1.0f64 / 3.0).asin() + extra;
+        let normal = axis * tilt.cos() + side * tilt.sin();
+        let plane = Plane::new(torus.center(), normal).unwrap();
+        (torus, plane, side)
+    }
+
+    #[test]
+    fn test_torus_plane_villarceau_circles() {
+        let tol = Tolerance::DEFAULT;
+        let (torus, plane, side) = tilted_torus_and_plane(0.0);
+        match torus.intersect_plane(&plane, tol) {
+            TorusPlaneIntersection::TwoCircles(c1, c2) => {
+                for c in [c1, c2] {
+                    assert!((c.radius() - 3.0).abs() < 1e-12);
+                    assert!((c.center().distance(torus.center()) - 1.0).abs() < 1e-12);
+                    let ts: Vec<f64> = (0..12).map(|k| k as f64 * 0.5).collect();
+                    for p in c.eval_points(&ts) {
+                        assert!(torus.contains(p, tol), "{p:?}");
+                        assert!(plane.contains(p, tol), "{p:?}");
+                    }
+                }
+                // Centers on either side of the center, along the line
+                // where the plane meets the equatorial plane.
+                let line = plane.normal().cross(torus.frame().z_direction());
+                let offsets = [c1.center() - torus.center(), c2.center() - torus.center()];
+                assert!((offsets[0] + offsets[1]).magnitude() < 1e-12);
+                assert!(offsets[0].cross(line).magnitude() < 1e-12);
+                assert!(offsets[0].dot(side).abs() < 1e-12);
+            }
+            other => panic!("expected two Villarceau circles, got {other:?}"),
+        }
+        // Tilted the other way.
+        let (torus, plane, _) = tilted_torus_and_plane(-2.0 * (1.0f64 / 3.0).asin());
+        assert!(matches!(
+            torus.intersect_plane(&plane, tol),
+            TorusPlaneIntersection::TwoCircles(..)
+        ));
+    }
+
+    #[test]
+    fn test_torus_plane_near_villarceau_is_not_analytic() {
+        let tol = Tolerance::DEFAULT;
+        let (torus, plane, _) = tilted_torus_and_plane(1e-4);
+        assert_eq!(
+            torus.intersect_plane(&plane, tol),
+            TorusPlaneIntersection::NotAnalytic
+        );
+        let (torus, plane, _) = tilted_torus_and_plane(0.0);
+        let shifted = Plane::new(torus.center() + plane.normal() * 1e-4, plane.normal()).unwrap();
+        assert_eq!(
+            torus.intersect_plane(&shifted, tol),
             TorusPlaneIntersection::NotAnalytic
         );
     }

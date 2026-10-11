@@ -12,6 +12,10 @@ the Python distribution are versioned in lockstep.
 ### Added
 
 - `is_finite()` on `Point2D`, `Point3D`, `Vector2D` and `Vector3D`.
+- `Torus::intersect_plane` returns the two Villarceau circles for a
+  plane through the center that is tangent to the tube twice (tilted
+  `asin(r / R)` from the equatorial plane), as `TwoCircles`. It used to
+  report `NotAnalytic`.
 
 ### Changed
 

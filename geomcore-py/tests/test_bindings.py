@@ -420,6 +420,14 @@ def test_intersect_torus_symmetric():
     kind, _ = torus.intersect_plane(Plane(Point3D.origin(), Vector3D.x()))
     assert kind == "two_circles"
 
+    # Bitangent plane through the center: Villarceau circles.
+    tilt = math.asin(1.0 / 4.0)
+    villarceau = Plane(Point3D.origin(), Vector3D(0.0, math.sin(tilt), math.cos(tilt)))
+    kind, (c1, c2) = torus.intersect_plane(villarceau)
+    assert kind == "two_circles"
+    assert [c1.radius(), c2.radius()] == pytest.approx([4.0, 4.0])
+    assert sorted([c1.center().x, c2.center().x]) == pytest.approx([-1.0, 1.0])
+
     kind, c = torus.intersect_sphere(Sphere(Point3D.origin(), 5.0))
     assert kind == "tangent_circle"
     assert c.radius() == pytest.approx(5.0)
