@@ -1,6 +1,7 @@
 //! Spheres in 3D: parametric evaluation and parameter inversion, thin
 //! wrappers over [`crate::surface_math::analytic`].
 
+use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{
@@ -20,6 +21,8 @@ pub enum SphereConstructionError {
     /// already-unit directions); kept for parity with sibling surface
     /// error enums and future direction-taking constructors.
     NullNormal,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for SphereConstructionError {
@@ -27,6 +30,7 @@ impl fmt::Display for SphereConstructionError {
         let message = match self {
             SphereConstructionError::NegativeRadius => "radius is negative",
             SphereConstructionError::NullNormal => "axis direction has zero length",
+            SphereConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -69,8 +73,9 @@ impl Sphere {
     /// assert_eq!(sphere.center(), Point3D::new(1.0, 2.0, 3.0));
     /// ```
     pub fn new(center: Point3D, radius: f64) -> Result<Sphere, SphereConstructionError> {
+        // Z and X are orthonormal, so only a non-finite center can fail.
         let frame = Frame3D::new(center, Vector3D::Z, Vector3D::X)
-            .expect("Vector3D::Z and Vector3D::X are orthonormal by construction");
+            .map_err(|_| SphereConstructionError::NonFinite)?;
         Sphere::from_frame(frame, radius)
     }
 
@@ -89,6 +94,9 @@ impl Sphere {
     /// assert_eq!(sphere.frame(), Frame3D::WORLD);
     /// ```
     pub fn from_frame(frame: Frame3D, radius: f64) -> Result<Sphere, SphereConstructionError> {
+        if !(radius.is_finite()) {
+            return Err(SphereConstructionError::NonFinite);
+        }
         if radius < 0.0 {
             return Err(SphereConstructionError::NegativeRadius);
         }
@@ -153,9 +161,10 @@ impl Sphere {
     /// assert_eq!(moved.radius(), 2.0);
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Sphere, SphereConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| SphereConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            SphereConstructionError::NonFinite,
+            SphereConstructionError::NullNormal,
+        ))?;
         Sphere::from_frame(frame, self.radius() * scale)
     }
 

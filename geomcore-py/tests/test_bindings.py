@@ -42,6 +42,33 @@ def test_constructor_error_raises_value_error():
     assert str(excinfo.value)
 
 
+@pytest.mark.parametrize("bad", [math.nan, math.inf])
+def test_non_finite_inputs_raise_value_error(bad):
+    from geomcore.curves import Parabola3D
+    from geomcore.surfaces import Plane
+
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        Circle3D(Point3D.origin(), Vector3D.z(), bad)
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        Sphere(Point3D(bad, 0.0, 0.0), 1.0)
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        Plane(Point3D.origin(), Vector3D(bad, 0.0, 1.0))
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), bad)
+
+
+def test_zero_size_conics_raise_value_error():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Parabola3D
+
+    o, z, x = Point3D.origin(), Vector3D.z(), Vector3D.x()
+    with pytest.raises(ValueError, match="not positive"):
+        Parabola3D(o, z, x, 0.0)
+    with pytest.raises(ValueError, match="not positive"):
+        Ellipse3D(o, z, x, 3.0, 0.0)
+    with pytest.raises(ValueError, match="not positive"):
+        Hyperbola3D(o, z, x, 2.0, 0.0)
+
+
 def test_init_constructs():
     circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
     assert circle.radius() == 2.0

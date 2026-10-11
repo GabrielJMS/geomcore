@@ -3,6 +3,7 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::frame::frame_error;
 use crate::intersect::{
     ConicSurfaceIntersection, QuadraticSolution, conic_lies_on, roots_with_tangency,
     solve_quadratic, verify_conic_hits,
@@ -17,18 +18,22 @@ use std::fmt;
 /// inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParabolaConstructionError {
-    /// The requested focal distance is negative.
-    NegativeFocal,
+    /// The requested focal distance is zero or negative (a zero focal
+    /// distance collapses the parabola onto its axis).
+    NonPositiveFocal,
     /// The normal (or the x direction) has zero length, or the x direction
     /// is parallel to the normal.
     NullNormal,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for ParabolaConstructionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            ParabolaConstructionError::NegativeFocal => "focal distance is negative",
+            ParabolaConstructionError::NonPositiveFocal => "focal distance is not positive",
             ParabolaConstructionError::NullNormal => "normal has zero length",
+            ParabolaConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -65,8 +70,10 @@ impl Parabola3D {
     ///
     /// Returns [`ParabolaConstructionError::NullNormal`] if `normal` cannot
     /// be normalized, if `x_direction` cannot be normalized, or if
-    /// `x_direction` is parallel to `normal`; or
-    /// [`ParabolaConstructionError::NegativeFocal`] if `focal < 0`.
+    /// `x_direction` is parallel to `normal`;
+    /// [`ParabolaConstructionError::NonPositiveFocal`] if `focal <= 0`; or
+    /// [`ParabolaConstructionError::NonFinite`] if any input is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -81,8 +88,10 @@ impl Parabola3D {
         x_direction: Vector3D,
         focal: f64,
     ) -> Result<Parabola3D, ParabolaConstructionError> {
-        let frame = Frame3D::new(apex, normal, x_direction)
-            .map_err(|_| ParabolaConstructionError::NullNormal)?;
+        let frame = Frame3D::new(apex, normal, x_direction).map_err(frame_error(
+            ParabolaConstructionError::NonFinite,
+            ParabolaConstructionError::NullNormal,
+        ))?;
         Parabola3D::from_frame(frame, focal)
     }
 
@@ -90,7 +99,8 @@ impl Parabola3D {
     ///
     /// # Errors
     ///
-    /// Returns [`ParabolaConstructionError::NegativeFocal`] if `focal < 0`.
+    /// Returns [`ParabolaConstructionError::NonPositiveFocal`] if `focal <= 0`,
+    /// or [`ParabolaConstructionError::NonFinite`] if it is NaN or infinite.
     ///
     /// # Examples
     ///
@@ -100,8 +110,11 @@ impl Parabola3D {
     /// assert_eq!(parabola.frame(), Frame3D::WORLD);
     /// ```
     pub fn from_frame(frame: Frame3D, focal: f64) -> Result<Parabola3D, ParabolaConstructionError> {
-        if focal < 0.0 {
-            return Err(ParabolaConstructionError::NegativeFocal);
+        if !(focal.is_finite()) {
+            return Err(ParabolaConstructionError::NonFinite);
+        }
+        if focal <= 0.0 {
+            return Err(ParabolaConstructionError::NonPositiveFocal);
         }
         Ok(Parabola3D { frame, focal })
     }
@@ -167,17 +180,15 @@ impl Parabola3D {
         &self,
         transform: Transform,
     ) -> Result<Parabola3D, ParabolaConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| ParabolaConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            ParabolaConstructionError::NonFinite,
+            ParabolaConstructionError::NullNormal,
+        ))?;
         Parabola3D::from_frame(frame, self.focal() * scale)
     }
 
     /// Evaluates the point on the parabola at parameter `u`:
     /// `apex + (u^2 / (4*focal))*x_dir + u*y_dir`.
-    ///
-    /// A parabola with focal = 0 is degenerate; evaluation returns
-    /// non-finite values.
     ///
     /// # Examples
     ///
@@ -210,9 +221,6 @@ impl Parabola3D {
     /// linear in `u`, the second is a constant, and every derivative of
     /// order above 2 is zero (see
     /// `curve_math::analytic::parabola_dn`).
-    ///
-    /// A parabola with focal = 0 is degenerate; evaluation returns
-    /// non-finite values.
     ///
     /// # Panics
     ///
@@ -584,14 +592,44 @@ mod tests {
     fn test_parabola3d_new_negative_focal_errors() {
         assert_eq!(
             Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, -1.0),
-            Err(ParabolaConstructionError::NegativeFocal)
+            Err(ParabolaConstructionError::NonPositiveFocal)
         );
     }
 
     #[test]
-    fn test_parabola3d_new_zero_focal_allowed() {
-        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 0.0).unwrap();
-        assert_eq!(p.focal(), 0.0);
+    fn test_parabola3d_new_zero_focal_errors() {
+        assert_eq!(
+            Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 0.0),
+            Err(ParabolaConstructionError::NonPositiveFocal)
+        );
+    }
+
+    #[test]
+    fn test_parabola3d_new_non_finite_errors() {
+        for focal in [f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, focal),
+                Err(ParabolaConstructionError::NonFinite)
+            );
+        }
+        assert_eq!(
+            Parabola3D::new(
+                Point3D::new(f64::NAN, 0.0, 0.0),
+                Vector3D::Z,
+                Vector3D::X,
+                1.0
+            ),
+            Err(ParabolaConstructionError::NonFinite)
+        );
+        assert_eq!(
+            Parabola3D::new(
+                Point3D::ORIGIN,
+                Vector3D::Z,
+                Vector3D::new(f64::INFINITY, 0.0, 0.0),
+                1.0
+            ),
+            Err(ParabolaConstructionError::NonFinite)
+        );
     }
 
     #[test]
@@ -621,7 +659,7 @@ mod tests {
     fn test_parabola3d_from_frame_negative_focal_errors() {
         assert_eq!(
             Parabola3D::from_frame(Frame3D::WORLD, -0.1),
-            Err(ParabolaConstructionError::NegativeFocal)
+            Err(ParabolaConstructionError::NonPositiveFocal)
         );
     }
 
@@ -687,8 +725,8 @@ mod tests {
     #[test]
     fn test_parabola_construction_error_display() {
         assert_eq!(
-            ParabolaConstructionError::NegativeFocal.to_string(),
-            "focal distance is negative"
+            ParabolaConstructionError::NonPositiveFocal.to_string(),
+            "focal distance is not positive"
         );
         assert_eq!(
             ParabolaConstructionError::NullNormal.to_string(),
@@ -699,7 +737,7 @@ mod tests {
     #[test]
     fn test_parabola_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
-        takes_error(&ParabolaConstructionError::NegativeFocal);
+        takes_error(&ParabolaConstructionError::NonPositiveFocal);
     }
 
     #[test]

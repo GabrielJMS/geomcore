@@ -4,6 +4,7 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::frame::frame_error;
 use crate::intersect::{
     ConicSurfaceIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit, conic_lies_on,
     solve_trig, solve_trig_linear, verify_conic_hits,
@@ -19,8 +20,9 @@ use std::fmt;
 /// inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EllipseConstructionError {
-    /// The requested minor radius is negative.
-    NegativeRadius,
+    /// The requested minor radius is zero or negative (a zero minor
+    /// radius collapses the ellipse onto a segment).
+    NonPositiveRadius,
     /// The major radius is smaller than the minor radius.
     InvertedRadii,
     /// The normal (or the x direction) has zero length, or the x direction
@@ -33,18 +35,21 @@ pub enum EllipseConstructionError {
     /// (the minor point is farther from, or as close to, the axis line as
     /// the major point, or the two points are collinear with the center).
     InvertedAxis,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for EllipseConstructionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            EllipseConstructionError::NegativeRadius => "minor radius is negative",
+            EllipseConstructionError::NonPositiveRadius => "minor radius is not positive",
             EllipseConstructionError::InvertedRadii => "major radius is smaller than minor radius",
             EllipseConstructionError::NullNormal => "normal has zero length",
             EllipseConstructionError::NullAxis => "major-axis point coincides with the center",
             EllipseConstructionError::InvertedAxis => {
                 "the two points do not determine a valid axis pair"
             }
+            EllipseConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -93,9 +98,11 @@ impl Ellipse3D {
     /// Returns [`EllipseConstructionError::NullNormal`] if `normal` cannot
     /// be normalized, if `x_direction` cannot be normalized, or if
     /// `x_direction` is parallel to `normal`;
-    /// [`EllipseConstructionError::NegativeRadius`] if `minor_radius < 0`; or
+    /// [`EllipseConstructionError::NonPositiveRadius`] if `minor_radius <= 0`;
     /// [`EllipseConstructionError::InvertedRadii`] if
-    /// `major_radius < minor_radius`.
+    /// `major_radius < minor_radius`; or
+    /// [`EllipseConstructionError::NonFinite`] if any input is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -112,8 +119,10 @@ impl Ellipse3D {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Ellipse3D, EllipseConstructionError> {
-        let frame = Frame3D::new(center, normal, x_direction)
-            .map_err(|_| EllipseConstructionError::NullNormal)?;
+        let frame = Frame3D::new(center, normal, x_direction).map_err(frame_error(
+            EllipseConstructionError::NonFinite,
+            EllipseConstructionError::NullNormal,
+        ))?;
         Ellipse3D::from_frame(frame, major_radius, minor_radius)
     }
 
@@ -122,9 +131,11 @@ impl Ellipse3D {
     ///
     /// # Errors
     ///
-    /// Returns [`EllipseConstructionError::NegativeRadius`] if
-    /// `minor_radius < 0`, or [`EllipseConstructionError::InvertedRadii`] if
-    /// `major_radius < minor_radius`.
+    /// Returns [`EllipseConstructionError::NonPositiveRadius`] if
+    /// `minor_radius <= 0`, [`EllipseConstructionError::InvertedRadii`] if
+    /// `major_radius < minor_radius`, or
+    /// [`EllipseConstructionError::NonFinite`] if either radius is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -138,8 +149,11 @@ impl Ellipse3D {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Ellipse3D, EllipseConstructionError> {
-        if minor_radius < 0.0 {
-            return Err(EllipseConstructionError::NegativeRadius);
+        if !(major_radius.is_finite() && minor_radius.is_finite()) {
+            return Err(EllipseConstructionError::NonFinite);
+        }
+        if minor_radius <= 0.0 {
+            return Err(EllipseConstructionError::NonPositiveRadius);
         }
         if major_radius < minor_radius {
             return Err(EllipseConstructionError::InvertedRadii);
@@ -207,8 +221,10 @@ impl Ellipse3D {
             return Err(EllipseConstructionError::InvertedAxis);
         }
 
-        let frame = Frame3D::new(center, normal, x_axis)
-            .map_err(|_| EllipseConstructionError::InvertedAxis)?;
+        let frame = Frame3D::new(center, normal, x_axis).map_err(frame_error(
+            EllipseConstructionError::NonFinite,
+            EllipseConstructionError::InvertedAxis,
+        ))?;
         Ellipse3D::from_frame(frame, d1, d2)
     }
 
@@ -284,9 +300,10 @@ impl Ellipse3D {
     /// assert_eq!(moved.minor_radius(), 3.0);
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Ellipse3D, EllipseConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| EllipseConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            EllipseConstructionError::NonFinite,
+            EllipseConstructionError::NullNormal,
+        ))?;
         Ellipse3D::from_frame(
             frame,
             self.major_radius() * scale,
@@ -903,7 +920,7 @@ mod tests {
     fn test_ellipse3d_new_negative_minor_radius_errors() {
         assert_eq!(
             Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, -1.0),
-            Err(EllipseConstructionError::NegativeRadius)
+            Err(EllipseConstructionError::NonPositiveRadius)
         );
     }
 
@@ -943,7 +960,7 @@ mod tests {
     fn test_ellipse3d_from_frame_negative_radius_errors() {
         assert_eq!(
             Ellipse3D::from_frame(Frame3D::WORLD, 3.0, -1.0),
-            Err(EllipseConstructionError::NegativeRadius)
+            Err(EllipseConstructionError::NonPositiveRadius)
         );
     }
 
@@ -1061,8 +1078,8 @@ mod tests {
     #[test]
     fn test_ellipse_construction_error_display() {
         assert_eq!(
-            EllipseConstructionError::NegativeRadius.to_string(),
-            "minor radius is negative"
+            EllipseConstructionError::NonPositiveRadius.to_string(),
+            "minor radius is not positive"
         );
         assert_eq!(
             EllipseConstructionError::InvertedRadii.to_string(),
@@ -1085,7 +1102,7 @@ mod tests {
     #[test]
     fn test_ellipse_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
-        takes_error(&EllipseConstructionError::NegativeRadius);
+        takes_error(&EllipseConstructionError::NonPositiveRadius);
     }
 
     #[test]

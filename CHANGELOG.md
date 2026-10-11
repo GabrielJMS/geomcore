@@ -9,6 +9,10 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- `is_finite()` on `Point2D`, `Point3D`, `Vector2D` and `Vector3D`.
+
 ### Changed
 
 - **Breaking:** cones are double. `v` was already unbounded and
@@ -36,8 +40,29 @@ the Python distribution are versioned in lockstep.
 - `Circle3D::intersect_circle` and `Ellipse3D::intersect_ellipse`
   return `Empty` instead of `NotAnalytic` for curves in distinct
   parallel planes, matching circle–conic.
+- **Breaking:** constructors validate their inputs.
+  - Every constructor rejects NaN and infinite inputs: radii, focal
+    distances, semi-angles, point and direction coordinates, and plane
+    coefficients. They used to be accepted and turned every later
+    result into NaN. Each construction error enum gains a `NonFinite`
+    variant, `FrameConstructionError` included.
+  - Conics that a zero size collapses onto a line or segment are
+    rejected: parabola focal `<= 0`, ellipse minor radius `<= 0`,
+    hyperbola radii `<= 0`. Their evaluation and inversion produced
+    NaN or infinity. The variants are renamed
+    `ParabolaConstructionError::NonPositiveFocal`,
+    `EllipseConstructionError::NonPositiveRadius` and
+    `HyperbolaConstructionError::NonPositiveRadius`.
+  - Zero radii stay valid where the shape degenerates cleanly: circle,
+    sphere, cylinder, torus and cone reference radius.
+  - `Plane::from_coefficients` rejects finite coefficients whose plane
+    lies beyond `f64` range, with `BadEquation`.
+  - Python: the same inputs raise `ValueError`.
 
 ### Fixed
+
+- `Plane::new` with a NaN normal and `Sphere::new` or `Circle2D::new`
+  with a non-finite center no longer panic; they return `NonFinite`.
 
 - Cones with a negative semi-angle no longer produce negative ring
   radii (a panic) in the cone–cylinder, cone–cone, sphere–cone and

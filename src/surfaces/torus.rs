@@ -1,6 +1,7 @@
 //! Tori in 3D: parametric evaluation and parameter inversion, thin wrappers
 //! over [`crate::surface_math::analytic`].
 
+use crate::frame::frame_error;
 use crate::intersect::{QuadraticSolution, solve_quadratic};
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
@@ -24,6 +25,8 @@ pub enum TorusConstructionError {
     NegativeRadius,
     /// The main axis direction has zero length.
     NullNormal,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for TorusConstructionError {
@@ -31,6 +34,7 @@ impl fmt::Display for TorusConstructionError {
         let message = match self {
             TorusConstructionError::NegativeRadius => "radius is negative",
             TorusConstructionError::NullNormal => "normal has zero length",
+            TorusConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -83,8 +87,10 @@ impl Torus {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Torus, TorusConstructionError> {
-        let frame =
-            Frame3D::from_z(center, normal).map_err(|_| TorusConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(center, normal).map_err(frame_error(
+            TorusConstructionError::NonFinite,
+            TorusConstructionError::NullNormal,
+        ))?;
         Torus::from_frame(frame, major_radius, minor_radius)
     }
 
@@ -108,6 +114,9 @@ impl Torus {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Torus, TorusConstructionError> {
+        if !(major_radius.is_finite() && minor_radius.is_finite()) {
+            return Err(TorusConstructionError::NonFinite);
+        }
         if major_radius < 0.0 || minor_radius < 0.0 {
             return Err(TorusConstructionError::NegativeRadius);
         }
@@ -190,9 +199,10 @@ impl Torus {
     /// assert_eq!(moved.minor_radius(), 3.0);
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Torus, TorusConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| TorusConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            TorusConstructionError::NonFinite,
+            TorusConstructionError::NullNormal,
+        ))?;
         Torus::from_frame(
             frame,
             self.major_radius() * scale,

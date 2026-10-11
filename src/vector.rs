@@ -118,6 +118,19 @@ impl Vector2D {
         self.x * self.x + self.y * self.y
     }
 
+    /// Whether every coordinate is finite (neither NaN nor infinite).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Vector2D;
+    /// assert!(Vector2D::new(1.0, 2.0).is_finite());
+    /// assert!(!Vector2D::new(f64::NAN, 2.0).is_finite());
+    /// ```
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite()
+    }
+
     /// Normalized vector.
     ///
     /// Returns `None` if the squared magnitude is below `f64::MIN_POSITIVE`.
@@ -281,6 +294,19 @@ impl Vector3D {
     /// ```
     pub fn square_magnitude(self) -> f64 {
         self.x * self.x + self.y * self.y + self.z * self.z
+    }
+
+    /// Whether every coordinate is finite (neither NaN nor infinite).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Vector3D;
+    /// assert!(Vector3D::new(1.0, 2.0, 3.0).is_finite());
+    /// assert!(!Vector3D::new(f64::NAN, 2.0, 3.0).is_finite());
+    /// ```
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
     }
 
     /// Normalized vector.

@@ -47,6 +47,19 @@ impl Point2D {
         let dy = other.y - self.y;
         (dx * dx + dy * dy).sqrt()
     }
+
+    /// Whether every coordinate is finite (neither NaN nor infinite).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Point2D;
+    /// assert!(Point2D::new(1.0, 2.0).is_finite());
+    /// assert!(!Point2D::new(f64::NAN, 2.0).is_finite());
+    /// ```
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite()
+    }
 }
 
 /// Three-dimensional point.
@@ -103,6 +116,19 @@ impl Point3D {
         let dy = other.y - self.y;
         let dz = other.z - self.z;
         (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+
+    /// Whether every coordinate is finite (neither NaN nor infinite).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Point3D;
+    /// assert!(Point3D::new(1.0, 2.0, 3.0).is_finite());
+    /// assert!(!Point3D::new(f64::NAN, 2.0, 3.0).is_finite());
+    /// ```
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
     }
 }
 

@@ -2,6 +2,7 @@
 //! construction from an apex angle or two circular sections, thin wrappers
 //! over [`crate::surface_math::analytic`].
 
+use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
@@ -27,6 +28,8 @@ pub enum ConeConstructionError {
     NullAngle,
     /// The axis direction has zero length.
     NullNormal,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for ConeConstructionError {
@@ -37,6 +40,7 @@ impl fmt::Display for ConeConstructionError {
             ConeConstructionError::NullAxis => "the two points are confused",
             ConeConstructionError::NullAngle => "semi-angle is null or a right angle",
             ConeConstructionError::NullNormal => "axis direction has zero length",
+            ConeConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -93,6 +97,9 @@ impl Cone {
         semi_angle: f64,
         ref_radius: f64,
     ) -> Result<Cone, ConeConstructionError> {
+        if !(semi_angle.is_finite() && ref_radius.is_finite()) {
+            return Err(ConeConstructionError::NonFinite);
+        }
         if !is_valid_semi_angle(semi_angle) {
             return Err(ConeConstructionError::BadAngle);
         }
@@ -130,8 +137,10 @@ impl Cone {
         semi_angle: f64,
         ref_radius: f64,
     ) -> Result<Cone, ConeConstructionError> {
-        let frame = Frame3D::from_z(center, axis_direction)
-            .map_err(|_| ConeConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(center, axis_direction).map_err(frame_error(
+            ConeConstructionError::NonFinite,
+            ConeConstructionError::NullNormal,
+        ))?;
         Cone::from_frame(frame, semi_angle, ref_radius)
     }
 
@@ -173,6 +182,9 @@ impl Cone {
         r1: f64,
         r2: f64,
     ) -> Result<Cone, ConeConstructionError> {
+        if !(p1.is_finite() && p2.is_finite() && r1.is_finite() && r2.is_finite()) {
+            return Err(ConeConstructionError::NonFinite);
+        }
         let delta = p2 - p1;
         let dist = delta.magnitude();
         if dist < tol::CONFUSION {
@@ -273,9 +285,10 @@ impl Cone {
     /// assert_eq!(moved.eval_point(0.0, 0.0), Point3D::new(3.0, 0.0, 0.0));
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Cone, ConeConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| ConeConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            ConeConstructionError::NonFinite,
+            ConeConstructionError::NullNormal,
+        ))?;
         Cone::from_frame(frame, self.semi_angle(), self.ref_radius() * scale)
     }
 

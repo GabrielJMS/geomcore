@@ -2,6 +2,7 @@
 //! construction from an axis or an existing circle, thin wrappers over
 //! [`crate::surface_math::analytic`].
 
+use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{
@@ -18,6 +19,8 @@ pub enum CylinderConstructionError {
     NegativeRadius,
     /// The axis direction has zero length.
     NullNormal,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for CylinderConstructionError {
@@ -25,6 +28,7 @@ impl fmt::Display for CylinderConstructionError {
         let message = match self {
             CylinderConstructionError::NegativeRadius => "radius is negative",
             CylinderConstructionError::NullNormal => "axis direction has zero length",
+            CylinderConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -72,8 +76,10 @@ impl Cylinder {
         axis_direction: Vector3D,
         radius: f64,
     ) -> Result<Cylinder, CylinderConstructionError> {
-        let frame = Frame3D::from_z(center, axis_direction)
-            .map_err(|_| CylinderConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(center, axis_direction).map_err(frame_error(
+            CylinderConstructionError::NonFinite,
+            CylinderConstructionError::NullNormal,
+        ))?;
         Cylinder::from_frame(frame, radius)
     }
 
@@ -92,6 +98,9 @@ impl Cylinder {
     /// assert_eq!(cylinder.frame(), Frame3D::WORLD);
     /// ```
     pub fn from_frame(frame: Frame3D, radius: f64) -> Result<Cylinder, CylinderConstructionError> {
+        if !(radius.is_finite()) {
+            return Err(CylinderConstructionError::NonFinite);
+        }
         if radius < 0.0 {
             return Err(CylinderConstructionError::NegativeRadius);
         }
@@ -115,8 +124,10 @@ impl Cylinder {
     /// assert_eq!(cylinder.axis(), axis);
     /// ```
     pub fn from_axis(axis: Axis3D, radius: f64) -> Result<Cylinder, CylinderConstructionError> {
-        let frame = Frame3D::from_z(axis.origin(), axis.direction())
-            .map_err(|_| CylinderConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(axis.origin(), axis.direction()).map_err(frame_error(
+            CylinderConstructionError::NonFinite,
+            CylinderConstructionError::NullNormal,
+        ))?;
         Cylinder::from_frame(frame, radius)
     }
 
@@ -200,9 +211,10 @@ impl Cylinder {
     /// assert_eq!(moved.eval_point(0.0, 3.0), Point3D::new(6.0, 0.0, 3.0));
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Cylinder, CylinderConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| CylinderConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            CylinderConstructionError::NonFinite,
+            CylinderConstructionError::NullNormal,
+        ))?;
         Cylinder::from_frame(frame, self.radius() * scale)
     }
 

@@ -15,6 +15,8 @@ pub enum FrameConstructionError {
     ParallelDirections,
     /// Two directions that should be orthogonal are not.
     NotOrthogonal,
+    /// The origin or a direction has a NaN or infinite coordinate.
+    NonFinite,
 }
 
 impl fmt::Display for FrameConstructionError {
@@ -23,12 +25,22 @@ impl fmt::Display for FrameConstructionError {
             FrameConstructionError::NullDirection => "direction has zero length",
             FrameConstructionError::ParallelDirections => "directions are parallel",
             FrameConstructionError::NotOrthogonal => "directions are not orthogonal",
+            FrameConstructionError::NonFinite => "a coordinate is NaN or infinite",
         };
         f.write_str(message)
     }
 }
 
 impl std::error::Error for FrameConstructionError {}
+
+/// Maps a frame error onto a shape's construction error: `non_finite` for
+/// [`FrameConstructionError::NonFinite`], `other` for everything else.
+pub(crate) fn frame_error<E>(non_finite: E, other: E) -> impl FnOnce(FrameConstructionError) -> E {
+    move |e| match e {
+        FrameConstructionError::NonFinite => non_finite,
+        _ => other,
+    }
+}
 
 /// A 3D axis: an origin point and a unit direction.
 ///
@@ -50,7 +62,9 @@ impl Axis3D {
     ///
     /// The direction is normalized. Returns
     /// [`FrameConstructionError::NullDirection`] if `direction` cannot be
-    /// normalized (zero length).
+    /// normalized (zero length), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -61,6 +75,9 @@ impl Axis3D {
     /// assert_eq!(axis.direction(), Vector3D::X);
     /// ```
     pub fn new(origin: Point3D, direction: Vector3D) -> Result<Axis3D, FrameConstructionError> {
+        if !origin.is_finite() || !direction.is_finite() {
+            return Err(FrameConstructionError::NonFinite);
+        }
         let direction = direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -143,9 +160,11 @@ impl Frame3D {
     /// # Errors
     ///
     /// Returns [`FrameConstructionError::NullDirection`] if `z_direction` or
-    /// `x_hint` cannot be normalized (zero length), or
+    /// `x_hint` cannot be normalized (zero length),
     /// [`FrameConstructionError::ParallelDirections`] if `x_hint` is
-    /// parallel to `z_direction` (the projection is zero).
+    /// parallel to `z_direction` (the projection is zero), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -161,6 +180,9 @@ impl Frame3D {
         z_direction: Vector3D,
         x_hint: Vector3D,
     ) -> Result<Frame3D, FrameConstructionError> {
+        if !origin.is_finite() || !z_direction.is_finite() || !x_hint.is_finite() {
+            return Err(FrameConstructionError::NonFinite);
+        }
         let z_dir = z_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -193,7 +215,9 @@ impl Frame3D {
     /// # Errors
     ///
     /// Returns [`FrameConstructionError::NullDirection`] if `z_direction`
-    /// cannot be normalized (zero length).
+    /// cannot be normalized (zero length), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -207,6 +231,9 @@ impl Frame3D {
         origin: Point3D,
         z_direction: Vector3D,
     ) -> Result<Frame3D, FrameConstructionError> {
+        if !origin.is_finite() || !z_direction.is_finite() {
+            return Err(FrameConstructionError::NonFinite);
+        }
         let z_dir = z_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -338,7 +365,9 @@ impl Axis2D {
     ///
     /// The direction is normalized. Returns
     /// [`FrameConstructionError::NullDirection`] if `direction` cannot be
-    /// normalized (zero length).
+    /// normalized (zero length), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -349,6 +378,9 @@ impl Axis2D {
     /// assert_eq!(axis.direction(), Vector2D::X);
     /// ```
     pub fn new(origin: Point2D, direction: Vector2D) -> Result<Axis2D, FrameConstructionError> {
+        if !origin.is_finite() || !direction.is_finite() {
+            return Err(FrameConstructionError::NonFinite);
+        }
         let direction = direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -425,9 +457,11 @@ impl Frame2D {
     /// # Errors
     ///
     /// Returns [`FrameConstructionError::NullDirection`] if either
-    /// direction cannot be normalized (zero length), or
+    /// direction cannot be normalized (zero length),
     /// [`FrameConstructionError::NotOrthogonal`] if the normalized
-    /// directions are not orthogonal (`|x·y| > 1e-9`).
+    /// directions are not orthogonal (`|x·y| > 1e-9`), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -442,6 +476,9 @@ impl Frame2D {
         x_direction: Vector2D,
         y_direction: Vector2D,
     ) -> Result<Frame2D, FrameConstructionError> {
+        if !origin.is_finite() || !x_direction.is_finite() || !y_direction.is_finite() {
+            return Err(FrameConstructionError::NonFinite);
+        }
         let x_dir = x_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
@@ -464,7 +501,9 @@ impl Frame2D {
     /// # Errors
     ///
     /// Returns [`FrameConstructionError::NullDirection`] if `x_direction`
-    /// cannot be normalized (zero length).
+    /// cannot be normalized (zero length), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -478,6 +517,9 @@ impl Frame2D {
         origin: Point2D,
         x_direction: Vector2D,
     ) -> Result<Frame2D, FrameConstructionError> {
+        if !origin.is_finite() || !x_direction.is_finite() {
+            return Err(FrameConstructionError::NonFinite);
+        }
         let x_dir = x_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;

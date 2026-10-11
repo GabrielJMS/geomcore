@@ -2,6 +2,7 @@
 //! construction from points or an implicit equation, thin wrappers over
 //! [`crate::surface_math::analytic`].
 
+use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::tol;
@@ -27,6 +28,8 @@ pub enum PlaneConstructionError {
     /// The equation `ax + by + cz + d = 0` is degenerate: `a`, `b`, and `c`
     /// are all (numerically) zero, so no normal can be derived from it.
     BadEquation,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for PlaneConstructionError {
@@ -36,6 +39,7 @@ impl fmt::Display for PlaneConstructionError {
             PlaneConstructionError::ConfusedPoints => "the points are confused",
             PlaneConstructionError::CollinearPoints => "the points are collinear",
             PlaneConstructionError::BadEquation => "the equation is degenerate",
+            PlaneConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -76,8 +80,10 @@ impl Plane {
     /// assert_eq!(plane.normal(), Vector3D::Z);
     /// ```
     pub fn new(point: Point3D, normal: Vector3D) -> Result<Plane, PlaneConstructionError> {
-        let frame =
-            Frame3D::from_z(point, normal).map_err(|_| PlaneConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(point, normal).map_err(frame_error(
+            PlaneConstructionError::NonFinite,
+            PlaneConstructionError::NullNormal,
+        ))?;
         Ok(Plane::from_frame(frame))
     }
 
@@ -140,8 +146,10 @@ impl Plane {
             return Err(PlaneConstructionError::CollinearPoints);
         }
 
-        let frame =
-            Frame3D::new(p1, normal, v12).map_err(|_| PlaneConstructionError::CollinearPoints)?;
+        let frame = Frame3D::new(p1, normal, v12).map_err(frame_error(
+            PlaneConstructionError::NonFinite,
+            PlaneConstructionError::CollinearPoints,
+        ))?;
         Ok(Plane::from_frame(frame))
     }
 
@@ -179,6 +187,9 @@ impl Plane {
         c: f64,
         d: f64,
     ) -> Result<Plane, PlaneConstructionError> {
+        if !(a.is_finite() && b.is_finite() && c.is_finite() && d.is_finite()) {
+            return Err(PlaneConstructionError::NonFinite);
+        }
         if a * a + b * b + c * c <= f64::MIN_POSITIVE {
             return Err(PlaneConstructionError::BadEquation);
         }
@@ -191,6 +202,10 @@ impl Plane {
         } else {
             Point3D::new(-d / a, 0.0, 0.0)
         };
+        if !origin.is_finite() {
+            // Finite coefficients whose plane lies beyond f64 range.
+            return Err(PlaneConstructionError::BadEquation);
+        }
 
         let normal = Vector3D::new(a, b, c);
         let frame = arbitrary_perpendicular_frame(origin, normal);
@@ -241,9 +256,10 @@ impl Plane {
     /// assert_eq!(moved.eval_point(1.0, 1.0), Point3D::new(1.0, 1.0, 2.0));
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Plane, PlaneConstructionError> {
-        let (frame, _) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| PlaneConstructionError::NullNormal)?;
+        let (frame, _) = transform.apply_frame(self.frame()).map_err(frame_error(
+            PlaneConstructionError::NonFinite,
+            PlaneConstructionError::NullNormal,
+        ))?;
         Ok(Plane::from_frame(frame))
     }
 

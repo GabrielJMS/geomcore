@@ -4,6 +4,7 @@
 use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
+use crate::frame::frame_error;
 use crate::intersect::{
     ImplicitConic, LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection,
     LineConicHit, LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
@@ -28,6 +29,8 @@ pub enum LineConstructionError {
     /// The two points given to build the line are coincident (or too close
     /// to distinguish), so no direction can be derived from them.
     ConfusedPoints,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for LineConstructionError {
@@ -35,6 +38,7 @@ impl fmt::Display for LineConstructionError {
         let message = match self {
             LineConstructionError::NullDirection => "direction has zero length",
             LineConstructionError::ConfusedPoints => "the two points are confused",
+            LineConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -72,8 +76,10 @@ impl Line3D {
     /// assert_eq!(line.direction(), Vector3D::X);
     /// ```
     pub fn new(origin: Point3D, direction: Vector3D) -> Result<Line3D, LineConstructionError> {
-        let axis =
-            Axis3D::new(origin, direction).map_err(|_| LineConstructionError::NullDirection)?;
+        let axis = Axis3D::new(origin, direction).map_err(frame_error(
+            LineConstructionError::NonFinite,
+            LineConstructionError::NullDirection,
+        ))?;
         Ok(Line3D { axis })
     }
 
@@ -110,7 +116,10 @@ impl Line3D {
             .normalized()
             .ok_or(LineConstructionError::ConfusedPoints)?;
         Ok(Line3D {
-            axis: Axis3D::new(p1, direction).map_err(|_| LineConstructionError::ConfusedPoints)?,
+            axis: Axis3D::new(p1, direction).map_err(frame_error(
+                LineConstructionError::NonFinite,
+                LineConstructionError::ConfusedPoints,
+            ))?,
         })
     }
 
@@ -975,8 +984,10 @@ impl Line2D {
     /// assert_eq!(line.direction(), Vector2D::Y);
     /// ```
     pub fn new(origin: Point2D, direction: Vector2D) -> Result<Line2D, LineConstructionError> {
-        let axis =
-            Axis2D::new(origin, direction).map_err(|_| LineConstructionError::NullDirection)?;
+        let axis = Axis2D::new(origin, direction).map_err(frame_error(
+            LineConstructionError::NonFinite,
+            LineConstructionError::NullDirection,
+        ))?;
         Ok(Line2D { axis })
     }
 
@@ -1013,7 +1024,10 @@ impl Line2D {
             .normalized()
             .ok_or(LineConstructionError::ConfusedPoints)?;
         Ok(Line2D {
-            axis: Axis2D::new(p1, direction).map_err(|_| LineConstructionError::ConfusedPoints)?,
+            axis: Axis2D::new(p1, direction).map_err(frame_error(
+                LineConstructionError::NonFinite,
+                LineConstructionError::ConfusedPoints,
+            ))?,
         })
     }
 

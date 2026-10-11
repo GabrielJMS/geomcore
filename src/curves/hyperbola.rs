@@ -4,6 +4,7 @@
 
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
+use crate::frame::frame_error;
 use crate::intersect::{
     ConicSurfaceIntersection, QuadraticSolution, conic_lies_on, roots_with_tangency,
     solve_quadratic, verify_conic_hits,
@@ -19,8 +20,9 @@ use std::fmt;
 /// given inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HyperbolaConstructionError {
-    /// The major or minor radius is negative.
-    NegativeRadius,
+    /// The major or minor radius is zero or negative (a zero radius
+    /// collapses the hyperbola onto lines).
+    NonPositiveRadius,
     /// The normal (or the x direction) has zero length, or the x direction
     /// is parallel to the normal.
     NullNormal,
@@ -31,15 +33,18 @@ pub enum HyperbolaConstructionError {
     /// collinear with the center and the first point), so no minor axis can
     /// be derived.
     CollinearPoints,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for HyperbolaConstructionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            HyperbolaConstructionError::NegativeRadius => "radius is negative",
+            HyperbolaConstructionError::NonPositiveRadius => "radius is not positive",
             HyperbolaConstructionError::NullNormal => "normal has zero length",
             HyperbolaConstructionError::ConfusedPoints => "the points are confused",
             HyperbolaConstructionError::CollinearPoints => "the points are collinear",
+            HyperbolaConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -77,9 +82,11 @@ impl Hyperbola3D {
     ///
     /// Returns [`HyperbolaConstructionError::NullNormal`] if `normal` cannot
     /// be normalized, if `x_direction` cannot be normalized, or if
-    /// `x_direction` is parallel to `normal`; or
-    /// [`HyperbolaConstructionError::NegativeRadius`] if `major_radius < 0`
-    /// or `minor_radius < 0`.
+    /// `x_direction` is parallel to `normal`;
+    /// [`HyperbolaConstructionError::NonPositiveRadius`] if
+    /// `major_radius <= 0` or `minor_radius <= 0`; or
+    /// [`HyperbolaConstructionError::NonFinite`] if any input is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -96,8 +103,10 @@ impl Hyperbola3D {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Hyperbola3D, HyperbolaConstructionError> {
-        let frame = Frame3D::new(center, normal, x_direction)
-            .map_err(|_| HyperbolaConstructionError::NullNormal)?;
+        let frame = Frame3D::new(center, normal, x_direction).map_err(frame_error(
+            HyperbolaConstructionError::NonFinite,
+            HyperbolaConstructionError::NullNormal,
+        ))?;
         Hyperbola3D::from_frame(frame, major_radius, minor_radius)
     }
 
@@ -105,12 +114,14 @@ impl Hyperbola3D {
     /// semi-minor radius directly.
     ///
     /// Unlike [`crate::Ellipse3D`], `minor_radius` may exceed `major_radius`
-    /// (only negativity is checked).
+    /// (only positivity is checked).
     ///
     /// # Errors
     ///
-    /// Returns [`HyperbolaConstructionError::NegativeRadius`] if
-    /// `major_radius < 0` or `minor_radius < 0`.
+    /// Returns [`HyperbolaConstructionError::NonPositiveRadius`] if
+    /// `major_radius <= 0` or `minor_radius <= 0`, or
+    /// [`HyperbolaConstructionError::NonFinite`] if either radius is NaN or
+    /// infinite.
     ///
     /// # Examples
     ///
@@ -124,8 +135,11 @@ impl Hyperbola3D {
         major_radius: f64,
         minor_radius: f64,
     ) -> Result<Hyperbola3D, HyperbolaConstructionError> {
-        if major_radius < 0.0 || minor_radius < 0.0 {
-            return Err(HyperbolaConstructionError::NegativeRadius);
+        if !(major_radius.is_finite() && minor_radius.is_finite()) {
+            return Err(HyperbolaConstructionError::NonFinite);
+        }
+        if major_radius <= 0.0 || minor_radius <= 0.0 {
+            return Err(HyperbolaConstructionError::NonPositiveRadius);
         }
         Ok(Hyperbola3D {
             frame,
@@ -194,8 +208,10 @@ impl Hyperbola3D {
             return Err(HyperbolaConstructionError::CollinearPoints);
         }
 
-        let frame = Frame3D::new(center, normal, x_axis)
-            .map_err(|_| HyperbolaConstructionError::CollinearPoints)?;
+        let frame = Frame3D::new(center, normal, x_axis).map_err(frame_error(
+            HyperbolaConstructionError::NonFinite,
+            HyperbolaConstructionError::CollinearPoints,
+        ))?;
         Hyperbola3D::from_frame(frame, d1, d2)
     }
 
@@ -274,9 +290,10 @@ impl Hyperbola3D {
         &self,
         transform: Transform,
     ) -> Result<Hyperbola3D, HyperbolaConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| HyperbolaConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            HyperbolaConstructionError::NonFinite,
+            HyperbolaConstructionError::NullNormal,
+        ))?;
         Hyperbola3D::from_frame(
             frame,
             self.major_radius() * scale,
@@ -761,7 +778,7 @@ mod tests {
     fn test_hyperbola3d_new_negative_major_radius_errors() {
         assert_eq!(
             Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, -2.0, 1.0),
-            Err(HyperbolaConstructionError::NegativeRadius)
+            Err(HyperbolaConstructionError::NonPositiveRadius)
         );
     }
 
@@ -769,7 +786,7 @@ mod tests {
     fn test_hyperbola3d_new_negative_minor_radius_errors() {
         assert_eq!(
             Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, -1.0),
-            Err(HyperbolaConstructionError::NegativeRadius)
+            Err(HyperbolaConstructionError::NonPositiveRadius)
         );
     }
 
@@ -808,7 +825,7 @@ mod tests {
     fn test_hyperbola3d_from_frame_negative_major_radius_errors() {
         assert_eq!(
             Hyperbola3D::from_frame(Frame3D::WORLD, -2.0, 1.0),
-            Err(HyperbolaConstructionError::NegativeRadius)
+            Err(HyperbolaConstructionError::NonPositiveRadius)
         );
     }
 
@@ -816,7 +833,7 @@ mod tests {
     fn test_hyperbola3d_from_frame_negative_minor_radius_errors() {
         assert_eq!(
             Hyperbola3D::from_frame(Frame3D::WORLD, 2.0, -1.0),
-            Err(HyperbolaConstructionError::NegativeRadius)
+            Err(HyperbolaConstructionError::NonPositiveRadius)
         );
     }
 
@@ -911,8 +928,8 @@ mod tests {
     #[test]
     fn test_hyperbola_construction_error_display() {
         assert_eq!(
-            HyperbolaConstructionError::NegativeRadius.to_string(),
-            "radius is negative"
+            HyperbolaConstructionError::NonPositiveRadius.to_string(),
+            "radius is not positive"
         );
         assert_eq!(
             HyperbolaConstructionError::NullNormal.to_string(),
@@ -931,7 +948,7 @@ mod tests {
     #[test]
     fn test_hyperbola_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
-        takes_error(&HyperbolaConstructionError::NegativeRadius);
+        takes_error(&HyperbolaConstructionError::NonPositiveRadius);
     }
 
     #[test]
@@ -1013,12 +1030,14 @@ mod projection_input_tests {
     }
 
     #[test]
-    fn test_hyperbola3d_zero_radii_projects_to_centre() {
+    fn test_hyperbola3d_zero_radii_rejected() {
         let center = Point3D::new(1.0, 2.0, 3.0);
-        let h = Hyperbola3D::new(center, Vector3D::Z, Vector3D::X, 0.0, 0.0).unwrap();
-        let proj = h.project_point(Point3D::new(1.0, 2.0, 8.0), Tolerance::DEFAULT);
-        assert_eq!(proj.parameter, 0.0);
-        assert_eq!(proj.distance, 5.0);
+        for (a, b) in [(0.0, 0.0), (2.0, 0.0), (0.0, 1.0)] {
+            assert_eq!(
+                Hyperbola3D::new(center, Vector3D::Z, Vector3D::X, a, b),
+                Err(HyperbolaConstructionError::NonPositiveRadius)
+            );
+        }
     }
 }
 

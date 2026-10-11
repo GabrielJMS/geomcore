@@ -5,6 +5,7 @@
 use crate::curve_math::analytic;
 use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
+use crate::frame::frame_error;
 use crate::intersect::{
     CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection, ConicSurfaceHit,
     ImplicitConic, PlacedConic, solve_trig, solve_trig_linear,
@@ -33,6 +34,8 @@ pub enum CircleConstructionError {
     /// The three points given to build the circle are collinear, so no
     /// (finite-radius) circle passes through all three.
     CollinearPoints,
+    /// An input coordinate, radius, or angle is NaN or infinite.
+    NonFinite,
 }
 
 impl fmt::Display for CircleConstructionError {
@@ -42,6 +45,7 @@ impl fmt::Display for CircleConstructionError {
             CircleConstructionError::NullNormal => "normal has zero length",
             CircleConstructionError::ConfusedPoints => "the points are confused",
             CircleConstructionError::CollinearPoints => "the points are collinear",
+            CircleConstructionError::NonFinite => "an input is NaN or infinite",
         };
         f.write_str(message)
     }
@@ -90,8 +94,10 @@ impl Circle3D {
         normal: Vector3D,
         radius: f64,
     ) -> Result<Circle3D, CircleConstructionError> {
-        let frame =
-            Frame3D::from_z(center, normal).map_err(|_| CircleConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(center, normal).map_err(frame_error(
+            CircleConstructionError::NonFinite,
+            CircleConstructionError::NullNormal,
+        ))?;
         Circle3D::from_frame(frame, radius)
     }
 
@@ -110,8 +116,10 @@ impl Circle3D {
     /// assert_eq!(circle.center(), Point3D::ORIGIN);
     /// ```
     pub fn from_axis(axis: Axis3D, radius: f64) -> Result<Circle3D, CircleConstructionError> {
-        let frame = Frame3D::from_z(axis.origin(), axis.direction())
-            .map_err(|_| CircleConstructionError::NullNormal)?;
+        let frame = Frame3D::from_z(axis.origin(), axis.direction()).map_err(frame_error(
+            CircleConstructionError::NonFinite,
+            CircleConstructionError::NullNormal,
+        ))?;
         Circle3D::from_frame(frame, radius)
     }
 
@@ -129,6 +137,9 @@ impl Circle3D {
     /// assert_eq!(circle.frame(), Frame3D::WORLD);
     /// ```
     pub fn from_frame(frame: Frame3D, radius: f64) -> Result<Circle3D, CircleConstructionError> {
+        if !(radius.is_finite()) {
+            return Err(CircleConstructionError::NonFinite);
+        }
         if radius < 0.0 {
             return Err(CircleConstructionError::NegativeRadius);
         }
@@ -197,8 +208,10 @@ impl Circle3D {
         let radius = center.distance(p1);
 
         let normal = (p2 - p1).cross(p3 - p2);
-        let frame = Frame3D::new(center, normal, p1 - center)
-            .map_err(|_| CircleConstructionError::CollinearPoints)?;
+        let frame = Frame3D::new(center, normal, p1 - center).map_err(frame_error(
+            CircleConstructionError::NonFinite,
+            CircleConstructionError::CollinearPoints,
+        ))?;
 
         Circle3D::from_frame(frame, radius)
     }
@@ -274,9 +287,10 @@ impl Circle3D {
     /// assert_eq!(moved.radius(), 2.0);
     /// ```
     pub fn transformed(&self, transform: Transform) -> Result<Circle3D, CircleConstructionError> {
-        let (frame, scale) = transform
-            .apply_frame(self.frame())
-            .map_err(|_| CircleConstructionError::NullNormal)?;
+        let (frame, scale) = transform.apply_frame(self.frame()).map_err(frame_error(
+            CircleConstructionError::NonFinite,
+            CircleConstructionError::NullNormal,
+        ))?;
         Circle3D::from_frame(frame, self.radius() * scale)
     }
 
@@ -955,8 +969,9 @@ impl Circle2D {
     /// assert_eq!(circle.center(), Point2D::new(1.0, 2.0));
     /// ```
     pub fn new(center: Point2D, radius: f64) -> Result<Circle2D, CircleConstructionError> {
+        // X and Y are orthonormal, so only a non-finite center can fail.
         let frame = Frame2D::new(center, Vector2D::X, Vector2D::Y)
-            .expect("Vector2D::X and Vector2D::Y are orthonormal by construction");
+            .map_err(|_| CircleConstructionError::NonFinite)?;
         Circle2D::from_frame(frame, radius)
     }
 
@@ -974,6 +989,9 @@ impl Circle2D {
     /// assert_eq!(circle.frame(), Frame2D::WORLD);
     /// ```
     pub fn from_frame(frame: Frame2D, radius: f64) -> Result<Circle2D, CircleConstructionError> {
+        if !(radius.is_finite()) {
+            return Err(CircleConstructionError::NonFinite);
+        }
         if radius < 0.0 {
             return Err(CircleConstructionError::NegativeRadius);
         }
