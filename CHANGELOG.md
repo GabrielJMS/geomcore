@@ -9,6 +9,8 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-11
+
 ### Added
 
 - `is_finite()` on `Point2D`, `Point3D`, `Vector2D` and `Vector3D`.
@@ -536,7 +538,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.27.0
 [0.26.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.26.0
 [0.25.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.25.0
 [0.24.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.24.0
