@@ -29,7 +29,7 @@
 //! # Quick start
 //!
 //! ```
-//! use geomcore::{Cylinder, Point3D, Vector3D};
+//! use geomcore::{Cylinder, Point3D, Tolerance, Vector3D};
 //! use geomcore::curves::Circle3D;
 //!
 //! // Evaluate a circle at a single parameter, and over a batch of parameters.
@@ -41,7 +41,7 @@
 //! // Curve-on-surface parametrization: this circle is coaxial with the
 //! // cylinder, so it has an exact 2D image, a horizontal line in (u, v).
 //! let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-//! let pcurve = circle.parametrize_on(&cylinder).unwrap();
+//! let pcurve = circle.parametrize_on(&cylinder, Tolerance::DEFAULT).unwrap();
 //! # let _ = point;
 //! ```
 //!

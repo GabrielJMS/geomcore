@@ -11,7 +11,7 @@ use geomcore::curves::ParametricCurve2D;
 use geomcore::surfaces::{BSplineSurface, ParametricSurface};
 use geomcore::{
     Axis3D, BSplineCurve3D, Circle3D, Cone, Curve2D, Cylinder, Ellipse3D, Hyperbola3D, Line3D,
-    Parabola3D, ParametrizeError, Plane, Sphere, Torus, Transform,
+    Parabola3D, ParametrizeError, Plane, Sphere, Tolerance, Torus, Transform,
 };
 use serde::Deserialize;
 
@@ -1065,8 +1065,8 @@ fn parametrize_curve(
     surface: &geomcore::Surface,
 ) -> Result<Curve2D, ParametrizeError> {
     match curve {
-        ParamCurve::Line(l) => l.parametrize_on(surface.clone()),
-        ParamCurve::Circle(c) => c.parametrize_on(surface.clone()),
+        ParamCurve::Line(l) => l.parametrize_on(surface.clone(), Tolerance::DEFAULT),
+        ParamCurve::Circle(c) => c.parametrize_on(surface.clone(), Tolerance::DEFAULT),
     }
 }
 

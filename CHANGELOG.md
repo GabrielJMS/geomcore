@@ -37,8 +37,26 @@ the Python distribution are versioned in lockstep.
   `TrimmedCurve3D<&BSplineCurve3D>` projects onto, intersects and finds
   extrema on a piece of a shared curve without cloning it.
 
+### Changed
+
+- **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
+  query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.
+  A curve lies on the surface when the 2D image evaluates within
+  `tol.confusion` of it (at least a few ulps of the coordinates far from
+  the origin), where a fixed `1e-6` times the curve's distance from the
+  origin was used: at the default tolerance a curve 1e-7 to 1e-6 off the
+  surface is now `CurveNotOnSurface`. Its angle checks use `tol.angular`,
+  and a circle counts as a sphere's meridian or parallel when it strays
+  at most `tol.confusion` from one. Python: `parametrize_on(surface,
+  tol=None)`.
+
 ### Fixed
 
+- A line or circle meeting a circle in its plane is found at a loose
+  tolerance (#26). With `tol.confusion` above about `1e-6`, a line or
+  second circle accepted as lying in the circle's plane was then rejected
+  by `parametrize_on`'s fixed check, and the intersection returned
+  `Empty` or `NotAnalytic` instead of the crossings.
 - Parameters on a circle or ellipse are reported within its `bounds()`,
   `[0, 2π)`, everywhere (#15). Hits against a plane or sphere came back
   anywhere in `(-2π, 2π)`, hits against a cylinder or cone and the

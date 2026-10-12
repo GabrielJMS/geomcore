@@ -91,6 +91,17 @@ def test_parametrize_on_cylinder():
     assert direction.y == pytest.approx(0.0)
 
 
+def test_parametrize_on_takes_a_tolerance():
+    # A radius 1e-4 too wide lies on the cylinder at confusion 1e-3 only.
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 1.0)
+    circle = Circle3D(Point3D(0.0, 0.0, 2.0), Vector3D.z(), 1.0 + 1e-4)
+    loose = Tolerance(confusion=1e-3)
+    assert isinstance(circle.parametrize_on(cylinder, loose), Line2D)
+    assert isinstance(circle.parametrize_on(cylinder, tol=loose), Line2D)
+    with pytest.raises(ValueError):
+        circle.parametrize_on(cylinder)
+
+
 def test_parametrize_on_not_analytic_raises():
     sphere = Sphere(Point3D.origin(), 2.0)
     line = geomcore.curves.Line3D(Point3D(2.0, 0.0, 0.0), Vector3D.z())

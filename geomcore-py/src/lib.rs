@@ -2894,10 +2894,18 @@ impl PyLine3D {
     /// Compute this line's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
-    /// pair, or if the line does not lie on the surface.
-    fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    /// pair, or if the line does not lie on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (surface, tol = None))]
+    fn parametrize_on(
+        &self,
+        py: Python<'_>,
+        surface: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
-        curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 }
 
@@ -3177,10 +3185,18 @@ impl PyCircle3D {
     /// Compute this circle's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
-    /// pair, or if the circle does not lie on the surface.
-    fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    /// pair, or if the circle does not lie on the surface within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (surface, tol = None))]
+    fn parametrize_on(
+        &self,
+        py: Python<'_>,
+        surface: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
-        curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 
     /// Intersects this circle with another shape, using the exact solver
@@ -3702,9 +3718,16 @@ impl PyEllipse3D {
     }
 
     /// Not available for ellipses in this release; always raises `ValueError`.
-    fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature = (surface, tol = None))]
+    fn parametrize_on(
+        &self,
+        py: Python<'_>,
+        surface: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
-        curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 }
 
@@ -3961,9 +3984,16 @@ impl PyParabola3D {
     }
 
     /// Not available for parabolas in this release; always raises `ValueError`.
-    fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature = (surface, tol = None))]
+    fn parametrize_on(
+        &self,
+        py: Python<'_>,
+        surface: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
-        curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 }
 
@@ -4238,9 +4268,16 @@ impl PyHyperbola3D {
     }
 
     /// Not available for hyperbolas in this release; always raises `ValueError`.
-    fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature = (surface, tol = None))]
+    fn parametrize_on(
+        &self,
+        py: Python<'_>,
+        surface: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
-        curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 }
 
@@ -4453,9 +4490,16 @@ impl PyBSplineCurve3D {
     }
 
     /// Not available for B-spline curves in this release; always raises `ValueError`.
-    fn parametrize_on(&self, py: Python<'_>, surface: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature = (surface, tol = None))]
+    fn parametrize_on(
+        &self,
+        py: Python<'_>,
+        surface: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
-        curve2d_to_py(py, self.0.parametrize_on(s).map_err(val_err)?)
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 }
 

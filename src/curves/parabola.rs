@@ -390,7 +390,7 @@ impl Parabola3D {
     ///
     /// No parabola/surface pair has a closed-form 2D image in this release, so
     /// this always returns [`ParametrizeError::NotAnalytic`]. The `surface`
-    /// argument is accepted for signature parity with the analytic
+    /// and `tol` arguments are accepted for signature parity with the analytic
     /// [`crate::Line3D::parametrize_on`] and
     /// [`crate::Circle3D::parametrize_on`].
     ///
@@ -398,13 +398,17 @@ impl Parabola3D {
     ///
     /// ```
     /// use geomcore::curves::ParametrizeError;
-    /// use geomcore::{Parabola3D, Plane, Point3D, Vector3D};
+    /// use geomcore::{Parabola3D, Plane, Point3D, Tolerance, Vector3D};
     ///
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
-    /// assert_eq!(parabola.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
+    /// assert_eq!(parabola.parametrize_on(&plane, Tolerance::DEFAULT), Err(ParametrizeError::NotAnalytic));
     /// ```
-    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+    pub fn parametrize_on(
+        &self,
+        surface: impl Into<Surface>,
+        _tol: Tolerance,
+    ) -> Result<Curve2D, ParametrizeError> {
         let _ = surface.into();
         Err(ParametrizeError::NotAnalytic)
     }

@@ -5,7 +5,7 @@
 //! Run with `cargo run --example sample_conics`.
 
 use geomcore::curves::{Circle3D, Curve2D, Ellipse3D, ParametricCurve2D};
-use geomcore::{Cylinder, Point3D, Vector3D};
+use geomcore::{Cylinder, Point3D, Tolerance, Vector3D};
 use std::f64::consts::TAU;
 
 const SAMPLE_COUNT: usize = 100;
@@ -33,7 +33,9 @@ fn main() {
     // has an exact 2D image, a horizontal line at v = height in (u, v).
     let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     let section = Circle3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::Z, 2.0).unwrap();
-    let pcurve = section.parametrize_on(cylinder).unwrap();
+    let pcurve = section
+        .parametrize_on(cylinder, Tolerance::DEFAULT)
+        .unwrap();
     match &pcurve {
         Curve2D::Line(line) => {
             println!(

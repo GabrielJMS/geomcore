@@ -51,48 +51,62 @@ const CHECK_PARAMS: [f64; 3] = [0.0, 1.7, 4.1];
 pub(crate) fn line_on_surface(
     line: &Line3D,
     surface: &Surface,
+    tol: Tolerance,
 ) -> Result<Curve2D, ParametrizeError> {
     let pcurve = match surface {
         Surface::Plane(plane) => line_on_plane(line, plane.frame()),
-        Surface::Cylinder(cyl) => line_on_cylinder(line, cyl.frame()),
-        Surface::Cone(cone) => {
-            line_on_cone(line, cone.frame(), cone.ref_radius(), cone.semi_angle())
-        }
+        Surface::Cylinder(cyl) => line_on_cylinder(line, cyl.frame(), tol),
+        Surface::Cone(cone) => line_on_cone(
+            line,
+            cone.frame(),
+            cone.ref_radius(),
+            cone.semi_angle(),
+            tol,
+        ),
         // A line has no closed-form 2D image on these surfaces.
         Surface::Sphere(_) | Surface::Torus(_) | Surface::BSpline(_) => {
             return Err(ParametrizeError::NotAnalytic);
         }
     }?;
 
-    finish_line(surface, pcurve, |t| line.eval_point(t))
+    finish_line(surface, pcurve, |t| line.eval_point(t), tol)
 }
 
 /// Computes the analytic 2D image of `circle` on `surface`, or an error.
 pub(crate) fn circle_on_surface(
     circle: &Circle3D,
     surface: &Surface,
+    tol: Tolerance,
 ) -> Result<Curve2D, ParametrizeError> {
     match surface {
         Surface::Plane(plane) => {
             let circle2d = circle_on_plane(circle, plane.frame());
-            verify_on_surface(surface, &Curve2D::Circle(circle2d), |t| {
-                circle.eval_point(t)
-            })?;
+            verify_on_surface(
+                surface,
+                &Curve2D::Circle(circle2d),
+                |t| circle.eval_point(t),
+                tol,
+            )?;
             // A circle on a plane maps to a circle; no window normalization.
             Ok(Curve2D::Circle(circle2d))
         }
         Surface::Cylinder(cyl) => {
-            let pcurve = circle_on_cylinder(circle, cyl.frame())?;
-            finish_line(surface, pcurve, |t| circle.eval_point(t))
+            let pcurve = circle_on_cylinder(circle, cyl.frame(), tol)?;
+            finish_line(surface, pcurve, |t| circle.eval_point(t), tol)
         }
         Surface::Cone(cone) => {
-            let pcurve =
-                circle_on_cone(circle, cone.frame(), cone.ref_radius(), cone.semi_angle())?;
-            finish_line(surface, pcurve, |t| circle.eval_point(t))
+            let pcurve = circle_on_cone(
+                circle,
+                cone.frame(),
+                cone.ref_radius(),
+                cone.semi_angle(),
+                tol,
+            )?;
+            finish_line(surface, pcurve, |t| circle.eval_point(t), tol)
         }
         Surface::Sphere(sphere) => {
-            let pcurve = circle_on_sphere(circle, sphere.frame())?;
-            finish_line(surface, pcurve, |t| circle.eval_point(t))
+            let pcurve = circle_on_sphere(circle, sphere.frame(), tol)?;
+            finish_line(surface, pcurve, |t| circle.eval_point(t), tol)
         }
         Surface::Torus(torus) => {
             let pcurve = circle_on_torus(
@@ -100,8 +114,9 @@ pub(crate) fn circle_on_surface(
                 torus.frame(),
                 torus.major_radius(),
                 torus.minor_radius(),
+                tol,
             )?;
-            finish_line(surface, pcurve, |t| circle.eval_point(t))
+            finish_line(surface, pcurve, |t| circle.eval_point(t), tol)
         }
         Surface::BSpline(_) => Err(ParametrizeError::NotAnalytic),
     }
@@ -113,32 +128,36 @@ fn finish_line(
     surface: &Surface,
     pcurve: Line2D,
     curve_point: impl Fn(f64) -> Point3D,
+    tol: Tolerance,
 ) -> Result<Curve2D, ParametrizeError> {
-    verify_on_surface(surface, &Curve2D::Line(pcurve), curve_point)?;
+    verify_on_surface(surface, &Curve2D::Line(pcurve), curve_point, tol)?;
     Ok(Curve2D::Line(normalize_line2d_at_zero(pcurve, surface)))
 }
 
 // ---- on-surface verification ----
 
-/// Checks that `surface(pcurve(t)) ~= curve(t)` at the sample parameters.
+/// Checks that `surface(pcurve(t))` is within `tol.confusion` of `curve(t)`
+/// at the sample parameters.
 ///
 /// This is a geomcore addition on top of the raw projection: the projection
 /// math assumes the curve already lies on the surface, so an off-surface curve
-/// would otherwise silently produce a wrong-but-plausible 2D image. The
-/// tolerance scales with the characteristic size of the configuration so it
-/// stays meaningful for both tiny and large geometries.
+/// would otherwise silently produce a wrong-but-plausible 2D image. Far from
+/// the origin the distance cannot be measured more finely than the
+/// coordinates' rounding, so the tolerance is at least a few ulps of them.
 fn verify_on_surface(
     surface: &Surface,
     pcurve: &Curve2D,
     curve_point: impl Fn(f64) -> Point3D,
+    tol: Tolerance,
 ) -> Result<(), ParametrizeError> {
     use crate::curves::ParametricCurve2D;
 
-    let mut scale: f64 = 1.0;
+    let mut coordinate: f64 = 0.0;
     for &t in &CHECK_PARAMS {
-        scale = scale.max((curve_point(t) - Point3D::ORIGIN).magnitude());
+        let p = curve_point(t);
+        coordinate = coordinate.max(p.x.abs()).max(p.y.abs()).max(p.z.abs());
     }
-    let tolerance = 1e-6 * scale;
+    let tolerance = tol.confusion.max(16.0 * f64::EPSILON * coordinate);
 
     for &t in &CHECK_PARAMS {
         let uv = pcurve.eval_point(t);
@@ -194,9 +213,13 @@ fn eval_dir2d_plane(frame: crate::Frame3D, d: Vector3D) -> Vector2D {
 
 /// 2D image of a line on a cylinder: succeeds only when the line is parallel
 /// to the cylinder axis (a vertical iso-`u` line in `(u, v)`).
-fn line_on_cylinder(line: &Line3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
+fn line_on_cylinder(
+    line: &Line3D,
+    frame: crate::Frame3D,
+    tol: Tolerance,
+) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
-    if line.direction().cross(axis).square_magnitude() > tol::ANGULAR * tol::ANGULAR {
+    if line.direction().cross(axis).square_magnitude() > tol.angular * tol.angular {
         return Err(ParametrizeError::NotAnalytic);
     }
     let (x, y, z) = frame.local_coordinates(line.origin());
@@ -216,10 +239,11 @@ fn line_on_cylinder(line: &Line3D, frame: crate::Frame3D) -> Result<Line2D, Para
 fn circle_on_cylinder(
     circle: &Circle3D,
     frame: crate::Frame3D,
+    tol: Tolerance,
 ) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
     let normal = circle.normal();
-    if axis.cross(normal).square_magnitude() > tol::ANGULAR * tol::ANGULAR {
+    if axis.cross(normal).square_magnitude() > tol.angular * tol.angular {
         return Err(ParametrizeError::NotAnalytic);
     }
     let u = wrap_to_turn(
@@ -242,11 +266,12 @@ fn line_on_cone(
     frame: crate::Frame3D,
     ref_r: f64,
     semi_angle: f64,
+    tol: Tolerance,
 ) -> Result<Line2D, ParametrizeError> {
     let apex = cone_apex(frame, ref_r, semi_angle);
     let mut foot = line.origin();
     let mut delta_v = 0.0;
-    if foot.distance(apex) < tol::CONFUSION {
+    if foot.distance(apex) < tol.confusion {
         // At the apex the v-isoline is degenerate; step along the line to get
         // a well-defined foot point and remember the unit shift to undo.
         foot = foot + line.direction();
@@ -254,7 +279,7 @@ fn line_on_cone(
     }
     let (u, v) = crate::surface_math::analytic::cone_parameters(&frame, ref_r, semi_angle, foot);
     let sv = crate::surface_math::analytic::cone_derivative(&frame, ref_r, semi_angle, u, v, 0, 1);
-    if line.direction().cross(sv).square_magnitude() > tol::ANGULAR * tol::ANGULAR {
+    if line.direction().cross(sv).square_magnitude() > tol.angular * tol.angular {
         return Err(ParametrizeError::NotAnalytic);
     }
     let sign = if line.direction().dot(sv) >= 0.0 {
@@ -276,10 +301,11 @@ fn circle_on_cone(
     frame: crate::Frame3D,
     ref_r: f64,
     semi_angle: f64,
+    tol: Tolerance,
 ) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
     let normal = circle.normal();
-    if axis.cross(normal).square_magnitude() > tol::ANGULAR * tol::ANGULAR {
+    if axis.cross(normal).square_magnitude() > tol.angular * tol.angular {
         return Err(ParametrizeError::NotAnalytic);
     }
     let cf = circle.frame();
@@ -312,15 +338,21 @@ fn cone_apex(frame: crate::Frame3D, ref_r: f64, semi_angle: f64) -> Point3D {
 
 /// 2D image of a circle on a sphere: succeeds only for a meridian (great
 /// circle through the poles) or a parallel (horizontal circle).
-fn circle_on_sphere(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
+fn circle_on_sphere(
+    circle: &Circle3D,
+    frame: crate::Frame3D,
+    tol: Tolerance,
+) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let cf = circle.frame();
     let normal = circle.normal();
 
-    let is_iso_u = normal.dot(z).abs() <= tol::CONFUSION
-        && circle.center().distance(frame.origin()) <= tol::CONFUSION;
-    let is_iso_v = cf.x_direction().dot(z).abs() <= tol::CONFUSION
-        && cf.y_direction().dot(z).abs() <= tol::CONFUSION;
+    // A tilt of angle `a` moves the circle's points by up to `radius * a`.
+    let r = circle.radius();
+    let is_iso_u = r * normal.dot(z).abs() <= tol.confusion
+        && circle.center().distance(frame.origin()) <= tol.confusion;
+    let is_iso_v = r * cf.x_direction().dot(z).abs() <= tol.confusion
+        && r * cf.y_direction().dot(z).abs() <= tol.confusion;
 
     if is_iso_u {
         Ok(sphere_meridian(circle, frame))
@@ -439,13 +471,14 @@ fn circle_on_torus(
     frame: crate::Frame3D,
     maj: f64,
     min: f64,
+    tol: Tolerance,
 ) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let oc = circle.center() - frame.origin();
     let normal = circle.normal();
 
-    let is_toroidal = oc.magnitude() < tol::CONFUSION
-        || z.cross(normal).square_magnitude() <= tol::ANGULAR * tol::ANGULAR;
+    let is_toroidal = oc.magnitude() < tol.confusion
+        || z.cross(normal).square_magnitude() <= tol.angular * tol.angular;
 
     if is_toroidal {
         torus_toroidal(circle, frame, maj, min)
@@ -631,8 +664,72 @@ mod tests {
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let circle = Circle3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z, 1.0).unwrap();
         assert_eq!(
-            circle.parametrize_on(cylinder),
+            circle.parametrize_on(cylinder, Tolerance::DEFAULT),
             Err(ParametrizeError::CurveNotOnSurface)
+        );
+    }
+
+    #[test]
+    fn test_parametrize_on_follows_the_confusion_tolerance() {
+        // A radius off by 1e-4 lies on the cylinder at confusion 1e-3, and
+        // one off by 1e-6 does not at the default 1e-7 (#26).
+        let loose = Tolerance {
+            confusion: 1e-3,
+            ..Tolerance::DEFAULT
+        };
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        let center = Point3D::new(0.0, 0.0, 2.0);
+        let wide = Circle3D::new(center, Vector3D::Z, 1.0 + 1e-4).unwrap();
+        assert!(matches!(
+            wide.parametrize_on(cylinder, loose),
+            Ok(Curve2D::Line(_))
+        ));
+        assert_eq!(
+            wide.parametrize_on(cylinder, Tolerance::DEFAULT),
+            Err(ParametrizeError::CurveNotOnSurface)
+        );
+        let slightly_wide = Circle3D::new(center, Vector3D::Z, 1.0 + 1e-6).unwrap();
+        assert_eq!(
+            slightly_wide.parametrize_on(cylinder, Tolerance::DEFAULT),
+            Err(ParametrizeError::CurveNotOnSurface)
+        );
+        // A line 1e-4 off a plane.
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        let line = Line3D::new(Point3D::new(0.0, 0.0, 1e-4), Vector3D::X).unwrap();
+        assert!(matches!(
+            line.parametrize_on(plane, loose),
+            Ok(Curve2D::Line(_))
+        ));
+        assert_eq!(
+            line.parametrize_on(plane, Tolerance::DEFAULT),
+            Err(ParametrizeError::CurveNotOnSurface)
+        );
+    }
+
+    #[test]
+    fn test_great_circle_near_a_meridian_follows_the_confusion_tolerance() {
+        // Tilted 1e-5 rad from a meridian, a radius-10 great circle strays
+        // 1e-4 from it: a meridian at confusion 1e-3, not at the default.
+        let loose = Tolerance {
+            confusion: 1e-3,
+            ..Tolerance::DEFAULT
+        };
+        let sphere = Sphere::new(Point3D::ORIGIN, 10.0).unwrap();
+        let normal = Vector3D::new(1.0, 0.0, 1e-5);
+        let circle = Circle3D::new(Point3D::ORIGIN, normal, 10.0).unwrap();
+        assert!(matches!(
+            circle.parametrize_on(sphere, loose),
+            Ok(Curve2D::Line(_))
+        ));
+        assert_eq!(
+            circle.parametrize_on(sphere, Tolerance::DEFAULT),
+            Err(ParametrizeError::NotAnalytic)
+        );
+        // Tilted 1e-3 rad it strays 1e-2: a great circle, not a meridian.
+        let steep = Circle3D::new(Point3D::ORIGIN, Vector3D::new(1.0, 0.0, 1e-3), 10.0).unwrap();
+        assert_eq!(
+            steep.parametrize_on(sphere, loose),
+            Err(ParametrizeError::NotAnalytic)
         );
     }
 
@@ -643,7 +740,7 @@ mod tests {
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let line = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::new(1.0, 0.0, 1.0)).unwrap();
         assert_eq!(
-            line.parametrize_on(cylinder),
+            line.parametrize_on(cylinder, Tolerance::DEFAULT),
             Err(ParametrizeError::NotAnalytic)
         );
     }
@@ -656,7 +753,7 @@ mod tests {
         // rather drop the borrow; pinning the borrowed form is the point).
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let circle = Circle3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::Z, 2.0).unwrap();
-        assert!(circle.parametrize_on(&cylinder).is_ok());
+        assert!(circle.parametrize_on(&cylinder, Tolerance::DEFAULT).is_ok());
     }
 
     #[test]
@@ -667,7 +764,7 @@ mod tests {
         let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         let line = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         assert_eq!(
-            line.parametrize_on(plane),
+            line.parametrize_on(plane, Tolerance::DEFAULT),
             Err(ParametrizeError::CurveNotOnSurface)
         );
     }
@@ -740,7 +837,7 @@ mod tests {
 
         // The consistency invariant is the real proof the mirror math is
         // right: it must hold across t values that cross the pole.
-        let pcurve = circle.parametrize_on(sphere).unwrap();
+        let pcurve = circle.parametrize_on(sphere, Tolerance::DEFAULT).unwrap();
         assert_eq!(pcurve, Curve2D::Line(normalized));
         for t in [0.0_f64, 0.5, 1.7, 3.0, 4.5] {
             let uv = pcurve.eval_point(t);
@@ -783,7 +880,7 @@ mod tests {
         assert!((normalized.origin().y - (-FRAC_PI_2)).abs() < tol::CONFUSION);
         assert!((0.0..TAU + 1e-9).contains(&normalized.origin().x));
 
-        let pcurve = circle.parametrize_on(sphere).unwrap();
+        let pcurve = circle.parametrize_on(sphere, Tolerance::DEFAULT).unwrap();
         assert_eq!(pcurve, Curve2D::Line(normalized));
         for t in [0.0_f64, 0.5, 1.7, 3.0, 4.5] {
             let uv = pcurve.eval_point(t);
@@ -861,7 +958,7 @@ mod tests {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         // Analytic image is the horizontal line v = 0.
-        let analytic = circle.parametrize_on(cylinder).unwrap();
+        let analytic = circle.parametrize_on(cylinder, Tolerance::DEFAULT).unwrap();
         let numeric = parametrize_numeric(&circle, &cylinder, 17, Tolerance::DEFAULT);
         assert_eq!(numeric.len(), 17);
         for (i, uv) in numeric.iter().enumerate() {

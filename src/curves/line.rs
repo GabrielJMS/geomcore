@@ -354,9 +354,9 @@ impl Line3D {
     ///
     /// The projection math assumes the line lies on the surface. As a
     /// geomcore safeguard, the candidate 2D image is verified against the
-    /// surface at a few parameters; if `surface.eval_point(q(t))` disagrees
-    /// with `self.eval_point(t)`, [`ParametrizeError::CurveNotOnSurface`] is
-    /// returned. For periodic surfaces the result is normalized so `q(0)`
+    /// surface at a few parameters; if `surface.eval_point(q(t))` is farther
+    /// than `tol.confusion` from `self.eval_point(t)`,
+    /// [`ParametrizeError::CurveNotOnSurface`] is returned. For periodic surfaces the result is normalized so `q(0)`
     /// lies in the canonical parameter window.
     ///
     /// # Examples
@@ -365,18 +365,22 @@ impl Line3D {
     ///
     /// ```
     /// use geomcore::curves::{Curve2D, ParametricCurve2D};
-    /// use geomcore::{Cylinder, Line3D, Point3D, Vector3D};
+    /// use geomcore::{Cylinder, Line3D, Point3D, Tolerance, Vector3D};
     ///
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let line = Line3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z).unwrap();
-    /// let pcurve = line.parametrize_on(&cylinder).unwrap();
+    /// let pcurve = line.parametrize_on(&cylinder, Tolerance::DEFAULT).unwrap();
     /// // q(0) sits at u = 0 (angle of x-axis), v = 0 (height of the origin).
     /// let q0 = pcurve.eval_point(0.0);
     /// assert!(q0.x.abs() < 1e-9 && q0.y.abs() < 1e-9);
     /// assert!(matches!(pcurve, Curve2D::Line(_)));
     /// ```
-    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
-        parametrize::line_on_surface(self, &surface.into())
+    pub fn parametrize_on(
+        &self,
+        surface: impl Into<Surface>,
+        tol: Tolerance,
+    ) -> Result<Curve2D, ParametrizeError> {
+        parametrize::line_on_surface(self, &surface.into(), tol)
     }
 
     /// Intersects with a [`Line3D`]; see its [`Intersect`] implementation.
@@ -1156,11 +1160,11 @@ impl Intersect<Circle3D> for Line3D {
             }
             LinePlaneIntersection::Parallel => LineCircle3DIntersection::Empty,
             LinePlaneIntersection::Coincident => {
-                let l2 = match self.parametrize_on(plane) {
+                let l2 = match self.parametrize_on(plane, tol) {
                     Ok(Curve2D::Line(l)) => l,
                     _ => return LineCircle3DIntersection::Empty,
                 };
-                let c2 = match circle.parametrize_on(plane) {
+                let c2 = match circle.parametrize_on(plane, tol) {
                     Ok(Curve2D::Circle(c)) => c,
                     _ => return LineCircle3DIntersection::Empty,
                 };
@@ -1927,6 +1931,28 @@ mod tests {
             miss.intersect(&circle, tol),
             LineCircle3DIntersection::Empty
         );
+    }
+
+    #[test]
+    fn test_line3d_intersect_circle_in_plane_within_loose_tolerance() {
+        // 1e-4 off the circle's plane is in the plane at confusion 1e-3, so
+        // the line meets the circle twice (#26).
+        let loose = Tolerance {
+            confusion: 1e-3,
+            ..Tolerance::DEFAULT
+        };
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        for height in [1e-5, 1e-4] {
+            let line = Line3D::new(Point3D::new(0.0, 0.0, height), Vector3D::X).unwrap();
+            match line.intersect(&circle, loose) {
+                LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => {
+                    assert!((t1 + 1.0).abs() < 1e-12 && (t2 - 1.0).abs() < 1e-12);
+                    assert!(circle.contains(p1, loose) && circle.contains(p2, loose));
+                    assert!(line.contains(p1, loose) && line.contains(p2, loose));
+                }
+                other => panic!("expected two points at height {height}, got {other:?}"),
+            }
+        }
     }
 
     #[test]

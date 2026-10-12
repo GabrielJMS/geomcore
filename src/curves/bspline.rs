@@ -808,7 +808,7 @@ impl BSplineCurve3D {
     ///
     /// No B-spline-curve/surface pair has a closed-form 2D image in this
     /// release, so this always returns [`ParametrizeError::NotAnalytic`]. The
-    /// `surface` argument is accepted for signature parity with the analytic
+    /// `surface` and `tol` arguments are accepted for signature parity with the analytic
     /// [`crate::Line3D::parametrize_on`] and
     /// [`crate::Circle3D::parametrize_on`].
     ///
@@ -816,14 +816,18 @@ impl BSplineCurve3D {
     ///
     /// ```
     /// use geomcore::curves::ParametrizeError;
-    /// use geomcore::{BSplineCurve3D, Plane, Point3D, Vector3D};
+    /// use geomcore::{BSplineCurve3D, Plane, Point3D, Tolerance, Vector3D};
     ///
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
     /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
-    /// assert_eq!(curve.parametrize_on(&plane), Err(ParametrizeError::NotAnalytic));
+    /// assert_eq!(curve.parametrize_on(&plane, Tolerance::DEFAULT), Err(ParametrizeError::NotAnalytic));
     /// ```
-    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
+    pub fn parametrize_on(
+        &self,
+        surface: impl Into<Surface>,
+        _tol: Tolerance,
+    ) -> Result<Curve2D, ParametrizeError> {
         let _ = surface.into();
         Err(ParametrizeError::NotAnalytic)
     }

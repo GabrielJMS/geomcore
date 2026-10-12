@@ -521,9 +521,9 @@ impl Circle3D {
     ///
     /// The projection math assumes the circle lies on the surface. As a
     /// geomcore safeguard, the candidate 2D image is verified against the
-    /// surface at a few parameters; if `surface.eval_point(q(t))` disagrees
-    /// with `self.eval_point(t)`, [`ParametrizeError::CurveNotOnSurface`] is
-    /// returned (this also rejects, for example, a circle whose radius does
+    /// surface at a few parameters; if `surface.eval_point(q(t))` is farther
+    /// than `tol.confusion` from `self.eval_point(t)`,
+    /// [`ParametrizeError::CurveNotOnSurface`] is returned (this also rejects, for example, a circle whose radius does
     /// not match the cylinder). For periodic surfaces the result is
     /// normalized so `q(0)` lies in the canonical parameter window.
     ///
@@ -534,19 +534,23 @@ impl Circle3D {
     ///
     /// ```
     /// use geomcore::curves::{Curve2D, ParametricCurve2D};
-    /// use geomcore::{Circle3D, Cylinder, Point3D, Vector3D};
+    /// use geomcore::{Circle3D, Cylinder, Point3D, Tolerance, Vector3D};
     ///
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let circle = Circle3D::new(Point3D::new(0.0, 0.0, 3.0), Vector3D::Z, 2.0).unwrap();
-    /// let pcurve = circle.parametrize_on(&cylinder).unwrap();
+    /// let pcurve = circle.parametrize_on(&cylinder, Tolerance::DEFAULT).unwrap();
     /// // q(t) = (t, 3): the angular parameter runs in u, the height v is fixed.
     /// let q = pcurve.eval_point(1.0);
     /// assert!((q.x - 1.0).abs() < 1e-9);
     /// assert!((q.y - 3.0).abs() < 1e-9);
     /// assert!(matches!(pcurve, Curve2D::Line(_)));
     /// ```
-    pub fn parametrize_on(&self, surface: impl Into<Surface>) -> Result<Curve2D, ParametrizeError> {
-        parametrize::circle_on_surface(self, &surface.into())
+    pub fn parametrize_on(
+        &self,
+        surface: impl Into<Surface>,
+        tol: Tolerance,
+    ) -> Result<Curve2D, ParametrizeError> {
+        parametrize::circle_on_surface(self, &surface.into(), tol)
     }
 }
 
@@ -942,11 +946,11 @@ impl Intersect<Circle3D> for Circle3D {
         {
             return CircleCircle3DIntersection::Coincident;
         }
-        let c1 = match self.parametrize_on(plane) {
+        let c1 = match self.parametrize_on(plane, tol) {
             Ok(Curve2D::Circle(c)) => c,
             _ => return CircleCircle3DIntersection::NotAnalytic,
         };
-        let c2 = match other.parametrize_on(plane) {
+        let c2 = match other.parametrize_on(plane, tol) {
             Ok(Curve2D::Circle(c)) => c,
             _ => return CircleCircle3DIntersection::NotAnalytic,
         };
@@ -1411,6 +1415,27 @@ mod tests {
             c1.intersect(&c1, tol),
             CircleCircle3DIntersection::Coincident
         );
+    }
+
+    #[test]
+    fn test_circle3d_intersect_circle_in_plane_within_loose_tolerance() {
+        // A partner 1e-4 off the plane is coplanar at confusion 1e-3 (#26).
+        let loose = Tolerance {
+            confusion: 1e-3,
+            ..Tolerance::DEFAULT
+        };
+        let c1 = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        let c2 = Circle3D::new(Point3D::new(0.5, 0.0, 1e-4), Vector3D::Z, 1.0).unwrap();
+        match c1.intersect(&c2, loose) {
+            CircleCircle3DIntersection::Points(p1, p2) => {
+                for p in [p1, p2] {
+                    assert!((p.x - 0.25).abs() < 1e-12);
+                    assert!((p.y.abs() - 0.9375f64.sqrt()).abs() < 1e-12);
+                    assert!(c1.contains(p, loose) && c2.contains(p, loose));
+                }
+            }
+            other => panic!("expected two points, got {other:?}"),
+        }
     }
 
     #[test]
