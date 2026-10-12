@@ -577,7 +577,7 @@ pub(crate) struct Interval {
 }
 
 impl Interval {
-    const ZERO: Interval = Interval { lo: 0.0, hi: 0.0 };
+    pub(crate) const ZERO: Interval = Interval { lo: 0.0, hi: 0.0 };
     const EMPTY: Interval = Interval {
         lo: f64::INFINITY,
         hi: f64::NEG_INFINITY,
@@ -604,21 +604,21 @@ impl Interval {
         }
     }
 
-    fn add(self, o: Interval) -> Interval {
+    pub(crate) fn add(self, o: Interval) -> Interval {
         Interval {
             lo: self.lo + o.lo,
             hi: self.hi + o.hi,
         }
     }
 
-    fn sub(self, o: Interval) -> Interval {
+    pub(crate) fn sub(self, o: Interval) -> Interval {
         Interval {
             lo: self.lo - o.hi,
             hi: self.hi - o.lo,
         }
     }
 
-    fn mul(self, o: Interval) -> Interval {
+    pub(crate) fn mul(self, o: Interval) -> Interval {
         let (a, b) = (self.lo * o.lo, self.lo * o.hi);
         let (c, d) = (self.hi * o.lo, self.hi * o.hi);
         Interval {
@@ -627,7 +627,7 @@ impl Interval {
         }
     }
 
-    fn square(self) -> Interval {
+    pub(crate) fn square(self) -> Interval {
         let (a, b) = (self.lo * self.lo, self.hi * self.hi);
         Interval {
             lo: if self.lo <= 0.0 && self.hi >= 0.0 {
