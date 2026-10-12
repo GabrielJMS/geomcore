@@ -127,6 +127,37 @@ pub trait ParametricSurface {
 
     /// Returns whether `point` lies on the surface.
     fn contains(&self, point: Point3D, tol: Tolerance) -> bool;
+
+    /// The surface as a B-spline, or `None` for any other surface.
+    ///
+    /// Numeric algorithms such as
+    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// to work on the B-spline's polynomial patches. Default
+    /// implementation: `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::{BSplineSurface, ParametricSurface, Surface};
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    ///     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)],
+    /// ];
+    /// let (knots, mults) = (vec![0.0, 1.0], vec![2, 2]);
+    /// let patch =
+    ///     BSplineSurface::new(1, 1, poles, knots.clone(), mults.clone(), knots, mults, false, false)
+    ///         .unwrap();
+    /// let surface = Surface::from(&patch);
+    /// assert_eq!(surface.as_bspline(), Some(&patch));
+    ///
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(ParametricSurface::as_bspline(&plane), None);
+    /// ```
+    fn as_bspline(&self) -> Option<&BSplineSurface> {
+        None
+    }
 }
 
 impl ParametricSurface for Plane {
@@ -497,6 +528,13 @@ impl ParametricSurface for Surface {
             Surface::Sphere(s) => s.eval_points(uvs),
             Surface::Torus(s) => s.eval_points(uvs),
             Surface::BSpline(s) => s.eval_points(uvs),
+        }
+    }
+
+    fn as_bspline(&self) -> Option<&BSplineSurface> {
+        match self {
+            Surface::BSpline(s) => Some(s),
+            _ => None,
         }
     }
 }

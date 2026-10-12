@@ -41,8 +41,9 @@ Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
 
 The numeric curve–curve extrema and intersection and the marching
 intersection evaluate through `eval_d1` and `eval_d2`, which made them
-12–17% faster on B-splines; the numeric curve–surface intersection spends
-its time projecting seeds onto the surface and is unchanged.
+12–17% faster on B-splines; the numeric curve–surface intersection spent
+its time projecting seeds onto the surface and was unchanged (see
+[below](#curvesurface-intersection-on-b-splines) for its B-spline path).
 
 # Intersection entry point
 
@@ -120,4 +121,33 @@ Reproduce with:
 
 ```sh
 cargo bench --bench conic_quadric
+```
+
+# Curve–surface intersection on B-splines
+
+`benches/intersect_curve_surface.rs` times `intersect_curve_surface` for 64
+cubic B-spline curves against one bicubic B-spline surface (6×6 poles
+`(i, j, sin(0.7 i j))`, knots `[0, 1, 2, 3]` with multiplicities
+`[4, 1, 1, 4]`). Each curve rises from `z = -2` to `z = 2` along a wavy
+path over the surface, so most cross it once.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per curve.
+
+| search | time / curve |
+|---|---|
+| sampled (before) | ~2.78 ms |
+| Bézier piece pairs (after) | ~35 µs |
+
+The sampled search projected 128 curve samples onto the surface and
+refined the 24 closest, whatever the shapes. The piece-pair search, about
+80 times faster, only looks where the control-point boxes of a curve span
+and a surface patch overlap, and drops a pair as soon as their hulls part;
+each hit then costs a few halvings and one short Newton run. Tangencies
+and overlaps still exhaust its budget and pay for both searches.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_curve_surface
 ```

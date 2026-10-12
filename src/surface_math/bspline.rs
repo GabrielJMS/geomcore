@@ -666,12 +666,9 @@ pub(crate) struct DistanceBounds {
 /// `[rows][cols][h]` (homogeneous when `h == 4`), whose Euclidean control
 /// points are `points`.
 ///
-/// The derivatives of the (homogeneous) patch lie in the hulls of their
-/// own Bernstein nets, scaled forward differences of `net`; rational ones
-/// follow by the quotient rule in interval arithmetic, about the centre
-/// of the patch's box so that the intervals shrink with the patch. Then
-/// `f_s = S_s . r`, `f_ss = S_s . S_s + S_ss . r` and so on, with `r = S -
-/// point` in the hull of `points`.
+/// With the enclosures of [`derivative_bounds`], `f_s = S_s . r`, `f_ss =
+/// S_s . S_s + S_ss . r` and so on, with `r = S - point` in the hull of
+/// `points`.
 ///
 /// Unless `second`, only the gradient is bounded, the rest left zero.
 pub(crate) fn distance_bounds(
@@ -683,6 +680,47 @@ pub(crate) fn distance_bounds(
     point: [f64; 3],
     second: bool,
 ) -> DistanceBounds {
+    let (value, d) = derivative_bounds(net, points, rows, cols, h, second);
+    let mut gradient = [Interval::ZERO; 2];
+    let mut hessian = [Interval::ZERO; 3];
+    let mut stretch = [0.0; 2];
+    for c in 0..3 {
+        let r = value[c].shifted(-point[c]);
+        gradient[0] = gradient[0].add(d[0][c].mul(r));
+        gradient[1] = gradient[1].add(d[1][c].mul(r));
+        hessian[0] = hessian[0].add(d[0][c].square()).add(d[2][c].mul(r));
+        hessian[1] = hessian[1].add(d[0][c].mul(d[1][c])).add(d[3][c].mul(r));
+        hessian[2] = hessian[2].add(d[1][c].square()).add(d[4][c].mul(r));
+        stretch[0] += d[0][c].magnitude().powi(2);
+        stretch[1] += d[1][c].magnitude().powi(2);
+    }
+    DistanceBounds {
+        gradient,
+        hessian,
+        stretch,
+    }
+}
+
+/// Enclosures, over the patch with the Bernstein net `net` (as in
+/// [`distance_bounds`]) in its own parameters `(s, t)` in `[0, 1]^2`, of
+/// each coordinate of the point (the hull of `points`) and of the
+/// derivatives `[S_s, S_t, S_ss, S_st, S_tt]`.
+///
+/// The derivatives of the (homogeneous) patch lie in the hulls of their
+/// own Bernstein nets, scaled forward differences of `net`; rational ones
+/// follow by the quotient rule in interval arithmetic, about the centre
+/// of the patch's box so that the intervals shrink with the patch.
+///
+/// Unless `second`, only the first derivatives are bounded, the rest left
+/// zero.
+pub(crate) fn derivative_bounds(
+    net: &[f64],
+    points: &[[f64; 3]],
+    rows: usize,
+    cols: usize,
+    h: usize,
+    second: bool,
+) -> ([Interval; 3], [[Interval; 3]; 5]) {
     let (p, q) = (rows - 1, cols - 1);
     let mut value = [Interval::EMPTY; 3];
     for x in points {
@@ -782,24 +820,7 @@ pub(crate) fn distance_bounds(
             dk.copy_from_slice(&hull[..3]);
         }
     }
-    let mut gradient = [Interval::ZERO; 2];
-    let mut hessian = [Interval::ZERO; 3];
-    let mut stretch = [0.0; 2];
-    for c in 0..3 {
-        let r = value[c].shifted(-point[c]);
-        gradient[0] = gradient[0].add(d[0][c].mul(r));
-        gradient[1] = gradient[1].add(d[1][c].mul(r));
-        hessian[0] = hessian[0].add(d[0][c].square()).add(d[2][c].mul(r));
-        hessian[1] = hessian[1].add(d[0][c].mul(d[1][c])).add(d[3][c].mul(r));
-        hessian[2] = hessian[2].add(d[1][c].square()).add(d[4][c].mul(r));
-        stretch[0] += d[0][c].magnitude().powi(2);
-        stretch[1] += d[1][c].magnitude().powi(2);
-    }
-    DistanceBounds {
-        gradient,
-        hessian,
-        stretch,
-    }
+    (value, d)
 }
 
 /// Homogeneous `[H, Hu, Hv, Huu, Huv, Hvv]` at `(u, v)`, each in the first

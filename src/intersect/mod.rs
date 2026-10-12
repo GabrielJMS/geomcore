@@ -24,7 +24,9 @@ use crate::{
 };
 
 mod conic;
+mod curve_surface;
 mod dispatch;
+mod pieces;
 pub(crate) use conic::{intersect_conic_conic, intersect_conic_quadric};
 pub use dispatch::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
@@ -1424,6 +1426,17 @@ pub struct CurveSurfaceHit {
 /// sets along the overlap — use the analytic `intersect_*` methods when
 /// classification (tangent, coincident) matters.
 ///
+/// A B-spline curve, or a trimmed curve over one (see
+/// [`ParametricCurve3D::as_bspline`]), against a B-spline surface is
+/// searched without sampling: the curve's knot spans over its range and
+/// the surface's knot-span patches are Bézier pieces, and the pairs of
+/// pieces whose control points' boxes overlap are halved until each
+/// provably holds at most one hit, which Newton iteration from the pair's
+/// centre then reaches. Parameters are reported within the ranges (a
+/// periodic one within its period). A pair that never separates (a
+/// tangency, an overlap, a hit at a singular point) exhausts the search's
+/// budget, and the samples above are used instead.
+///
 /// # Examples
 ///
 /// ```
@@ -1436,6 +1449,23 @@ pub struct CurveSurfaceHit {
 /// assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
 /// ```
 pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> Vec<CurveSurfaceHit>
+where
+    C: ParametricCurve3D,
+    S: ParametricSurface,
+{
+    if let (Some(bspline), Some(patches)) = (curve.as_bspline(), surface.as_bspline()) {
+        let periodic = curve.period().is_some();
+        let hits =
+            curve_surface::bspline_curve_surface(bspline, curve.bounds(), periodic, patches, tol);
+        if let Some(hits) = hits {
+            return hits;
+        }
+    }
+    sampled_curve_surface(curve, surface, tol)
+}
+
+/// The sampled search of [`intersect_curve_surface`].
+fn sampled_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> Vec<CurveSurfaceHit>
 where
     C: ParametricCurve3D,
     S: ParametricSurface,

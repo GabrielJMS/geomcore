@@ -815,6 +815,53 @@ impl BSplineSurface {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// The shape of a knot-span patch's Bernstein net: `(rows, cols, h)`,
+    /// `u_degree + 1` rows of `v_degree + 1` points of `h` values
+    /// (homogeneous when `h == 4`).
+    pub(crate) fn patch_net_shape(&self) -> (usize, usize, usize) {
+        (self.u_degree + 1, self.v_degree + 1, self.h)
+    }
+
+    /// The bounding-box hierarchy of the knot-span patches (leaf `k` is
+    /// patch `k`, see [`Self::patch_net`]), built on first use.
+    pub(crate) fn patch_boxes(&self) -> &BoxTree {
+        &self.patch_tree().tree
+    }
+
+    /// Writes the Bernstein net of knot-span patch `k` to `out` (laid out
+    /// as [`math::patch_bezier`]; `scratch` holds as many values) and
+    /// returns its parameter rectangle `[u0, u1, v0, v1]`.
+    pub(crate) fn patch_net(&self, k: usize, scratch: &mut [f64], out: &mut [f64]) -> [f64; 4] {
+        let patches = self.patch_tree();
+        self.write_patch_net(patches, k, scratch, out);
+        patches.patch(k).0
+    }
+
+    fn write_patch_net(&self, patches: &PatchTree, k: usize, scratch: &mut [f64], out: &mut [f64]) {
+        let n_vspans = patches.v_breaks.len() - 1;
+        let (a, b) = (k / n_vspans, k % n_vspans);
+        let (p, q) = (self.u_degree, self.v_degree);
+        let (mu, mv) = ((p + 1) * (p + 1), (q + 1) * (q + 1));
+        math::patch_bezier(
+            (
+                &patches.u_spans.1[a * mu..(a + 1) * mu],
+                patches.u_spans.0[a],
+                p,
+                self.n_u,
+            ),
+            (
+                &patches.v_spans.1[b * mv..(b + 1) * mv],
+                patches.v_spans.0[b],
+                q,
+                self.n_v,
+            ),
+            &self.flat_poles,
+            self.h,
+            scratch,
+            out,
+        );
+    }
+
     /// The patch bounding-box hierarchy, built on first use.
     fn patch_tree(&self) -> &PatchTree {
         self.patches.get_or_init(|| {
@@ -1032,6 +1079,10 @@ impl ParametricSurface for BSplineSurface {
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         BSplineSurface::eval_points(self, uvs)
     }
+
+    fn as_bspline(&self) -> Option<&BSplineSurface> {
+        Some(self)
+    }
 }
 
 /// Subdivisions per knot-span patch before the search settles for Newton
@@ -1162,27 +1213,10 @@ impl<'a> PatchSearch<'a> {
     /// The whole patch `k` of `patches` as a subpatch to search, unless it
     /// is farther than the closest point so far.
     fn root(&mut self, patches: &PatchTree, k: usize) -> Option<Subpatch> {
-        let s = self.surface;
         let slot = self.slot();
-        let n_vspans = patches.v_breaks.len() - 1;
-        let (a, b) = (k / n_vspans, k % n_vspans);
-        let (p, q) = (s.u_degree, s.v_degree);
-        let (mu, mv) = ((p + 1) * (p + 1), (q + 1) * (q + 1));
-        math::patch_bezier(
-            (
-                &patches.u_spans.1[a * mu..(a + 1) * mu],
-                patches.u_spans.0[a],
-                p,
-                s.n_u,
-            ),
-            (
-                &patches.v_spans.1[b * mv..(b + 1) * mv],
-                patches.v_spans.0[b],
-                q,
-                s.n_v,
-            ),
-            &s.flat_poles,
-            s.h,
+        self.surface.write_patch_net(
+            patches,
+            k,
             &mut self.scratch,
             &mut self.nets[slot..slot + self.size],
         );
