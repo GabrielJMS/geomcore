@@ -20,7 +20,7 @@
 //!   [`curves::TrimmedCurve3D`]/[`curves::TrimmedCurve2D`] pieces of a
 //!   curve over a parameter range (segments, arcs), and the
 //!   [`curves::ParametricCurve3D`]/[`curves::ParametricCurve2D`] traits.
-//! - [`surfaces`] holds the five elementary analytic surfaces
+//! - [`surfaces`] holds the five elementary surfaces
 //!   ([`surfaces::Plane`], [`surfaces::Cylinder`], [`surfaces::Cone`],
 //!   [`surfaces::Sphere`], [`surfaces::Torus`]) plus
 //!   [`surfaces::BSplineSurface`], the [`surfaces::Surface`] enum adaptor,
@@ -95,7 +95,7 @@ pub mod curves;
 pub mod discretization;
 /// Axis and frame placement types.
 pub mod frame;
-/// Analytic intersection result types.
+/// Exact intersection result types.
 pub mod intersect;
 /// Internal numerical toolbox (polynomial roots, Newton, Brent).
 pub(crate) mod math;
