@@ -80,7 +80,7 @@ pub(crate) fn circle_on_surface(
 ) -> Result<Curve2D, ParametrizeError> {
     match surface {
         Surface::Plane(plane) => {
-            let circle2d = circle_on_plane(circle, plane.frame());
+            let circle2d = circle_on_plane(circle, plane.frame(), tol)?;
             verify_on_surface(
                 surface,
                 &Curve2D::Circle(circle2d),
@@ -185,17 +185,32 @@ fn line_on_plane(line: &Line3D, frame: crate::Frame3D) -> Result<Line2D, Paramet
     Line2D::new(origin, dir).map_err(|_| ParametrizeError::CurveNotOnSurface)
 }
 
-/// 2D image of a circle lying in a plane: the circle's frame mapped to local
-/// plane coordinates, radius preserved.
-fn circle_on_plane(circle: &Circle3D, frame: crate::Frame3D) -> Circle2D {
+/// 2D image of a circle lying in a plane: the circle's x direction mapped
+/// to local plane coordinates, its y direction the perpendicular on the
+/// side its normal makes it turn, radius preserved. The circle's normal
+/// must turn onto the plane's while moving it by at most the confusion
+/// tolerance.
+fn circle_on_plane(
+    circle: &Circle3D,
+    frame: crate::Frame3D,
+    tol: Tolerance,
+) -> Result<Circle2D, ParametrizeError> {
+    let normal = circle.normal();
+    let along = normal.dot(frame.z_direction());
+    if normal.cross(frame.z_direction()).magnitude() > tol.angular_for_extent(circle.radius()) {
+        return Err(ParametrizeError::CurveNotOnSurface);
+    }
     let center = eval_point2d_plane(frame, circle.center());
-    let cf = circle.frame();
-    let x_dir = eval_dir2d_plane(frame, cf.x_direction());
-    let y_dir = eval_dir2d_plane(frame, cf.y_direction());
-    let frame2 = Frame2D::new(center, x_dir, y_dir)
-        .expect("circle frame axes stay orthonormal under a plane projection");
-    Circle2D::from_frame(frame2, circle.radius())
-        .expect("circle radius is non-negative by construction")
+    let x_dir = eval_dir2d_plane(frame, circle.frame().x_direction());
+    let y_dir = if along > 0.0 {
+        x_dir.perp()
+    } else {
+        -x_dir.perp()
+    };
+    let frame2 =
+        Frame2D::new(center, x_dir, y_dir).map_err(|_| ParametrizeError::CurveNotOnSurface)?;
+    Ok(Circle2D::from_frame(frame2, circle.radius())
+        .expect("circle radius is non-negative by construction"))
 }
 
 /// Local (x, y) coordinates of `p` in the plane `frame`.
@@ -243,7 +258,7 @@ fn circle_on_cylinder(
 ) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
     let normal = circle.normal();
-    if axis.cross(normal).square_magnitude() > tol.angular * tol.angular {
+    if axis.cross(normal).magnitude() > tol.angular_for_extent(circle.radius()) {
         return Err(ParametrizeError::NotAnalytic);
     }
     let u = wrap_to_turn(
@@ -305,14 +320,14 @@ fn circle_on_cone(
 ) -> Result<Line2D, ParametrizeError> {
     let axis = frame.z_direction();
     let normal = circle.normal();
-    if axis.cross(normal).square_magnitude() > tol.angular * tol.angular {
+    if axis.cross(normal).magnitude() > tol.angular_for_extent(circle.radius()) {
         return Err(ParametrizeError::NotAnalytic);
     }
     let cf = circle.frame();
     let x = frame.x_direction().dot(cf.x_direction());
     let y = frame.y_direction().dot(cf.x_direction());
     let z = (circle.center() - frame.origin()).dot(axis);
-    let u = if x.abs() <= tol::ANGULAR && y.abs() <= tol::ANGULAR {
+    let u = if x.abs() <= tol.angular && y.abs() <= tol.angular {
         0.0
     } else if -ref_r > z * semi_angle.tan() {
         // Below the apex the point lies on the opposite nappe, so `u` is
@@ -478,7 +493,7 @@ fn circle_on_torus(
     let normal = circle.normal();
 
     let is_toroidal = oc.magnitude() < tol.confusion
-        || z.cross(normal).square_magnitude() <= tol.angular * tol.angular;
+        || z.cross(normal).magnitude() <= tol.angular_for_extent(circle.radius());
 
     if is_toroidal {
         torus_toroidal(circle, frame, maj, min)

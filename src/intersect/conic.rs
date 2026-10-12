@@ -58,6 +58,15 @@ impl ConicShape {
         }
     }
 
+    /// How far the conic reaches from its origin: the lever arm of a turn
+    /// about it (ADR 0006). Parabolas and hyperbolas are unbounded.
+    pub(crate) fn extent(self) -> f64 {
+        match self {
+            ConicShape::Ellipse { a, b } => a.max(b),
+            ConicShape::Parabola { .. } | ConicShape::Hyperbola { .. } => f64::INFINITY,
+        }
+    }
+
     /// The implicit equation in the conic's own frame coordinates.
     fn implicit(self) -> ImplicitConic {
         match self {
@@ -239,11 +248,14 @@ impl Quadric for Plane {
         Some((origin - self.frame().origin()).magnitude() + a + b)
     }
 
-    /// Any conic lies on a plane parallel to its own through its origin.
+    /// Any conic lies on a plane through its origin whose normal turns
+    /// onto its own while moving the conic by at most the confusion
+    /// tolerance.
     #[inline]
     fn holds<C: Conic>(&self, conic: &C, tol: Tolerance) -> bool {
         let frame = conic.frame();
-        frame.z_direction().cross(self.normal()).magnitude() <= tol.angular
+        let angular = tol.angular_for_extent(conic.shape().extent());
+        frame.z_direction().cross(self.normal()).magnitude() <= angular
             && self.contains(frame.origin(), tol)
     }
 }
@@ -468,12 +480,20 @@ fn conic_conic_hits<A: Conic, B: Conic>(
         second_param: other.parameter_in_bounds(other.parameter_of(p), tol),
         multiplicity,
     };
-    if normal.cross(other_frame.z_direction()).magnitude() > tol.angular {
+    // Coplanar when either conic lies in the other's plane: solving in
+    // `conic`'s plane then moves neither by more than the confusion
+    // tolerance.
+    let plane = Plane::from_frame(other_frame);
+    if !plane.holds(conic, tol) && !Plane::from_frame(frame).holds(other, tol) {
+        if normal.cross(other_frame.z_direction()).magnitude() <= tol.angular {
+            // Distinct parallel planes.
+            return Some(hits);
+        }
         // Crossing planes: the hits of `conic` on the other's plane that
         // lie on the other conic. They are tangent only where both conics
         // run along the line the planes share: `conic` grazes the plane
         // and the other conic's tangent lies in `conic`'s plane.
-        let plane = Plane::from_frame(other_frame);
+        let along_tolerance = tol.angular_for_extent(other.shape().extent());
         if let ConicSurfaceIntersection::Hits(on_plane) =
             intersect_conic_quadric(conic, &plane, tol)
         {
@@ -482,7 +502,7 @@ fn conic_conic_hits<A: Conic, B: Conic>(
                     let mut h = hit(h.point, h.multiplicity);
                     let along = other.eval_derivative(h.second_param, 1);
                     if h.multiplicity < 2
-                        || along.dot(normal).abs() > tol.angular * along.magnitude()
+                        || along.dot(normal).abs() > along_tolerance * along.magnitude()
                     {
                         h.multiplicity = 1;
                     }
@@ -493,10 +513,6 @@ fn conic_conic_hits<A: Conic, B: Conic>(
         return Some(hits);
     }
     let origin = frame.origin();
-    if !Plane::from_frame(frame).contains(other_frame.origin(), tol) {
-        // Distinct parallel planes.
-        return Some(hits);
-    }
     if same_conic(conic, other, tol) {
         return None;
     }
@@ -527,7 +543,7 @@ fn same_conic<A: Conic, B: Conic>(first: &A, second: &B, tol: Tolerance) -> bool
     let close = |x: f64, y: f64| (x - y).abs() <= tol.confusion;
     let (f1, f2) = (first.frame(), second.frame());
     let (x1, x2) = (f1.x_direction(), f2.x_direction());
-    let parallel = x1.cross(x2).magnitude() <= tol.angular;
+    let parallel = x1.cross(x2).magnitude() <= tol.angular_for_extent(first.shape().extent());
     let same_way = parallel && x1.dot(x2) > 0.0;
     f1.origin().distance(f2.origin()) <= tol.confusion
         && match (first.shape(), second.shape()) {
