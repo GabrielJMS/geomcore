@@ -1,10 +1,10 @@
 //! Small numerical toolbox for the kernel's iterative algorithms.
 //!
 //! Everything here is tiny and fixed-size: real roots of polynomials of
-//! degree ≤ 4, Newton iteration on 1–3 unknowns, Gauss-Newton steps for
-//! least-squares projection, box-bounded Newton minimisation (with a
-//! box hierarchy for nearest-first search over B-spline pieces), Brent
-//! refinement, and 2x2/3x3 solves on stack arrays. That is deliberate: projection, extrema, and
+//! degree ≤ 4, Newton iteration and polishing on 1–3 unknowns,
+//! box-bounded Newton minimisation (with a box hierarchy for
+//! nearest-first search over B-spline pieces), Brent refinement, and
+//! 2x2 to 4x4 solves on stack arrays. That is deliberate: projection, extrema, and
 //! intersection never need large dense systems, so the kernel keeps zero
 //! runtime dependencies and no linear-algebra crate in its public API.
 //!
@@ -19,15 +19,12 @@ pub(crate) mod equation;
 pub(crate) mod poly;
 pub(crate) mod solve;
 
-// Re-exported for the curve-curve/generic consumers landing next;
-// the allow expires then.
 pub(crate) use equation::{
     QuadraticSolution, quadratic_centre, roots_with_tangency, solve_quadratic, solve_trig,
     solve_trig_linear,
 };
-#[allow(dead_code, unused_imports)]
-pub(crate) use poly::RealRoot;
-pub(crate) use poly::real_roots;
-#[allow(dead_code, unused_imports)]
-pub(crate) use solve::{brent_minimum, gauss_newton_1d, newton_1d};
-pub(crate) use solve::{newton_3d, newton_min_1d, newton_min_2d, solve_2x2, solve_3x3, solve_4x4};
+pub(crate) use poly::{RealRoot, real_roots};
+pub(crate) use solve::{
+    brent_minimum, newton_3d, newton_min_1d, newton_min_2d, polish_root, solve_2x2, solve_3x3,
+    solve_4x4,
+};

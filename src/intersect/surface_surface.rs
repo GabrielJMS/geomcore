@@ -224,7 +224,8 @@ mod tests {
     use super::*;
     use crate::Point3D;
     use crate::curves::BSplineCurve3D;
-    use crate::intersect::{grid_marching, marching_intersection};
+    use crate::intersect::marching::grid_marching;
+    use crate::intersect::marching_intersection;
 
     const TOL: Tolerance = Tolerance::DEFAULT;
 

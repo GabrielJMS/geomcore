@@ -418,7 +418,10 @@ impl Intersect<Plane> for Torus {
         let o = self.center();
         let s = n.dot(a);
         let sin = n.cross(a).magnitude();
-        if s.abs() <= tol.angular {
+        // Turning the plane about the centre moves it across the torus by
+        // at most the angle times the torus's reach.
+        let angular = tol.angular_for_extent(major + minor);
+        if s.abs() <= angular {
             // Axis-containing plane: the axis must lie in it.
             if ((o - plane.frame().origin()).dot(n)).abs() > tol.confusion {
                 return TorusPlaneIntersection::NotAnalytic;
@@ -430,7 +433,7 @@ impl Intersect<Plane> for Torus {
                     .expect("tube radius is positive by construction")
             };
             TorusPlaneIntersection::TwoCircles(mk(1.0), mk(-1.0))
-        } else if sin <= tol.angular {
+        } else if sin <= angular {
             let h = (o - plane.frame().origin()).dot(n);
             let h_abs = h.abs();
             if h_abs > minor + tol.confusion {
@@ -573,11 +576,14 @@ impl Intersect<Cylinder> for Torus {
         let a = self.frame().z_direction();
         let o = self.center();
         let ac = cylinder.axis().direction();
-        if a.cross(ac).magnitude() > tol.angular {
+        // Coaxial when the cylinder's axis passes through the centre and
+        // turning it onto the torus's moves it by at most the confusion
+        // tolerance across the torus.
+        if a.cross(ac).magnitude() > tol.angular_for_extent(major + minor) {
             return TorusCylinderIntersection::NotAnalytic;
         }
         let w = cylinder.axis().origin() - o;
-        if (w - a * w.dot(a)).magnitude() > tol.confusion {
+        if (w - ac * w.dot(ac)).magnitude() > tol.confusion {
             return TorusCylinderIntersection::NotAnalytic;
         }
         let rc = cylinder.radius();
@@ -632,10 +638,14 @@ impl Intersect<Cone> for Torus {
         let a = self.frame().z_direction();
         let o = self.center();
         let ac = cone.frame().z_direction();
-        if a.cross(ac).magnitude() > tol.angular {
+        let w = cone.apex() - o;
+        // Coaxial when the apex lies on the axis and turning the cone's
+        // axis about it moves the cone by at most the confusion tolerance
+        // across the torus.
+        let reach = w.magnitude() + major + minor;
+        if a.cross(ac).magnitude() > tol.angular_for_extent(reach) {
             return TorusConeIntersection::NotAnalytic;
         }
-        let w = cone.apex() - o;
         if (w - a * w.dot(a)).magnitude() > tol.confusion {
             return TorusConeIntersection::NotAnalytic;
         }
@@ -712,7 +722,9 @@ impl Intersect<Torus> for Torus {
         }
         let a = self.frame().z_direction();
         let o1 = self.center();
-        if a.cross(other.frame().z_direction()).magnitude() > tol.angular {
+        // Coaxial when turning the other torus about its centre onto this
+        // one's axis moves it by at most the confusion tolerance.
+        if a.cross(other.frame().z_direction()).magnitude() > tol.angular_for_extent(r2 + s2) {
             return TorusTorusIntersection::NotAnalytic;
         }
         let w = other.center() - o1;

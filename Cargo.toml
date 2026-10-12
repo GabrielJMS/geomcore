@@ -27,6 +27,10 @@ name = "conic_quadric"
 harness = false
 
 [[bench]]
+name = "discretization"
+harness = false
+
+[[bench]]
 name = "intersect_curve_surface"
 harness = false
 
