@@ -18,6 +18,28 @@ the Python distribution are versioned in lockstep.
   and `contains`. `curve_curve_extrema`, `intersect_curve_curve`,
   `intersect_curve_surface` and `parametrize_numeric` accept a
   `TrimmedCurve3D` and only search its range.
+- `Intersect` trait: one entry point for exact intersections,
+  `a.intersect(&b, tol)`, implemented for every pair of elementary
+  surfaces in both orders. The output is the pair's own result type, so
+  dispatch is static and nothing allocates.
+- `ElementaryCurve` and `ElementarySurface`: `Copy` enums of the
+  closed-form curves and surfaces, reached from `Curve3D` and `Surface`
+  with `as_elementary()`.
+- `SurfaceIntersection`, the general result of intersecting two surfaces
+  of unknown type: `Surface` and `ElementarySurface` implement
+  `Intersect` with it. It reports `Empty`, `Coincident`, `NotAnalytic`
+  (also for a B-spline), or `Meets` with up to four curves, each flagged
+  when tangent, and up to four contact points, held inline in an
+  `InlineList`. Every typed surface result converts into it with
+  `From`. It never runs a numeric intersection; call
+  `intersect_marching` for that.
+
+### Deprecated
+
+- The per-pair surface methods `Plane::intersect_plane`,
+  `intersect_sphere`, `intersect_cylinder`, `intersect_cone`, and the
+  same on `Sphere`, `Cylinder`, `Cone` and `Torus`: use
+  `Intersect::intersect`.
 
 ## [0.28.0] - 2026-10-12
 

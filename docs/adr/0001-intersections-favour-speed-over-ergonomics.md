@@ -6,4 +6,4 @@ Exact intersections are reached through one generic `Intersect<B>` trait, implem
 
 - **One general result as the only interface** (fewest types to learn): rejected. Every call would pay for a general result, some would allocate, and the compiler would no longer rule out impossible outcomes, such as a hyperbola from plane–sphere.
 - **Automatic numeric fallback** on the untyped path: rejected. An exact intersection takes nanoseconds and marching takes milliseconds. A hidden switch between the two makes run time unpredictable, and the returned curves would silently change from exact to approximate.
-- **Keeping the per-pair `intersect_*` methods public** alongside the trait: rejected. That would mean two interfaces for the same behaviour. They are deprecated in 0.28 and become crate-private in 0.30.
+- **Keeping the per-pair `intersect_*` methods public** alongside the trait: rejected. That would mean two interfaces for the same behaviour. They are deprecated in 0.29 and become crate-private in the next breaking release.

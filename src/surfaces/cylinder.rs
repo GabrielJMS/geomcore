@@ -2,6 +2,7 @@
 //! construction from an axis or an existing circle, thin wrappers over
 //! [`crate::surface_math::analytic`].
 
+use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
@@ -342,6 +343,20 @@ impl Cylinder {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_cylinder(
+        &self,
+        other: &Cylinder,
+        tol: Tolerance,
+    ) -> CylinderCylinderIntersection {
+        self.intersect(other, tol)
+    }
+}
+
+impl Intersect<Cylinder> for Cylinder {
+    type Output = CylinderCylinderIntersection;
+
     /// Intersects this cylinder with another cylinder.
     ///
     /// The analytic path needs parallel axes (against `tol.angular`):
@@ -356,20 +371,17 @@ impl Cylinder {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Cylinder, CylinderCylinderIntersection, Point3D, Tolerance, Vector3D};
     /// let c1 = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let c2 = Cylinder::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match c1.intersect_cylinder(&c2, tol) {
+    /// match c1.intersect(&c2, tol) {
     ///     CylinderCylinderIntersection::TwoLines(_, _) => {}
     ///     _ => panic!("expected two lines"),
     /// }
     /// ```
-    pub fn intersect_cylinder(
-        &self,
-        other: &Cylinder,
-        tol: Tolerance,
-    ) -> CylinderCylinderIntersection {
+    fn intersect(&self, other: &Cylinder, tol: Tolerance) -> CylinderCylinderIntersection {
         let a1 = self.axis().direction();
         if self
             .axis()
@@ -575,7 +587,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let c1 = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let c2 = Cylinder::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
-        match c1.intersect_cylinder(&c2, tol) {
+        match c1.intersect(&c2, tol) {
             CylinderCylinderIntersection::TwoLines(l1, l2) => {
                 assert_eq!(l1.direction(), Vector3D::Z);
                 assert!((l1.origin().x - 1.5).abs() < 1e-12);
@@ -596,7 +608,7 @@ mod tests {
         let c1 = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         // External tangency.
         let tangent = Cylinder::new(Point3D::new(4.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
-        match c1.intersect_cylinder(&tangent, tol) {
+        match c1.intersect(&tangent, tol) {
             CylinderCylinderIntersection::TangentLine(l) => {
                 assert_eq!(l.origin(), Point3D::new(2.0, 0.0, 0.0));
             }
@@ -604,25 +616,22 @@ mod tests {
         }
         // Separate.
         let far = Cylinder::new(Point3D::new(5.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
-        assert_eq!(
-            c1.intersect_cylinder(&far, tol),
-            CylinderCylinderIntersection::Empty
-        );
+        assert_eq!(c1.intersect(&far, tol), CylinderCylinderIntersection::Empty);
         // Concentric, different radii.
         let nested = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
         assert_eq!(
-            c1.intersect_cylinder(&nested, tol),
+            c1.intersect(&nested, tol),
             CylinderCylinderIntersection::Empty
         );
         // Coincident.
         assert_eq!(
-            c1.intersect_cylinder(&c1, tol),
+            c1.intersect(&c1, tol),
             CylinderCylinderIntersection::Coincident
         );
         // Crossing axes: space quartic, no closed form.
         let crossed = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 2.0).unwrap();
         assert_eq!(
-            c1.intersect_cylinder(&crossed, tol),
+            c1.intersect(&crossed, tol),
             CylinderCylinderIntersection::NotAnalytic
         );
     }

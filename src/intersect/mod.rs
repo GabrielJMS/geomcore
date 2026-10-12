@@ -18,7 +18,7 @@ use crate::{
 };
 
 mod dispatch;
-pub use dispatch::{InlineList, Intersect};
+pub use dispatch::{InlineList, Intersect, SurfaceIntersection};
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]

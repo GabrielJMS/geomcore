@@ -9,6 +9,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
+use geomcore::Intersect;
 use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D,
     InterpParametrization, Line2D, Line3D, Parabola3D, ParametricCurve3D, PointExtrema2D,
@@ -579,7 +580,7 @@ impl PyPlane {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_plane(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             PlanePlaneIntersection::Line(l) => Ok((
                 "line".to_string(),
                 PyLine3D(l).into_pyobject(py)?.into_any().unbind(),
@@ -601,7 +602,7 @@ impl PyPlane {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_sphere(&sphere.0, tol) {
+        match self.0.intersect(&sphere.0, tol) {
             PlaneSphereIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -627,7 +628,7 @@ impl PyPlane {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cylinder(&cylinder.0, tol) {
+        match self.0.intersect(&cylinder.0, tol) {
             PlaneCylinderIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -668,7 +669,7 @@ impl PyPlane {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cone(&cone.0, tol) {
+        match self.0.intersect(&cone.0, tol) {
             PlaneConeIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -839,7 +840,7 @@ impl PyCylinder {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cylinder(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             CylinderCylinderIntersection::TwoLines(l1, l2) => Ok((
                 "two_lines".to_string(),
                 (
@@ -995,7 +996,7 @@ impl PyCone {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cylinder(&cylinder.0, tol) {
+        match self.0.intersect(&cylinder.0, tol) {
             ConeCylinderIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -1020,7 +1021,7 @@ impl PyCone {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cone(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             ConeConeIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1157,7 +1158,7 @@ impl PySphere {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_sphere(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             SphereSphereIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1185,7 +1186,7 @@ impl PySphere {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cylinder(&cylinder.0, tol) {
+        match self.0.intersect(&cylinder.0, tol) {
             SphereCylinderIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1219,7 +1220,7 @@ impl PySphere {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cone(&cone.0, tol) {
+        match self.0.intersect(&cone.0, tol) {
             SphereConeIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -1350,7 +1351,7 @@ impl PyTorus {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_plane(&plane.0, tol) {
+        match self.0.intersect(&plane.0, tol) {
             TorusPlaneIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -1382,7 +1383,7 @@ impl PyTorus {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_sphere(&sphere.0, tol) {
+        match self.0.intersect(&sphere.0, tol) {
             TorusSphereIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1413,7 +1414,7 @@ impl PyTorus {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cylinder(&cylinder.0, tol) {
+        match self.0.intersect(&cylinder.0, tol) {
             TorusCylinderIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -1439,7 +1440,7 @@ impl PyTorus {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_cone(&cone.0, tol) {
+        match self.0.intersect(&cone.0, tol) {
             TorusConeIntersection::Rings(rings) => Ok((
                 "rings".to_string(),
                 rings
@@ -1469,7 +1470,7 @@ impl PyTorus {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_torus(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             TorusTorusIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),

@@ -1,6 +1,7 @@
 //! Spheres in 3D: parametric evaluation and parameter inversion, thin
 //! wrappers over [`crate::surface_math::analytic`].
 
+use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
@@ -318,6 +319,32 @@ impl Sphere {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> SphereCylinderIntersection {
+        self.intersect(cylinder, tol)
+    }
+
+    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> SphereConeIntersection {
+        self.intersect(cone, tol)
+    }
+
+    /// Intersects with a [`Sphere`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_sphere(&self, other: &Sphere, tol: Tolerance) -> SphereSphereIntersection {
+        self.intersect(other, tol)
+    }
+}
+
+impl Intersect<Cylinder> for Sphere {
+    type Output = SphereCylinderIntersection;
+
     /// Intersects this sphere with a cylinder.
     ///
     /// The analytic path needs the cylinder axis through the sphere
@@ -331,22 +358,19 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Cylinder, Point3D, Sphere, SphereCylinderIntersection, Tolerance, Vector3D};
     /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match sphere.intersect_cylinder(&cylinder, tol) {
+    /// match sphere.intersect(&cylinder, tol) {
     ///     SphereCylinderIntersection::TwoCircles(c1, c2) => {
     ///         assert_eq!(c1.radius(), 2.0);
     ///     }
     ///     _ => panic!("expected two circles"),
     /// }
     /// ```
-    pub fn intersect_cylinder(
-        &self,
-        cylinder: &Cylinder,
-        tol: Tolerance,
-    ) -> SphereCylinderIntersection {
+    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> SphereCylinderIntersection {
         let axis = cylinder.axis();
         let a = axis.direction();
         let w = self.center() - axis.origin();
@@ -372,6 +396,10 @@ impl Sphere {
             SphereCylinderIntersection::TwoCircles(mk(1.0), mk(-1.0))
         }
     }
+}
+
+impl Intersect<Cone> for Sphere {
+    type Output = SphereConeIntersection;
 
     /// Intersects this sphere with a cone.
     ///
@@ -385,16 +413,17 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Cone, Frame3D, Point3D, Sphere, SphereConeIntersection, Tolerance};
     /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
     /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match sphere.intersect_cone(&cone, tol) {
+    /// match sphere.intersect(&cone, tol) {
     ///     SphereConeIntersection::TwoCircles(_, _) => {}
     ///     _ => panic!("expected two circles"),
     /// }
     /// ```
-    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> SphereConeIntersection {
+    fn intersect(&self, cone: &Cone, tol: Tolerance) -> SphereConeIntersection {
         let a = cone.frame().z_direction();
         let w = self.center() - cone.apex();
         let tc = w.dot(a);
@@ -423,6 +452,10 @@ impl Sphere {
             SphereConeIntersection::TwoCircles(mk(base + root), mk(base - root))
         }
     }
+}
+
+impl Intersect<Sphere> for Sphere {
+    type Output = SphereSphereIntersection;
 
     /// Intersects this sphere with another sphere.
     ///
@@ -439,18 +472,19 @@ impl Sphere {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Point3D, Sphere, SphereSphereIntersection, Tolerance};
     /// let s1 = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     /// let s2 = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match s1.intersect_sphere(&s2, tol) {
+    /// match s1.intersect(&s2, tol) {
     ///     SphereSphereIntersection::Circle(circle) => {
     ///         assert_eq!(circle.center(), Point3D::new(1.5, 0.0, 0.0));
     ///     }
     ///     _ => panic!("expected a circle"),
     /// }
     /// ```
-    pub fn intersect_sphere(&self, other: &Sphere, tol: Tolerance) -> SphereSphereIntersection {
+    fn intersect(&self, other: &Sphere, tol: Tolerance) -> SphereSphereIntersection {
         let c1 = self.center();
         let c2 = other.center();
         let r1 = self.radius();
@@ -616,7 +650,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let s1 = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
         let s2 = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 2.0).unwrap();
-        match s1.intersect_sphere(&s2, tol) {
+        match s1.intersect(&s2, tol) {
             SphereSphereIntersection::Circle(circle) => {
                 assert_eq!(circle.center(), Point3D::new(1.5, 0.0, 0.0));
                 assert!((circle.radius() - 1.75f64.sqrt()).abs() < 1e-12);
@@ -634,22 +668,22 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let s1 = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
         // External tangency.
-        match s1.intersect_sphere(&Sphere::new(Point3D::new(4.0, 0.0, 0.0), 2.0).unwrap(), tol) {
+        match s1.intersect(&Sphere::new(Point3D::new(4.0, 0.0, 0.0), 2.0).unwrap(), tol) {
             SphereSphereIntersection::TangentPoint(p) => assert_eq!(p, Point3D::new(2.0, 0.0, 0.0)),
             _ => panic!("expected a tangent point"),
         }
         // Separate.
-        match s1.intersect_sphere(&Sphere::new(Point3D::new(5.0, 0.0, 0.0), 2.0).unwrap(), tol) {
+        match s1.intersect(&Sphere::new(Point3D::new(5.0, 0.0, 0.0), 2.0).unwrap(), tol) {
             SphereSphereIntersection::Empty => {}
             _ => panic!("expected empty"),
         }
         // One inside the other without contact.
-        match s1.intersect_sphere(&Sphere::new(Point3D::ORIGIN, 1.0).unwrap(), tol) {
+        match s1.intersect(&Sphere::new(Point3D::ORIGIN, 1.0).unwrap(), tol) {
             SphereSphereIntersection::Empty => {}
             _ => panic!("expected empty"),
         }
         // Coincident.
-        match s1.intersect_sphere(&Sphere::new(Point3D::ORIGIN, 2.0).unwrap(), tol) {
+        match s1.intersect(&Sphere::new(Point3D::ORIGIN, 2.0).unwrap(), tol) {
             SphereSphereIntersection::Coincident => {}
             _ => panic!("expected coincident"),
         }
@@ -660,7 +694,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-        match sphere.intersect_cylinder(&cylinder, tol) {
+        match sphere.intersect(&cylinder, tol) {
             SphereCylinderIntersection::TwoCircles(c1, c2) => {
                 assert_eq!(c1.radius(), 2.0);
                 assert_eq!(c2.radius(), 2.0);
@@ -675,7 +709,7 @@ mod tests {
         }
         // Grazing tube.
         let grazing = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 3.0).unwrap();
-        match sphere.intersect_cylinder(&grazing, tol) {
+        match sphere.intersect(&grazing, tol) {
             SphereCylinderIntersection::Circle(c) => {
                 assert_eq!(c.center(), Point3D::ORIGIN);
                 assert_eq!(c.radius(), 3.0);
@@ -685,13 +719,13 @@ mod tests {
         // Oversize tube misses.
         let fat = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 4.0).unwrap();
         assert_eq!(
-            sphere.intersect_cylinder(&fat, tol),
+            sphere.intersect(&fat, tol),
             SphereCylinderIntersection::Empty
         );
         // Offset axis: space quartic, no closed form.
         let off = Cylinder::new(Point3D::new(0.0, 1.0, 0.0), Vector3D::Z, 2.0).unwrap();
         assert_eq!(
-            sphere.intersect_cylinder(&off, tol),
+            sphere.intersect(&off, tol),
             SphereCylinderIntersection::NotAnalytic
         );
     }
@@ -701,7 +735,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
-        match sphere.intersect_cone(&cone, tol) {
+        match sphere.intersect(&cone, tol) {
             SphereConeIntersection::TwoCircles(c1, c2) => {
                 // Rings at axial 6.194 (r 2.619) and 1.832 (r 0.775).
                 assert!((c1.center().z - 1.4636).abs() < 1e-3);
@@ -721,13 +755,10 @@ mod tests {
         }
         // Small sphere around the origin: clear of both nappes.
         let small = Sphere::new(Point3D::ORIGIN, 0.5).unwrap();
-        assert_eq!(
-            small.intersect_cone(&cone, tol),
-            SphereConeIntersection::Empty
-        );
+        assert_eq!(small.intersect(&cone, tol), SphereConeIntersection::Empty);
         // Beyond the apex: two rings on the opposite nappe.
         let behind = Sphere::new(Point3D::new(0.0, 0.0, -6.0), 0.5).unwrap();
-        match behind.intersect_cone(&cone, tol) {
+        match behind.intersect(&cone, tol) {
             SphereConeIntersection::TwoCircles(c1, c2) => {
                 for p in [c1, c2].iter().flat_map(|c| c.eval_points(&[0.0, 2.0])) {
                     assert!(p.z < cone.apex().z);
@@ -739,7 +770,7 @@ mod tests {
         }
         // Around the apex: one ring on each nappe.
         let around = Sphere::new(cone.apex(), 1.0).unwrap();
-        match around.intersect_cone(&cone, tol) {
+        match around.intersect(&cone, tol) {
             SphereConeIntersection::TwoCircles(c1, c2) => {
                 assert!((c1.center().z - cone.apex().z) * (c2.center().z - cone.apex().z) < 0.0);
                 for p in [c1, c2].iter().flat_map(|c| c.eval_points(&[0.0, 2.0])) {
@@ -752,7 +783,7 @@ mod tests {
         // Off-axis center: space quartic, no closed form.
         let off = Sphere::new(Point3D::new(1.0, 0.0, 0.0), 1.0).unwrap();
         assert_eq!(
-            off.intersect_cone(&cone, tol),
+            off.intersect(&cone, tol),
             SphereConeIntersection::NotAnalytic
         );
     }
@@ -764,7 +795,7 @@ mod tests {
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
         let tc = (Point3D::ORIGIN - cone.apex()).dot(Vector3D::Z);
         let sphere = Sphere::new(Point3D::ORIGIN, tc * 0.4f64.sin()).unwrap();
-        match sphere.intersect_cone(&cone, tol) {
+        match sphere.intersect(&cone, tol) {
             SphereConeIntersection::TangentCircle(c) => {
                 assert!(sphere.contains(c.eval_point(0.0), tol));
                 assert!(cone.contains(c.eval_point(1.0), tol));

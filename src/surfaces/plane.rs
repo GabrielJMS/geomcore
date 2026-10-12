@@ -2,6 +2,7 @@
 //! construction from points or an implicit equation, thin wrappers over
 //! [`crate::surface_math::analytic`].
 
+use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
@@ -385,6 +386,60 @@ impl Plane {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_plane(&self, other: &Plane, tol: Tolerance) -> PlanePlaneIntersection {
+        self.intersect(other, tol)
+    }
+
+    /// Intersects with a [`Sphere`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> PlaneSphereIntersection {
+        self.intersect(sphere, tol)
+    }
+
+    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_cylinder(
+        &self,
+        cylinder: &Cylinder,
+        tol: Tolerance,
+    ) -> PlaneCylinderIntersection {
+        self.intersect(cylinder, tol)
+    }
+
+    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
+    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> PlaneConeIntersection {
+        self.intersect(cone, tol)
+    }
+}
+
+/// Builds a frame at `origin` with `z_dir = normalize(normal)` and an
+/// arbitrary x direction perpendicular to it, matching the reference
+/// implementation's convention for planes derived from an implicit
+/// equation: zero the smallest-magnitude component of the normal and swap
+/// the other two (with a sign that reproduces the golden fixture).
+///
+/// `normal` must be non-zero (checked by the caller).
+fn arbitrary_perpendicular_frame(origin: Point3D, normal: Vector3D) -> Frame3D {
+    let z = normal.normalized().expect("normal is non-zero (checked)");
+    let (ax, ay, az) = (z.x.abs(), z.y.abs(), z.z.abs());
+    let x_dir = if ax <= ay && ax <= az {
+        Vector3D::new(0.0, z.z, -z.y)
+    } else if ay <= ax && ay <= az {
+        Vector3D::new(z.z, 0.0, -z.x)
+    } else {
+        Vector3D::new(z.y, -z.x, 0.0)
+    }
+    .normalized()
+    .expect("z has unit length and is nonzero on at least two axes, so the swap is nonzero");
+    Frame3D::new(origin, z, x_dir).expect("x_dir constructed perpendicular to z by design")
+}
+
+impl Intersect<Plane> for Plane {
+    type Output = PlanePlaneIntersection;
+
     /// Intersects this plane with another plane.
     ///
     /// Non-parallel planes meet in a [`Line3D`]: the direction is the
@@ -399,11 +454,12 @@ impl Plane {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Plane, PlanePlaneIntersection, Point3D, Tolerance, Vector3D};
     /// let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match xy.intersect_plane(&zy, tol) {
+    /// match xy.intersect(&zy, tol) {
     ///     PlanePlaneIntersection::Line(line) => {
     ///         assert_eq!(line.origin(), Point3D::ORIGIN);
     ///         assert_eq!(line.direction(), Vector3D::Y);
@@ -411,7 +467,7 @@ impl Plane {
     ///     _ => panic!("expected a line"),
     /// }
     /// ```
-    pub fn intersect_plane(&self, other: &Plane, tol: Tolerance) -> PlanePlaneIntersection {
+    fn intersect(&self, other: &Plane, tol: Tolerance) -> PlanePlaneIntersection {
         let n1 = self.normal();
         let n2 = other.normal();
         let d = n1.cross(n2);
@@ -455,6 +511,10 @@ impl Plane {
             PlanePlaneIntersection::Line(line)
         }
     }
+}
+
+impl Intersect<Sphere> for Plane {
+    type Output = PlaneSphereIntersection;
 
     /// Intersects this plane with a sphere.
     ///
@@ -469,11 +529,12 @@ impl Plane {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Plane, PlaneSphereIntersection, Point3D, Sphere, Tolerance, Vector3D};
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match plane.intersect_sphere(&sphere, tol) {
+    /// match plane.intersect(&sphere, tol) {
     ///     PlaneSphereIntersection::Circle(circle) => {
     ///         assert_eq!(circle.center(), Point3D::ORIGIN);
     ///         assert_eq!(circle.radius(), 2.0);
@@ -481,7 +542,7 @@ impl Plane {
     ///     _ => panic!("expected a circle"),
     /// }
     /// ```
-    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> PlaneSphereIntersection {
+    fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> PlaneSphereIntersection {
         let n = self.normal();
         let h = n.dot(sphere.center() - self.frame.origin());
         let h_abs = h.abs();
@@ -499,6 +560,10 @@ impl Plane {
             PlaneSphereIntersection::Circle(circle)
         }
     }
+}
+
+impl Intersect<Cylinder> for Plane {
+    type Output = PlaneCylinderIntersection;
 
     /// Intersects this plane with a cylinder.
     ///
@@ -513,11 +578,12 @@ impl Plane {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Cylinder, Plane, PlaneCylinderIntersection, Point3D, Tolerance, Vector3D};
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match plane.intersect_cylinder(&cylinder, tol) {
+    /// match plane.intersect(&cylinder, tol) {
     ///     PlaneCylinderIntersection::Circle(circle) => {
     ///         assert_eq!(circle.center(), Point3D::ORIGIN);
     ///         assert_eq!(circle.radius(), 2.0);
@@ -525,11 +591,7 @@ impl Plane {
     ///     _ => panic!("expected a circle"),
     /// }
     /// ```
-    pub fn intersect_cylinder(
-        &self,
-        cylinder: &Cylinder,
-        tol: Tolerance,
-    ) -> PlaneCylinderIntersection {
+    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> PlaneCylinderIntersection {
         let n = self.normal();
         let a = cylinder.axis().direction();
         let r = cylinder.radius();
@@ -577,6 +639,10 @@ impl Plane {
             PlaneCylinderIntersection::Ellipse(ellipse)
         }
     }
+}
+
+impl Intersect<Cone> for Plane {
+    type Output = PlaneConeIntersection;
 
     /// Intersects this plane with a cone.
     ///
@@ -597,11 +663,12 @@ impl Plane {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::Intersect;
     /// use geomcore::{Cone, Frame3D, Plane, PlaneConeIntersection, Point3D, Tolerance, Vector3D};
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match plane.intersect_cone(&cone, tol) {
+    /// match plane.intersect(&cone, tol) {
     ///     PlaneConeIntersection::Circle(circle) => {
     ///         assert_eq!(circle.center(), Point3D::ORIGIN);
     ///         assert!((circle.radius() - 2.0).abs() < 1e-12);
@@ -609,7 +676,7 @@ impl Plane {
     ///     _ => panic!("expected a circle"),
     /// }
     /// ```
-    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> PlaneConeIntersection {
+    fn intersect(&self, cone: &Cone, tol: Tolerance) -> PlaneConeIntersection {
         let n = self.normal();
         let a = cone.frame().z_direction();
         // The double cone about `a` with half-angle |semi_angle|.
@@ -705,28 +772,6 @@ impl Plane {
             }
         }
     }
-}
-
-/// Builds a frame at `origin` with `z_dir = normalize(normal)` and an
-/// arbitrary x direction perpendicular to it, matching the reference
-/// implementation's convention for planes derived from an implicit
-/// equation: zero the smallest-magnitude component of the normal and swap
-/// the other two (with a sign that reproduces the golden fixture).
-///
-/// `normal` must be non-zero (checked by the caller).
-fn arbitrary_perpendicular_frame(origin: Point3D, normal: Vector3D) -> Frame3D {
-    let z = normal.normalized().expect("normal is non-zero (checked)");
-    let (ax, ay, az) = (z.x.abs(), z.y.abs(), z.z.abs());
-    let x_dir = if ax <= ay && ax <= az {
-        Vector3D::new(0.0, z.z, -z.y)
-    } else if ay <= ax && ay <= az {
-        Vector3D::new(z.z, 0.0, -z.x)
-    } else {
-        Vector3D::new(z.y, -z.x, 0.0)
-    }
-    .normalized()
-    .expect("z has unit length and is nonzero on at least two axes, so the swap is nonzero");
-    Frame3D::new(origin, z, x_dir).expect("x_dir constructed perpendicular to z by design")
 }
 
 #[cfg(test)]
@@ -954,7 +999,7 @@ mod tests {
         let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         let tol = Tolerance::DEFAULT;
-        match xy.intersect_plane(&zy, tol) {
+        match xy.intersect(&zy, tol) {
             PlanePlaneIntersection::Line(line) => {
                 assert_eq!(line.origin(), Point3D::ORIGIN);
                 assert_eq!(line.direction(), Vector3D::Y);
@@ -971,20 +1016,11 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let p1 = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         let p2 = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
-        assert_eq!(
-            p1.intersect_plane(&p2, tol),
-            PlanePlaneIntersection::Parallel
-        );
+        assert_eq!(p1.intersect(&p2, tol), PlanePlaneIntersection::Parallel);
         // Flipped normal is still the same plane.
         let p3 = Plane::new(Point3D::ORIGIN, Vector3D::Z * -1.0).unwrap();
-        assert_eq!(
-            p1.intersect_plane(&p3, tol),
-            PlanePlaneIntersection::Coincident
-        );
-        assert_eq!(
-            p1.intersect_plane(&p1, tol),
-            PlanePlaneIntersection::Coincident
-        );
+        assert_eq!(p1.intersect(&p3, tol), PlanePlaneIntersection::Coincident);
+        assert_eq!(p1.intersect(&p1, tol), PlanePlaneIntersection::Coincident);
     }
 
     #[test]
@@ -992,7 +1028,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
         // Diametral section: great circle.
-        match plane.intersect_sphere(&Sphere::new(Point3D::ORIGIN, 2.0).unwrap(), tol) {
+        match plane.intersect(&Sphere::new(Point3D::ORIGIN, 2.0).unwrap(), tol) {
             PlaneSphereIntersection::Circle(circle) => {
                 assert_eq!(circle.center(), Point3D::ORIGIN);
                 assert_eq!(circle.radius(), 2.0);
@@ -1001,7 +1037,7 @@ mod tests {
             _ => panic!("expected a circle"),
         }
         // Offset section.
-        match plane.intersect_sphere(&Sphere::new(Point3D::new(0.0, 0.0, 1.0), 2.0).unwrap(), tol) {
+        match plane.intersect(&Sphere::new(Point3D::new(0.0, 0.0, 1.0), 2.0).unwrap(), tol) {
             PlaneSphereIntersection::Circle(circle) => {
                 assert_eq!(circle.center(), Point3D::ORIGIN);
                 assert!((circle.radius() - 3.0f64.sqrt()).abs() < 1e-12);
@@ -1009,12 +1045,12 @@ mod tests {
             _ => panic!("expected a circle"),
         }
         // Grazing contact.
-        match plane.intersect_sphere(&Sphere::new(Point3D::new(0.0, 0.0, 2.0), 2.0).unwrap(), tol) {
+        match plane.intersect(&Sphere::new(Point3D::new(0.0, 0.0, 2.0), 2.0).unwrap(), tol) {
             PlaneSphereIntersection::TangentPoint(p) => assert_eq!(p, Point3D::ORIGIN),
             _ => panic!("expected a tangent point"),
         }
         // Clear miss.
-        match plane.intersect_sphere(&Sphere::new(Point3D::new(0.0, 0.0, 5.0), 2.0).unwrap(), tol) {
+        match plane.intersect(&Sphere::new(Point3D::new(0.0, 0.0, 5.0), 2.0).unwrap(), tol) {
             PlaneSphereIntersection::Empty => {}
             _ => panic!("expected empty"),
         }
@@ -1027,7 +1063,7 @@ mod tests {
         let plane =
             Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, tilt.sin(), tilt.cos())).unwrap();
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-        match plane.intersect_cylinder(&cylinder, tol) {
+        match plane.intersect(&cylinder, tol) {
             PlaneCylinderIntersection::Ellipse(ellipse) => {
                 assert_eq!(ellipse.center(), Point3D::ORIGIN);
                 assert_eq!(ellipse.minor_radius(), 2.0);
@@ -1047,7 +1083,7 @@ mod tests {
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         // Two generators at x = +-sqrt(3), y = 1.
         let plane = Plane::new(Point3D::new(0.0, 1.0, 0.0), Vector3D::Y).unwrap();
-        match plane.intersect_cylinder(&cylinder, tol) {
+        match plane.intersect(&cylinder, tol) {
             PlaneCylinderIntersection::TwoLines(l1, l2) => {
                 assert_eq!(l1.direction(), Vector3D::Z);
                 assert_eq!(l2.direction(), Vector3D::Z);
@@ -1058,7 +1094,7 @@ mod tests {
         }
         // Grazing generator.
         let tangent = Plane::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::Y).unwrap();
-        match tangent.intersect_cylinder(&cylinder, tol) {
+        match tangent.intersect(&cylinder, tol) {
             PlaneCylinderIntersection::TangentLine(l) => {
                 assert_eq!(l.origin(), Point3D::new(0.0, 2.0, 0.0));
             }
@@ -1067,7 +1103,7 @@ mod tests {
         // Clear miss.
         let miss = Plane::new(Point3D::new(0.0, 3.0, 0.0), Vector3D::Y).unwrap();
         assert_eq!(
-            miss.intersect_cylinder(&cylinder, tol),
+            miss.intersect(&cylinder, tol),
             PlaneCylinderIntersection::Empty
         );
     }
@@ -1079,7 +1115,7 @@ mod tests {
         let plane =
             Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, tilt.sin(), tilt.cos())).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
-        match plane.intersect_cone(&cone, tol) {
+        match plane.intersect(&cone, tol) {
             PlaneConeIntersection::Ellipse(ellipse) => {
                 assert!(ellipse.major_radius() > ellipse.minor_radius());
                 for p in ellipse.eval_points(&[0.0, 1.0, 2.0, 4.0]) {
@@ -1098,7 +1134,7 @@ mod tests {
         let plane =
             Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, tilt.sin(), tilt.cos())).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
-        match plane.intersect_cone(&cone, tol) {
+        match plane.intersect(&cone, tol) {
             PlaneConeIntersection::Parabola(parabola) => {
                 for p in parabola.eval_points(&[-2.0, 0.0, 2.0]) {
                     assert!(plane.contains(p, tol));
@@ -1114,7 +1150,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let plane = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
-        match plane.intersect_cone(&cone, tol) {
+        match plane.intersect(&cone, tol) {
             PlaneConeIntersection::Hyperbola(upper, lower) => {
                 let apex_height = cone.apex().z;
                 for (branch, side) in [(upper, 1.0), (lower, -1.0)] {
@@ -1141,16 +1177,14 @@ mod tests {
             Vector3D::new(0.0, 0.2f64.sin(), 0.2f64.cos()),
         )
         .unwrap();
-        let PlaneCylinderIntersection::Ellipse(ellipse) =
-            oblique.intersect_cylinder(&cylinder, tol)
-        else {
+        let PlaneCylinderIntersection::Ellipse(ellipse) = oblique.intersect(&cylinder, tol) else {
             panic!("expected an ellipse");
         };
         assert_eq!(
             ellipse.intersect_cylinder(&cylinder, tol),
             ConicSurfaceIntersection::Coincident
         );
-        let PlaneConeIntersection::Ellipse(ellipse) = oblique.intersect_cone(&cone, tol) else {
+        let PlaneConeIntersection::Ellipse(ellipse) = oblique.intersect(&cone, tol) else {
             panic!("expected an ellipse");
         };
         assert_eq!(
@@ -1163,7 +1197,7 @@ mod tests {
             Vector3D::new(0.0, tilt.sin(), tilt.cos()),
         )
         .unwrap();
-        let PlaneConeIntersection::Parabola(parabola) = parallel.intersect_cone(&cone, tol) else {
+        let PlaneConeIntersection::Parabola(parabola) = parallel.intersect(&cone, tol) else {
             panic!("expected a parabola");
         };
         assert_eq!(
@@ -1171,8 +1205,7 @@ mod tests {
             ConicSurfaceIntersection::Coincident
         );
         let steep = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
-        let PlaneConeIntersection::Hyperbola(upper, lower) = steep.intersect_cone(&cone, tol)
-        else {
+        let PlaneConeIntersection::Hyperbola(upper, lower) = steep.intersect(&cone, tol) else {
             panic!("expected a hyperbola");
         };
         for branch in [upper, lower] {
@@ -1206,12 +1239,12 @@ mod tests {
         // Perpendicular plane through the apex: just the tip.
         let perp = Plane::new(apex, Vector3D::Z).unwrap();
         assert_eq!(
-            perp.intersect_cone(&cone, tol),
+            perp.intersect(&cone, tol),
             PlaneConeIntersection::ApexPoint(apex)
         );
         // Steep plane through the apex: two generators.
         let steep = Plane::new(apex, Vector3D::new(1.0, 0.0, 0.1).normalized().unwrap()).unwrap();
-        match steep.intersect_cone(&cone, tol) {
+        match steep.intersect(&cone, tol) {
             PlaneConeIntersection::TwoLines(l1, l2) => {
                 assert_eq!(l1.origin(), apex);
                 assert_eq!(l2.origin(), apex);
@@ -1236,7 +1269,7 @@ mod tests {
         let tangent = 60f64.to_radians();
         let kind = |d: f64, angular: f64| {
             let tol = Tolerance::new(1e-7, angular, 1e-9);
-            match tilted(Point3D::ORIGIN, tangent + d).intersect_cone(&cone, tol) {
+            match tilted(Point3D::ORIGIN, tangent + d).intersect(&cone, tol) {
                 PlaneConeIntersection::ApexPoint(_) => "apex",
                 PlaneConeIntersection::TangentLine(_) => "tangent",
                 PlaneConeIntersection::TwoLines(..) => "two",
@@ -1267,8 +1300,7 @@ mod tests {
                 std::f64::consts::FRAC_PI_2 + 0.4,
             ] {
                 let plane = tilted(apex, tilt);
-                let PlaneConeIntersection::TangentLine(line) = plane.intersect_cone(&cone, tol)
-                else {
+                let PlaneConeIntersection::TangentLine(line) = plane.intersect(&cone, tol) else {
                     panic!("expected a tangent line at tilt {tilt}");
                 };
                 for t in [-5.0, 5.0] {
@@ -1284,8 +1316,7 @@ mod tests {
         let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 30f64.to_radians(), 0.0).unwrap();
         let tangent = 60f64.to_radians();
         let tol = Tolerance::DEFAULT;
-        let at =
-            |d: f64| tilted(Point3D::new(0.0, 0.0, 1.0), tangent + d).intersect_cone(&cone, tol);
+        let at = |d: f64| tilted(Point3D::new(0.0, 0.0, 1.0), tangent + d).intersect(&cone, tol);
         assert!(matches!(at(-2e-12), PlaneConeIntersection::Ellipse(_)));
         assert!(matches!(at(-0.5e-12), PlaneConeIntersection::Parabola(_)));
         assert!(matches!(at(0.5e-12), PlaneConeIntersection::Parabola(_)));
@@ -1303,7 +1334,7 @@ mod tests {
             let on_both =
                 |p: Point3D, plane: &Plane| plane.contains(p, tol) && cone.contains(p, tol);
             let flat = Plane::new(Point3D::new(0.0, 0.0, beyond), Vector3D::Z).unwrap();
-            match flat.intersect_cone(&cone, tol) {
+            match flat.intersect(&cone, tol) {
                 PlaneConeIntersection::Circle(circle) => {
                     assert!((circle.radius() - 2.0).abs() < 1e-9);
                     assert!(
@@ -1320,7 +1351,7 @@ mod tests {
                 Vector3D::new(0.0, 0.2f64.sin(), 0.2f64.cos()),
             )
             .unwrap();
-            match tilted.intersect_cone(&cone, tol) {
+            match tilted.intersect(&cone, tol) {
                 PlaneConeIntersection::Ellipse(ellipse) => {
                     let points = ellipse.eval_points(&[0.0, 1.0, 2.0, 4.0]);
                     assert!(points.into_iter().all(|p| on_both(p, &tilted)));
@@ -1333,7 +1364,7 @@ mod tests {
                 Vector3D::new(0.0, along.sin(), along.cos()),
             )
             .unwrap();
-            match parallel.intersect_cone(&cone, tol) {
+            match parallel.intersect(&cone, tol) {
                 PlaneConeIntersection::Parabola(parabola) => {
                     let points = parabola.eval_points(&[-2.0, 0.0, 2.0]);
                     assert!(points.into_iter().all(|p| on_both(p, &parallel)));
@@ -1342,7 +1373,7 @@ mod tests {
             }
             // Lines through the apex lie on the cone on both sides of it.
             let apex_plane = Plane::new(cone.apex(), Vector3D::X).unwrap();
-            match apex_plane.intersect_cone(&cone, tol) {
+            match apex_plane.intersect(&cone, tol) {
                 PlaneConeIntersection::TwoLines(l1, l2) => {
                     for t in [-3.0, 3.0] {
                         assert!(cone.contains(l1.eval_point(t), tol));
