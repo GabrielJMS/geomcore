@@ -130,7 +130,7 @@ the Python distribution are versioned in lockstep.
   that do not merge into them. Other pairs are `Sampled`. Code that
   only reads the hits keeps compiling unless it names the `Vec` type;
   call `into_hits()` there.
-  See ADR 0006. Python is unchanged and still returns the list of hits.
+  See ADR 0007. Python is unchanged and still returns the list of hits.
 - **Breaking:** numeric curve–curve intersection and extrema report
   whether their search was complete (#32), like the curve–surface case:
   `intersect_curve_curve` returns `CurveCurveHits` (`hits()`,
@@ -149,7 +149,7 @@ the Python distribution are versioned in lockstep.
   join the extrema's, one minimum kept per valley. Other pairs, two
   straight curves included, are `Sampled`. Code that only reads the
   results keeps compiling unless it names the `Vec` type; call
-  `into_hits()` or `into_minima()` there. See ADR 0006. Python is
+  `into_hits()` or `into_minima()` there. See ADR 0007. Python is
   unchanged.
 
 ### Fixed
