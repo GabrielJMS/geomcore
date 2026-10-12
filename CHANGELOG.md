@@ -45,6 +45,15 @@ the Python distribution are versioned in lockstep.
   curve and surface types, get them from `eval_point` and
   `eval_derivative`. The numeric curve–curve extrema and intersection and
   the marching intersection use them, 12–17% faster on B-splines.
+- Degree elevation (#36): `elevate_degree` on `BSplineCurve3D`, and
+  `elevate_u_degree` and `elevate_v_degree` on `BSplineSurface`, raise
+  the degree by any amount in one pass and return a B-spline that
+  evaluates to the same points and derivatives, with each knot's
+  multiplicity raised by the same amount so continuity is kept. Rational
+  B-splines are raised in homogeneous coordinates, periodic ones stay
+  periodic, and an unclamped curve or direction comes back clamped at
+  its range ends. Raising by 0 returns a copy; a degree above 25 is a
+  `DegreeElevationError`.
 
 ### Changed
 

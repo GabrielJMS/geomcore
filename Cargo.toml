@@ -26,6 +26,10 @@ harness = false
 name = "conic_quadric"
 harness = false
 
+[[bench]]
+name = "degree_elevation"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 

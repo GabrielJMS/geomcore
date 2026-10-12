@@ -121,3 +121,35 @@ Reproduce with:
 ```sh
 cargo bench --bench conic_quadric
 ```
+
+# Degree elevation
+
+`benches/degree_elevation.rs` raises clamped curves of degree 2 and 3
+with 32 poles and simple interior knots, polynomial and rational, by 1
+and by 3, and the bicubic 6×6 surface of the throughput baseline by 1 in
+`u`. Times include building the returned B-spline.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12).
+
+| input | by 1 | by 3 |
+|---|---|---|
+| degree 2, polynomial | ~1.4 µs | ~1.4 µs |
+| degree 2, rational | ~1.3 µs | ~1.9 µs |
+| degree 3, polynomial | ~2.0 µs | ~2.6 µs |
+| degree 3, rational | ~2.8 µs | ~2.9 µs |
+| bicubic 6×6 surface, `u` | ~0.93 µs | |
+
+All raises take one sweep over the knot spans, whatever the amount: each
+span becomes a Bézier piece, is raised with a precomputed matrix of
+binomial ratios and joined to the previous piece by removing the joint
+knot in place. Raising by 3 therefore costs little more than raising by
+1. For comparison, a reference implementation that raises the degree-2
+curve in steps of one takes about 4.6 µs by 1 and 16 µs by 3, and the
+6×6 surface about 5.4 µs.
+
+Reproduce with:
+
+```sh
+cargo bench --bench degree_elevation
+```

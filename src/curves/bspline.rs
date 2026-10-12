@@ -9,6 +9,7 @@
 use std::fmt;
 
 use crate::curve_math::bspline as math;
+use crate::curve_math::elevation;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::math::boxtree::{BoxTree, Lazy};
 use crate::math::newton_min_1d;
@@ -82,6 +83,24 @@ impl fmt::Display for BSplineConstructionError {
 }
 
 impl std::error::Error for BSplineConstructionError {}
+
+/// Error returned when the degree of a [`BSplineCurve3D`] or of a direction
+/// of a [`crate::BSplineSurface`] cannot be raised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DegreeElevationError {
+    /// The raised degree would exceed 25, the largest supported.
+    DegreeTooHigh,
+}
+
+impl fmt::Display for DegreeElevationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DegreeElevationError::DegreeTooHigh => f.write_str("raised degree would exceed 25"),
+        }
+    }
+}
+
+impl std::error::Error for DegreeElevationError {}
 
 /// A B-spline (optionally rational, optionally periodic) curve in 3D,
 /// evaluated by de Boor's algorithm.
@@ -719,6 +738,84 @@ impl BSplineCurve3D {
         }
     }
 
+    /// Returns the same curve with its degree raised by `amount`: it
+    /// evaluates to the same points and derivatives everywhere, up to
+    /// rounding.
+    ///
+    /// Every knot keeps its value and its multiplicity rises by `amount`,
+    /// so the curve keeps its continuity at each knot; the pole count
+    /// grows by `amount` per knot span. A rational curve is raised in
+    /// homogeneous coordinates and stays rational, a periodic one stays
+    /// periodic with the same bounds. An unclamped non-periodic curve (end
+    /// multiplicities below `degree + 1`) comes back clamped at its bounds,
+    /// with multiplicity `degree + amount + 1` there, and the knots outside
+    /// its bounds dropped. An `amount` of 0 returns an identical copy.
+    ///
+    /// One sweep over the knot spans raises the degree by any amount at
+    /// once (The NURBS Book, A5.9): each span is brought to Bézier form,
+    /// raised by the Bernstein elevation formula, and the knot it shares
+    /// with the previous span removed back down to its new multiplicity.
+    ///
+    /// # Errors
+    ///
+    /// [`DegreeElevationError::DegreeTooHigh`] if the raised degree would
+    /// exceed 25.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    ///
+    /// // Rational quadratic quarter circle, raised to a cubic.
+    /// let w = std::f64::consts::FRAC_1_SQRT_2;
+    /// let poles = vec![
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 1.0, 0.0),
+    ///     Point3D::new(0.0, 1.0, 0.0),
+    /// ];
+    /// let arc = BSplineCurve3D::new_rational(2, poles, vec![1.0, w, 1.0], vec![0.0, 1.0], vec![3, 3], false)
+    ///     .unwrap();
+    /// let cubic = arc.elevate_degree(1).unwrap();
+    /// assert_eq!(cubic.degree(), 3);
+    /// assert_eq!(cubic.multiplicities(), &[4, 4]);
+    /// assert_eq!(cubic.poles().len(), 4);
+    /// for i in 0..=10 {
+    ///     let u = i as f64 / 10.0;
+    ///     assert!(cubic.eval_point(u).distance(arc.eval_point(u)) < 1e-12);
+    /// }
+    /// ```
+    pub fn elevate_degree(&self, amount: usize) -> Result<BSplineCurve3D, DegreeElevationError> {
+        if amount == 0 {
+            return Ok(self.clone());
+        }
+        if amount > math::MAX_DEGREE - self.degree {
+            return Err(DegreeElevationError::DegreeTooHigh);
+        }
+        let dim = if self.is_rational() { 4 } else { 3 };
+        let raised = elevation::elevate(
+            self.degree,
+            amount,
+            self.periodic,
+            &self.knots,
+            &self.mults,
+            &self.flat,
+            &self.flat_poles,
+            dim,
+        );
+        let (poles, weights) = unpack_flat_poles(&raised.poles, self.is_rational());
+        Ok(BSplineCurve3D {
+            degree: self.degree + amount,
+            periodic: self.periodic,
+            poles,
+            weights,
+            knots: raised.knots,
+            mults: raised.mults,
+            flat: raised.flat,
+            flat_poles: raised.poles,
+            spans: Lazy::default(),
+        })
+    }
+
     /// Returns the curve's parameter bounds `(first, last)`.
     ///
     /// For a clamped (non-periodic) curve this is the active span
@@ -1257,6 +1354,24 @@ fn pack_flat_poles(poles: &[Point3D], weights: Option<&[f64]>) -> Vec<f64> {
             .zip(ws)
             .flat_map(|(p, &w)| [p.x * w, p.y * w, p.z * w, w])
             .collect(),
+    }
+}
+
+/// The poles (and, if `rational`, weights) of a flat buffer packed by
+/// [`pack_flat_poles`].
+fn unpack_flat_poles(flat: &[f64], rational: bool) -> (Vec<Point3D>, Option<Vec<f64>>) {
+    if rational {
+        let (poles, weights) = flat
+            .chunks_exact(4)
+            .map(|h| (Point3D::new(h[0] / h[3], h[1] / h[3], h[2] / h[3]), h[3]))
+            .unzip();
+        (poles, Some(weights))
+    } else {
+        let poles = flat
+            .chunks_exact(3)
+            .map(|c| Point3D::new(c[0], c[1], c[2]))
+            .collect();
+        (poles, None)
     }
 }
 

@@ -17,7 +17,7 @@
 use super::analytic::in_period;
 
 /// Maximum supported B-spline degree.
-const MAX_DEGREE: usize = 25;
+pub(crate) const MAX_DEGREE: usize = 25;
 
 /// Error type re-exported here for use by [`validate_direction`]; the
 /// canonical definition (and its docs) live on [`crate::curves`], next to

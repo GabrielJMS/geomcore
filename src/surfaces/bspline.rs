@@ -11,6 +11,8 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::curve_math::bspline as curve;
+use crate::curve_math::elevation;
+use crate::curves::DegreeElevationError;
 use crate::math::boxtree::{BoxTree, Lazy, box_distance};
 use crate::math::newton_min_2d;
 use crate::projection::SurfaceProjection;
@@ -465,6 +467,144 @@ impl BSplineSurface {
             h: self.h,
             patches: Lazy::default(),
         }
+    }
+
+    /// Returns the same surface with its `u` degree raised by `amount`: it
+    /// evaluates to the same points and derivatives everywhere, up to
+    /// rounding.
+    ///
+    /// Raises every `v`-column of the net as a [`crate::BSplineCurve3D`]
+    /// is raised by [`crate::BSplineCurve3D::elevate_degree`], in one sweep
+    /// over the `u` knot spans for all columns: every `u` multiplicity
+    /// rises by `amount` (an unclamped non-periodic direction comes back
+    /// clamped at its bounds), and the `v` direction is unchanged. An
+    /// `amount` of 0 returns an identical copy.
+    ///
+    /// # Errors
+    ///
+    /// [`DegreeElevationError::DegreeTooHigh`] if the raised degree would
+    /// exceed 25.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// let raised = surface.elevate_u_degree(2).unwrap();
+    /// assert_eq!((raised.u_degree(), raised.v_degree()), (3, 1));
+    /// let (p, q) = (raised.eval_point(0.3, 0.7), surface.eval_point(0.3, 0.7));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn elevate_u_degree(&self, amount: usize) -> Result<BSplineSurface, DegreeElevationError> {
+        if amount == 0 {
+            return Ok(self.clone());
+        }
+        if amount > curve::MAX_DEGREE - self.u_degree {
+            return Err(DegreeElevationError::DegreeTooHigh);
+        }
+        let raised = elevation::elevate(
+            self.u_degree,
+            amount,
+            self.u_periodic,
+            &self.u_knots,
+            &self.u_mults,
+            &self.u_flat,
+            &self.flat_poles,
+            self.n_v * self.h,
+        );
+        let n_u = raised.poles.len() / (self.n_v * self.h);
+        let (poles, weights) = unpack_flat_poles(&raised.poles, n_u, self.n_v, self.h);
+        Ok(BSplineSurface {
+            u_degree: self.u_degree + amount,
+            v_degree: self.v_degree,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+            poles,
+            weights,
+            u_knots: raised.knots,
+            u_mults: raised.mults,
+            v_knots: self.v_knots.clone(),
+            v_mults: self.v_mults.clone(),
+            u_flat: raised.flat,
+            v_flat: self.v_flat.clone(),
+            flat_poles: raised.poles,
+            n_u,
+            n_v: self.n_v,
+            h: self.h,
+            patches: Lazy::default(),
+        })
+    }
+
+    /// Returns the same surface with its `v` degree raised by `amount`: the
+    /// counterpart of [`BSplineSurface::elevate_u_degree`] along `v`, every
+    /// `u`-row of the net raised in one sweep over the `v` knot spans.
+    ///
+    /// # Errors
+    ///
+    /// [`DegreeElevationError::DegreeTooHigh`] if the raised degree would
+    /// exceed 25.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// let raised = surface.elevate_v_degree(1).unwrap();
+    /// assert_eq!((raised.u_degree(), raised.v_degree()), (1, 2));
+    /// let (p, q) = (raised.eval_point(0.3, 0.7), surface.eval_point(0.3, 0.7));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn elevate_v_degree(&self, amount: usize) -> Result<BSplineSurface, DegreeElevationError> {
+        if amount == 0 {
+            return Ok(self.clone());
+        }
+        if amount > curve::MAX_DEGREE - self.v_degree {
+            return Err(DegreeElevationError::DegreeTooHigh);
+        }
+        // Columns of the net are contiguous in its transpose.
+        let columns = transpose(&self.flat_poles, self.n_u, self.n_v, self.h);
+        let raised = elevation::elevate(
+            self.v_degree,
+            amount,
+            self.v_periodic,
+            &self.v_knots,
+            &self.v_mults,
+            &self.v_flat,
+            &columns,
+            self.n_u * self.h,
+        );
+        let n_v = raised.poles.len() / (self.n_u * self.h);
+        let flat_poles = transpose(&raised.poles, n_v, self.n_u, self.h);
+        let (poles, weights) = unpack_flat_poles(&flat_poles, self.n_u, n_v, self.h);
+        Ok(BSplineSurface {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree + amount,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+            poles,
+            weights,
+            u_knots: self.u_knots.clone(),
+            u_mults: self.u_mults.clone(),
+            v_knots: raised.knots,
+            v_mults: raised.mults,
+            u_flat: self.u_flat.clone(),
+            v_flat: raised.flat,
+            flat_poles,
+            n_u: self.n_u,
+            n_v,
+            h: self.h,
+            patches: Lazy::default(),
+        })
     }
 
     /// Evaluates the point on the surface at parameters `(u, v)`.
@@ -1533,6 +1673,44 @@ fn pack_flat_poles(poles: &[Vec<Point3D>], weights: Option<&Vec<Vec<f64>>>, h: u
     out
 }
 
+/// The pole grid (and, if `h == 4`, the weight grid) of a flat buffer
+/// packed by [`pack_flat_poles`], `n_u` rows of `n_v` poles.
+fn unpack_flat_poles(
+    flat: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> (Vec<Vec<Point3D>>, Option<Vec<Vec<f64>>>) {
+    let rows = flat.chunks_exact(n_v * h);
+    let point = |c: &[f64]| {
+        let w = if h == 4 { c[3] } else { 1.0 };
+        Point3D::new(c[0] / w, c[1] / w, c[2] / w)
+    };
+    let poles: Vec<Vec<Point3D>> = rows
+        .clone()
+        .map(|row| row.chunks_exact(h).map(point).collect())
+        .collect();
+    debug_assert_eq!(poles.len(), n_u);
+    let weights = (h == 4).then(|| {
+        rows.map(|row| row.chunks_exact(4).map(|c| c[3]).collect())
+            .collect()
+    });
+    (poles, weights)
+}
+
+/// The transpose of a row-major `[rows][cols][h]` buffer, laid out
+/// `[cols][rows][h]`.
+fn transpose(flat: &[f64], rows: usize, cols: usize, h: usize) -> Vec<f64> {
+    let mut out = Vec::with_capacity(flat.len());
+    for j in 0..cols {
+        for i in 0..rows {
+            let k = (i * cols + j) * h;
+            out.extend_from_slice(&flat[k..k + h]);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1912,6 +2090,37 @@ mod tests {
             false,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn test_elevated_directions_raise_multiplicities_and_keep_a_valid_net() {
+        let s = periodic_tube();
+        let u = s.elevate_u_degree(2).unwrap();
+        assert_eq!(u.u_knots, s.u_knots);
+        assert_eq!(u.u_mults, vec![3; 7]);
+        assert_eq!((u.n_u, u.n_v), (6 + 2 * 6, 2));
+        assert_eq!((u.v_mults.clone(), u.v_degree), (s.v_mults.clone(), 1));
+        let v = s.elevate_v_degree(3).unwrap();
+        assert_eq!(v.v_mults, vec![5, 5]);
+        assert_eq!((v.n_u, v.n_v), (6, 5));
+        assert_eq!(v.u_mults, s.u_mults);
+        for raised in [u, v] {
+            assert_eq!(raised.poles.len(), raised.n_u);
+            assert!(raised.poles.iter().all(|row| row.len() == raised.n_v));
+            let rebuilt = BSplineSurface::new(
+                raised.u_degree,
+                raised.v_degree,
+                raised.poles.clone(),
+                raised.u_knots.clone(),
+                raised.u_mults.clone(),
+                raised.v_knots.clone(),
+                raised.v_mults.clone(),
+                raised.u_periodic,
+                raised.v_periodic,
+            )
+            .unwrap();
+            assert_eq!(rebuilt, raised);
+        }
     }
 
     #[test]
