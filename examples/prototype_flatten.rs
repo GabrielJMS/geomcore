@@ -170,10 +170,17 @@ fn apriori(p: &Piece, eps: f64) -> (usize, f64) {
             .fold(0.0, f64::max)
             * nn
     } else {
-        let pts: Vec<V> = cp.iter().map(proj).collect();
+        let mut pts = [[0.0; 3]; MAXN];
+        for (q, h) in pts.iter_mut().zip(cp) {
+            *q = proj(h);
+        }
+        let pts = &pts[..=n];
         let c: V = std::array::from_fn(|j| pts.iter().map(|q| q[j]).sum::<f64>() / pts.len() as f64);
         let r = pts.iter().map(|q| norm(sub(*q, c))).fold(0.0, f64::max);
-        let x: Vec<V> = cp.iter().map(|h| [h[0] - c[0] * h[3], h[1] - c[1] * h[3], h[2] - c[2] * h[3]]).collect();
+        let mut x = [[0.0; 3]; MAXN];
+        for (xi, h) in x.iter_mut().zip(cp) {
+            *xi = [h[0] - c[0] * h[3], h[1] - c[1] * h[3], h[2] - c[2] * h[3]];
+        }
         let mx = (0..n - 1)
             .map(|i| norm(std::array::from_fn(|j| x[i + 2][j] - 2.0 * x[i + 1][j] + x[i][j])))
             .fold(0.0, f64::max);
@@ -682,9 +689,173 @@ fn batch(threads: usize) {
     println!("  {:<28}{:>10}{:>11.2}{:>13.1}{:>9.1}", "B hull, parallel", nbp, tbp * 1e3, nbp as f64 / tbp / 1e6, tb / tbp);
 }
 
+// ---------------------------------------------------------------- realistic
+
+/// Model-like edges: short cubics (4..10 poles) and quarter-circle arcs
+/// (rational quadratics), tolerance relative to each edge's size.
+fn realistic(threads: usize) {
+    const COUNT: usize = 100_000;
+    let mut r = Lcg(99);
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    let curves: Vec<BSplineCurve3D> = (0..COUNT)
+        .map(|i| {
+            if i % 3 == 0 {
+                let rad = 1.0 + 49.0 * r.next();
+                BSplineCurve3D::new_rational(2,
+                    vec![Point3D::new(rad, 0.0, 0.0), Point3D::new(rad, rad, 0.0), Point3D::new(0.0, rad, 0.0)],
+                    vec![1.0, s, 1.0], vec![0.0, 1.0], vec![3, 3], false).unwrap()
+            } else {
+                let n = 4 + (r.next() * 7.0) as usize;
+                let len = 5.0 + 95.0 * r.next();
+                let poles = (0..n)
+                    .map(|j| Point3D::new(j as f64 * len / (n - 1) as f64, 0.3 * len * (r.next() - 0.5), 0.3 * len * (r.next() - 0.5)))
+                    .collect();
+                let (k, m) = clamped(3, n);
+                BSplineCurve3D::new(3, poles, k, m, false).unwrap()
+            }
+        })
+        .collect();
+    let all: Vec<Vec<Piece>> = curves.iter().map(pieces).collect();
+    let sizes: Vec<f64> = curves.iter().map(size).collect();
+    let spans: usize = all.iter().map(|p| p.len()).sum();
+    println!("\n== Realistic: {COUNT} edges (2/3 cubics with 1..7 spans, 1/3 quarter arcs), {:.1} spans/edge, {threads} threads ==", spans as f64 / COUNT as f64);
+
+    let ns_per = |el: f64| el * 1e9 / COUNT as f64;
+    let t0 = Instant::now();
+    for c in &curves {
+        black_box(pieces(c));
+    }
+    println!("  Bezier extraction (prototype accessor, allocating): {:.0} ns/edge", ns_per(t0.elapsed().as_secs_f64()));
+
+    for rel in [1e-2, 1e-3] {
+        let mut ks = Vec::new();
+        let mut counts: Vec<usize> = all.iter().zip(&sizes).map(|(p, &sz)| apriori_counts(p, rel * sz, &mut ks)).collect();
+        let total: usize = counts.iter().sum();
+        counts.sort_unstable();
+        let pct = |q: f64| counts[((COUNT - 1) as f64 * q) as usize];
+        println!("\n  eps = {rel:e} x edge size: points/edge mean {:.1}, p50 {}, p95 {}, max {}  ({total} points)",
+            total as f64 / COUNT as f64, pct(0.5), pct(0.95), counts[COUNT - 1]);
+
+        let best = |f: &dyn Fn() -> f64| (0..5).map(|_| f()).fold(f64::INFINITY, f64::min);
+        // 1. Plan only.
+        let plan = best(&|| {
+            let t = Instant::now();
+            let mut ks = Vec::new();
+            for (p, &sz) in all.iter().zip(&sizes) {
+                black_box(apriori_counts(p, rel * sz, &mut ks));
+            }
+            t.elapsed().as_secs_f64()
+        });
+        // 2. Naive API: one freshly allocated polyline per edge.
+        let naive_h = best(&|| {
+            let t = Instant::now();
+            for (p, &sz) in all.iter().zip(&sizes) {
+                black_box(method_a(p, rel * sz));
+            }
+            t.elapsed().as_secs_f64()
+        });
+        let naive_c = best(&|| {
+            let t = Instant::now();
+            for (p, &sz) in all.iter().zip(&sizes) {
+                black_box(method_a_casteljau(p, rel * sz));
+            }
+            t.elapsed().as_secs_f64()
+        });
+        let adaptive = best(&|| {
+            let t = Instant::now();
+            for (p, &sz) in all.iter().zip(&sizes) {
+                black_box(method_c(p, rel * sz, true));
+            }
+            t.elapsed().as_secs_f64()
+        });
+        // 2b. Caller keeps one polyline buffer and one plan buffer across edges.
+        let reuse = best(&|| {
+            let t = Instant::now();
+            let (mut ks, mut out) = (Vec::new(), Polyline::default());
+            for (p, &sz) in all.iter().zip(&sizes) {
+                let n = apriori_counts(p, rel * sz, &mut ks);
+                for v in [&mut out.t, &mut out.x, &mut out.y, &mut out.z, &mut out.dev] {
+                    v.resize(n, 0.0);
+                }
+                apriori_fill(p, &ks, &mut out.t, &mut out.x, &mut out.y, &mut out.z, &mut out.dev);
+                black_box(&out);
+            }
+            t.elapsed().as_secs_f64()
+        });
+        // 2c. Same, edges split across threads, each with its own buffers.
+        let reuse_par = best(&|| {
+            let t = Instant::now();
+            let chunk = COUNT.div_ceil(threads);
+            std::thread::scope(|sc| {
+                for (ps, ss) in all.chunks(chunk).zip(sizes.chunks(chunk)) {
+                    sc.spawn(move || {
+                        let (mut ks, mut out) = (Vec::new(), Polyline::default());
+                        for (p, &sz) in ps.iter().zip(ss) {
+                            let n = apriori_counts(p, rel * sz, &mut ks);
+                            for v in [&mut out.t, &mut out.x, &mut out.y, &mut out.z, &mut out.dev] {
+                                v.resize(n, 0.0);
+                            }
+                            apriori_fill(p, &ks, &mut out.t, &mut out.x, &mut out.y, &mut out.z, &mut out.dev);
+                            black_box(&out);
+                        }
+                    });
+                }
+            });
+            t.elapsed().as_secs_f64()
+        });
+        // 3. Count then fill one caller buffer, serial or across threads.
+        let two_pass = |par: bool| -> f64 {
+            let t = Instant::now();
+            let mut kss: Vec<Vec<(usize, f64)>> = vec![Vec::new(); COUNT];
+            let cnt: Vec<usize> = all.iter().zip(&sizes).zip(&mut kss).map(|((p, &sz), k)| apriori_counts(p, rel * sz, k)).collect();
+            let total: usize = cnt.iter().sum();
+            let (mut tt, mut x, mut y, mut z, mut d) = (vec![0.0; total], vec![0.0; total], vec![0.0; total], vec![0.0; total], vec![0.0; total]);
+            let mut jobs = Vec::with_capacity(COUNT);
+            {
+                let (mut rt, mut rx, mut ry, mut rz, mut rd) = (&mut tt[..], &mut x[..], &mut y[..], &mut z[..], &mut d[..]);
+                for (i, &n) in cnt.iter().enumerate() {
+                    let (a, b) = rt.split_at_mut(n); rt = b;
+                    let (a2, b2) = rx.split_at_mut(n); rx = b2;
+                    let (a3, b3) = ry.split_at_mut(n); ry = b3;
+                    let (a4, b4) = rz.split_at_mut(n); rz = b4;
+                    let (a5, b5) = rd.split_at_mut(n); rd = b5;
+                    jobs.push((i, a, a2, a3, a4, a5));
+                }
+            }
+            if par {
+                let chunk = COUNT.div_ceil(threads);
+                let (kss, all) = (&kss, &all);
+                std::thread::scope(|sc| {
+                    for js in jobs.chunks_mut(chunk) {
+                        sc.spawn(move || for (i, a, b, c, dd, e) in js.iter_mut() { apriori_fill(&all[*i], &kss[*i], a, b, c, dd, e) });
+                    }
+                });
+            } else {
+                for (i, a, b, c, dd, e) in jobs.iter_mut() { apriori_fill(&all[*i], &kss[*i], a, b, c, dd, e) }
+            }
+            black_box((&tt, &x, &y, &z, &d));
+            t.elapsed().as_secs_f64()
+        };
+        let (ser, par) = (best(&|| two_pass(false)), best(&|| two_pass(true)));
+        let row = |label: &str, el: f64| println!("    {:<46}{:>9.1} ms{:>9.0} ns/edge{:>8.1} ns/point", label, el * 1e3, ns_per(el), el * 1e9 / total as f64);
+        row("plan only (counts)", plan);
+        row("C2 adaptive estimate, Vec per edge", adaptive);
+        row("A, de Casteljau eval, Vec per edge", naive_c);
+        row("A, Horner eval, Vec per edge", naive_h);
+        row("A, reused per-edge buffer, serial", reuse);
+        row(&format!("A, reused per-edge buffer, {threads} threads"), reuse_par);
+        row("A, count + fill one buffer, serial", ser);
+        row(&format!("A, count + fill one buffer, {threads} threads"), par);
+    }
+}
+
 // ---------------------------------------------------------------- main
 
 fn main() {
+    if std::env::args().any(|a| a == "realistic") {
+        realistic(std::thread::available_parallelism().map_or(4, |n| n.get()));
+        return;
+    }
     for rel in [1e-3, 1e-5] {
         println!("\n######## eps = {rel:e} x size (bounding-box diagonal of the poles) ########");
         for (name, c) in curves() {
