@@ -24,13 +24,18 @@ the Python distribution are versioned in lockstep.
   the curve's points at the range ends; closed curves end on their first
   point, with at least three segments. B-splines bound the angle
   deviation from the control points of their tangent's direction (#19,
-  #20; in homogeneous form for rational ones), reporting π only next to a
-  cusp or coincident poles. Ellipses, and trimmed lines, parabolas,
+  #20; in homogeneous form for rational ones), reporting π where no bound
+  was found: with an angle limit, only next to a cusp or (nearly)
+  coincident poles; without one, also on pieces turning too much. Ellipses, and trimmed lines, parabolas,
   hyperbolas and run-time `Curve3D`s, use exact closed-form deviations
   of equal parameter steps (#21); a trimmed line is one segment.
+  In the plane (#22), `Discretize2D` gives a `Discretization2D` of a
+  `Circle2D` or a trimmed 2D curve (lines, circles, run-time `Curve2D`s,
+  borrowed curves), its chord deviations being distances in the plane.
   Python: `discretize(max_chord_deviation, max_angle_deviation=None)` on
   `Circle3D`, `Ellipse3D`, `BSplineCurve3D` and `TrimmedCurve3D`,
-  returning a `Discretization3D`.
+  returning a `Discretization3D`, and on `Circle2D` and `TrimmedCurve2D`,
+  returning a `Discretization2D`.
 - A trimmed curve can borrow its basis (#18): the curve traits
   (`ParametricCurve3D`, `ParametricCurve2D`, `PointExtrema3D`,
   `PointExtrema2D`) are implemented for references to curves, so
@@ -45,6 +50,13 @@ the Python distribution are versioned in lockstep.
   curve and surface types, get them from `eval_point` and
   `eval_derivative`. The numeric curve–curve extrema and intersection and
   the marching intersection use them, 12–17% faster on B-splines.
+- `Tolerance::MODEL_SIZE` (1e5), the side of the cube centred on the
+  origin that models are assumed to fit in, and
+  `Tolerance::angular_for_extent(extent)`, the angle below which two
+  directions are parallel for geometry reaching `extent` from the pivot
+  of the turn: `confusion / extent`, never below `angular`. The default
+  angular tolerance, 1e-12, is `confusion / MODEL_SIZE`. Python:
+  `Tolerance.MODEL_SIZE` and `Tolerance.angular_for_extent(extent)`.
 
 ### Changed
 
@@ -54,12 +66,49 @@ the Python distribution are versioned in lockstep.
   `tol.confusion` of it (at least a few ulps of the coordinates far from
   the origin), where a fixed `1e-6` times the curve's distance from the
   origin was used: at the default tolerance a curve 1e-7 to 1e-6 off the
-  surface is now `CurveNotOnSurface`. Its angle checks use `tol.angular`,
-  and a circle counts as a sphere's meridian or parallel when it strays
+  surface is now `CurveNotOnSurface`. Its angle checks derive from `tol`
+  (see the angles below), and a circle counts as a sphere's meridian or parallel when it strays
   at most `tol.confusion` from one. Python: `parametrize_on(surface,
   tol=None)`.
+- Angles derive from the confusion tolerance and the extent of the
+  geometry involved (ADR 0006): two directions are parallel, coplanar or
+  coaxial when turning one onto the other moves that geometry by at most
+  `tol.confusion`. A circle, ellipse or torus tilted below that angle now
+  behaves as untilted in its intersections with planes, lines, circles,
+  conics, cylinders, cones and tori, and in `parametrize_on` a cylinder,
+  cone or torus; unbounded geometry (lines, planes, cylinders, cones,
+  parabolas, hyperbolas) keeps `tol.angular`. Two circles or conics are
+  coplanar when either lies in the other's plane.
+- **Breaking:** `DiscretizationCriteria::new` rejects a maximum chord
+  deviation below the default confusion tolerance (1e-7) with the new
+  `DiscretizationCriteriaError::ChordDeviationBelowConfusion`: a segment
+  that close to the curve already lies on it, and the count grew without
+  bound as the deviation shrank. Python raises `ValueError`.
+- **Breaking:** `Frame2D::new` rejects directions off square by more
+  than the angular tolerance (`|x·y| > 1e-12`), where the parametric
+  tolerance (1e-9) was used: axes 1e-9 off square move a point across
+  the model by 1e-4.
 
 ### Fixed
+
+- Near-coplanar circles and lines are no longer missed. At the default
+  tolerance, a circle tilted 1e-10 rad through a plane gave `Empty`
+  instead of the whole circle; a line tilted 1e-10 rad through a circle's
+  centre, or one whose origin lies far along it, gave `Empty` instead of
+  two points; two circles, or a circle and an ellipse, tilted 1e-10 rad
+  gave `NotAnalytic` or `Empty` instead of their crossings.
+- `Circle3D::parametrize_on` a plane panicked for a circle crossing the
+  plane; it returns `CurveNotOnSurface`.
+- Two 2D lines nearly parallel and one of them along an axis never
+  reported `Parallel` (directions 1e-14 rad apart crossed at 1e11);
+  they are parallel within `tol.angular`.
+- Two 3D lines up to 1e-6 rad apart were reported `Parallel`, because
+  the squared sine of their angle was compared with `tol.angular`; it
+  now compares the sine, and lines 1e-9 rad apart cross. The closest
+  points between straight curves (`curve_curve_extrema`) agree.
+- A line within 1e-6 rad of a cylinder's axis was treated as parallel to
+  it for the same reason, losing hits inside the model on a thin
+  cylinder; it is parallel within `tol.angular`.
 
 - A line or circle meeting a circle in its plane is found at a loose
   tolerance (#26). With `tol.confusion` above about `1e-6`, a line or

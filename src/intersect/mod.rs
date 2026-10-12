@@ -22,7 +22,7 @@ mod curve_curve;
 mod curve_surface;
 mod dispatch;
 mod marching;
-pub(crate) use conic::{intersect_conic_conic, intersect_conic_quadric};
+pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
 pub use curve_curve::{curve_curve_extrema, intersect_curve_curve};
 pub use curve_surface::intersect_curve_surface;
 pub use dispatch::{
@@ -567,6 +567,9 @@ pub(crate) struct PlacedConic {
     pub origin: Point3D,
     /// The implicit equation in frame coordinates.
     pub implicit: ImplicitConic,
+    /// How far the conic reaches from its origin: infinite for a parabola
+    /// or a hyperbola.
+    pub extent: f64,
 }
 
 /// A hit of a curve on a surface: the curve parameter, the point, and the
