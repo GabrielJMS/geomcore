@@ -18,6 +18,7 @@
 //! Near-multiple roots survive as multiplicity counts instead of
 //! collapsing or vanishing — tangencies downstream depend on it.
 
+use super::solve::solve_square;
 use crate::InlineList;
 
 /// Safety factor on the rounding-noise radius of a multiple root.
@@ -826,7 +827,10 @@ fn refine<const N: usize>(
                 row.iter_mut().for_each(|v| *v /= m);
             }
         }
-        let Some(step) = solve_small(j, w) else {
+        // Only an exactly singular step is refused; a near-singular one is
+        // left to the residual check below.
+        let step = solve_square(j, w, 0.0).filter(|s| s.iter().all(|v| v.is_finite()));
+        let Some(step) = step else {
             break;
         };
         let next: [f64; N] = std::array::from_fn(|i| x[i] - step[i]);
@@ -1023,37 +1027,6 @@ fn peel_root(b: f64, c: f64, d: f64, e: f64, r: f64) -> (f64, f64, f64, f64) {
         },
     );
     (x[0], x[1], x[2], x[3])
-}
-
-/// Gaussian elimination with partial pivoting on an `N x N` stack system;
-/// `None` when singular or non-finite (near-singular steps are left to
-/// the caller's residual check).
-fn solve_small<const N: usize>(mut a: [[f64; N]; N], mut b: [f64; N]) -> Option<[f64; N]> {
-    for col in 0..N {
-        let piv = (col..N).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
-        if a[piv][col] == 0.0 {
-            return None;
-        }
-        a.swap(col, piv);
-        b.swap(col, piv);
-        for row in col + 1..N {
-            let factor = a[row][col] / a[col][col];
-            let pivot_row = a[col];
-            for (v, &p) in a[row][col..].iter_mut().zip(&pivot_row[col..]) {
-                *v -= factor * p;
-            }
-            b[row] -= factor * b[col];
-        }
-    }
-    let mut x = [0.0; N];
-    for row in (0..N).rev() {
-        let mut acc = b[row];
-        for k in row + 1..N {
-            acc -= a[row][k] * x[k];
-        }
-        x[row] = acc / a[row][row];
-    }
-    x.iter().all(|v| v.is_finite()).then_some(x)
 }
 
 #[cfg(test)]
