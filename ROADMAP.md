@@ -50,6 +50,8 @@ ones before them. If you'd like to help with any of it, see
   NaN, infinite inputs and zero-size conics. Marching intersection finds
   curves between its seed grid lines and traces each loop once.
   Villarceau circles in torus–plane intersection.
+- **0.28** — Trimmed curves (segments, arcs, pieces of B-splines) whose
+  numeric intersections and extrema only search their range.
 
 ## Next
 

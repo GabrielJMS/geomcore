@@ -1,11 +1,17 @@
 //! Analytic intersection result types.
 //!
-//! The `intersect_*` methods on the analytic curves and surfaces return
-//! these enums: the intersecting geometry on success, or an explicit
+//! [`Intersect::intersect`] on two analytic curves or surfaces returns one
+//! of these enums: the intersecting geometry on success, or an explicit
 //! classification when the pair is tangent, disjoint, parallel, or
 //! coincident. Tangency and coincidence are decided with
 //! [`crate::Tolerance`], so near-degenerate configurations classify
 //! robustly instead of collapsing to noise.
+//!
+//! When the types are only known at run time, the same call on
+//! [`crate::surfaces::Surface`], [`crate::curves::Curve3D`] or their
+//! elementary enums returns a general result instead:
+//! [`SurfaceIntersection`], [`CurveSurfaceIntersection`] or
+//! [`CurveCurveIntersection`].
 
 use crate::curves::{BSplineCurve3D, InterpParametrization, ParametricCurve3D};
 use crate::math::{

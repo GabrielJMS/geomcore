@@ -45,6 +45,30 @@
 //! # let _ = point;
 //! ```
 //!
+//! # Intersections
+//!
+//! [`Intersect`] is the one entry point for exact intersections. Between
+//! two concrete types it returns the pair's own result, in either order:
+//!
+//! ```
+//! use geomcore::{Intersect, PlaneSphereIntersection, Point3D, Vector3D};
+//! use geomcore::surfaces::{Plane, Sphere};
+//!
+//! let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+//! let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+//! let tol = geomcore::Tolerance::default();
+//! let PlaneSphereIntersection::Circle(circle) = plane.intersect(&sphere, tol) else {
+//!     panic!("expected a circle");
+//! };
+//! assert_eq!(sphere.intersect(&plane, tol), PlaneSphereIntersection::Circle(circle));
+//! ```
+//!
+//! Between [`surfaces::Surface`] or [`curves::Curve3D`] values it returns
+//! a general result such as [`SurfaceIntersection`], which reports
+//! `NotAnalytic` for a B-spline or a pair without a closed form; the
+//! numeric functions ([`marching_intersection`],
+//! [`intersect_curve_surface`], [`intersect_curve_curve`]) cover those.
+//!
 //! # Extending the kernel
 //!
 //! New curve or surface types are added by implementing

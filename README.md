@@ -27,9 +27,10 @@ changes are flagged in the changelog). Implemented:
   closed form on the analytic types, exact subdivision on B-splines.
 - **Analytic intersections** with tangency and coincidence
   classification: plane, quadric and torus pairs, and lines, circles and
-  conics against each other and against the elementary surfaces. A
-  configuration with no closed form reports `NotAnalytic` instead of
-  guessing.
+  conics against each other and against the elementary surfaces, all
+  through one `a.intersect(&b, tol)` call that works in either order and
+  on shapes whose type is only known at run time. A configuration with no
+  closed form reports `NotAnalytic` instead of guessing.
 - **Numeric intersections** over any curve or surface: curve–surface and
   curve–curve intersection and extrema, and marching surface–surface
   intersection fitted with B-splines.

@@ -25,7 +25,8 @@ the Python distribution are versioned in lockstep.
   every curve pair with an exact solver: lines with lines, circles and
   conics, circles with circles and conics, ellipses with ellipses, and
   the 2D line and circle pairs. The output is the pair's own result
-  type, so dispatch is static and nothing allocates.
+  type, so dispatch is static and the call costs the same as the
+  per-pair method it replaces (`benches/intersect_dispatch.rs`).
 - `ElementaryCurve` and `ElementarySurface`: `Copy` enums of the
   closed-form curves and surfaces, reached from `Curve3D` and `Surface`
   with `as_elementary()`.

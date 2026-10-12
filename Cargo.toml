@@ -18,6 +18,10 @@ criterion = "0.7"
 name = "eval_throughput"
 harness = false
 
+[[bench]]
+name = "intersect_dispatch"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 
