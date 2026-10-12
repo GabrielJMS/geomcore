@@ -5,7 +5,10 @@ use geomcore::curves::ParametricCurve3D;
 use geomcore::discretization::{
     Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError, Discretize3D,
 };
-use geomcore::{BSplineCurve3D, Circle3D, Point3D, TrimmedCurve3D, Vector3D};
+use geomcore::{
+    BSplineCurve3D, Circle3D, Curve3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point3D,
+    TrimmedCurve3D, Vector3D,
+};
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 // ---------------------------------------------------------------- checker
@@ -532,5 +535,150 @@ fn test_a_rational_circle_needs_few_more_points_than_the_exact_one() {
     for (max, angle) in [(1e-2, 0.2), (1e-2, 0.05), (1e-5, 0.01)] {
         let r = ratio(chord_and_angle(max, angle));
         assert!(r <= 3.0, "{max}, {angle}: {r}");
+    }
+}
+
+// ---------------------------------------------------------------- conics and lines
+
+fn ellipse(major: f64, minor: f64) -> Ellipse3D {
+    let normal = Vector3D::new(0.2, -0.3, 1.0);
+    let x = Vector3D::new(1.0, 0.0, 0.0).cross(normal);
+    Ellipse3D::new(Point3D::new(1.0, 2.0, 3.0), normal, x, major, minor).unwrap()
+}
+
+fn parabola(focal: f64) -> Parabola3D {
+    let normal = Vector3D::new(0.0, 1.0, 1.0);
+    Parabola3D::new(Point3D::new(-1.0, 0.5, 0.0), normal, Vector3D::X, focal).unwrap()
+}
+
+fn hyperbola(major: f64, minor: f64) -> Hyperbola3D {
+    let normal = Vector3D::new(1.0, 1.0, 0.0);
+    let x = Vector3D::new(-1.0, 1.0, 0.5);
+    Hyperbola3D::new(Point3D::new(0.0, 0.0, 2.0), normal, x, major, minor).unwrap()
+}
+
+const CRITERIA: [(f64, Option<f64>); 4] = [
+    (1e-1, None),
+    (1e-3, None),
+    (1e-2, Some(0.2)),
+    (1e-4, Some(0.02)),
+];
+
+fn criteria_list() -> impl Iterator<Item = DiscretizationCriteria> {
+    CRITERIA.into_iter().map(|(max, angle)| match angle {
+        Some(angle) => chord_and_angle(max, angle),
+        None => chord(max),
+    })
+}
+
+#[test]
+fn test_ellipses_whole_and_arcs() {
+    for (major, minor) in [(2.0, 2.0), (3.0, 1.0), (10.0, 0.1)] {
+        let e = ellipse(major, minor);
+        for criteria in criteria_list() {
+            let d = e.discretize(criteria);
+            assert_proven(&e, &d, criteria, major);
+            assert_eq!(d.points[0], d.points[d.points.len() - 1]);
+            for (first, last) in [(0.3, 1.2), (2.0, 5.0), (-1.0, 0.5)] {
+                let arc = TrimmedCurve3D::new(e, first, last).unwrap();
+                assert_proven(&arc, &arc.discretize(criteria), criteria, major);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_trimmed_parabolas_and_hyperbolas_including_far_along() {
+    for (first, last) in [(-3.0, 3.0), (0.0, 1.0), (20.0, 40.0)] {
+        let p = TrimmedCurve3D::new(parabola(0.5), first, last).unwrap();
+        for criteria in criteria_list() {
+            assert_proven(&p, &p.discretize(criteria), criteria, 400.0);
+        }
+    }
+    for (major, minor) in [(1.0, 1.0), (3.0, 0.5), (0.5, 3.0)] {
+        for (first, last) in [(-2.0, 2.0), (0.0, 0.5), (4.0, 6.0)] {
+            let h = TrimmedCurve3D::new(hyperbola(major, minor), first, last).unwrap();
+            for criteria in criteria_list() {
+                assert_proven(&h, &h.discretize(criteria), criteria, 1000.0);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_far_along_a_hyperbola_needs_few_points() {
+    // Nearly straight beyond the vertex: the count follows the bend at the
+    // vertex, not the parameter speed, which grows like e^u.
+    let h = TrimmedCurve3D::new(hyperbola(1.0, 1.0), 0.0, 10.0).unwrap();
+    assert!(
+        h.point_count(chord(1e-3)) < 300,
+        "{}",
+        h.point_count(chord(1e-3))
+    );
+    let far = TrimmedCurve3D::new(hyperbola(1.0, 1.0), 8.0, 10.0).unwrap();
+    assert!(
+        far.point_count(chord(1e-3)) < 20,
+        "{}",
+        far.point_count(chord(1e-3))
+    );
+    let p = TrimmedCurve3D::new(parabola(1.0), 100.0, 120.0).unwrap();
+    assert!(
+        p.point_count(chord(1e-3)) < 100,
+        "{}",
+        p.point_count(chord(1e-3))
+    );
+}
+
+#[test]
+fn test_a_trimmed_line_is_one_segment() {
+    let line = Line3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::new(0.0, 3.0, 4.0)).unwrap();
+    let segment = TrimmedCurve3D::new(line, -1.0, 2.0).unwrap();
+    let d = segment.discretize(chord_and_angle(1e-9, 1e-9));
+    assert_eq!(d.parameters, vec![-1.0, 2.0]);
+    assert_eq!(d.points, vec![line.eval_point(-1.0), line.eval_point(2.0)]);
+    assert_eq!(d.chord_deviations, vec![0.0]);
+    assert_eq!(d.angle_deviations, vec![0.0]);
+}
+
+#[test]
+fn test_run_time_curves_match_the_concrete_types() {
+    fn same<C>(basis: C, first: f64, last: f64)
+    where
+        C: Clone + Into<Curve3D> + ParametricCurve3D,
+        TrimmedCurve3D<C>: Discretize3D,
+    {
+        let concrete = TrimmedCurve3D::new(basis.clone(), first, last).unwrap();
+        let run_time = TrimmedCurve3D::new(basis.into(), first, last).unwrap();
+        for criteria in criteria_list() {
+            assert_eq!(concrete.discretize(criteria), run_time.discretize(criteria));
+        }
+    }
+    let line = Line3D::new(Point3D::ORIGIN, Vector3D::new(1.0, 1.0, 0.0)).unwrap();
+    same(line, 0.0, 2.0);
+    same(circle(2.0), 1.0, 4.0);
+    same(ellipse(3.0, 1.0), -1.0, 2.0);
+    same(parabola(0.5), -2.0, 3.0);
+    same(hyperbola(2.0, 1.0), -1.0, 1.5);
+    same(uneven_weights(), 0.2, 1.8);
+}
+
+#[test]
+fn test_coarse_tolerances_keep_points_over_their_chords() {
+    // Steps turning past a right angle can lie near the chord's line yet
+    // far beyond the chord's ends.
+    let flat = ellipse(10.0, 1.0);
+    let narrow = parabola(0.05);
+    for max in [0.5, 2.0, 5.0] {
+        let criteria = chord(max);
+        for (first, last) in [(0.0, 6.0), (-1.0, 2.5), (0.5, 3.0), (2.0, 4.0)] {
+            let arc = TrimmedCurve3D::new(flat, first, last).unwrap();
+            assert_proven(&arc, &arc.discretize(criteria), criteria, 10.0);
+        }
+        for (first, last) in [(-1.0, 3.0), (-0.2, 2.0), (-3.0, 0.5)] {
+            let arc = TrimmedCurve3D::new(narrow, first, last).unwrap();
+            assert_proven(&arc, &arc.discretize(criteria), criteria, 50.0);
+        }
+        let arc = TrimmedCurve3D::new(hyperbola(0.2, 3.0), -0.5, 3.0).unwrap();
+        assert_proven(&arc, &arc.discretize(criteria), criteria, 100.0);
     }
 }

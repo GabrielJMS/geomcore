@@ -25,8 +25,11 @@ the Python distribution are versioned in lockstep.
   point, with at least three segments. B-splines bound the angle
   deviation from the control points of their tangent's direction (#19,
   #20; in homogeneous form for rational ones), reporting π only next to a
-  cusp or coincident poles. Python: `discretize(max_chord_deviation,
-  max_angle_deviation=None)` on `Circle3D` and `BSplineCurve3D`,
+  cusp or coincident poles. Ellipses, and trimmed lines, parabolas,
+  hyperbolas and run-time `Curve3D`s, use exact closed-form deviations
+  of equal parameter steps (#21); a trimmed line is one segment.
+  Python: `discretize(max_chord_deviation, max_angle_deviation=None)` on
+  `Circle3D`, `Ellipse3D`, `BSplineCurve3D` and `TrimmedCurve3D`,
   returning a `Discretization3D`.
 - A trimmed curve can borrow its basis (#18): the curve traits
   (`ParametricCurve3D`, `ParametricCurve2D`, `PointExtrema3D`,

@@ -1227,3 +1227,26 @@ def test_discretize_circle_and_bspline():
         circle.discretize(0.0)
     with pytest.raises(ValueError, match="angle deviation"):
         curve.discretize(1e-3, max_angle_deviation=-1.0)
+
+
+def test_discretize_ellipse_and_trimmed_curves():
+    from geomcore.curves import Ellipse3D, Parabola3D, TrimmedCurve3D
+
+    # A round ellipse is a circle: 2(1 - cos(pi/8)) = 0.152... gives eight segments.
+    round_ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
+    d = round_ellipse.discretize(0.16)
+    assert len(d.points) == 9
+    assert _xyz(d.points[0]) == _xyz(d.points[-1])
+    flat = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 5.0, 0.5)
+    d = flat.discretize(1e-3, max_angle_deviation=0.1)
+    assert all(dev <= 1e-3 for dev in d.chord_deviations)
+    assert all(angle <= 0.1 for angle in d.angle_deviations)
+    # A segment is its own chord.
+    segment = TrimmedCurve3D.segment(Point3D(0.0, 0.0, 0.0), Point3D(1.0, 2.0, 2.0))
+    d = segment.discretize(1e-9, max_angle_deviation=1e-9)
+    assert [_xyz(p) for p in d.points] == [(0.0, 0.0, 0.0), (1.0, 2.0, 2.0)]
+    assert d.chord_deviations == [0.0]
+    arc = TrimmedCurve3D(Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 0.5), -2.0, 3.0)
+    d = arc.discretize(1e-3)
+    assert d.parameters[0] == -2.0 and d.parameters[-1] == 3.0
+    assert all(dev <= 1e-3 for dev in d.chord_deviations)

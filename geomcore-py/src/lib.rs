@@ -3521,6 +3521,19 @@ impl PyEllipse3D {
         self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
+    /// Discretize the ellipse into points joined by straight segments,
+    /// each segment's chord deviation at most `max_chord_deviation` and,
+    /// if given, its angle deviation at most `max_angle_deviation`
+    /// (radians).
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn discretize(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<PyDiscretization3D> {
+        discretize_3d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// Evaluate the derivative of the given order (>= 1) at `u`.
     fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
         check_curve_order(order, u32::MAX)?;
@@ -4869,6 +4882,19 @@ impl PyTrimmedCurve3D {
     /// Evaluate many parameters at once.
     fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
         self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
+    }
+
+    /// Discretize the trimmed curve into points joined by straight segments,
+    /// each segment's chord deviation at most `max_chord_deviation` and,
+    /// if given, its angle deviation at most `max_angle_deviation`
+    /// (radians).
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn discretize(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<PyDiscretization3D> {
+        discretize_3d(&self.0, max_chord_deviation, max_angle_deviation)
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`, within

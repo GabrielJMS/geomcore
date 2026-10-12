@@ -23,7 +23,7 @@ mod bspline;
 mod elementary;
 
 use crate::curves::{ParametricCurve3D, TrimmedCurve3D};
-use crate::{BSplineCurve3D, Circle3D, Point3D};
+use crate::{BSplineCurve3D, Circle3D, Ellipse3D, Point3D};
 use std::fmt;
 
 /// Error returned when a [`DiscretizationCriteria`] value is not a
@@ -383,7 +383,7 @@ macro_rules! discretize_bounded {
     )*};
 }
 
-discretize_bounded!(Circle3D, BSplineCurve3D);
+discretize_bounded!(Circle3D, Ellipse3D, BSplineCurve3D);
 
 /// Whether a trimmed curve's range spans a whole period of its basis.
 fn spans_period<C: ParametricCurve3D>(curve: &TrimmedCurve3D<C>) -> bool {

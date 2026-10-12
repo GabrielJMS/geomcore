@@ -3,7 +3,7 @@
 //! of its own, as it replaces the global allocator.
 
 use geomcore::discretization::{DiscretizationCriteria, Discretize3D};
-use geomcore::{BSplineCurve3D, Circle3D, Point3D, TrimmedCurve3D, Vector3D};
+use geomcore::{BSplineCurve3D, Circle3D, Curve3D, Ellipse3D, Point3D, TrimmedCurve3D, Vector3D};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
@@ -71,6 +71,8 @@ fn test_count_and_fill_do_not_allocate() {
     )
     .unwrap();
     let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.0).unwrap();
+    let run_time = TrimmedCurve3D::new(Curve3D::from(spline.clone()), 0.5, 2.5).unwrap();
     let chord = DiscretizationCriteria::new(1e-4).unwrap();
     let both = chord.with_max_angle_deviation(0.05).unwrap();
     for criteria in [chord, both] {
@@ -78,5 +80,7 @@ fn test_count_and_fill_do_not_allocate() {
         assert_fills_without_allocating(&TrimmedCurve3D::new(&spline, 0.5, 2.5).unwrap(), criteria);
         assert_fills_without_allocating(&circle, criteria);
         assert_fills_without_allocating(&TrimmedCurve3D::new(circle, 1.0, 3.0).unwrap(), criteria);
+        assert_fills_without_allocating(&ellipse, criteria);
+        assert_fills_without_allocating(&run_time, criteria);
     }
 }
