@@ -972,6 +972,31 @@ impl BSplineCurve3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// PROTOTYPE (throwaway branch): every knot span `(a, b)` with its
+    /// Bernstein control points, homogeneous `[x*w, y*w, z*w, w]` (`w = 1`
+    /// if nonrational).
+    #[doc(hidden)]
+    pub fn prototype_bezier_spans(&self) -> Vec<(f64, f64, Vec<[f64; 4]>)> {
+        let (first, last) = self.bounds();
+        let breaks = math::span_breaks(&self.knots, first, last);
+        let p = self.degree;
+        let dim = if self.is_rational() { 4 } else { 3 };
+        breaks
+            .windows(2)
+            .map(|w| {
+                let mut c = [[0.0; 32]; 3];
+                let mut wt = [1.0; 32];
+                {
+                    let [x, y, z] = &mut c;
+                    let mut out: [&mut [f64]; 4] = [x, y, z, &mut wt];
+                    math::span_bezier(0.5 * (w[0] + w[1]), p, self.periodic, &self.flat, &self.flat_poles, &mut out[..dim]);
+                }
+                let pts = (0..=p).map(|k| [c[0][k], c[1][k], c[2][k], wt[k]]).collect();
+                (w[0], w[1], pts)
+            })
+            .collect()
+    }
+
     /// The knot-span box hierarchy, built on first use.
     fn span_tree(&self) -> &SpanTree {
         self.spans.get_or_init(|| {
