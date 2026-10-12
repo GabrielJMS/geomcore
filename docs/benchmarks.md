@@ -70,3 +70,32 @@ Reproduce with:
 ```sh
 cargo bench --bench intersect_dispatch
 ```
+
+# Conic–quadric intersections
+
+`benches/conic_quadric.rs` times batches of 1024 typed `Intersect::intersect`
+calls for each of the 16 pairs of a conic (circle, ellipse, parabola,
+hyperbola) and a quadric (plane, sphere, cylinder, cone). The conics are
+placed at random near the quadric, so each batch mixes crossings,
+tangencies and misses.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 4` (2026-10-12). Times are per pair.
+
+| conic | plane | sphere | cylinder | cone |
+|---|---|---|---|---|
+| circle | ~100 ns | ~313 ns | ~1.30 µs | ~1.49 µs |
+| ellipse | ~100 ns | ~1.40 µs | ~1.28 µs | ~1.41 µs |
+| parabola | ~70 ns | ~1.00 µs | ~960 ns | ~1.23 µs |
+| hyperbola | ~96 ns | ~1.17 µs | ~1.27 µs | ~1.38 µs |
+
+The plane pairs, and a circle against a sphere, solve a first-order
+equation in closed form. The rest solve a quartic, and nearly all of their
+time goes to its roots and to the tangency check at its critical points;
+setting up the coefficients takes under 10 ns.
+
+Reproduce with:
+
+```sh
+cargo bench --bench conic_quadric
+```

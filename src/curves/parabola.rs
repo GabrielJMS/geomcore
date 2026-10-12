@@ -5,8 +5,8 @@ use crate::Intersect;
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
-use crate::intersect::{ConicSurfaceIntersection, conic_lies_on, verify_conic_hits};
-use crate::math::{QuadraticSolution, real_roots, roots_with_tangency, solve_quadratic};
+use crate::intersect::{ConicSurfaceIntersection, intersect_conic_quadric};
+use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{Cone, Cylinder, Frame3D, Plane, Point3D, Sphere, Tolerance, Transform, Vector3D};
@@ -345,13 +345,6 @@ impl Parabola3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
-    /// Plane coincident check: parallel normals and apex in the plane.
-    fn plane_coincident(&self, plane: &Plane, tol: Tolerance) -> bool {
-        let n = plane.normal();
-        self.frame().z_direction().cross(n).magnitude() <= tol.angular
-            && plane.contains(self.apex(), tol)
-    }
-
     /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
     #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
@@ -427,31 +420,7 @@ impl Intersect<Plane> for Parabola3D {
     /// }
     /// ```
     fn intersect(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
-        if self.plane_coincident(plane, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let n = plane.normal();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let f = self.focal();
-        // c*t^2 + d*t + e = 0 with E(t) = apex + (t^2/4f)X + tY.
-        let c = x.dot(n) / (4.0 * f);
-        let d = y.dot(n);
-        let e = (self.apex() - plane.frame().origin()).dot(n);
-        let roots = solve_quadratic(c, d, e, tol)
-            .touching_at(-d / (2.0 * c), |t| plane.contains(self.eval_point(t), tol));
-        let candidates: Vec<(f64, u32)> = match roots {
-            QuadraticSolution::Two(t1, t2) => vec![(t1, 1), (t2, 1)],
-            QuadraticSolution::One(t) => vec![(t, 2)],
-            QuadraticSolution::Linear(t) => vec![(t, 1)],
-            QuadraticSolution::Empty | QuadraticSolution::Degenerate => Vec::new(),
-        };
-        let hits = verify_conic_hits(self, plane, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, plane, tol)
     }
 }
 
@@ -475,29 +444,7 @@ impl Intersect<Sphere> for Parabola3D {
     /// }
     /// ```
     fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let f = self.focal();
-        let w = self.apex() - sphere.center();
-        let r = sphere.radius();
-        let q = [
-            w.dot(w) - r * r,
-            2.0 * y.dot(w),
-            1.0 + x.dot(w) / (2.0 * f),
-            0.0,
-            1.0 / (16.0 * f * f),
-        ];
-        let touches = |t: f64| sphere.contains(self.eval_point(t), tol);
-        let candidates: Vec<(f64, u32)> = roots_with_tangency(&q, tol, touches)
-            .into_iter()
-            .map(|root| (root.value, root.multiplicity))
-            .collect();
-        let hits = verify_conic_hits(self, sphere, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, sphere, tol)
     }
 }
 
@@ -522,36 +469,7 @@ impl Intersect<Cylinder> for Parabola3D {
     /// }
     /// ```
     fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let f = self.focal();
-        let a = cylinder.axis().direction();
-        let w = self.apex() - cylinder.axis().origin();
-        let r = cylinder.radius();
-        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let alpha = xa / (4.0 * f);
-        let beta = ya;
-        // |E - C0|^2 - axial^2 - rho^2, E - C0 = W + (t^2/4f)X + tY.
-        let q = [
-            ww - wa * wa - r * r,
-            2.0 * yw - 2.0 * wa * beta,
-            1.0 + xw / (2.0 * f) - (beta * beta + 2.0 * wa * alpha),
-            -2.0 * alpha * beta,
-            1.0 / (16.0 * f * f) - alpha * alpha,
-        ];
-        let touches = |t: f64| cylinder.contains(self.eval_point(t), tol);
-        let candidates: Vec<(f64, u32)> = roots_with_tangency(&q, tol, touches)
-            .into_iter()
-            .map(|root| (root.value, root.multiplicity))
-            .collect();
-        let hits = verify_conic_hits(self, cylinder, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, cylinder, tol)
     }
 }
 
@@ -576,41 +494,7 @@ impl Intersect<Cone> for Parabola3D {
     /// }
     /// ```
     fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        let f = self.focal();
-        if conic_lies_on(self, cone, [-8.0 * f, -4.0 * f, 0.0, 4.0 * f, 8.0 * f], tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let a = cone.frame().z_direction();
-        let cos_phi = cone.semi_angle().cos();
-        let c2 = cos_phi * cos_phi;
-        let w = self.apex() - cone.apex();
-        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let alpha = xa / (4.0 * f);
-        let beta = ya;
-        // m(t)^2 - c^2*|E - A|^2 with m = va + alpha*t^2 + beta*t.
-        let va = wa;
-        let q = [
-            va * va - c2 * ww,
-            2.0 * va * beta - c2 * 2.0 * yw,
-            (2.0 * va * alpha + beta * beta) - c2 * (1.0 + xw / (2.0 * f)),
-            2.0 * alpha * beta,
-            alpha * alpha - c2 / (16.0 * f * f),
-        ];
-        let touches = |t: f64| cone.contains(self.eval_point(t), tol);
-        let candidates: Vec<(f64, u32)> = roots_with_tangency(&q, tol, touches)
-            .into_iter()
-            .map(|root| (root.value, root.multiplicity))
-            .collect();
-        let hits = verify_conic_hits(self, cone, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, cone, tol)
     }
 }
 

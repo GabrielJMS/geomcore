@@ -9,6 +9,23 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Changed
+
+- The 16 exact intersections of a circle, ellipse, parabola or hyperbola
+  with a plane, sphere, cylinder or cone now share one implementation.
+  Each surface's section by the curve's plane is written once and each
+  curve's parametrization substituted into it once, instead of one
+  derivation per pair. Results are unchanged up to rounding, with two
+  exceptions:
+  - a circle lies on a plane when the normals are parallel and its center
+    is on the plane, as for the other curves, instead of when five points
+    of it are, which is also about 10% faster; its tangency band against
+    the plane scales with its diameter, like the ellipse's, instead of its
+    radius plus one;
+  - a hit of a circle far from the origin is verified with the same
+    coordinate-scaled tolerance as the other curves.
+  Hyperbola–cone and ellipse–cone are about 5% faster; no pair is slower.
+
 ## [0.30.0] - 2026-10-12
 
 ### Fixed

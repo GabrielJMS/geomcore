@@ -7,10 +7,10 @@ use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
-    CLOSED_CONIC_SAMPLES, ConicSurfaceIntersection, EllipseEllipse3DIntersection,
-    EllipseEllipseHit, conic_lies_on, verify_conic_hits,
+    ConicSurfaceIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit,
+    intersect_conic_quadric,
 };
-use crate::math::{real_roots, solve_trig, solve_trig_linear};
+use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
@@ -628,25 +628,7 @@ impl Intersect<Plane> for Ellipse3D {
     /// }
     /// ```
     fn intersect(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
-        let n = plane.normal();
-        if self.frame().z_direction().cross(n).magnitude() <= tol.angular
-            && plane.contains(self.center(), tol)
-        {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let c = a * x.dot(n);
-        let d = b * y.dot(n);
-        let e = (self.center() - plane.frame().origin()).dot(n);
-        let scale = (self.center() - plane.frame().origin()).magnitude() + a + b;
-        let hits = verify_conic_hits(self, plane, solve_trig_linear(c, d, e, scale, tol), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, plane, tol)
     }
 }
 
@@ -667,36 +649,16 @@ impl Intersect<Sphere> for Ellipse3D {
     /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
     /// match ellipse.intersect(&sphere, tol) {
-    ///     // Both major vertices graze the sphere (the antipodal one
-    ///     // arrives via the PI candidate, reported multiplicity 1).
+    ///     // Both major vertices graze the sphere: two tangent hits.
     ///     ConicSurfaceIntersection::Hits(hits) => {
     ///         assert_eq!(hits.len(), 2);
+    ///         assert!(hits.iter().all(|h| h.multiplicity == 2));
     ///     }
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
     fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, sphere, CLOSED_CONIC_SAMPLES, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let w = self.center() - sphere.center();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = sphere.radius();
-        let a2 = (a * a - b * b) / 2.0;
-        let b2 = 0.0;
-        let c1 = 2.0 * a * x.dot(w);
-        let d1 = 2.0 * b * y.dot(w);
-        let e = w.dot(w) + (a * a + b * b) / 2.0 - r * r;
-        let touches = |t: f64| sphere.contains(self.eval_point(t), tol);
-        let candidates = solve_trig(a2, b2, c1, d1, e, tol, touches);
-        let hits = verify_conic_hits(self, sphere, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, sphere, tol)
     }
 }
 
@@ -720,34 +682,7 @@ impl Intersect<Cylinder> for Ellipse3D {
     /// }
     /// ```
     fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cylinder, CLOSED_CONIC_SAMPLES, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let ax = cylinder.axis().direction();
-        let w = self.center() - cylinder.axis().origin();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = cylinder.radius();
-        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let a2 = (a * a - b * b) / 2.0 - (a * a * xa * xa - b * b * ya * ya) / 2.0;
-        let b2 = -a * b * xa * ya;
-        let c1 = 2.0 * a * xw - 2.0 * wa * a * xa;
-        let d1 = 2.0 * b * yw - 2.0 * wa * b * ya;
-        let e = ww + (a * a + b * b) / 2.0
-            - r * r
-            - wa * wa
-            - (a * a * xa * xa + b * b * ya * ya) / 2.0;
-        let touches = |t: f64| cylinder.contains(self.eval_point(t), tol);
-        let candidates = solve_trig(a2, b2, c1, d1, e, tol, touches);
-        let hits = verify_conic_hits(self, cylinder, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, cylinder, tol)
     }
 }
 
@@ -772,33 +707,7 @@ impl Intersect<Cone> for Ellipse3D {
     /// }
     /// ```
     fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cone, CLOSED_CONIC_SAMPLES, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let ax = cone.frame().z_direction();
-        let cos_phi = cone.semi_angle().cos();
-        let c2 = cos_phi * cos_phi;
-        let w = self.center() - cone.apex();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let a2 = (a * a * xa * xa - b * b * ya * ya) / 2.0 - c2 * (a * a - b * b) / 2.0;
-        let b2 = a * b * xa * ya;
-        let c1 = 2.0 * wa * a * xa - c2 * 2.0 * a * xw;
-        let d1 = 2.0 * wa * b * ya - c2 * 2.0 * b * yw;
-        let e =
-            wa * wa + (a * a * xa * xa + b * b * ya * ya) / 2.0 - c2 * (ww + (a * a + b * b) / 2.0);
-        let touches = |t: f64| cone.contains(self.eval_point(t), tol);
-        let candidates = solve_trig(a2, b2, c1, d1, e, tol, touches);
-        let hits = verify_conic_hits(self, cone, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, cone, tol)
     }
 }
 

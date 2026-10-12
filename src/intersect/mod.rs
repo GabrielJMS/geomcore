@@ -23,7 +23,9 @@ use crate::{
     Vector3D,
 };
 
+mod conic_quadric;
 mod dispatch;
+pub(crate) use conic_quadric::intersect_conic_quadric;
 pub use dispatch::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
 };
@@ -692,70 +694,6 @@ pub enum ConicSurfaceIntersection {
     Coincident,
     /// No intersection.
     Empty,
-}
-
-/// Keep trig/quartic candidates verified on the surface. A point far
-/// from the origin cannot be placed (nor its surface distance measured)
-/// more finely than its coordinates' rounding, so the check's tolerance
-/// is at least a few ulps of the point's largest coordinate.
-pub(crate) fn verify_conic_hits<C, S>(
-    curve: &C,
-    surface: &S,
-    candidates: Vec<(f64, u32)>,
-    tol: Tolerance,
-) -> Vec<ConicSurfaceHit>
-where
-    C: ParametricCurve3D,
-    S: ParametricSurface,
-{
-    candidates
-        .into_iter()
-        .filter_map(|(t, multiplicity)| {
-            let p = curve.eval_point(t);
-            let coord = p.x.abs().max(p.y.abs()).max(p.z.abs());
-            let tol = Tolerance {
-                confusion: tol.confusion.max(16.0 * f64::EPSILON * coord),
-                ..tol
-            };
-            if surface.contains(p, tol) {
-                Some(ConicSurfaceHit {
-                    parameter: t,
-                    point: p,
-                    multiplicity,
-                })
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-/// Five equally spaced parameters around a circle or an ellipse, enough
-/// to decide whether the whole curve lies on a quadric (see
-/// [`conic_lies_on`]).
-pub(crate) const CLOSED_CONIC_SAMPLES: [f64; 5] = [
-    0.0,
-    0.4 * std::f64::consts::PI,
-    0.8 * std::f64::consts::PI,
-    1.2 * std::f64::consts::PI,
-    1.6 * std::f64::consts::PI,
-];
-
-/// Whether the whole conic lies on a quadric surface. On a conic, the
-/// surface's equation is a polynomial of degree at most 4 (in `t`,
-/// `e^t`, or `tan(t/2)` for the parabola, hyperbola, and circle or
-/// ellipse), so five distinct `params` on the surface force it to vanish
-/// identically. Three would not do for a circle on a cylinder or cone:
-/// their section by the circle's plane is a conic, which a circle can
-/// cross at three points without lying on it.
-pub(crate) fn conic_lies_on<C, S>(curve: &C, surface: &S, params: [f64; 5], tol: Tolerance) -> bool
-where
-    C: ParametricCurve3D,
-    S: ParametricSurface,
-{
-    params
-        .iter()
-        .all(|&t| surface.contains(curve.eval_point(t), tol))
 }
 
 /// One local minimum of the distance between two 3D curves (see

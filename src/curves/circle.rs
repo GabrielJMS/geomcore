@@ -8,10 +8,10 @@ use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
-    CLOSED_CONIC_SAMPLES, CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection,
-    ConicSurfaceHit, ImplicitConic, PlacedConic, conic_lies_on,
+    CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection, ConicSurfaceIntersection,
+    ImplicitConic, PlacedConic, intersect_conic_quadric,
 };
-use crate::math::{solve_trig, solve_trig_linear};
+use crate::math::solve_trig;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
@@ -530,30 +530,6 @@ impl Circle3D {
         std::f64::consts::PI * self.radius() * self.radius()
     }
 
-    /// Keep trig-solve candidates verified on the surface.
-    fn keep_hits<S: crate::surfaces::ParametricSurface>(
-        &self,
-        surface: &S,
-        candidates: Vec<(f64, u32)>,
-        tol: Tolerance,
-    ) -> Vec<ConicSurfaceHit> {
-        candidates
-            .into_iter()
-            .filter_map(|(t, multiplicity)| {
-                let p = self.eval_point(t);
-                if surface.contains(p, tol) {
-                    Some(ConicSurfaceHit {
-                        parameter: t,
-                        point: p,
-                        multiplicity,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
     #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> CircleSurfaceIntersection {
@@ -871,22 +847,10 @@ impl Intersect<Plane> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, plane: &Plane, tol: Tolerance) -> CircleSurfaceIntersection {
-        if conic_lies_on(self, plane, CLOSED_CONIC_SAMPLES, tol) {
-            return CircleSurfaceIntersection::Circle(*self);
-        }
-        let n = plane.normal();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = self.radius();
-        let c = r * x.dot(n);
-        let d = r * y.dot(n);
-        let e = (self.center() - plane.frame().origin()).dot(n);
-        let scale = (self.center() - plane.frame().origin()).magnitude() + r + 1.0;
-        let hits = self.keep_hits(plane, solve_trig_linear(c, d, e, scale, tol), tol);
-        if hits.is_empty() {
-            CircleSurfaceIntersection::Empty
-        } else {
-            CircleSurfaceIntersection::Hits(hits)
+        match intersect_conic_quadric(self, plane, tol) {
+            ConicSurfaceIntersection::Coincident => CircleSurfaceIntersection::Circle(*self),
+            ConicSurfaceIntersection::Hits(hits) => CircleSurfaceIntersection::Hits(hits),
+            ConicSurfaceIntersection::Empty => CircleSurfaceIntersection::Empty,
         }
     }
 }
@@ -915,23 +879,10 @@ impl Intersect<Sphere> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> CircleSurfaceIntersection {
-        if conic_lies_on(self, sphere, CLOSED_CONIC_SAMPLES, tol) {
-            return CircleSurfaceIntersection::Circle(*self);
-        }
-        let w = self.center() - sphere.center();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = self.radius();
-        let rs = sphere.radius();
-        let c = 2.0 * r * x.dot(w);
-        let d = 2.0 * r * y.dot(w);
-        let e = w.dot(w) + r * r - rs * rs;
-        let scale = w.magnitude() + r + rs;
-        let hits = self.keep_hits(sphere, solve_trig_linear(c, d, e, scale * scale, tol), tol);
-        if hits.is_empty() {
-            CircleSurfaceIntersection::Empty
-        } else {
-            CircleSurfaceIntersection::Hits(hits)
+        match intersect_conic_quadric(self, sphere, tol) {
+            ConicSurfaceIntersection::Coincident => CircleSurfaceIntersection::Circle(*self),
+            ConicSurfaceIntersection::Hits(hits) => CircleSurfaceIntersection::Hits(hits),
+            ConicSurfaceIntersection::Empty => CircleSurfaceIntersection::Empty,
         }
     }
 }
@@ -942,8 +893,8 @@ impl Intersect<Cylinder> for Circle3D {
     /// Intersects this circle with a cylinder.
     ///
     /// The cylinder equation in circle-frame coordinates carries
-    /// double-angle terms, solved as a quartic in `tan(t/2)` (plus the
-    /// `t = PI` candidate); a fully contained circle returns itself.
+    /// double-angle terms, solved as a quartic in `tan(t/2)`; a fully
+    /// contained circle returns itself.
     ///
     /// # Examples
     ///
@@ -960,30 +911,10 @@ impl Intersect<Cylinder> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> CircleSurfaceIntersection {
-        if conic_lies_on(self, cylinder, CLOSED_CONIC_SAMPLES, tol) {
-            return CircleSurfaceIntersection::Circle(*self);
-        }
-        let a = cylinder.axis().direction();
-        let w = self.center() - cylinder.axis().origin();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = self.radius();
-        let rho = cylinder.radius();
-        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        // |E - C0|^2 - ((E - C0).a)^2 - rho^2 in double-angle form.
-        let a2 = r * r * (ya * ya - xa * xa) / 2.0;
-        let b2 = -r * r * xa * ya;
-        let c1 = 2.0 * r * (xw - wa * xa);
-        let d1 = 2.0 * r * (yw - wa * ya);
-        let e = ww + r * r - wa * wa - r * r * (xa * xa + ya * ya) / 2.0 - rho * rho;
-        let touches = |t: f64| cylinder.contains(self.eval_point(t), tol);
-        let hits = self.keep_hits(cylinder, solve_trig(a2, b2, c1, d1, e, tol, touches), tol);
-        if hits.is_empty() {
-            CircleSurfaceIntersection::Empty
-        } else {
-            CircleSurfaceIntersection::Hits(hits)
+        match intersect_conic_quadric(self, cylinder, tol) {
+            ConicSurfaceIntersection::Coincident => CircleSurfaceIntersection::Circle(*self),
+            ConicSurfaceIntersection::Hits(hits) => CircleSurfaceIntersection::Hits(hits),
+            ConicSurfaceIntersection::Empty => CircleSurfaceIntersection::Empty,
         }
     }
 }
@@ -994,8 +925,8 @@ impl Intersect<Cone> for Circle3D {
     /// Intersects this circle with a cone.
     ///
     /// The half-angle equation in circle-frame coordinates carries
-    /// double-angle terms, solved as a quartic in `tan(t/2)` (plus the
-    /// `t = PI` candidate); a fully contained circle returns itself.
+    /// double-angle terms, solved as a quartic in `tan(t/2)`; a fully
+    /// contained circle returns itself.
     ///
     /// # Examples
     ///
@@ -1012,31 +943,10 @@ impl Intersect<Cone> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, cone: &Cone, tol: Tolerance) -> CircleSurfaceIntersection {
-        if conic_lies_on(self, cone, CLOSED_CONIC_SAMPLES, tol) {
-            return CircleSurfaceIntersection::Circle(*self);
-        }
-        let a = cone.frame().z_direction();
-        let cos_phi = cone.semi_angle().cos();
-        let w = self.center() - cone.apex();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = self.radius();
-        let (xa, ya, wa) = (x.dot(a), y.dot(a), w.dot(a));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let c2 = cos_phi * cos_phi;
-        // ((E - A).a)^2 - |E - A|^2*cos^2(phi) in double-angle form.
-        let a2 = r * r * (xa * xa - ya * ya) / 2.0;
-        let b2 = r * r * xa * ya;
-        let c1 = 2.0 * r * (wa * xa - c2 * xw);
-        let d1 = 2.0 * r * (wa * ya - c2 * yw);
-        let e = wa * wa + r * r * (xa * xa + ya * ya) / 2.0 - c2 * (ww + r * r);
-        let touches = |t: f64| cone.contains(self.eval_point(t), tol);
-        let hits = self.keep_hits(cone, solve_trig(a2, b2, c1, d1, e, tol, touches), tol);
-        if hits.is_empty() {
-            CircleSurfaceIntersection::Empty
-        } else {
-            CircleSurfaceIntersection::Hits(hits)
+        match intersect_conic_quadric(self, cone, tol) {
+            ConicSurfaceIntersection::Coincident => CircleSurfaceIntersection::Circle(*self),
+            ConicSurfaceIntersection::Hits(hits) => CircleSurfaceIntersection::Hits(hits),
+            ConicSurfaceIntersection::Empty => CircleSurfaceIntersection::Empty,
         }
     }
 }

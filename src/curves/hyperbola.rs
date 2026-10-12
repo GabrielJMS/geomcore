@@ -6,8 +6,8 @@ use crate::Intersect;
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
-use crate::intersect::{ConicSurfaceIntersection, conic_lies_on, verify_conic_hits};
-use crate::math::{QuadraticSolution, real_roots, roots_with_tangency, solve_quadratic};
+use crate::intersect::{ConicSurfaceIntersection, intersect_conic_quadric};
+use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
@@ -501,22 +501,6 @@ impl Hyperbola3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
-    /// Plane coincident check: parallel normals and center in the plane.
-    fn plane_coincident(&self, plane: &Plane, tol: Tolerance) -> bool {
-        let n = plane.normal();
-        self.frame().z_direction().cross(n).magnitude() <= tol.angular
-            && plane.contains(self.center(), tol)
-    }
-
-    /// Positive `u = e^t` roots as parameters (filtering `u <= 0`).
-    fn params_from_u(&self, roots: Vec<crate::math::RealRoot>) -> Vec<(f64, u32)> {
-        roots
-            .into_iter()
-            .filter(|r| r.value > 0.0)
-            .map(|r| (r.value.ln(), r.multiplicity))
-            .collect()
-    }
-
     /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
     #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
@@ -589,46 +573,7 @@ impl Intersect<Plane> for Hyperbola3D {
     /// }
     /// ```
     fn intersect(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
-        if self.plane_coincident(plane, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let n = plane.normal();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let e = (self.center() - plane.frame().origin()).dot(n);
-        // [(a*xn + b*yn)u^2 + 2e*u + (a*xn - b*yn)] / 2u = 0.
-        let aq = a * x.dot(n) + b * y.dot(n);
-        let bq = 2.0 * e;
-        let cq = a * x.dot(n) - b * y.dot(n);
-        let mut candidates = Vec::new();
-        let touches = |u: f64| u > 0.0 && plane.contains(self.eval_point(u.ln()), tol);
-        match solve_quadratic(aq, bq, cq, tol).touching_at(-bq / (2.0 * aq), touches) {
-            QuadraticSolution::Two(u1, u2) => {
-                for u in [u1, u2] {
-                    if u > 0.0 {
-                        candidates.push((u.ln(), 1));
-                    }
-                }
-            }
-            QuadraticSolution::One(u) => {
-                if u > 0.0 {
-                    candidates.push((u.ln(), 2));
-                }
-            }
-            QuadraticSolution::Linear(u) => {
-                if u > 0.0 {
-                    candidates.push((u.ln(), 1));
-                }
-            }
-            QuadraticSolution::Empty | QuadraticSolution::Degenerate => {}
-        }
-        let hits = verify_conic_hits(self, plane, candidates, tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, plane, tol)
     }
 }
 
@@ -652,28 +597,7 @@ impl Intersect<Sphere> for Hyperbola3D {
     /// }
     /// ```
     fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let w = self.center() - sphere.center();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = sphere.radius();
-        // |E - S|^2 - R^2, x4u^2 cleared: full quartic (see derivation in
-        // intersect_plane docs pattern above).
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let g4 = a * a + b * b;
-        let g3 = 4.0 * a * xw + 4.0 * b * yw;
-        let g2 = 2.0 * (a * a - b * b) + 4.0 * (ww - r * r);
-        let g1 = 4.0 * a * xw - 4.0 * b * yw;
-        let g0 = a * a + b * b;
-        let touches = |u: f64| u > 0.0 && sphere.contains(self.eval_point(u.ln()), tol);
-        let roots = roots_with_tangency(&[g0, g1, g2, g3, g4], tol, touches);
-        let hits = verify_conic_hits(self, sphere, self.params_from_u(roots), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, sphere, tol)
     }
 }
 
@@ -698,37 +622,7 @@ impl Intersect<Cylinder> for Hyperbola3D {
     /// }
     /// ```
     fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
-        let (ra, rb) = (self.major_radius, self.minor_radius);
-        let ax = cylinder.axis().direction();
-        let w = self.center() - cylinder.axis().origin();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = cylinder.radius();
-        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let p = ra * xa + rb * ya;
-        let q = ra * xa - rb * ya;
-        // G(u) = F(u) - H(u): F from |E - C0|^2, H = (P*u^2 + 2*wa*u + Q)^2.
-        let f4 = ra * ra + rb * rb;
-        let f3 = 4.0 * ra * xw + 4.0 * rb * yw;
-        let f2 = 4.0 * ww + 2.0 * ra * ra - 2.0 * rb * rb - 4.0 * r * r;
-        let f1 = 4.0 * ra * xw - 4.0 * rb * yw;
-        let f0 = ra * ra + rb * rb;
-        let h4 = p * p;
-        let h3 = 4.0 * wa * p;
-        let h2 = 4.0 * wa * wa + 2.0 * p * q;
-        let h1 = 4.0 * wa * q;
-        let h0 = q * q;
-        let g = [f0 - h0, f1 - h1, f2 - h2, f3 - h3, f4 - h4];
-        let touches = |u: f64| u > 0.0 && cylinder.contains(self.eval_point(u.ln()), tol);
-        let roots = roots_with_tangency(&g, tol, touches);
-        let hits = verify_conic_hits(self, cylinder, self.params_from_u(roots), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, cylinder, tol)
     }
 }
 
@@ -753,49 +647,7 @@ impl Intersect<Cone> for Hyperbola3D {
     /// }
     /// ```
     fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cone, [-1.0, -0.5, 0.0, 0.5, 1.0], tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (ra, rb) = (self.major_radius, self.minor_radius);
-        let ac = cone.frame().z_direction();
-        let cos_phi = cone.semi_angle().cos();
-        let c2 = cos_phi * cos_phi;
-        let v = self.center() - cone.apex();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let (xa, ya, va) = (x.dot(ac), y.dot(ac), v.dot(ac));
-        let (xv, yv) = (x.dot(v), y.dot(v));
-        let vv = v.dot(v);
-        let p2 = ra * xa + rb * ya;
-        let q2 = ra * xa - rb * ya;
-        // G(u) = (P2*u^2 + 2*va*u + Q2)^2 - c^2 * F(u).
-        let f4 = ra * ra + rb * rb;
-        let f3 = 4.0 * ra * xv + 4.0 * rb * yv;
-        let f2 = 4.0 * vv + 2.0 * ra * ra - 2.0 * rb * rb;
-        let f1 = 4.0 * ra * xv - 4.0 * rb * yv;
-        let f0 = ra * ra + rb * rb;
-        let h4 = p2 * p2;
-        let h3 = 4.0 * va * p2;
-        let h2 = 4.0 * va * va + 2.0 * p2 * q2;
-        let h1 = 4.0 * va * q2;
-        let h0 = q2 * q2;
-        let g = [
-            h4 - c2 * f4,
-            h3 - c2 * f3,
-            h2 - c2 * f2,
-            h1 - c2 * f1,
-            h0 - c2 * f0,
-        ];
-        // Ascending order for the solver.
-        let q = [g[4], g[3], g[2], g[1], g[0]];
-        let touches = |u: f64| u > 0.0 && cone.contains(self.eval_point(u.ln()), tol);
-        let roots = roots_with_tangency(&q, tol, touches);
-        let hits = verify_conic_hits(self, cone, self.params_from_u(roots), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        intersect_conic_quadric(self, cone, tol)
     }
 }
 
