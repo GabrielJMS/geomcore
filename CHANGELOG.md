@@ -9,6 +9,8 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-12
+
 ### Added
 
 - Python: `geomcore.curves.TrimmedCurve3D` and `TrimmedCurve2D`, built
@@ -652,7 +654,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.29.0
 [0.28.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.28.0
 [0.27.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.27.0
 [0.26.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.26.0

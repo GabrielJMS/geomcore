@@ -52,6 +52,10 @@ ones before them. If you'd like to help with any of it, see
   Villarceau circles in torus–plane intersection.
 - **0.28** — Trimmed curves (segments, arcs, pieces of B-splines) whose
   numeric intersections and extrema only search their range.
+- **0.29** — One entry point for exact intersections, `a.intersect(&b)` in
+  either order, also on shapes whose type is only known at run time; the
+  per-pair methods are deprecated. Hits carry a multiplicity. Trimmed
+  curves in Python.
 
 ## Next
 
