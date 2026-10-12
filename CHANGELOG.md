@@ -22,8 +22,10 @@ the Python distribution are versioned in lockstep.
   Circles use the exact deviations; B-splines are split per knot span
   and bounded from each span's Bézier control points. Both end points are
   the curve's points at the range ends; closed curves end on their first
-  point, with at least three segments. B-splines do not bound the angle
-  deviation yet (they report π). Python: `discretize(max_chord_deviation,
+  point, with at least three segments. Nonrational B-splines bound the
+  angle deviation from the derivative's control points (#19), reporting π
+  only next to a cusp or coincident poles; rational B-splines do not bound
+  it yet (they report π). Python: `discretize(max_chord_deviation,
   max_angle_deviation=None)` on `Circle3D` and `BSplineCurve3D`,
   returning a `Discretization3D`.
 - A trimmed curve can borrow its basis (#18): the curve traits

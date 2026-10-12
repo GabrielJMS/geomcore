@@ -31,6 +31,10 @@ const CAPACITY: usize = 26;
 /// How many times a span may be halved.
 const MAX_DEPTH: u32 = 30;
 
+/// How many times a span may be halved looking for a bound on the angle
+/// deviation (a piece with a cusp never gets one).
+const MAX_UNBOUNDED_DEPTH: u32 = 6;
+
 /// A piece is halved only if its halves need fewer than this fraction of
 /// its steps.
 const SPLIT_GAIN: f64 = 0.85;
@@ -157,15 +161,34 @@ impl Piece {
         factor * (offset + radius * weight) / smallest_weight
     }
 
+    /// `T` such that the tangent turns by at most `T / k` over each of
+    /// `k` equal steps, `None` where no lower bound on the speed exists.
+    /// Rational pieces are not bounded yet.
+    fn turning(&self) -> Option<f64> {
+        if self.rational {
+            return None;
+        }
+        let p = self.control();
+        let mut differences = [[0.0; 3]; CAPACITY];
+        for (i, d) in differences.iter_mut().enumerate().take(self.degree) {
+            *d = std::array::from_fn(|c| p[i + 1][c] - p[i][c]);
+        }
+        turning(&differences[..self.degree])
+    }
+
     /// The fewest equal steps meeting the criteria, `None` if the angle
-    /// deviation is limited but has no bound on this piece. The angle
-    /// deviation is not bounded yet: B-spline segments report π and the
-    /// angle limit is not honoured.
+    /// deviation is limited but has no bound on this piece.
     fn segments(&self, criteria: &DiscretizationCriteria) -> Option<usize> {
-        Some(chord_segments(
-            self.chord_constant(),
-            criteria.max_chord_deviation,
-        ))
+        let chord = chord_segments(self.chord_constant(), criteria.max_chord_deviation);
+        let Some(limit) = criteria.angle_limit() else {
+            return Some(chord);
+        };
+        if self.rational {
+            return Some(chord);
+        }
+        let turning = self.turning()?;
+        let angle = smallest_count(turning / limit, |k| angle_deviation(turning, k) <= limit);
+        Some(chord.max(angle))
     }
 
     /// Visits the leaves of the halving of this piece, each as a run.
@@ -179,7 +202,11 @@ impl Piece {
         F: FnMut(Run, &dyn Fn(f64) -> Point3D),
     {
         let segments = self.segments(criteria);
-        if depth < MAX_DEPTH && segments.is_none_or(|k| k > 2) {
+        let may_split = match segments {
+            Some(k) => depth < MAX_DEPTH && k > 2,
+            None => depth < MAX_UNBOUNDED_DEPTH,
+        };
+        if may_split {
             let (left, right) = self.split(0.5);
             let halves = left.segments(criteria).zip(right.segments(criteria));
             let worth = match (segments, halves) {
@@ -202,10 +229,44 @@ impl Piece {
             last: self.last,
             segments,
             chord_deviation: chord_deviation(chord_constant, segments),
-            angle_deviation: PI,
+            angle_deviation: self.turning().map_or(PI, |t| angle_deviation(t, segments)),
         };
         visit(run, &|s| self.point_at(s));
     }
+}
+
+/// The turning of a curve over `[0, 1]` whose tangent has the direction
+/// of the polynomial with Bernstein coefficients `d`, of degree `m`: the
+/// tangent's direction turns at most `|D'| / |D|` per unit of parameter,
+/// `|D'|` is at most `m max |Δd_j|`, and `|D|` at least the smallest
+/// component of the `d_j` along their mean direction, if positive.
+fn turning(d: &[[f64; 3]]) -> Option<f64> {
+    let m = d.len().checked_sub(1)?;
+    let sum: [f64; 3] = std::array::from_fn(|c| d.iter().map(|v| v[c]).sum());
+    let length = norm(sum);
+    if length.is_nan() || length <= 0.0 {
+        return None;
+    }
+    let slowest = d
+        .iter()
+        .map(|v| (v[0] * sum[0] + v[1] * sum[1] + v[2] * sum[2]) / length)
+        .fold(f64::INFINITY, f64::min);
+    if slowest.is_nan() || slowest <= 0.0 {
+        return None;
+    }
+    let change = (0..m)
+        .map(|j| norm(std::array::from_fn(|c| d[j + 1][c] - d[j][c])))
+        .fold(0.0, f64::max);
+    Some(m as f64 * change / slowest)
+}
+
+/// The angle deviation of each of `segments` equal steps of a piece whose
+/// tangent turns by at most `turning`. The directions of the tangent over
+/// a step lie within half the step's turning `Θ` of its middle direction,
+/// and so does the chord (their average) while `Θ < π`, so the tangent
+/// and the chord differ by at most `Θ`; no angle exceeds π.
+fn angle_deviation(turning: f64, segments: usize) -> f64 {
+    (turning / segments as f64).min(PI)
 }
 
 fn chord_deviation(constant: f64, segments: usize) -> f64 {

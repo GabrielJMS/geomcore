@@ -422,3 +422,78 @@ fn test_same_input_gives_bit_identical_output() {
         assert_eq!(a, b);
     }
 }
+
+// ---------------------------------------------------------------- angle deviation
+
+/// A cubic over one span from four planar poles.
+fn planar_cubic(poles: [(f64, f64); 4]) -> BSplineCurve3D {
+    let poles = poles.map(|(x, y)| Point3D::new(x, y, 0.0)).to_vec();
+    BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap()
+}
+
+/// The segments reporting an angle deviation of π, as parameter ranges.
+fn unbounded_segments(d: &Discretization3D) -> Vec<(f64, f64)> {
+    (0..d.angle_deviations.len())
+        .filter(|&i| d.angle_deviations[i] == PI)
+        .map(|i| (d.parameters[i], d.parameters[i + 1]))
+        .collect()
+}
+
+#[test]
+fn test_nonrational_angle_deviations_are_proven() {
+    for curve in [wavy(), periodic_ring()] {
+        for criteria in [
+            chord(1e-3),
+            chord_and_angle(1e-2, 0.2),
+            chord_and_angle(1e-4, 0.02),
+        ] {
+            let d = curve.discretize(criteria);
+            assert_proven(&curve, &d, criteria, 8.0);
+            assert!(unbounded_segments(&d).is_empty());
+        }
+    }
+}
+
+#[test]
+fn test_a_span_turning_past_half_a_turn_meets_the_angle_limit() {
+    // The tangent turns by about 270° within the one span.
+    let loop_ = planar_cubic([(0.0, 0.0), (4.0, 3.0), (-4.0, 3.0), (0.5, 0.0)]);
+    let criteria = chord_and_angle(1e-3, 0.1);
+    let d = loop_.discretize(criteria);
+    assert_proven(&loop_, &d, criteria, 4.0);
+    assert!(unbounded_segments(&d).is_empty());
+}
+
+#[test]
+fn test_a_cusp_reports_pi_only_next_to_it() {
+    // The speed vanishes at u = 0.5.
+    let cusp = planar_cubic([(0.0, 0.0), (1.0, 1.0), (0.0, 1.0), (1.0, 0.0)]);
+    let criteria = chord_and_angle(1e-4, 0.1);
+    let d = cusp.discretize(criteria);
+    assert_proven(&cusp, &d, criteria, 1.0);
+    let unbounded = unbounded_segments(&d);
+    assert!(!unbounded.is_empty());
+    assert!(
+        unbounded.iter().all(|&(u0, u1)| u0 > 0.45 && u1 < 0.55),
+        "{unbounded:?}"
+    );
+}
+
+#[test]
+fn test_coincident_poles_report_pi_only_at_that_end() {
+    // The first two poles coincide: the speed vanishes at u = 0.
+    let curve = planar_cubic([(0.0, 0.0), (0.0, 0.0), (1.0, 1.0), (2.0, 0.0)]);
+    let criteria = chord_and_angle(1e-4, 0.1);
+    let d = curve.discretize(criteria);
+    assert_proven(&curve, &d, criteria, 2.0);
+    let unbounded = unbounded_segments(&d);
+    assert!(!unbounded.is_empty());
+    assert!(unbounded.iter().all(|&(_, u1)| u1 < 0.05), "{unbounded:?}");
+}
+
+#[test]
+fn test_degree_one_segments_have_no_angle_deviation() {
+    let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)];
+    let line = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    assert_eq!(line.discretize(chord(1e-3)).angle_deviations, vec![0.0]);
+}

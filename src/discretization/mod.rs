@@ -156,8 +156,12 @@ pub struct Discretization3D {
 /// closed-form deviations allow. B-splines are split per knot span, on the
 /// span's Bézier control points: a piece is halved while that saves
 /// points, then split into the fewest equal steps its bounds allow.
-/// B-spline segments do not bound the angle deviation yet: they report π,
-/// and a maximum angle deviation is not honoured on B-splines.
+/// The tangent's turning is bounded from the derivative's control points;
+/// a piece where the speed may reach zero (a cusp, coincident poles) is
+/// halved a few times, and what remains reports an angle deviation of π
+/// while still meeting the chord deviation. Rational B-spline segments do
+/// not bound the angle deviation yet: they report π, and a maximum angle
+/// deviation is not honoured on them.
 ///
 /// # Examples
 ///
