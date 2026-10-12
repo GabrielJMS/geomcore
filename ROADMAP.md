@@ -60,6 +60,9 @@ ones before them. If you'd like to help with any of it, see
   and quadrics near half a turn, circles meeting a cylinder or cone at
   three points, numeric curve–surface hits at a sphere's pole or a cone's
   apex.
+- **0.31** — Exact intersections between any two conics, coplanar or in
+  crossing planes, with hit multiplicity; faster `contains` on ellipses,
+  parabolas and hyperbolas; faster tangency detection through quartics.
 
 ## Next
 
