@@ -1660,7 +1660,7 @@ where
     B: ParametricSurface,
 {
     // Chord deviation allowed per step, and the longest step.
-    let sag = 1000.0 * tol.confusion;
+    let chord_deviation = 1000.0 * tol.confusion;
     const H_MAX: f64 = 0.1;
     // Turn always allowed in one step. Beyond it, a step may turn by at
     // most `CURVATURE_GROWTH` times the previous step's curvature times
@@ -1679,7 +1679,7 @@ where
             break;
         }
         let (mut x, mut p, mut t) = (seed, start, t0 * dir);
-        let mut h = (8.0 * sag).sqrt().min(H_MAX);
+        let mut h = (8.0 * chord_deviation).sqrt().min(H_MAX);
         // Curvature of the last accepted step (none before the first).
         let mut last_curvature = 0.0;
         for _ in 0..2000 {
@@ -1696,7 +1696,11 @@ where
                     let chord = q.distance(p);
                     let turn = t.cross(ty).magnitude().atan2(t.dot(ty));
                     let smooth = turn <= FREE_TURN.max(CURVATURE_GROWTH * last_curvature * chord);
-                    if ty.dot(t) > 0.0 && chord <= 2.0 * h && chord * turn <= 32.0 * sag && smooth {
+                    if ty.dot(t) > 0.0
+                        && chord <= 2.0 * h
+                        && chord * turn <= 32.0 * chord_deviation
+                        && smooth
+                    {
                         step = Some((y, q, ty, turn / chord.max(f64::MIN_POSITIVE)));
                         break;
                     }
@@ -1710,7 +1714,8 @@ where
             let along = (start - p).dot(q - p) / (q - p).dot(q - p).max(f64::MIN_POSITIVE);
             if half.len() >= 3
                 && (0.0..=1.0).contains(&along)
-                && (p + (q - p) * along).distance(start) <= 4.0 * sag + 10.0 * tol.confusion
+                && (p + (q - p) * along).distance(start)
+                    <= 4.0 * chord_deviation + 10.0 * tol.confusion
             {
                 if p.distance(start) < 0.1 * h {
                     half.pop();
@@ -1724,7 +1729,7 @@ where
             last_curvature = curvature;
             h = (2.0 * h)
                 .min(H_MAX)
-                .min((8.0 * sag / curvature.max(f64::MIN_POSITIVE)).sqrt());
+                .min((8.0 * chord_deviation / curvature.max(f64::MIN_POSITIVE)).sqrt());
         }
     }
     let [forward, backward] = halves;
