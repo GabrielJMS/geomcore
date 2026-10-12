@@ -573,7 +573,8 @@ pub(crate) struct PlacedConic {
 /// root multiplicity (2+ marks grazing tangency).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConicSurfaceHit {
-    /// Parameter on the curve.
+    /// Parameter on the curve, within its bounds: in `[0, 2π)` on a
+    /// circle or ellipse, where a hit at the seam reports `0`.
     pub parameter: f64,
     /// The hit point.
     pub point: Point3D,
@@ -588,7 +589,7 @@ pub struct ConicSurfaceHit {
 pub enum CircleSurfaceIntersection {
     /// The whole circle lies on the surface (sample-verified).
     Circle(Circle3D),
-    /// Isolated hits with multiplicity.
+    /// Isolated hits with multiplicity, ordered by circle parameter.
     Hits(Vec<ConicSurfaceHit>),
     /// No intersection.
     Empty,
@@ -599,7 +600,8 @@ pub enum CircleSurfaceIntersection {
 /// coincidence, or nothing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConicSurfaceIntersection {
-    /// Isolated hits with multiplicity (≥ 2 marks tangency).
+    /// Isolated hits with multiplicity (≥ 2 marks tangency), ordered by
+    /// curve parameter.
     Hits(Vec<ConicSurfaceHit>),
     /// The whole curve lies on the surface: in the plane, or a plane
     /// section of the sphere, cylinder, or cone.
@@ -656,11 +658,12 @@ pub struct CurveCurveExtremum {
 /// One meeting of two 3D curves.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
-    /// Parameter on the first curve.
+    /// Parameter on the first curve, within its bounds (on a circle or
+    /// ellipse, a hit at the seam reports the start of the bounds).
     pub first_param: f64,
     /// The meeting point (on the first curve; within tolerance of both).
     pub point: Point3D,
-    /// Parameter on the second curve.
+    /// Parameter on the second curve, within its bounds.
     pub second_param: f64,
     /// 1 where the curves cross, 2 or more where they are tangent.
     pub multiplicity: u32,

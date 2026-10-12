@@ -368,6 +368,16 @@ impl Ellipse3D {
         }
     }
 
+    /// The parameter to report for a point found at parameter `u`: `u`
+    /// wrapped into [`bounds`](crate::curves::ParametricCurve3D::bounds),
+    /// and the start of the bounds when within `tol.confusion` of the seam
+    /// along the curve, so a point at the seam has one parameter.
+    pub(crate) fn parameter_in_bounds(&self, u: f64, tol: Tolerance) -> f64 {
+        let (first, last) = crate::curves::ParametricCurve3D::bounds(self);
+        // The speed at parameter 0 is the minor radius.
+        analytic::seam_wrapped(u, first, last - first, self.minor_radius, tol.confusion)
+    }
+
     /// Recovers the angular parameter of a point on (or near) the ellipse,
     /// wrapped into `[0, 2*PI)`.
     ///
@@ -472,7 +482,7 @@ impl Ellipse3D {
         ];
         // s = -1/r maps the quartic to its reversal with alternating signs.
         let reversed = [coeffs[4], -coeffs[3], coeffs[2], -coeffs[1], coeffs[0]];
-        let mut ts: Vec<f64> = real_roots(&coeffs, tol.confusion)
+        let mut ts: Vec<(f64, f64)> = real_roots(&coeffs, tol.confusion)
             .into_iter()
             .map(|r| 2.0 * r.value.atan())
             .chain(
@@ -494,36 +504,25 @@ impl Ellipse3D {
                     }
                     t = next;
                 }
-                // Into (-PI, PI], the substitution's range.
-                let w = t.rem_euclid(std::f64::consts::TAU);
-                if w > std::f64::consts::PI {
-                    w - std::f64::consts::TAU
-                } else {
-                    w
-                }
+                // Measured at the polished parameter, reported in bounds.
+                let distance = self.eval_point(t).distance(point);
+                (self.parameter_in_bounds(t, tol), distance)
             })
             .collect();
-        ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
-        let mut params: Vec<f64> = Vec::with_capacity(ts.len());
-        for t in ts {
-            let fresh = match params.last() {
-                Some(&last) => (t - last).abs() > tol.parametric * (1.0 + t.abs()),
+        ts.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let mut out: Vec<CurveProjection> = Vec::with_capacity(ts.len());
+        for (t, distance) in ts {
+            let fresh = match out.last() {
+                Some(last) => (t - last.parameter).abs() > tol.parametric * (1.0 + t.abs()),
                 None => true,
             };
             if fresh {
-                params.push(t);
-            }
-        }
-        let mut out: Vec<CurveProjection> = params
-            .into_iter()
-            .map(|t| {
-                let distance = self.eval_point(t).distance(point);
-                CurveProjection {
+                out.push(CurveProjection {
                     parameter: t,
                     distance: projection::snap_distance(distance, tol.confusion),
-                }
-            })
-            .collect();
+                });
+            }
+        }
         out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
         out
     }

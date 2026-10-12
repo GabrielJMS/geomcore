@@ -1220,7 +1220,7 @@ impl Intersect<Ellipse3D> for Line3D {
         self.intersect_frame_conic(
             &conic,
             |p| ellipse.contains(p, tol),
-            |p| ellipse.parameter_of(p),
+            |p| ellipse.parameter_in_bounds(ellipse.parameter_of(p), tol),
             tol,
         )
     }

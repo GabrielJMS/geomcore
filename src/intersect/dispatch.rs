@@ -720,7 +720,14 @@ fn line_circle(
     circle: &Circle3D,
     tol: Tolerance,
 ) -> CurveCurveIntersection {
-    let on_circle = |t: f64, p: Point3D| pair(t, p, circle.parameter_of(p), 1);
+    let on_circle = |t: f64, p: Point3D| {
+        pair(
+            t,
+            p,
+            circle.parameter_in_bounds(circle.parameter_of(p), tol),
+            1,
+        )
+    };
     match result {
         LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => {
             CurveCurveIntersection::points([on_circle(t1, p1), on_circle(t2, p2)])
@@ -762,7 +769,8 @@ fn circle_circle(
     b: &Circle3D,
     tol: Tolerance,
 ) -> CurveCurveIntersection {
-    let at = |p: Point3D, m: u32| pair(a.parameter_of(p), p, b.parameter_of(p), m);
+    let on = |c: &Circle3D, p: Point3D| c.parameter_in_bounds(c.parameter_of(p), tol);
+    let at = |p: Point3D, m: u32| pair(on(a, p), p, on(b, p), m);
     match result {
         CircleCircle3DIntersection::Points(p, q) => {
             CurveCurveIntersection::points([at(p, 1), at(q, 1)])
@@ -1890,5 +1898,151 @@ mod tests {
     fn test_inline_list_adds_no_more_than_a_word() {
         // The empty case costs at most one tag word over the items.
         assert!(std::mem::size_of::<InlineList<[f64; 3], 4>>() <= 4 * 24 + 8);
+    }
+    /// Every parameter reported on a circle or ellipse lies in its
+    /// `bounds()`, hits come sorted by it, and a hit or projection at the
+    /// seam reports its start: through every surface and curve pair, the
+    /// projection and the extrema, in random poses.
+    #[test]
+    fn test_circle_and_ellipse_parameters_lie_in_bounds() {
+        let mut state: u64 = 0x5eed_0f15_c0de_cafe;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as f64 / 2147483648.0
+        };
+        let unit = |next: &mut dyn FnMut() -> f64| loop {
+            let v = Vector3D::new(2.0 * next() - 1.0, 2.0 * next() - 1.0, 2.0 * next() - 1.0);
+            if let Some(v) = v.normalized().filter(|_| v.magnitude() > 0.2) {
+                return v;
+            }
+        };
+        let in_bounds = |curve: &ElementaryCurve, t: f64| {
+            let (lo, hi) = curve.bounds();
+            assert!(lo <= t && t < hi, "{t} outside [{lo}, {hi}) on {curve:?}");
+        };
+        let mut hits = 0;
+        for _ in 0..150 {
+            let point = |next: &mut dyn FnMut() -> f64| {
+                Point3D::new(2.0 * next() - 1.0, 2.0 * next() - 1.0, 2.0 * next() - 1.0)
+            };
+            let frame = Frame3D::new(point(&mut next), unit(&mut next), unit(&mut next));
+            let Ok(frame) = frame else { continue };
+            let (a, b) = (0.6 + next(), 0.3 + 0.3 * next());
+            let curves: [ElementaryCurve; 2] = [
+                Circle3D::from_frame(frame, a).unwrap().into(),
+                Ellipse3D::from_frame(frame, a, b).unwrap().into(),
+            ];
+            let surfaces: [ElementarySurface; 4] = [
+                Plane::new(point(&mut next), unit(&mut next))
+                    .unwrap()
+                    .into(),
+                Sphere::new(point(&mut next), 0.5 + next()).unwrap().into(),
+                Cylinder::new(point(&mut next), unit(&mut next), 0.2 + next())
+                    .unwrap()
+                    .into(),
+                Cone::new(point(&mut next), unit(&mut next), 0.2 + next(), 0.5)
+                    .unwrap()
+                    .into(),
+            ];
+            let others: [ElementaryCurve; 4] = [
+                Line3D::new(point(&mut next), unit(&mut next))
+                    .unwrap()
+                    .into(),
+                // In the curves' plane, so coplanar pairs are exercised.
+                Line3D::new(
+                    frame.origin(),
+                    frame.x_direction() + frame.y_direction() * next(),
+                )
+                .unwrap()
+                .into(),
+                Circle3D::from_frame(
+                    Frame3D::new(
+                        frame.origin() + frame.x_direction() * next(),
+                        frame.z_direction(),
+                        unit(&mut next),
+                    )
+                    .unwrap(),
+                    0.4 + next(),
+                )
+                .unwrap()
+                .into(),
+                Ellipse3D::new(point(&mut next), unit(&mut next), unit(&mut next), 1.0, 0.5)
+                    .unwrap()
+                    .into(),
+            ];
+            for curve in &curves {
+                for surface in &surfaces {
+                    if let CurveSurfaceIntersection::Points(list) = curve.intersect(surface, TOL) {
+                        for h in list.iter() {
+                            in_bounds(curve, h.parameter);
+                            hits += 1;
+                        }
+                        assert!(list.windows(2).all(|w| w[0].parameter <= w[1].parameter));
+                    }
+                }
+                for other in &others {
+                    for (first, second, swapped) in [(curve, other, false), (other, curve, true)] {
+                        if let CurveCurveIntersection::Points(list) = first.intersect(second, TOL) {
+                            for h in list.iter() {
+                                let t = if swapped {
+                                    h.second_param
+                                } else {
+                                    h.first_param
+                                };
+                                in_bounds(curve, t);
+                                hits += 1;
+                            }
+                        }
+                    }
+                }
+                let query = Point3D::ORIGIN + (point(&mut next) - Point3D::ORIGIN) * 3.0;
+                let (projected, extrema) = match curve {
+                    ElementaryCurve::Circle(c) => {
+                        (c.project_point(query, TOL), c.extrema(query, TOL))
+                    }
+                    ElementaryCurve::Ellipse(e) => {
+                        (e.project_point(query, TOL), e.extrema(query, TOL))
+                    }
+                    _ => unreachable!(),
+                };
+                in_bounds(curve, projected.parameter);
+                for e in extrema {
+                    in_bounds(curve, e.parameter);
+                }
+            }
+        }
+        assert!(hits > 500, "only {hits} hits exercised");
+
+        // At the seam: the plane x = 1 grazes the unit circle there, and
+        // the plane y = 0 crosses it there and half a turn on.
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0, 0.5).unwrap();
+        for curve in [
+            ElementaryCurve::from(circle),
+            ElementaryCurve::from(ellipse),
+        ] {
+            let params = |surface: ElementarySurface| match curve.intersect(&surface, TOL) {
+                CurveSurfaceIntersection::Points(list) => {
+                    list.iter().map(|h| h.parameter).collect::<Vec<_>>()
+                }
+                other => panic!("expected hits, got {other:?}"),
+            };
+            let grazing = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
+            assert_eq!(params(grazing.into()), [0.0]);
+            let across = Plane::new(Point3D::ORIGIN, Vector3D::Y).unwrap();
+            let got = params(across.into());
+            assert_eq!(got[0], 0.0);
+            assert!((got[1] - std::f64::consts::PI).abs() < 1e-12);
+            // A point a hair below the seam projects onto it.
+            let below = Point3D::new(1.5, -1e-9, 0.0);
+            let projected = match curve {
+                ElementaryCurve::Circle(c) => c.project_point(below, TOL),
+                ElementaryCurve::Ellipse(e) => e.project_point(below, TOL),
+                _ => unreachable!(),
+            };
+            assert_eq!(projected.parameter, 0.0);
+        }
     }
 }

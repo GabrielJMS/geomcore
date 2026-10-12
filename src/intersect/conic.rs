@@ -88,6 +88,12 @@ pub(crate) trait Conic: ParametricCurve3D {
     fn contains(&self, point: Point3D, tol: Tolerance) -> bool;
     /// The parameter of the curve point nearest `point`.
     fn parameter_of(&self, point: Point3D) -> f64;
+    /// The parameter to report for a hit found at `t`: in the curve's
+    /// bounds, with the seam of a closed conic snapped to their start.
+    #[inline]
+    fn parameter_in_bounds(&self, t: f64, _tol: Tolerance) -> f64 {
+        t
+    }
 }
 
 impl Conic for Circle3D {
@@ -102,6 +108,10 @@ impl Conic for Circle3D {
     #[inline]
     fn parameter_of(&self, point: Point3D) -> f64 {
         Circle3D::parameter_of(self, point)
+    }
+    #[inline]
+    fn parameter_in_bounds(&self, t: f64, tol: Tolerance) -> f64 {
+        Circle3D::parameter_in_bounds(self, t, tol)
     }
     #[inline]
     fn shape(&self) -> ConicShape {
@@ -124,6 +134,10 @@ impl Conic for Ellipse3D {
     #[inline]
     fn parameter_of(&self, point: Point3D) -> f64 {
         Ellipse3D::parameter_of(self, point)
+    }
+    #[inline]
+    fn parameter_in_bounds(&self, t: f64, tol: Tolerance) -> f64 {
+        Ellipse3D::parameter_in_bounds(self, t, tol)
     }
     #[inline]
     fn shape(&self) -> ConicShape {
@@ -395,12 +409,15 @@ pub(crate) fn intersect_conic_quadric<C: Conic, S: Quadric>(
         touches,
         tol,
     );
-    let hits = verify_conic_hits(conic, quadric, &candidates, tol);
+    let mut hits = verify_conic_hits(conic, quadric, &candidates, tol);
     if hits.is_empty() {
-        ConicSurfaceIntersection::Empty
-    } else {
-        ConicSurfaceIntersection::Hits(hits)
+        return ConicSurfaceIntersection::Empty;
     }
+    for h in &mut hits {
+        h.parameter = conic.parameter_in_bounds(h.parameter, tol);
+    }
+    hits.sort_unstable_by(|x, y| x.parameter.total_cmp(&y.parameter));
+    ConicSurfaceIntersection::Hits(hits)
 }
 
 /// Intersects two conics: [`ConicConicIntersection::Coincident`] when
@@ -446,9 +463,9 @@ fn conic_conic_hits<A: Conic, B: Conic>(
     // Both parameters come from the point, so a closed conic's lies in its
     // own bounds whichever conic was solved for.
     let hit = |p: Point3D, multiplicity: u32| CurveCurveHit {
-        first_param: conic.parameter_of(p),
+        first_param: conic.parameter_in_bounds(conic.parameter_of(p), tol),
         point: p,
-        second_param: other.parameter_of(p),
+        second_param: other.parameter_in_bounds(other.parameter_of(p), tol),
         multiplicity,
     };
     if normal.cross(other_frame.z_direction()).magnitude() > tol.angular {

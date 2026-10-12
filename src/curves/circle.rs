@@ -347,6 +347,16 @@ impl Circle3D {
         }
     }
 
+    /// The parameter to report for a point found at parameter `u`: `u`
+    /// wrapped into [`bounds`](crate::curves::ParametricCurve3D::bounds),
+    /// and the start of the bounds when within `tol.confusion` of the seam
+    /// along the curve, so a point at the seam has one parameter.
+    pub(crate) fn parameter_in_bounds(&self, u: f64, tol: Tolerance) -> f64 {
+        let (first, last) = crate::curves::ParametricCurve3D::bounds(self);
+        // The speed is the radius everywhere.
+        analytic::seam_wrapped(u, first, last - first, self.radius, tol.confusion)
+    }
+
     /// Recovers the angular parameter of a point on (or near) the circle,
     /// wrapped into `[0, 2*PI)`.
     ///
@@ -397,7 +407,7 @@ impl Circle3D {
         let u = self.parameter_of(point);
         let distance = self.eval_point(u).distance(point);
         CurveProjection {
-            parameter: u,
+            parameter: self.parameter_in_bounds(u, tol),
             distance: projection::snap_distance(distance, tol.confusion),
         }
     }

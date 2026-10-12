@@ -9,6 +9,18 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Fixed
+
+- Parameters on a circle or ellipse are reported within its `bounds()`,
+  `[0, 2π)`, everywhere (#15). Hits against a plane or sphere came back
+  anywhere in `(-2π, 2π)`, hits against a cylinder or cone and the
+  ellipse's `project_point` and `extrema` in `(-π, π]`, so a caller
+  checking them against `bounds()` or an arc's range dropped valid hits.
+  The conic–surface hits are now also sorted by parameter, and a hit or
+  projection within `tol.confusion` of the seam (along the curve) reports
+  `0` whichever side it was found from, in every intersection and
+  projection of a circle or ellipse.
+
 ## [0.31.0] - 2026-10-12
 
 ### Added

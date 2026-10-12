@@ -229,6 +229,20 @@ pub(crate) fn in_period(u: f64, first: f64, last: f64) -> f64 {
     f64::max(first, u + period * ((first - u) / period).ceil())
 }
 
+/// The parameter to report for a hit or projection at `u` on a closed
+/// curve whose bounds are `[first, first + period)`: `u` wrapped into
+/// them, and `first` when it falls within `tol` of the seam along the
+/// curve (`speed` is the curve's speed there), so a point at the seam gets
+/// one parameter whichever side it was found from.
+pub(crate) fn seam_wrapped(u: f64, first: f64, period: f64, speed: f64, tol: f64) -> f64 {
+    let w = in_period(u, first, first + period);
+    if (first + period - w) * speed <= tol {
+        first
+    } else {
+        w
+    }
+}
+
 /// Wraps a signed angle in `(-PI, PI]` into `[0, 2*PI)`, treating an exact
 /// `2*PI` result as `0`.
 pub(crate) fn wrap_to_turn(angle: f64) -> f64 {
