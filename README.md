@@ -13,24 +13,35 @@ just future CAD-kernel builders.
 
 ## Status
 
-Proof-of-concept. Implemented so far:
+Pre-1.0: the API can still change between minor versions (breaking
+changes are flagged in the changelog). Implemented:
 
-- Parametric evaluation for lines, circles, ellipses, parabolas,
-  hyperbolas, and B-spline curves in 3D (plus 2D lines and circles, the
-  shapes curve-on-surface parametrization produces).
-- Parametric evaluation for planes, cylinders, cones, spheres, tori, and
-  B-spline surfaces.
-- Rigid transformations (translation, rotation, mirroring, scaling) via a
-  single `Transform` type.
-- Analytic curve-on-surface parametrization for lines and circles on the
-  five elementary surfaces (plane, cylinder, cone, sphere, torus).
+- **Evaluation** of lines, circles, ellipses, parabolas, hyperbolas and
+  B-spline curves (rational and periodic) in 3D, plus 2D lines and
+  circles; and of planes, cylinders, cones, spheres, tori and B-spline
+  surfaces.
+- **Transformations**: translation, rotation, mirroring and scaling via a
+  single `Transform` type, applied to any curve or surface with
+  `transformed`.
+- **Containment, projection and extrema** on every curve and surface:
+  closed form on the analytic types, exact subdivision on B-splines.
+- **Analytic intersections** with tangency and coincidence
+  classification: plane, quadric and torus pairs, and lines, circles and
+  conics against each other and against the elementary surfaces. A
+  configuration with no closed form reports `NotAnalytic` instead of
+  guessing.
+- **Numeric intersections** over any curve or surface: curve–surface and
+  curve–curve intersection and extrema, and marching surface–surface
+  intersection fitted with B-splines.
+- **Curve-on-surface parametrization**: analytic for lines and circles on
+  the five elementary surfaces, numeric everywhere else.
+- **B-spline fitting**: interpolation and least-squares approximation.
 
-Not implemented yet: curve/surface intersection, extrema computation,
-topology/B-rep, and a numeric-approximation fallback for
-curve-on-surface parametrization when no closed form exists.
+Not implemented: topology/B-rep and boolean operations.
 
-Evaluation results are validated against golden fixtures with
-CAD-kernel-grade tolerances (1e-7).
+Evaluation, transformations and curve-on-surface parametrization are
+validated against golden fixtures with CAD-kernel-grade tolerances
+(1e-7).
 
 See [ROADMAP.md](ROADMAP.md) for what's coming next and
 [CHANGELOG.md](CHANGELOG.md) for release history.
@@ -47,8 +58,6 @@ let point = circle.eval_point(std::f64::consts::PI / 4.0);
 
     cargo add geomcore
 
-Not yet published to crates.io — coming with the first release.
-
 ## Python
 
 ```python
@@ -61,8 +70,6 @@ point = circle.eval_point(math.pi / 4)
 ```
 
     pip install geomcore
-
-Not yet published to PyPI — coming with the first release.
 
 ## Why
 

@@ -36,16 +36,27 @@ ones before them. If you'd like to help with any of it, see
 - **0.19** — Marching surface–surface intersection with B-spline fits.
 - **0.20** — Numeric curve-on-surface parametrization fallback, validated
   against every analytic pcurve.
+- **0.21** — Generic 3D curve–curve intersection and extrema.
+- **0.22** — B-spline least-squares approximation.
+- **0.23–0.25** — Analytic intersections of circles and conics with the
+  quadrics, and of lines and circles with conics. Closed-form measures
+  (circumference, areas, sphere volume).
+- **0.25** — Hand-written Python type stubs (PEP 561) for IDE support.
+- **0.26** — `transformed` on every 3D curve and surface. Exact projection
+  and extrema on B-spline curves and surfaces. Curve–surface tangency
+  decided by distance. Curve–curve extrema as the local distance minima
+  over the curves' domains.
+- **0.27** — Double-nappe cones in every intersection. Constructors reject
+  NaN, infinite inputs and zero-size conics. Marching intersection finds
+  curves between its seed grid lines and traces each loop once.
+  Villarceau circles in torus–plane intersection.
 
 ## Next
 
-1. **Generic curve–curve intersection and extrema** — subdivision +
-   Newton refinement for B-splines in 2D; closest-point enumeration in
-   3D (analytic pairs already ship).
-2. **B-spline approximation** (least-squares fit, complementing
-   interpolation).
-3. **Python type stubs** for IDE autocompletion, and hosted documentation
-   with tutorials.
+1. **Marching intersection** — find isolated loops smaller than the seed
+   grid, and trace through points where the two surfaces touch.
+2. **Hosted documentation** — tutorials on the docs site, and a Python
+   API reference generated from docstrings.
 
 ## Someday
 

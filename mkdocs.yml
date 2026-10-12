@@ -19,4 +19,6 @@ nav:
   - Python: python.md
   - Roadmap: roadmap.md
 
-exclude_docs: superpowers/*
+exclude_docs: |
+  superpowers/*
+  agents/*
