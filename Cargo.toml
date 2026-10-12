@@ -27,6 +27,10 @@ name = "conic_quadric"
 harness = false
 
 [[bench]]
+name = "discretization"
+harness = false
+
+[[bench]]
 name = "degree_elevation"
 harness = false
 
