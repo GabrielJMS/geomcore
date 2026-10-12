@@ -97,6 +97,37 @@ pub trait PointExtrema3D: ParametricCurve3D {
     fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection>;
 }
 
+/// A reference to a curve is the curve, so a
+/// [`TrimmedCurve3D`](crate::curves::TrimmedCurve3D) can borrow its
+/// basis instead of owning it.
+impl<C: ParametricCurve3D + ?Sized> ParametricCurve3D for &C {
+    fn eval_point(&self, u: f64) -> Point3D {
+        (**self).eval_point(u)
+    }
+
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
+        (**self).eval_derivative(u, order)
+    }
+
+    fn bounds(&self) -> (f64, f64) {
+        (**self).bounds()
+    }
+
+    fn period(&self) -> Option<f64> {
+        (**self).period()
+    }
+
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
+        (**self).eval_points(us)
+    }
+}
+
+impl<C: PointExtrema3D + ?Sized> PointExtrema3D for &C {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        (**self).extrema(point, tol)
+    }
+}
+
 /// The single local minimum of a line, or of a circle (whose distance
 /// from a point falls monotonically to it from the farthest point).
 fn only_minimum(point: Point3D, project: impl Fn() -> CurveProjection) -> Vec<CurveProjection> {

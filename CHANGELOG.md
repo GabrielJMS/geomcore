@@ -9,6 +9,14 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- A trimmed curve can borrow its basis (#18): the curve traits
+  (`ParametricCurve3D`, `ParametricCurve2D`, `PointExtrema3D`,
+  `PointExtrema2D`) are implemented for references to curves, so
+  `TrimmedCurve3D<&BSplineCurve3D>` projects onto, intersects and finds
+  extrema on a piece of a shared curve without cloning it.
+
 ### Fixed
 
 - Parameters on a circle or ellipse are reported within its `bounds()`,

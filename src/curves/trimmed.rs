@@ -791,4 +791,58 @@ mod tests {
         assert!(close(ext[0].first_param, 1.0));
         assert!(close(ext[0].second_param, 1.0));
     }
+
+    // ---- borrowed basis ----
+
+    fn wavy() -> BSplineCurve3D {
+        let poles = vec![
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 2.0, 0.5),
+            Point3D::new(2.0, -1.0, 0.0),
+            Point3D::new(3.0, 1.5, -0.5),
+            Point3D::new(4.0, 0.0, 0.0),
+        ];
+        BSplineCurve3D::new(3, poles, vec![0.0, 0.5, 1.0], vec![4, 1, 4], false).unwrap()
+    }
+
+    #[test]
+    fn test_borrowed_basis_matches_owned() {
+        let curve = wavy();
+        let owned = TrimmedCurve3D::new(curve.clone(), 0.1, 0.8).unwrap();
+        let borrowed = TrimmedCurve3D::new(&curve, 0.1, 0.8).unwrap();
+        let point = Point3D::new(2.0, 1.0, 1.0);
+        assert_eq!(borrowed.bounds(), owned.bounds());
+        assert_eq!(borrowed.extrema(point, TOL), owned.extrema(point, TOL));
+        assert_eq!(
+            borrowed.project_point(point, TOL),
+            owned.project_point(point, TOL)
+        );
+
+        let line =
+            TrimmedCurve3D::segment(Point3D::new(2.0, -3.0, 0.0), Point3D::new(2.0, 3.0, 0.0))
+                .unwrap();
+        assert_eq!(
+            intersect_curve_curve(&borrowed, &line, TOL),
+            intersect_curve_curve(&owned, &line, TOL)
+        );
+        assert_eq!(
+            curve_curve_extrema(&line, &borrowed, TOL),
+            curve_curve_extrema(&line, &owned, TOL)
+        );
+        let sphere = Sphere::new(Point3D::new(2.0, 0.0, 0.0), 1.0).unwrap();
+        assert_eq!(
+            intersect_curve_surface(&borrowed, &sphere, TOL),
+            intersect_curve_surface(&owned, &sphere, TOL)
+        );
+
+        let circle = Circle2D::new(Point2D::new(1.0, 1.0), 2.0).unwrap();
+        let owned = TrimmedCurve2D::new(circle, 1.0, 4.0).unwrap();
+        let borrowed = TrimmedCurve2D::new(&circle, 1.0, 4.0).unwrap();
+        let point = Point2D::new(-3.0, 0.5);
+        assert_eq!(borrowed.extrema(point, TOL), owned.extrema(point, TOL));
+        assert_eq!(
+            borrowed.project_point(point, TOL),
+            owned.project_point(point, TOL)
+        );
+    }
 }
