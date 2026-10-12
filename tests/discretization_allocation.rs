@@ -2,8 +2,11 @@
 //! reuse its buffers across curves and threads (ADR 0004). A test binary
 //! of its own, as it replaces the global allocator.
 
-use geomcore::discretization::{DiscretizationCriteria, Discretize3D};
-use geomcore::{BSplineCurve3D, Circle3D, Curve3D, Ellipse3D, Point3D, TrimmedCurve3D, Vector3D};
+use geomcore::discretization::{DiscretizationCriteria, Discretize2D, Discretize3D};
+use geomcore::{
+    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Point2D, Point3D,
+    TrimmedCurve2D, TrimmedCurve3D, Vector3D,
+};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
@@ -52,6 +55,27 @@ fn assert_fills_without_allocating<C: Discretize3D>(curve: &C, criteria: Discret
     assert_eq!(filling, 0);
 }
 
+/// [`assert_fills_without_allocating`] for a 2D curve.
+fn assert_fills_2d_without_allocating<C: Discretize2D>(
+    curve: &C,
+    criteria: DiscretizationCriteria,
+) {
+    let mut n = 0;
+    assert_eq!(allocations_during(|| n = curve.point_count(criteria)), 0);
+    let (mut parameters, mut points) = (vec![0.0; n], vec![Point2D::ORIGIN; n]);
+    let (mut chords, mut angles) = (vec![0.0; n - 1], vec![0.0; n - 1]);
+    let filling = allocations_during(|| {
+        curve.discretize_into(
+            criteria,
+            &mut parameters,
+            &mut points,
+            &mut chords,
+            &mut angles,
+        )
+    });
+    assert_eq!(filling, 0);
+}
+
 #[test]
 fn test_count_and_fill_do_not_allocate() {
     let poles = (0..6)
@@ -82,5 +106,9 @@ fn test_count_and_fill_do_not_allocate() {
         assert_fills_without_allocating(&TrimmedCurve3D::new(circle, 1.0, 3.0).unwrap(), criteria);
         assert_fills_without_allocating(&ellipse, criteria);
         assert_fills_without_allocating(&run_time, criteria);
+        let circle_2d = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+        assert_fills_2d_without_allocating(&circle_2d, criteria);
+        let arc_2d = TrimmedCurve2D::new(Curve2D::from(circle_2d), 1.0, 3.0).unwrap();
+        assert_fills_2d_without_allocating(&arc_2d, criteria);
     }
 }

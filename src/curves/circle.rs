@@ -910,10 +910,13 @@ impl Intersect<Circle3D> for Circle3D {
 
     /// Intersects this circle with another 3D circle.
     ///
-    /// Only coplanar pairs admit a closed form: both circles map to 2D
-    /// images in the shared plane ([`parametrize_on`](Circle3D::parametrize_on)),
-    /// the 2D problem solves, and hits map back through the plane
-    /// evaluation. Distinct parallel planes report
+    /// Only coplanar pairs admit a closed form. They are coplanar when one
+    /// circle lies in the other's plane: turning it onto that plane moves
+    /// it by at most `tol.confusion` (an angle below
+    /// [`tol.angular_for_extent`](Tolerance::angular_for_extent) of its
+    /// radius). Both circles then map to 2D images in that plane, the 2D
+    /// problem solves, and hits map back through the plane evaluation.
+    /// Distinct parallel planes report
     /// [`CircleCircle3DIntersection::Empty`]; crossing planes report
     /// [`CircleCircle3DIntersection::NotAnalytic`], which the
     /// [`ElementaryCurve`](crate::curves::ElementaryCurve) intersection
@@ -933,28 +936,32 @@ impl Intersect<Circle3D> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, other: &Circle3D, tol: Tolerance) -> CircleCircle3DIntersection {
-        if self.normal().cross(other.normal()).magnitude() > tol.angular {
-            return CircleCircle3DIntersection::NotAnalytic;
-        }
-        let plane = Plane::from_frame(self.frame());
-        if !plane.contains(other.center(), tol) {
+        let host = if lies_in_plane_of(other, self, tol) {
+            self
+        } else if lies_in_plane_of(self, other, tol) {
+            other
+        } else if self.normal().cross(other.normal()).magnitude() <= tol.angular {
             // Distinct parallel planes.
             return CircleCircle3DIntersection::Empty;
-        }
+        } else {
+            return CircleCircle3DIntersection::NotAnalytic;
+        };
         if self.center().distance(other.center()) <= tol.confusion
             && (self.radius() - other.radius()).abs() <= tol.confusion
         {
             return CircleCircle3DIntersection::Coincident;
         }
-        let c1 = match self.parametrize_on(plane, tol) {
-            Ok(Curve2D::Circle(c)) => c,
-            _ => return CircleCircle3DIntersection::NotAnalytic,
+        // Both circles in the host's plane coordinates.
+        let plane = Plane::from_frame(host.frame());
+        let image = |circle: &Circle3D| {
+            let w = circle.center() - plane.frame().origin();
+            let center = Point2D::new(
+                w.dot(plane.frame().x_direction()),
+                w.dot(plane.frame().y_direction()),
+            );
+            Circle2D::new(center, circle.radius()).expect("radius is non-negative by construction")
         };
-        let c2 = match other.parametrize_on(plane, tol) {
-            Ok(Curve2D::Circle(c)) => c,
-            _ => return CircleCircle3DIntersection::NotAnalytic,
-        };
-        match c1.intersect(&c2, tol) {
+        match image(self).intersect(&image(other), tol) {
             CircleCircle2DIntersection::Points(p1, p2) => CircleCircle3DIntersection::Points(
                 plane.eval_point(p1.x, p1.y),
                 plane.eval_point(p2.x, p2.y),
@@ -966,6 +973,14 @@ impl Intersect<Circle3D> for Circle3D {
             CircleCircle2DIntersection::Coincident => CircleCircle3DIntersection::Coincident,
         }
     }
+}
+
+/// Whether `circle` lies in the plane of `host`: its centre is on that
+/// plane and turning its normal onto the host's moves it by at most the
+/// confusion tolerance.
+fn lies_in_plane_of(circle: &Circle3D, host: &Circle3D, tol: Tolerance) -> bool {
+    circle.normal().cross(host.normal()).magnitude() <= tol.angular_for_extent(circle.radius())
+        && Plane::from_frame(host.frame()).contains(circle.center(), tol)
 }
 
 impl Intersect<Circle2D> for Circle2D {
