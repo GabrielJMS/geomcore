@@ -275,7 +275,7 @@ impl CurveCurveExtrema {
     /// use geomcore::{Line3D, Point3D, Tolerance, Vector3D, curve_curve_extrema};
     /// let l1 = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
     /// let l2 = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Y).unwrap();
-    /// // Only the search over two B-splines proves its minima complete.
+    /// // Only a search with a B-spline on one side proves its minima complete.
     /// assert!(!curve_curve_extrema(&l1, &l2, Tolerance::DEFAULT).is_complete());
     /// ```
     pub fn is_complete(&self) -> bool {
@@ -1732,7 +1732,7 @@ mod tests {
     }
 
     #[test]
-    fn test_other_pairs_are_sampled() {
+    fn test_elementary_pairs_are_sampled_and_mixed_pairs_are_not() {
         let circle = crate::Circle3D::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
         let line = crate::Line3D::new(Point3D::ORIGIN, crate::Vector3D::X).unwrap();
         let hits = intersect_curve_curve(&line, &circle, TOL);
@@ -1744,11 +1744,20 @@ mod tests {
         );
         let chord = segment([-3.0, 0.5, 0.0], [3.0, 0.5, 0.0]);
         let hits = intersect_curve_curve(&chord, &circle, TOL);
-        assert_eq!(hits.completeness(), &Completeness::Sampled);
+        assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 2);
         let extrema = curve_curve_extrema(&circle, &chord, TOL);
         assert_eq!(extrema.completeness(), &Completeness::Sampled);
         assert!(!extrema.is_empty());
+        let line = crate::Line3D::new(Point3D::new(0.0, 0.5, 1.0), crate::Vector3D::X).unwrap();
+        let extrema = curve_curve_extrema(&line, &chord, TOL);
+        assert_eq!(extrema.completeness(), &Completeness::Sampled);
+        let bend = quadratic([-1.0, 0.0, 0.0], [0.0, 2.0, 1.0], [1.0, 0.0, 0.0]);
+        let extrema = curve_curve_extrema(&line, &bend, TOL);
+        assert_eq!(extrema.completeness(), &Completeness::Sampled);
+        let piece = crate::curves::TrimmedCurve3D::new(line, -2.0, 2.0).unwrap();
+        let extrema = curve_curve_extrema(&piece, &bend, TOL);
+        assert_eq!(extrema.completeness(), &Completeness::Complete);
     }
 
     #[test]

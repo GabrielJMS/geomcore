@@ -187,3 +187,48 @@ Reproduce with:
 ```sh
 cargo bench --bench intersect_curve_curve
 ```
+
+# Mixed elementary and B-spline intersections
+
+The same two benches time an elementary shape against a B-spline,
+converted to its exact rational B-spline and searched by Bézier piece
+pairs instead of sampled. `intersect_curve_surface`: the 64 cubic curves
+above against a cylinder of radius 2 about the vertical axis through the
+footprint's centre, and 64 circles of radius 0.6 to 1.2 standing across
+the bicubic surface in vertical planes of random directions.
+`intersect_curve_curve`: 64 circles of radius 1 to 2 in the plane of the
+crossing pairs against the first curve of each pair. `curve_curve_extrema`:
+64 ellipses of radii 2 and 1, tilted at random 1 to 2 above the plane,
+their halves `[0, π]`, and the lines along their major axes, whole and
+over `[-2, 2]`, against the lower curve of each skew pair.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per curve or pair.
+
+| query | sampled (before) | after |
+|---|---|---|
+| `intersect_curve_surface`, cubic × cylinder | ~84 µs | ~62 µs |
+| `intersect_curve_surface`, circle × bicubic | ~4.9 ms | ~84 µs |
+| `intersect_curve_curve`, circle × cubic | ~66 µs | ~15 µs |
+| `curve_curve_extrema`, segment × cubic | ~58 µs | ~29 µs |
+| `curve_curve_extrema`, ellipse × cubic | ~66 µs | unchanged, sampled |
+| `curve_curve_extrema`, half ellipse × cubic | ~116 µs | unchanged, sampled |
+| `curve_curve_extrema`, line × cubic | ~33 µs | unchanged, sampled |
+
+Every search run here ends complete. A circle against a surface gains
+most, about 58 times: the sampled search projected 128 points of the
+circle onto the surface, each projection a search of its own. Against a
+cylinder the gain is smaller, as the cylinder's quarter-turn patches are
+large and rational, and their boxes overlap much of each curve. The
+extrema search beats the grid on a segment only: on a whole ellipse it
+took ~270 µs (a maximum of the distance along the closed curve for every
+point of the cubic, and loose bounds on rational pieces), on a half
+ellipse ~145 µs, and on a full line ~42 µs against the exact reduction
+to the cubic alone, so those pairs stay sampled.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_curve_surface -- "cylinder|circle_bspline_surface" --warm-up-time 1 --measurement-time 3
+cargo bench --bench intersect_curve_curve -- "_bspline$" --warm-up-time 1 --measurement-time 3
+```

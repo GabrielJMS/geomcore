@@ -5,14 +5,22 @@
 //! the other from bottom to top along wavy paths, so that every pair
 //! crosses at least once; and `curve_curve_extrema` on 64 pairs of skew
 //! cubic B-spline curves, wavy in all three directions, one above the
-//! other.
+//! other. Then mixed pairs: `intersect_curve_curve` on 64 circles in the
+//! plane of the crossing pairs against their first curve, and
+//! `curve_curve_extrema` on 64 tilted ellipses, their halves, and the
+//! lines along their major axes, whole and over `[-2, 2]`, above the skew
+//! pairs' lower curve.
 //!
 //! Informational only, like `eval_throughput`; not a correctness gate.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use geomcore::{BSplineCurve3D, Point3D, Tolerance, curve_curve_extrema, intersect_curve_curve};
+use geomcore::curves::TrimmedCurve3D;
+use geomcore::{
+    BSplineCurve3D, Circle3D, Ellipse3D, Line3D, Point3D, Tolerance, Vector3D, curve_curve_extrema,
+    intersect_curve_curve,
+};
 
 const PAIRS: usize = 64;
 
@@ -88,10 +96,42 @@ fn skew_pairs() -> Vec<(BSplineCurve3D, BSplineCurve3D)> {
         .collect()
 }
 
+/// Circles of radius 1 to 2 centred in the square `[1, 4]^2` of the
+/// plane `z = 0`.
+fn circles() -> Vec<Circle3D> {
+    let mut rng = Lcg(11);
+    (0..PAIRS)
+        .map(|_| {
+            let centre = Point3D::new(1.0 + 3.0 * rng.next(), 1.0 + 3.0 * rng.next(), 0.0);
+            Circle3D::new(centre, Vector3D::Z, 1.0 + rng.next()).unwrap()
+        })
+        .collect()
+}
+
+/// Ellipses of radii 2 and 1 centred over the square `[1, 4]^2` at
+/// heights 1 to 2, tilted at random.
+fn ellipses() -> Vec<Ellipse3D> {
+    let mut rng = Lcg(13);
+    (0..PAIRS)
+        .map(|_| {
+            let centre = Point3D::new(
+                1.0 + 3.0 * rng.next(),
+                1.0 + 3.0 * rng.next(),
+                1.0 + rng.next(),
+            );
+            let normal = Vector3D::new(rng.next() - 0.5, rng.next() - 0.5, 1.0);
+            let major = Vector3D::new(normal.z, 0.0, -normal.x);
+            Ellipse3D::new(centre, normal, major, 2.0, 1.0).unwrap()
+        })
+        .collect()
+}
+
 fn bench_curve_curve(c: &mut Criterion) {
     let tol = Tolerance::default();
     let crossing = crossing_pairs();
     let skew = skew_pairs();
+    let circles = circles();
+    let ellipses = ellipses();
     let mut group = c.benchmark_group("curve_curve");
     group.throughput(Throughput::Elements(PAIRS as u64));
     group.bench_function("intersect_crossing_bsplines", |b| {
@@ -105,6 +145,53 @@ fn bench_curve_curve(c: &mut Criterion) {
         b.iter(|| {
             for (p, q) in black_box(&skew) {
                 black_box(curve_curve_extrema(p, q, tol));
+            }
+        })
+    });
+    group.bench_function("intersect_circle_bspline", |b| {
+        b.iter(|| {
+            for (circle, (p, _)) in black_box(&circles).iter().zip(&crossing) {
+                black_box(intersect_curve_curve(circle, p, tol));
+            }
+        })
+    });
+    group.bench_function("extrema_ellipse_bspline", |b| {
+        b.iter(|| {
+            for (ellipse, (p, _)) in black_box(&ellipses).iter().zip(&skew) {
+                black_box(curve_curve_extrema(ellipse, p, tol));
+            }
+        })
+    });
+    let arcs: Vec<_> = ellipses
+        .iter()
+        .map(|e| TrimmedCurve3D::new(*e, 0.0, std::f64::consts::PI).unwrap())
+        .collect();
+    group.bench_function("extrema_arc_bspline", |b| {
+        b.iter(|| {
+            for (arc, (p, _)) in black_box(&arcs).iter().zip(&skew) {
+                black_box(curve_curve_extrema(arc, p, tol));
+            }
+        })
+    });
+    let lines: Vec<_> = ellipses
+        .iter()
+        .map(|e| Line3D::new(e.center(), e.frame().x_direction()).unwrap())
+        .collect();
+    let segs: Vec<_> = lines
+        .iter()
+        .map(|l| TrimmedCurve3D::new(*l, -2.0, 2.0).unwrap())
+        .collect();
+    group.bench_function("extrema_segment_bspline", |b| {
+        b.iter(|| {
+            for (s, (p, _)) in black_box(&segs).iter().zip(&skew) {
+                black_box(curve_curve_extrema(s, p, tol));
+            }
+        })
+    });
+    group.bench_function("extrema_line_bspline", |b| {
+        b.iter(|| {
+            for (line, (p, _)) in black_box(&lines).iter().zip(&skew) {
+                black_box(curve_curve_extrema(line, p, tol));
             }
         })
     });

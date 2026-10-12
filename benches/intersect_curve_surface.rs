@@ -4,7 +4,10 @@
 //! bicubic B-spline surface. The surface is a 6×6 net over `[0, 5]^2`
 //! with gentle height variation; each curve interpolates six points rising
 //! from `z = -2` to `z = 2` along a wavy path between two random points of
-//! the surface's footprint, so most curves cross it once.
+//! the surface's footprint, so most curves cross it once. Then the same
+//! curves against a cylinder of radius 2 about the vertical axis through
+//! the footprint's centre, and 64 circles standing across the surface,
+//! each crossing it about twice.
 //!
 //! Informational only, like `eval_throughput`; not a correctness gate.
 
@@ -12,7 +15,9 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::surfaces::BSplineSurface;
-use geomcore::{BSplineCurve3D, Point3D, Tolerance, intersect_curve_surface};
+use geomcore::{
+    BSplineCurve3D, Circle3D, Cylinder, Point3D, Tolerance, Vector3D, intersect_curve_surface,
+};
 
 const CURVES: usize = 64;
 
@@ -74,6 +79,20 @@ fn curves() -> Vec<BSplineCurve3D> {
         .collect()
 }
 
+/// Circles of radius 0.6 to 1.2 centred over the surface's footprint, in
+/// vertical planes of random directions.
+fn circles() -> Vec<Circle3D> {
+    let mut rng = Lcg(7);
+    (0..CURVES)
+        .map(|_| {
+            let centre = Point3D::new(1.2 + rng.next() * 2.6, 1.2 + rng.next() * 2.6, 0.0);
+            let angle = rng.next() * std::f64::consts::PI;
+            let normal = Vector3D::new(angle.cos(), angle.sin(), 0.0);
+            Circle3D::new(centre, normal, 0.6 + 0.6 * rng.next()).unwrap()
+        })
+        .collect()
+}
+
 fn bench_intersect_curve_surface(c: &mut Criterion) {
     let surface = surface();
     let curves = curves();
@@ -84,6 +103,22 @@ fn bench_intersect_curve_surface(c: &mut Criterion) {
         b.iter(|| {
             for curve in black_box(&curves) {
                 black_box(intersect_curve_surface(curve, &surface, tol));
+            }
+        })
+    });
+    let cylinder = Cylinder::new(Point3D::new(2.5, 2.5, 0.0), Vector3D::Z, 2.0).unwrap();
+    group.bench_function("bspline_curve_cylinder", |b| {
+        b.iter(|| {
+            for curve in black_box(&curves) {
+                black_box(intersect_curve_surface(curve, &cylinder, tol));
+            }
+        })
+    });
+    let circles = circles();
+    group.bench_function("circle_bspline_surface", |b| {
+        b.iter(|| {
+            for circle in black_box(&circles) {
+                black_box(intersect_curve_surface(circle, &surface, tol));
             }
         })
     });
