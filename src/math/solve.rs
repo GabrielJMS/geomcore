@@ -1,10 +1,11 @@
-//! Small iterative solvers: Newton, Gauss-Newton, Brent, and 2x2 to 4x4
-//! linear systems.
+//! Small iterative solvers: Newton, Brent, and 2x2 to 4x4 linear
+//! systems.
 //!
-//! All routines are allocation-free, take plain closures and stack
-//! arrays, and report `None` (rather than a best effort) when they do
-//! not converge — callers seed them densely and keep the best converged
-//! candidate.
+//! All routines are allocation-free and take plain closures and stack
+//! arrays. The root finders report `None` (rather than a best effort)
+//! when they do not converge — callers seed them densely and keep the
+//! best converged candidate; the polishing and minimising routines never
+//! fail and return their best iterate.
 
 /// Solve the 2x2 system `a*x = b`, or `None` when near-singular.
 pub(crate) fn solve_2x2(a: [[f64; 2]; 2], b: [f64; 2], tol: f64) -> Option<[f64; 2]> {
@@ -19,27 +20,31 @@ pub(crate) fn solve_2x2(a: [[f64; 2]; 2], b: [f64; 2], tol: f64) -> Option<[f64;
     ])
 }
 
-/// Newton iteration for `f(x) = 0` from `x0` (needs `f` and `df`).
-/// Converges on `|dx| <= tol * (1 + |x|)`; gives up after `max_iter`.
-pub(crate) fn newton_1d(
-    mut f: impl FnMut(f64) -> f64,
-    mut df: impl FnMut(f64) -> f64,
+/// Newton steps on `f(x) = 0` from `x`, each accepted only while it
+/// strictly decreases `|f|`; returns the last accepted `x`.
+///
+/// Never fails: it polishes a candidate that is already close (a root of
+/// a polynomial the equation was reduced to), so the result is never
+/// worse than the input.
+pub(crate) fn polish_root(
+    f: impl Fn(f64) -> f64,
+    df: impl Fn(f64) -> f64,
     mut x: f64,
-    tol: f64,
     max_iter: u32,
-) -> Option<f64> {
+) -> f64 {
     for _ in 0..max_iter {
-        let (fx, dfx) = (f(x), df(x));
-        if dfx.abs() <= f64::MIN_POSITIVE * (1.0 + fx.abs()) {
-            return None;
+        let slope = df(x);
+        if slope == 0.0 {
+            break;
         }
-        let dx = fx / dfx;
-        x -= dx;
-        if dx.abs() <= tol * (1.0 + x.abs()) {
-            return Some(x);
+        let next = x - f(x) / slope;
+        let residual = f(next).abs();
+        if residual.is_nan() || residual >= f(x).abs() {
+            break;
         }
+        x = next;
     }
-    None
+    x
 }
 
 /// Solve the 3x3 system `a*x = b` by Gaussian elimination with partial
@@ -55,8 +60,8 @@ pub(crate) fn solve_4x4(a: [[f64; 4]; 4], b: [f64; 4], tol: f64) -> Option<[f64;
 }
 
 /// Gaussian elimination with partial pivoting; a pivot below `tol` times
-/// the sum of `|a|` counts as singular.
-fn solve_square<const N: usize>(
+/// the sum of `|a|` counts as singular (with `tol = 0`, only a zero pivot).
+pub(crate) fn solve_square<const N: usize>(
     mut m: [[f64; N]; N],
     mut b: [f64; N],
     tol: f64,
@@ -128,53 +133,6 @@ pub(crate) fn newton_3d(
         }
         if s0.abs() + s1.abs() + s2.abs() <= tol * (3.0 + x[0].abs() + x[1].abs() + x[2].abs()) {
             return Some(x);
-        }
-    }
-    None
-}
-
-/// Gauss-Newton step driver for 3-component residuals in 1 parameter
-/// (curve projection): minimizes `|r(t)|^2` via
-/// `delta = -(J.r) / (J.J)` with backtracking.
-pub(crate) fn gauss_newton_1d(
-    mut residual: impl FnMut(f64) -> [f64; 3],
-    mut jacobian: impl FnMut(f64) -> [f64; 3],
-    mut t: f64,
-    tol: f64,
-    max_iter: u32,
-) -> Option<f64> {
-    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    // The residual at `t` is carried over from the accepted trial, so each
-    // point is evaluated once.
-    let mut r = residual(t);
-    let mut best = dot(r, r);
-    for _ in 0..max_iter {
-        let j = jacobian(t);
-        let jj = dot(j, j);
-        if jj <= f64::MIN_POSITIVE * (1.0 + best) {
-            return None;
-        }
-        let mut step = -dot(j, r) / jj;
-        // Backtrack while the step fails to improve.
-        let mut improved = false;
-        for _ in 0..12 {
-            let trial = t + step;
-            let trial_r = residual(trial);
-            let value = dot(trial_r, trial_r);
-            if value < best {
-                t = trial;
-                r = trial_r;
-                best = value;
-                improved = true;
-                break;
-            }
-            step *= 0.5;
-        }
-        if !improved {
-            return Some(t);
-        }
-        if step.abs() <= tol * (1.0 + t.abs()) {
-            return Some(t);
         }
     }
     None
@@ -480,24 +438,16 @@ mod tests {
     }
 
     #[test]
-    fn test_newton_sqrt2() {
-        let x = newton_1d(|x| x * x - 2.0, |x| 2.0 * x, 1.0, 1e-12, 50).unwrap();
-        assert!((x - std::f64::consts::SQRT_2).abs() < 1e-12);
-        assert!(newton_1d(|_| 1.0, |_| 0.0, 0.0, 1e-12, 10).is_none());
-    }
-
-    #[test]
-    fn test_gauss_newton_1d_line_fit() {
-        // Closest t on the x-axis to (3, 4, 0): t = 3.
-        let t = gauss_newton_1d(
-            |t| [t - 3.0, -4.0, 0.0],
-            |_| [1.0, 0.0, 0.0],
-            0.0,
-            1e-12,
-            50,
-        )
-        .unwrap();
-        assert!((t - 3.0).abs() < 1e-9);
+    fn test_polish_root_sqrt2() {
+        let x = polish_root(|x| x * x - 2.0, |x| 2.0 * x, 1.4, 8);
+        assert!((x - std::f64::consts::SQRT_2).abs() < 1e-15);
+        // A flat function leaves the candidate unchanged.
+        assert_eq!(polish_root(|_| 1.0, |_| 0.0, 0.5, 8), 0.5);
+        // A step that would increase |f| is refused.
+        assert_eq!(
+            polish_root(|x: f64| x.atan(), |x| 1.0 / (1.0 + x * x), 3.0, 8),
+            3.0
+        );
     }
 
     #[test]
