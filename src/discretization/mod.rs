@@ -22,8 +22,10 @@
 mod bspline;
 mod elementary;
 
+#[cfg(doc)]
+use crate::Tolerance;
 use crate::curves::{ParametricCurve2D, ParametricCurve3D, TrimmedCurve2D, TrimmedCurve3D};
-use crate::{BSplineCurve3D, Circle2D, Circle3D, Ellipse3D, Point2D, Point3D, Tolerance};
+use crate::{BSplineCurve3D, Circle2D, Circle3D, Ellipse3D, Point2D, Point3D};
 use std::fmt;
 
 /// Error returned when a [`DiscretizationCriteria`] value is not a
@@ -32,10 +34,6 @@ use std::fmt;
 pub enum DiscretizationCriteriaError {
     /// The maximum chord deviation is not positive and finite.
     InvalidChordDeviation,
-    /// The maximum chord deviation is below the default confusion
-    /// tolerance: segments closer to the curve than that already lie on
-    /// it.
-    ChordDeviationBelowConfusion,
     /// The maximum angle deviation is not positive and finite.
     InvalidAngleDeviation,
 }
@@ -45,9 +43,6 @@ impl fmt::Display for DiscretizationCriteriaError {
         f.write_str(match self {
             DiscretizationCriteriaError::InvalidChordDeviation => {
                 "the maximum chord deviation must be positive and finite"
-            }
-            DiscretizationCriteriaError::ChordDeviationBelowConfusion => {
-                "the maximum chord deviation must be at least the confusion tolerance"
             }
             DiscretizationCriteriaError::InvalidAngleDeviation => {
                 "the maximum angle deviation must be positive and finite"
@@ -81,16 +76,16 @@ impl DiscretizationCriteria {
     /// Criteria asking for a chord deviation of at most
     /// `max_chord_deviation`, with no limit on the angle deviation.
     ///
-    /// The chord deviation must be at least the default confusion
-    /// tolerance ([`Tolerance::DEFAULT`]): a segment closer to the curve
-    /// than that already lies on it, so a finer request would only add
-    /// points.
+    /// Any positive chord deviation is accepted, but the points cannot lie
+    /// closer to the curve than their coordinates' rounding: about 1e-15
+    /// times the curve's distance from the origin, 1e-13 near it and 1e-10
+    /// at the edge of a [`Tolerance::MODEL_SIZE`] model. A finer request
+    /// only adds points, about three times as many for each tenfold;
+    /// [`point_count`](Discretize3D::point_count) gives the count before
+    /// anything is allocated.
     pub fn new(max_chord_deviation: f64) -> Result<Self, DiscretizationCriteriaError> {
         if !(max_chord_deviation.is_finite() && max_chord_deviation > 0.0) {
             return Err(DiscretizationCriteriaError::InvalidChordDeviation);
-        }
-        if max_chord_deviation < Tolerance::DEFAULT.confusion {
-            return Err(DiscretizationCriteriaError::ChordDeviationBelowConfusion);
         }
         Ok(DiscretizationCriteria {
             max_chord_deviation,
