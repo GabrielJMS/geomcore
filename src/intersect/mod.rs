@@ -23,11 +23,14 @@ use crate::{
     Vector3D,
 };
 
+mod completeness;
 mod conic;
 mod curve_surface;
 mod dispatch;
 mod pieces;
+pub use completeness::{Completeness, IncompleteReason};
 pub(crate) use conic::{intersect_conic_conic, intersect_conic_quadric};
+pub use curve_surface::{CurveSurfaceHits, CurveSurfaceRegion};
 pub use dispatch::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
 };
@@ -1426,16 +1429,23 @@ pub struct CurveSurfaceHit {
 /// sets along the overlap — use the analytic `intersect_*` methods when
 /// classification (tangent, coincident) matters.
 ///
+/// The hits are [`Completeness::Sampled`]: a hit between samples, or
+/// whose Newton iteration strays, can be missed.
+///
 /// A B-spline curve, or a trimmed curve over one (see
 /// [`ParametricCurve3D::as_bspline`]), against a B-spline surface is
 /// searched without sampling: the curve's knot spans over its range and
 /// the surface's knot-span patches are Bézier pieces, and the pairs of
-/// pieces whose control points' boxes overlap are halved until each
-/// provably holds at most one hit, which Newton iteration from the pair's
-/// centre then reaches. Parameters are reported within the ranges (a
-/// periodic one within its period). A pair that never separates (a
-/// tangency, an overlap, a hit at a singular point) exhausts the search's
-/// budget, and the samples above are used instead.
+/// pieces whose control points' boxes overlap are halved until each is
+/// proven apart or provably holds at most one hit, which Newton iteration
+/// from the pair's centre then reaches. Parameters are reported within
+/// the ranges (a periodic one within its period). When every pair
+/// settles, the hits are [`Completeness::Complete`]. A pair that never
+/// separates (a tangency, an overlap, a hit at a singular point), or a
+/// search that runs out of its budget of halvings, leaves them
+/// [`Completeness::Incomplete`], with the reason and the regions where
+/// hits may be missing; the hits are then those found, together with
+/// the sampled search's hits that do not merge into them.
 ///
 /// # Examples
 ///
@@ -1447,21 +1457,23 @@ pub struct CurveSurfaceHit {
 /// assert_eq!(hits.len(), 2);
 /// assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
 /// assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
+/// assert!(!hits.is_complete());
 /// ```
-pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> Vec<CurveSurfaceHit>
+pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> CurveSurfaceHits
 where
     C: ParametricCurve3D,
     S: ParametricSurface,
 {
     if let (Some(bspline), Some(patches)) = (curve.as_bspline(), surface.as_bspline()) {
         let periodic = curve.period().is_some();
-        let hits =
+        let mut hits =
             curve_surface::bspline_curve_surface(bspline, curve.bounds(), periodic, patches, tol);
-        if let Some(hits) = hits {
-            return hits;
+        if !hits.is_complete() {
+            hits.add_sampled(sampled_curve_surface(curve, surface, tol), tol);
         }
+        return hits;
     }
-    sampled_curve_surface(curve, surface, tol)
+    CurveSurfaceHits::sampled(sampled_curve_surface(curve, surface, tol))
 }
 
 /// The sampled search of [`intersect_curve_surface`].
