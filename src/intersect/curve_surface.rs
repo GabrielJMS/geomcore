@@ -1,22 +1,273 @@
-//! Intersection of a B-spline curve with a B-spline surface by subdivision
-//! of their Bézier pieces (see [`bspline_curve_surface`]).
+//! The result of a numeric curve–surface intersection
+//! ([`CurveSurfaceHits`]), and the intersection of a B-spline curve with a
+//! B-spline surface by subdivision of their Bézier pieces (see
+//! [`bspline_curve_surface`]).
 
-use super::CurveSurfaceHit;
 use super::pieces::{
-    CurvePieces, Pool, apart_along, bounding_box, box_size, euclidean, meets_at_most_once,
+    CurvePieces, Pool, apart_along, bounding_box, box_size, dot, euclidean, meets_at_most_once,
     net_normal, norm, sub,
 };
+use super::{Completeness, CurveSurfaceHit, IncompleteReason};
 use crate::curves::BSplineCurve3D;
-use crate::math::boxtree::boxes_apart;
+use crate::math::boxtree::{Aabb, boxes_apart};
 use crate::math::solve_3x3;
 use crate::surface_math::bspline::net_points;
 use crate::surfaces::{BSplineSurface, ParametricSurface};
 use crate::{Point3D, Tolerance};
+use std::ops::Deref;
+
+/// The hits of a numeric curve–surface intersection, ordered by curve
+/// parameter, and whether they are all of them (see
+/// [`intersect_curve_surface`](crate::intersect_curve_surface)).
+///
+/// It reads as the slice of its hits.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{BSplineCurve3D, BSplineSurface, Point3D, Tolerance, intersect_curve_surface};
+/// let poles = vec![
+///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+/// ];
+/// let (knots, mults) = (vec![0.0, 1.0], vec![2, 2]);
+/// let square = BSplineSurface::new(
+///     1, 1, poles, knots.clone(), mults.clone(), knots.clone(), mults.clone(), false, false,
+/// )
+/// .unwrap();
+/// let ends = vec![Point3D::new(0.5, 1.0, -1.0), Point3D::new(1.5, 1.0, 1.0)];
+/// let segment = BSplineCurve3D::new(1, ends, knots, mults, false).unwrap();
+/// let hits = intersect_curve_surface(&segment, &square, Tolerance::DEFAULT);
+/// // Both are B-splines: the search proves there is no other hit.
+/// assert!(hits.is_complete());
+/// assert_eq!(hits.len(), 1);
+/// assert!(hits[0].point.distance(Point3D::new(1.0, 1.0, 0.0)) < 1e-12);
+/// for hit in &hits {
+///     assert!((hit.curve_param - 0.5).abs() < 1e-12);
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurveSurfaceHits {
+    hits: Vec<CurveSurfaceHit>,
+    completeness: Completeness<CurveSurfaceRegion>,
+}
+
+impl CurveSurfaceHits {
+    /// Hits found from samples.
+    pub(super) fn sampled(hits: Vec<CurveSurfaceHit>) -> Self {
+        CurveSurfaceHits {
+            hits,
+            completeness: Completeness::Sampled,
+        }
+    }
+
+    /// Adds the `sampled` hits farther than `sqrt(tol.confusion)` from
+    /// every hit already found, keeping the order by curve parameter.
+    pub(super) fn add_sampled(&mut self, sampled: Vec<CurveSurfaceHit>, tol: Tolerance) {
+        let merge_gap = tol.confusion.sqrt();
+        for hit in sampled {
+            if self
+                .hits
+                .iter()
+                .all(|h| h.point.distance(hit.point) > merge_gap)
+            {
+                self.hits.push(hit);
+            }
+        }
+        self.hits
+            .sort_by(|a, b| a.curve_param.total_cmp(&b.curve_param));
+    }
+
+    /// The hits, ordered by curve parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
+    /// assert_eq!(hits.hits().len(), 2);
+    /// ```
+    pub fn hits(&self) -> &[CurveSurfaceHit] {
+        &self.hits
+    }
+
+    /// The hits, ordered by curve parameter, without the completeness.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let hits: Vec<_> = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT).into_hits();
+    /// assert!(hits[0].curve_param < hits[1].curve_param);
+    /// ```
+    pub fn into_hits(self) -> Vec<CurveSurfaceHit> {
+        self.hits
+    }
+
+    /// Whether the hits are all of them, and if not, why and where hits
+    /// may be missing.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Completeness, Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
+    /// assert_eq!(hits.completeness(), &Completeness::Sampled);
+    /// ```
+    pub fn completeness(&self) -> &Completeness<CurveSurfaceRegion> {
+        &self.completeness
+    }
+
+    /// Whether the hits are all of them ([`Completeness::Complete`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// // Sampled hits are not proven complete.
+    /// assert!(!intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT).is_complete());
+    /// ```
+    pub fn is_complete(&self) -> bool {
+        self.completeness.is_complete()
+    }
+}
+
+impl Deref for CurveSurfaceHits {
+    type Target = [CurveSurfaceHit];
+
+    fn deref(&self) -> &[CurveSurfaceHit] {
+        &self.hits
+    }
+}
+
+impl IntoIterator for CurveSurfaceHits {
+    type Item = CurveSurfaceHit;
+    type IntoIter = std::vec::IntoIter<CurveSurfaceHit>;
+
+    fn into_iter(self) -> std::vec::IntoIter<CurveSurfaceHit> {
+        self.hits.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a CurveSurfaceHits {
+    type Item = &'a CurveSurfaceHit;
+    type IntoIter = std::slice::Iter<'a, CurveSurfaceHit>;
+
+    fn into_iter(self) -> std::slice::Iter<'a, CurveSurfaceHit> {
+        self.hits.iter()
+    }
+}
+
+/// Where an incomplete curve–surface intersection may have missed hits:
+/// a curve parameter interval against a surface parameter rectangle,
+/// with a box in space holding the curve over its interval. A missed hit
+/// has its curve parameter in `curve_range`, its surface parameters in
+/// `u_range` and `v_range`, and its point in the box.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{
+///     BSplineCurve3D, BSplineSurface, Completeness, Point3D, Tolerance, intersect_curve_surface,
+/// };
+/// let poles = vec![
+///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+/// ];
+/// let (knots, mults) = (vec![0.0, 1.0], vec![2, 2]);
+/// let square = BSplineSurface::new(
+///     1, 1, poles, knots.clone(), mults.clone(), knots.clone(), mults, false, false,
+/// )
+/// .unwrap();
+/// // A parabola touching the square at (1, 1, 0), at t = 0.5.
+/// let poles = vec![
+///     Point3D::new(0.5, 1.0, 1.0),
+///     Point3D::new(1.0, 1.0, -1.0),
+///     Point3D::new(1.5, 1.0, 1.0),
+/// ];
+/// let parabola = BSplineCurve3D::new(2, poles, knots, vec![3, 3], false).unwrap();
+/// let hits = intersect_curve_surface(&parabola, &square, Tolerance::DEFAULT);
+/// let Completeness::Incomplete { regions, .. } = hits.completeness() else {
+///     panic!("a tangent contact never separates");
+/// };
+/// assert_eq!(regions.len(), 1);
+/// let (t0, t1) = regions[0].curve_range;
+/// assert!(t0 <= 0.5 && 0.5 <= t1 && t1 - t0 < 1e-2);
+/// assert!(regions[0].min_corner.x <= 1.0 && 1.0 <= regions[0].max_corner.x);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveSurfaceRegion {
+    /// The curve parameter interval.
+    pub curve_range: (f64, f64),
+    /// The surface's `u` parameter interval.
+    pub u_range: (f64, f64),
+    /// The surface's `v` parameter interval.
+    pub v_range: (f64, f64),
+    /// The corner of the box with the smallest coordinates.
+    pub min_corner: Point3D,
+    /// The corner of the box with the largest coordinates.
+    pub max_corner: Point3D,
+}
+
+impl CurveSurfaceRegion {
+    fn touches(&self, other: &CurveSurfaceRegion) -> bool {
+        let meet = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| a0 <= b1 && b0 <= a1;
+        meet(self.curve_range, other.curve_range)
+            && meet(self.u_range, other.u_range)
+            && meet(self.v_range, other.v_range)
+    }
+
+    fn union(&self, other: &CurveSurfaceRegion) -> CurveSurfaceRegion {
+        let span = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| (a0.min(b0), a1.max(b1));
+        let (p, q) = (self.min_corner, other.min_corner);
+        let (r, s) = (self.max_corner, other.max_corner);
+        CurveSurfaceRegion {
+            curve_range: span(self.curve_range, other.curve_range),
+            u_range: span(self.u_range, other.u_range),
+            v_range: span(self.v_range, other.v_range),
+            min_corner: Point3D::new(p.x.min(q.x), p.y.min(q.y), p.z.min(q.z)),
+            max_corner: Point3D::new(r.x.max(s.x), r.y.max(s.y), r.z.max(s.z)),
+        }
+    }
+}
+
+/// `regions` with every group of touching ones merged into one, ordered
+/// by the start of their curve ranges.
+fn merged(mut regions: Vec<CurveSurfaceRegion>) -> Vec<CurveSurfaceRegion> {
+    let mut out: Vec<CurveSurfaceRegion> = Vec::new();
+    while let Some(mut region) = regions.pop() {
+        loop {
+            let before = out.len();
+            out.retain(|r| {
+                let touches = region.touches(r);
+                if touches {
+                    region = region.union(r);
+                }
+                !touches
+            });
+            if out.len() == before {
+                break;
+            }
+        }
+        out.push(region);
+    }
+    out.sort_by(|a, b| a.curve_range.0.total_cmp(&b.curve_range.0));
+    out
+}
 
 /// Halvings allowed per pair of pieces whose boxes overlap, pooled over
 /// all of them, before the search gives up.
-const SPLITS_PER_PAIR: usize = 256;
-/// Halvings from a pair of pieces down to one subpiece pair.
+const SPLITS_PER_PAIR: usize = 1024;
+/// Halvings from a pair of pieces down to one subpiece pair, beyond which
+/// the pair counts as never separating.
 const MAX_DEPTH: u32 = 64;
 /// Newton steps from the centre of a subpiece pair.
 const NEWTON_STEPS: usize = 32;
@@ -25,8 +276,8 @@ const NEWTON_STEPS: usize = 32;
 const SLACK: f64 = 1e-10;
 
 /// The hits of `curve` over `range` (the curve's own bounds if `periodic`,
-/// a trimmed range otherwise) with `surface`, or `None` when the search
-/// cannot isolate them within its budget.
+/// a trimmed range otherwise) with `surface`, complete unless some pair
+/// of pieces was left unsettled.
 ///
 /// The curve's knot spans and the surface's knot-span patches are Bézier
 /// pieces; the pairs whose control-point boxes come within
@@ -46,8 +297,15 @@ const SLACK: f64 = 1e-10;
 ///   other without meeting.)
 ///
 /// A tangency or an overlap never separates into such pairs, and a hit at
-/// a singular point of the surface defeats Newton's method: both exhaust
-/// the budget or the depth limit, and the caller falls back to sampling.
+/// a singular point of the surface defeats Newton's method. A pair is
+/// left as never separating once its curve piece is no larger than its
+/// patch and both lie within `tol.confusion` of a plane across which
+/// they cannot be told apart (see [`flat_against`]), or after
+/// [`MAX_DEPTH`] halvings; the search goes on with the other pairs. If
+/// the budget of halvings runs out first, the pairs still pending are
+/// left unsettled too. Either way, the result is incomplete, with the
+/// unsettled pairs as its regions.
+///
 /// Hits within `sqrt(tol.confusion)` of each other merge, as in the
 /// sampled search, keeping the one closest to the surface.
 pub(super) fn bspline_curve_surface(
@@ -56,7 +314,20 @@ pub(super) fn bspline_curve_surface(
     periodic: bool,
     surface: &BSplineSurface,
     tol: Tolerance,
-) -> Option<Vec<CurveSurfaceHit>> {
+) -> CurveSurfaceHits {
+    search_pieces(curve, range, periodic, surface, tol, SPLITS_PER_PAIR)
+}
+
+/// [`bspline_curve_surface`] with `splits_per_pair` halvings allowed per
+/// initial pair of pieces.
+fn search_pieces(
+    curve: &BSplineCurve3D,
+    range: (f64, f64),
+    periodic: bool,
+    surface: &BSplineSurface,
+    tol: Tolerance,
+    splits_per_pair: usize,
+) -> CurveSurfaceHits {
     let pieces = CurvePieces::new(curve, range);
     let mut search = Search::new(curve, &pieces, range, periodic, surface, tol);
     let tree = surface.patch_boxes();
@@ -82,11 +353,36 @@ pub(super) fn bspline_curve_surface(
             });
         });
     }
-    search.budget = SPLITS_PER_PAIR * search.pending.len();
+    search.budget = splits_per_pair * search.pending.len();
+    let mut exhausted = false;
     while let Some(node) = search.pending.pop() {
-        search.visit(node).ok()?;
+        if search.visit(node).is_err() {
+            exhausted = true;
+            break;
+        }
     }
-    Some(search.hits())
+    search.finish(exhausted)
+}
+
+/// Whether the points of a patch lie within `gap` of a plane across
+/// `normal`, and those of a curve piece within `gap` of that slab: no
+/// halving of the pair can then be told apart along the normal.
+fn flat_against(normal: [f64; 3], curve: &[[f64; 3]], patch: &[[f64; 3]], gap: f64) -> bool {
+    let length = norm(normal);
+    if !(length > 0.0 && length.is_finite()) {
+        return false;
+    }
+    let extent = |points: &[[f64; 3]]| {
+        points
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), x| {
+                let y = dot(*x, normal);
+                (lo.min(y), hi.max(y))
+            })
+    };
+    let ((c0, c1), (p0, p1)) = (extent(curve), extent(patch));
+    let gap = gap * length;
+    p1 - p0 <= gap && c0 >= p0 - gap && c1 <= p1 + gap
 }
 
 /// A parameter interval of the curve or one direction of the surface.
@@ -128,7 +424,7 @@ struct Node {
     depth: u32,
 }
 
-/// The search ran out of budget or depth.
+/// The search ran out of budget.
 struct Exhausted;
 
 struct Search<'a> {
@@ -145,6 +441,8 @@ struct Search<'a> {
     patch_points: Vec<[f64; 3]>,
     /// Hits found, with their distance to the surface.
     found: Vec<(CurveSurfaceHit, f64)>,
+    /// The pairs left as never separating.
+    unseparated: Vec<CurveSurfaceRegion>,
     budget: usize,
 }
 
@@ -186,11 +484,13 @@ impl<'a> Search<'a> {
             curve_points: Vec::with_capacity(pieces.width),
             patch_points: Vec::with_capacity(rows * cols),
             found: Vec::new(),
+            unseparated: Vec::new(),
             budget: 0,
         }
     }
 
-    /// Settles `node` or halves it into two pending pairs.
+    /// Settles `node`, leaves it as never separating, or halves it into
+    /// two pending pairs; out of budget, puts it back.
     fn visit(&mut self, node: Node) -> Result<(), Exhausted> {
         let (rows, cols, h) = self.patches_shape;
         euclidean(self.curves.get(node.curve), &mut self.curve_points);
@@ -241,12 +541,61 @@ impl<'a> Search<'a> {
                 }
             }
         }
-        if node.depth >= MAX_DEPTH || self.budget == 0 {
+        let curve_larger = box_size(&curve_box) >= box_size(&patch_box);
+        let stuck =
+            !curve_larger && flat_against(normal, &self.curve_points, &self.patch_points, gap);
+        if stuck || node.depth >= MAX_DEPTH {
+            let region = self.region(&node, &curve_box);
+            self.unseparated.push(region);
+            self.release(&node);
+            return Ok(());
+        }
+        if self.budget == 0 {
+            self.pending.push(node);
             return Err(Exhausted);
         }
         self.budget -= 1;
-        self.split(node, box_size(&curve_box) >= box_size(&patch_box));
+        self.split(node, curve_larger);
         Ok(())
+    }
+
+    /// The region of `node`, whose curve piece's control points have the
+    /// box `curve_box`.
+    fn region(&self, node: &Node, curve_box: &Aabb) -> CurveSurfaceRegion {
+        let r = node.rect;
+        CurveSurfaceRegion {
+            curve_range: node.t,
+            u_range: (r[0], r[1]),
+            v_range: (r[2], r[3]),
+            min_corner: Point3D::new(curve_box[0], curve_box[1], curve_box[2]),
+            max_corner: Point3D::new(curve_box[3], curve_box[4], curve_box[5]),
+        }
+    }
+
+    /// The hits found, complete unless pairs were left as never
+    /// separating or, if `exhausted`, still pending.
+    fn finish(mut self, exhausted: bool) -> CurveSurfaceHits {
+        let mut regions = std::mem::take(&mut self.unseparated);
+        for node in std::mem::take(&mut self.pending) {
+            euclidean(self.curves.get(node.curve), &mut self.curve_points);
+            regions.push(self.region(&node, &bounding_box(&self.curve_points)));
+        }
+        let completeness = if regions.is_empty() {
+            Completeness::Complete
+        } else {
+            Completeness::Incomplete {
+                reason: if exhausted {
+                    IncompleteReason::BudgetExhausted
+                } else {
+                    IncompleteReason::Unseparated
+                },
+                regions: merged(regions),
+            }
+        };
+        CurveSurfaceHits {
+            hits: self.hits(),
+            completeness,
+        }
     }
 
     /// Halves the curve piece of `node` if `curve`, else its patch along
@@ -507,12 +856,13 @@ mod tests {
         }
     }
 
-    /// The hits of the piece-pair search, which must not fall back.
+    /// The hits of the piece-pair search, which must be complete.
     fn search<C: ParametricCurve3D>(curve: &C, surface: &BSplineSurface) -> Vec<CurveSurfaceHit> {
         let bspline = curve.as_bspline().unwrap();
         let periodic = curve.period().is_some();
-        bspline_curve_surface(bspline, curve.bounds(), periodic, surface, TOL)
-            .expect("the search isolates every hit")
+        let found = bspline_curve_surface(bspline, curve.bounds(), periodic, surface, TOL);
+        assert!(found.is_complete(), "{:?}", found.completeness());
+        found.into_hits()
     }
 
     /// Asserts every hit lies on both shapes, with parameters in range.
@@ -584,16 +934,16 @@ mod tests {
         assert!(count >= 24);
     }
 
-    #[test]
-    fn test_rational_cylinder_is_hit_at_its_radius() {
-        // An exact quarter cylinder of radius 2 about the z axis.
+    /// An exact quarter cylinder of radius 2 about the z axis, over `z` in
+    /// `[0, 1]`.
+    fn quarter_cylinder() -> BSplineSurface {
         let w = std::f64::consts::FRAC_1_SQRT_2;
         let arc = [(2.0, 0.0), (2.0, 2.0), (0.0, 2.0)];
         let poles = arc
             .iter()
             .map(|&(x, y)| vec![Point3D::new(x, y, 0.0), Point3D::new(x, y, 1.0)])
             .collect();
-        let cylinder = BSplineSurface::new_rational(
+        BSplineSurface::new_rational(
             2,
             1,
             poles,
@@ -605,7 +955,12 @@ mod tests {
             false,
             false,
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn test_rational_cylinder_is_hit_at_its_radius() {
+        let cylinder = quarter_cylinder();
         for k in 0..=8 {
             let angle = k as f64 * std::f64::consts::FRAC_PI_2 / 8.0;
             let (c, s) = (angle.cos(), angle.sin());
@@ -750,7 +1105,7 @@ mod tests {
             for hits in [
                 assert_matches_sampled(&borrowed, &surface),
                 assert_matches_sampled(&owned, &surface),
-                intersect_curve_surface(&owned, &Surface::from(&surface), TOL),
+                intersect_curve_surface(&owned, &Surface::from(&surface), TOL).into_hits(),
             ] {
                 assert_eq!(hits.len(), expected.len());
                 for (hit, want) in hits.iter().zip(&expected) {
@@ -840,18 +1195,178 @@ mod tests {
         }
     }
 
+    /// The reason and regions of an incomplete result.
+    #[track_caller]
+    fn incomplete(hits: &CurveSurfaceHits) -> (IncompleteReason, &[CurveSurfaceRegion]) {
+        match hits.completeness() {
+            Completeness::Incomplete { reason, regions } => (*reason, regions),
+            other => panic!("expected an incomplete search, got {other:?}"),
+        }
+    }
+
+    /// Whether `region` holds the curve parameter `t`, the surface
+    /// parameters `(u, v)` and the point `p`.
+    fn holds(region: &CurveSurfaceRegion, t: f64, (u, v): (f64, f64), p: Point3D) -> bool {
+        let within = |x: f64, (lo, hi): (f64, f64)| lo - 1e-9 <= x && x <= hi + 1e-9;
+        let (lo, hi) = (region.min_corner, region.max_corner);
+        within(t, region.curve_range)
+            && within(u, region.u_range)
+            && within(v, region.v_range)
+            && within(p.x, (lo.x, hi.x))
+            && within(p.y, (lo.y, hi.y))
+            && within(p.z, (lo.z, hi.z))
+    }
+
+    /// Asserts the hits of `intersect_curve_surface` include the sampled
+    /// search's, every one lying on both shapes.
+    #[track_caller]
+    fn assert_sampled_hits_kept(
+        hits: &CurveSurfaceHits,
+        curve: &BSplineCurve3D,
+        plane: &BSplineSurface,
+    ) {
+        for hit in hits {
+            assert!(hit.point.distance(curve.eval_point(hit.curve_param)) < 1e-12);
+            assert!(plane.project_point(hit.point, TOL).distance <= TOL.confusion);
+        }
+        for hit in sampled_curve_surface(curve, plane, TOL) {
+            let near = |h: &CurveSurfaceHit| h.point.distance(hit.point) <= TOL.confusion.sqrt();
+            assert!(hits.iter().any(near), "{hit:?} missing from {hits:?}");
+        }
+    }
+
     #[test]
-    fn test_tangency_and_overlap_fall_back_to_sampling() {
+    fn test_curve_lying_on_the_surface_is_unseparated_along_it() {
+        let plane = flat();
+        let lying = segment(Point3D::new(1.0, 1.0, 0.0), Point3D::new(4.0, 3.0, 0.0));
+        let found = bspline_curve_surface(&lying, lying.bounds(), false, &plane, TOL);
+        let (reason, regions) = incomplete(&found);
+        assert_eq!(reason, IncompleteReason::Unseparated);
+        // The patches it crosses merge into one region over the whole curve.
+        assert_eq!(regions.len(), 1, "{regions:#?}");
+        assert_eq!(regions[0].curve_range, (0.0, 1.0));
+        for k in 0..=16 {
+            let t = k as f64 / 16.0;
+            let p = lying.eval_point(t);
+            let foot = plane.project_point(p, TOL);
+            assert!(
+                holds(&regions[0], t, (foot.u, foot.v), p),
+                "{t}: {regions:?}"
+            );
+        }
+        let hits = intersect_curve_surface(&lying, &plane, TOL);
+        assert_eq!(hits.completeness(), found.completeness());
+        assert!(!hits.is_empty());
+        assert_sampled_hits_kept(&hits, &lying, &plane);
+    }
+
+    #[test]
+    fn test_tangent_contact_is_unseparated_around_it() {
         let plane = flat();
         let tangent = dip(0.0);
-        let lying = segment(Point3D::new(1.0, 1.0, 0.0), Point3D::new(4.0, 3.0, 0.0));
-        for curve in [tangent, lying] {
-            let periodic = curve.period().is_some();
-            assert!(bspline_curve_surface(&curve, curve.bounds(), periodic, &plane, TOL).is_none());
-            let hits = intersect_curve_surface(&curve, &plane, TOL);
-            assert!(!hits.is_empty());
-            assert_eq!(hits, sampled_curve_surface(&curve, &plane, TOL));
+        let contact = Point3D::new(2.5, 2.5, 0.0);
+        assert_eq!(tangent.eval_point(0.5), contact);
+        let foot = plane.project_point(contact, TOL);
+        let found = bspline_curve_surface(&tangent, tangent.bounds(), false, &plane, TOL);
+        let (reason, regions) = incomplete(&found);
+        assert_eq!(reason, IncompleteReason::Unseparated);
+        assert!(
+            regions
+                .iter()
+                .any(|r| holds(r, 0.5, (foot.u, foot.v), contact))
+        );
+        for region in regions {
+            let (t0, t1) = region.curve_range;
+            assert!(t0 <= 0.5 + 1e-3 && t1 >= 0.5 - 1e-3, "{region:?}");
+            assert!(t1 - t0 < 1e-2, "{region:?}");
         }
+        let hits = intersect_curve_surface(&tangent, &plane, TOL);
+        assert_eq!(hits.completeness(), found.completeness());
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert!(hits[0].point.distance(contact) < TOL.confusion.sqrt());
+        assert_sampled_hits_kept(&hits, &tangent, &plane);
+    }
+
+    #[test]
+    fn test_contact_with_a_curved_surface_is_incomplete_around_it() {
+        let cylinder = quarter_cylinder();
+        for u in [0.2, 0.5, 0.77] {
+            let foot = (u, 0.4);
+            let on = cylinder.eval_point(u, 0.4);
+            // Tangent to the cylinder at `on`, and lying on it.
+            let side = crate::Vector3D::new(on.y, -on.x, 0.0) * 0.125;
+            let across = segment(on + side, on - side);
+            let found = bspline_curve_surface(&across, across.bounds(), false, &cylinder, TOL);
+            let (reason, regions) = incomplete(&found);
+            assert_eq!(reason, IncompleteReason::Unseparated);
+            assert!(
+                regions.iter().any(|r| holds(r, 0.5, foot, on)),
+                "{regions:#?}"
+            );
+            let lying = segment(
+                cylinder.eval_point(foot.0, 0.1),
+                cylinder.eval_point(foot.0, 0.9),
+            );
+            let found = bspline_curve_surface(&lying, lying.bounds(), false, &cylinder, TOL);
+            let (_, regions) = incomplete(&found);
+            for k in 0..=8 {
+                let t = k as f64 / 8.0;
+                let v = 0.1 + 0.8 * t;
+                let p = lying.eval_point(t);
+                assert!(regions.iter().any(|r| holds(r, t, (foot.0, v), p)), "{t}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_exhausted_budget_leaves_the_pending_pairs() {
+        let surface = wavy(false);
+        let mut rng = Lcg(3);
+        for _ in 0..8 {
+            let curve = rising(&mut rng, false);
+            let all = search(&curve, &surface);
+            let found = search_pieces(&curve, curve.bounds(), false, &surface, TOL, 0);
+            let (reason, regions) = incomplete(&found);
+            assert_eq!(reason, IncompleteReason::BudgetExhausted);
+            assert_on_both(&found, &curve, &surface);
+            // Every hit is either found or within a region.
+            for hit in &all {
+                let held = regions
+                    .iter()
+                    .any(|r| holds(r, hit.curve_param, hit.surface_params, hit.point));
+                let near = |h: &CurveSurfaceHit| h.point.distance(hit.point) < 1e-9;
+                assert!(held || found.iter().any(near), "{hit:?}: {regions:#?}");
+            }
+            for pair in regions.windows(2) {
+                assert!(!pair[0].touches(&pair[1]));
+            }
+        }
+    }
+
+    #[test]
+    fn test_transversal_bsplines_are_complete() {
+        let surface = wavy(true);
+        let mut rng = Lcg(11);
+        for _ in 0..8 {
+            let curve = rising(&mut rng, true);
+            let hits = intersect_curve_surface(&curve, &surface, TOL);
+            assert!(hits.is_complete(), "{:?}", hits.completeness());
+            assert!(!hits.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_other_shapes_are_sampled() {
+        let surface = wavy(false);
+        let cylinder = crate::Cylinder::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
+        let ray = segment(Point3D::new(0.0, 0.0, 0.5), Point3D::new(4.0, 0.0, 0.5));
+        let hits = intersect_curve_surface(&ray, &cylinder, TOL);
+        assert_eq!(hits.completeness(), &Completeness::Sampled);
+        assert_eq!(hits.len(), 1);
+        let line = crate::Line3D::new(Point3D::new(2.0, 2.0, -1.0), crate::Vector3D::Z).unwrap();
+        let hits = intersect_curve_surface(&line, &surface, TOL);
+        assert_eq!(hits.completeness(), &Completeness::Sampled);
+        assert_eq!(hits.len(), 1);
     }
 
     #[test]

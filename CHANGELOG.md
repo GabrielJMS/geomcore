@@ -86,6 +86,21 @@ the Python distribution are versioned in lockstep.
   before, plus crossings and minima the grid could miss between its
   samples. Tangencies, overlaps and other valleys of equal distance
   exceed the search's budget and fall back to the grid.
+- **Breaking:** numeric curve–surface intersection reports whether its
+  search was complete (#31): `intersect_curve_surface` returns
+  `CurveSurfaceHits`, which reads as the slice of its hits (`hits()`,
+  `into_hits()`, iteration) and carries a `Completeness`. A B-spline
+  curve against a B-spline surface is `Complete` when every pair of
+  pieces was proven apart or isolated to one hit. It is `Incomplete`
+  when the budget ran out (`IncompleteReason::BudgetExhausted`) or
+  pieces never separated at a tangent contact, an overlap or a singular
+  point (`Unseparated`), with the `CurveSurfaceRegion`s where hits may
+  be missing: curve and surface parameter ranges and a box in space.
+  Its hits are then the proven ones together with the sampled search's
+  that do not merge into them. Other pairs are `Sampled`. Code that
+  only reads the hits keeps compiling unless it names the `Vec` type;
+  call `into_hits()` there.
+  See ADR 0006. Python is unchanged and still returns the list of hits.
 
 ### Fixed
 
