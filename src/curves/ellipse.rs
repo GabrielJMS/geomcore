@@ -7,7 +7,7 @@ use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{ConicConicIntersection, ConicSurfaceIntersection, intersect_conic_quadric};
-use crate::math::real_roots;
+use crate::math::{polish_root, real_roots};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
@@ -491,19 +491,8 @@ impl Ellipse3D {
                     .map(|r| std::f64::consts::PI + 2.0 * r.value.atan()),
             )
             .chain([0.0, std::f64::consts::PI])
-            .map(|mut t| {
-                for _ in 0..8 {
-                    let slope = dg(t);
-                    if slope == 0.0 {
-                        break;
-                    }
-                    let next = t - g(t) / slope;
-                    let residual = g(next).abs();
-                    if residual.is_nan() || residual >= g(t).abs() {
-                        break;
-                    }
-                    t = next;
-                }
+            .map(|t| {
+                let t = polish_root(g, dg, t, 8);
                 // Measured at the polished parameter, reported in bounds.
                 let distance = self.eval_point(t).distance(point);
                 (self.parameter_in_bounds(t, tol), distance)
