@@ -56,6 +56,10 @@ ones before them. If you'd like to help with any of it, see
   either order, also on shapes whose type is only known at run time; the
   per-pair methods are deprecated. Hits carry a multiplicity. Trimmed
   curves in Python.
+- **0.30** — Fixes: tangent contacts of circles and ellipses with conics
+  and quadrics near half a turn, circles meeting a cylinder or cone at
+  three points, numeric curve–surface hits at a sphere's pole or a cone's
+  apex.
 
 ## Next
 
