@@ -2324,7 +2324,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_line(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             LineLine3DIntersection::Point(s, p, t) => Ok((
                 "point".to_string(),
                 (s, PyPoint3D(p).into_pyobject(py)?.into_any().unbind(), t)
@@ -2361,7 +2361,7 @@ impl PyLine3D {
                 .into_pyobject(py)
                 .map(|o| o.into_any().unbind())
         }
-        match self.0.intersect_circle(&circle.0, tol) {
+        match self.0.intersect(&circle.0, tol) {
             LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => Ok((
                 "points".to_string(),
                 (hit(py, t1, p1)?, hit(py, t2, p2)?)
@@ -2386,7 +2386,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        line_conic_to_py(py, self.0.intersect_ellipse(&ellipse.0, tol))
+        line_conic_to_py(py, self.0.intersect(&ellipse.0, tol))
     }
 
     /// Intersects this line with a parabola.
@@ -2400,7 +2400,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        line_conic_to_py(py, self.0.intersect_parabola(&parabola.0, tol))
+        line_conic_to_py(py, self.0.intersect(&parabola.0, tol))
     }
 
     /// Intersects this line with a hyperbola.
@@ -2414,7 +2414,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        line_conic_to_py(py, self.0.intersect_hyperbola(&hyperbola.0, tol))
+        line_conic_to_py(py, self.0.intersect(&hyperbola.0, tol))
     }
 
     /// Intersects this line with a torus.
@@ -2590,7 +2590,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_circle(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             CircleCircle3DIntersection::Points(p1, p2) => Ok((
                 "points".to_string(),
                 (
@@ -2625,7 +2625,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_conic_to_py(py, self.0.intersect_ellipse(&ellipse.0, tol))
+        circle_conic_to_py(py, self.0.intersect(&ellipse.0, tol))
     }
 
     /// Intersects this circle with a parabola.
@@ -2639,7 +2639,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_conic_to_py(py, self.0.intersect_parabola(&parabola.0, tol))
+        circle_conic_to_py(py, self.0.intersect(&parabola.0, tol))
     }
 
     /// Intersects this circle with a hyperbola.
@@ -2653,7 +2653,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_conic_to_py(py, self.0.intersect_hyperbola(&hyperbola.0, tol))
+        circle_conic_to_py(py, self.0.intersect(&hyperbola.0, tol))
     }
 
     /// Intersects this circle with a plane.
@@ -2922,7 +2922,7 @@ impl PyEllipse3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        ellipse_ellipse_to_py(py, self.0.intersect_ellipse(&other.0, tol))
+        ellipse_ellipse_to_py(py, self.0.intersect(&other.0, tol))
     }
 
     /// Not available for ellipses in this release; always raises `ValueError`.
@@ -3548,7 +3548,7 @@ impl PyLine2D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_line(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             LineLine2DIntersection::Point(s, p, t) => Ok((
                 "point".to_string(),
                 (s, PyPoint2D(p).into_pyobject(py)?.into_any().unbind(), t)
@@ -3573,7 +3573,7 @@ impl PyLine2D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_circle(&circle.0, tol) {
+        match self.0.intersect(&circle.0, tol) {
             LineCircle2DIntersection::Points((t1, p1), (t2, p2)) => Ok((
                 "points".to_string(),
                 (point2(py, t1, p1)?, point2(py, t2, p2)?)
@@ -3687,7 +3687,7 @@ impl PyCircle2D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_circle(&other.0, tol) {
+        match self.0.intersect(&other.0, tol) {
             CircleCircle2DIntersection::Points(p1, p2) => Ok((
                 "points".to_string(),
                 (

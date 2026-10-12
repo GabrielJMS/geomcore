@@ -581,151 +581,14 @@ impl Ellipse3D {
         self.intersect(cone, tol)
     }
 
-    /// Intersects this ellipse with another 3D ellipse.
-    ///
-    /// Only coplanar pairs admit a closed form (parallel normals within
-    /// `tol.angular` plus the other center in this plane within
-    /// `tol.confusion`). Distinct parallel planes report
-    /// [`EllipseEllipse3DIntersection::Empty`]; crossing planes report
-    /// [`EllipseEllipse3DIntersection::NotAnalytic`]. Whole-curve
-    /// coincidence (same center, plane, and radii within tolerance)
-    /// reports [`EllipseEllipse3DIntersection::Coincident`].
-    ///
-    /// In this frame the other ellipse reads
-    /// `qa*x^2 + qb*y^2 + qc*x*y + qd*x + qe*y + qf = 0`, a rotated and
-    /// shifted copy of `(x'/a2)^2 + (y'/b2)^2 = 1`. Writing it as
-    /// `qb*y^2 + beta(x)*y + (qa*x^2 + qd*x + qf) = 0` with
-    /// `beta(x) = qc*x + qe` and substituting this ellipse's
-    /// `y^2 = delta(x) = b1^2*(1 - x^2/a1^2)` gives
-    /// `beta(x)*y + eta(x) = 0` with `eta(x) = qb*delta(x) + qa*x^2 +
-    /// qd*x + qf`; squaring yields the quartic
-    /// `beta(x)^2*delta(x) - eta(x)^2 = 0` in `x`, solved by
-    /// `real_roots`. Each root recovers `y = -eta/beta` (or, when `beta`
-    /// vanishes within tolerance, `y = ±sqrt(delta)`), maps back to
-    /// `center + x*x_dir + y*y_dir`, and verifies with `contains` on both
-    /// ellipses, so squaring artifacts are dropped.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Ellipse3D, EllipseEllipse3DIntersection, Point3D, Tolerance, Vector3D};
-    /// let e1 = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
-    /// let e2 = Ellipse3D::new(Point3D::new(4.0, 0.0, 0.0), Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match e1.intersect_ellipse(&e2, tol) {
-    ///     EllipseEllipse3DIntersection::Points(hits) => assert_eq!(hits.len(), 2),
-    ///     _ => panic!("expected two points"),
-    /// }
-    /// ```
+    /// Intersects with an [`Ellipse3D`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_ellipse(
         &self,
         other: &Ellipse3D,
         tol: Tolerance,
     ) -> EllipseEllipse3DIntersection {
-        let n1 = self.frame().z_direction();
-        let n2 = other.frame().z_direction();
-        if n1.cross(n2).magnitude() > tol.angular {
-            return EllipseEllipse3DIntersection::NotAnalytic;
-        }
-        if !Plane::from_frame(self.frame()).contains(other.center(), tol) {
-            // Distinct parallel planes.
-            return EllipseEllipse3DIntersection::Empty;
-        }
-        if self.center().distance(other.center()) <= tol.confusion
-            && (self.major_radius() - other.major_radius()).abs() <= tol.confusion
-            && (self.minor_radius() - other.minor_radius()).abs() <= tol.confusion
-            && ((self.major_radius() - self.minor_radius()).abs() <= tol.confusion
-                || self
-                    .frame()
-                    .x_direction()
-                    .cross(other.frame().x_direction())
-                    .magnitude()
-                    <= tol.angular)
-        {
-            return EllipseEllipse3DIntersection::Coincident;
-        }
-        let x1 = self.frame().x_direction();
-        let y1 = self.frame().y_direction();
-        let x2 = other.frame().x_direction();
-        let y2 = other.frame().y_direction();
-        let (a1, b1) = (self.major_radius(), self.minor_radius());
-        let (a2, b2) = (other.major_radius(), other.minor_radius());
-        let rel = other.center() - self.center();
-        let (cx, cy) = (rel.dot(x1), rel.dot(y1));
-        let (p, q) = (x2.dot(x1), x2.dot(y1));
-        let (r, s) = (y2.dot(x1), y2.dot(y1));
-        let (ia, ib) = (1.0 / (a2 * a2), 1.0 / (b2 * b2));
-        let qa = p * p * ia + r * r * ib;
-        let qb = q * q * ia + s * s * ib;
-        let qc = 2.0 * (p * q * ia + r * s * ib);
-        let qd = -(2.0 * qa * cx + qc * cy);
-        let qe = -(2.0 * qb * cy + qc * cx);
-        let qf = qa * cx * cx + qb * cy * cy + qc * cx * cy - 1.0;
-        let d0 = b1 * b1;
-        let d2 = -(b1 * b1) / (a1 * a1);
-        let (n0, n1) = (qb * d0 + qf, qd);
-        let n2 = qb * d2 + qa;
-        // beta(x)^2 * (d0 + d2*x^2) - (n0 + n1*x + n2*x^2)^2, ascending.
-        let quartic = [
-            qe * qe * d0 - n0 * n0,
-            2.0 * qc * qe * d0 - 2.0 * n0 * n1,
-            qc * qc * d0 + qe * qe * d2 - (2.0 * n0 * n2 + n1 * n1),
-            2.0 * qc * qe * d2 - 2.0 * n1 * n2,
-            qc * qc * d2 - n2 * n2,
-        ];
-        let beta_scale = qc.abs() * a1 + qe.abs();
-        let eta_scale = n0.abs() + n1.abs() * a1 + n2.abs() * a1 * a1;
-        let mut hits: Vec<EllipseEllipseHit> = Vec::new();
-        let push = |x: f64, y: f64, hits: &mut Vec<EllipseEllipseHit>| {
-            let point = self.center() + x * x1 + y * y1;
-            if self.contains(point, tol) && other.contains(point, tol) {
-                let hit = EllipseEllipseHit {
-                    first_param: self.parameter_of(point),
-                    point,
-                    second_param: other.parameter_of(point),
-                };
-                if !hits
-                    .iter()
-                    .any(|h: &EllipseEllipseHit| h.point.distance(point) <= tol.confusion)
-                {
-                    hits.push(hit);
-                }
-            }
-        };
-        for root in real_roots(&quartic, tol.confusion) {
-            let x = root.value;
-            let beta = qc * x + qe;
-            if beta.abs() > tol.confusion * (1.0 + beta_scale) {
-                let eta = n0 + n1 * x + n2 * x * x;
-                push(x, -eta / beta, &mut hits);
-            } else {
-                let eta = n0 + n1 * x + n2 * x * x;
-                if eta.abs() > tol.confusion * (1.0 + eta_scale) {
-                    continue;
-                }
-                let delta = d0 + d2 * x * x;
-                if delta < -tol.confusion * (1.0 + d0) {
-                    continue;
-                }
-                let y = delta.max(0.0).sqrt();
-                // The pair `±y` merging into one point is a tangency on
-                // this ellipse's axis: `delta` vanishes there to first
-                // order, so its square root amplifies the rounding in `x`
-                // (`y ~ sqrt(eps)`). The symmetric pair's midpoint is exact.
-                if 2.0 * y <= tol.confusion {
-                    push(x, 0.0, &mut hits);
-                } else {
-                    push(x, y, &mut hits);
-                    push(x, -y, &mut hits);
-                }
-            }
-        }
-        hits.sort_by(|a, b| a.first_param.partial_cmp(&b.first_param).unwrap());
-        match hits.len() {
-            0 => EllipseEllipse3DIntersection::Empty,
-            1 => EllipseEllipse3DIntersection::Tangent(hits[0]),
-            _ => EllipseEllipse3DIntersection::Points(hits),
-        }
+        self.intersect(other, tol)
     }
 
     /// Computes the exact 2D representation of this ellipse in a surface's
@@ -939,6 +802,154 @@ impl Intersect<Cone> for Ellipse3D {
             ConicSurfaceIntersection::Empty
         } else {
             ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+}
+
+impl Intersect<Ellipse3D> for Ellipse3D {
+    type Output = EllipseEllipse3DIntersection;
+
+    /// Intersects this ellipse with another 3D ellipse.
+    ///
+    /// Only coplanar pairs admit a closed form (parallel normals within
+    /// `tol.angular` plus the other center in this plane within
+    /// `tol.confusion`). Distinct parallel planes report
+    /// [`EllipseEllipse3DIntersection::Empty`]; crossing planes report
+    /// [`EllipseEllipse3DIntersection::NotAnalytic`]. Whole-curve
+    /// coincidence (same center, plane, and radii within tolerance)
+    /// reports [`EllipseEllipse3DIntersection::Coincident`].
+    ///
+    /// In this frame the other ellipse reads
+    /// `qa*x^2 + qb*y^2 + qc*x*y + qd*x + qe*y + qf = 0`, a rotated and
+    /// shifted copy of `(x'/a2)^2 + (y'/b2)^2 = 1`. Writing it as
+    /// `qb*y^2 + beta(x)*y + (qa*x^2 + qd*x + qf) = 0` with
+    /// `beta(x) = qc*x + qe` and substituting this ellipse's
+    /// `y^2 = delta(x) = b1^2*(1 - x^2/a1^2)` gives
+    /// `beta(x)*y + eta(x) = 0` with `eta(x) = qb*delta(x) + qa*x^2 +
+    /// qd*x + qf`; squaring yields the quartic
+    /// `beta(x)^2*delta(x) - eta(x)^2 = 0` in `x`, solved by
+    /// `real_roots`. Each root recovers `y = -eta/beta` (or, when `beta`
+    /// vanishes within tolerance, `y = ±sqrt(delta)`), maps back to
+    /// `center + x*x_dir + y*y_dir`, and verifies with `contains` on both
+    /// ellipses, so squaring artifacts are dropped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Intersect;
+    /// use geomcore::{Ellipse3D, EllipseEllipse3DIntersection, Point3D, Tolerance, Vector3D};
+    /// let e1 = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
+    /// let e2 = Ellipse3D::new(Point3D::new(4.0, 0.0, 0.0), Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match e1.intersect(&e2, tol) {
+    ///     EllipseEllipse3DIntersection::Points(hits) => assert_eq!(hits.len(), 2),
+    ///     _ => panic!("expected two points"),
+    /// }
+    /// ```
+    fn intersect(&self, other: &Ellipse3D, tol: Tolerance) -> EllipseEllipse3DIntersection {
+        let n1 = self.frame().z_direction();
+        let n2 = other.frame().z_direction();
+        if n1.cross(n2).magnitude() > tol.angular {
+            return EllipseEllipse3DIntersection::NotAnalytic;
+        }
+        if !Plane::from_frame(self.frame()).contains(other.center(), tol) {
+            // Distinct parallel planes.
+            return EllipseEllipse3DIntersection::Empty;
+        }
+        if self.center().distance(other.center()) <= tol.confusion
+            && (self.major_radius() - other.major_radius()).abs() <= tol.confusion
+            && (self.minor_radius() - other.minor_radius()).abs() <= tol.confusion
+            && ((self.major_radius() - self.minor_radius()).abs() <= tol.confusion
+                || self
+                    .frame()
+                    .x_direction()
+                    .cross(other.frame().x_direction())
+                    .magnitude()
+                    <= tol.angular)
+        {
+            return EllipseEllipse3DIntersection::Coincident;
+        }
+        let x1 = self.frame().x_direction();
+        let y1 = self.frame().y_direction();
+        let x2 = other.frame().x_direction();
+        let y2 = other.frame().y_direction();
+        let (a1, b1) = (self.major_radius(), self.minor_radius());
+        let (a2, b2) = (other.major_radius(), other.minor_radius());
+        let rel = other.center() - self.center();
+        let (cx, cy) = (rel.dot(x1), rel.dot(y1));
+        let (p, q) = (x2.dot(x1), x2.dot(y1));
+        let (r, s) = (y2.dot(x1), y2.dot(y1));
+        let (ia, ib) = (1.0 / (a2 * a2), 1.0 / (b2 * b2));
+        let qa = p * p * ia + r * r * ib;
+        let qb = q * q * ia + s * s * ib;
+        let qc = 2.0 * (p * q * ia + r * s * ib);
+        let qd = -(2.0 * qa * cx + qc * cy);
+        let qe = -(2.0 * qb * cy + qc * cx);
+        let qf = qa * cx * cx + qb * cy * cy + qc * cx * cy - 1.0;
+        let d0 = b1 * b1;
+        let d2 = -(b1 * b1) / (a1 * a1);
+        let (n0, n1) = (qb * d0 + qf, qd);
+        let n2 = qb * d2 + qa;
+        // beta(x)^2 * (d0 + d2*x^2) - (n0 + n1*x + n2*x^2)^2, ascending.
+        let quartic = [
+            qe * qe * d0 - n0 * n0,
+            2.0 * qc * qe * d0 - 2.0 * n0 * n1,
+            qc * qc * d0 + qe * qe * d2 - (2.0 * n0 * n2 + n1 * n1),
+            2.0 * qc * qe * d2 - 2.0 * n1 * n2,
+            qc * qc * d2 - n2 * n2,
+        ];
+        let beta_scale = qc.abs() * a1 + qe.abs();
+        let eta_scale = n0.abs() + n1.abs() * a1 + n2.abs() * a1 * a1;
+        let mut hits: Vec<EllipseEllipseHit> = Vec::new();
+        let push = |x: f64, y: f64, hits: &mut Vec<EllipseEllipseHit>| {
+            let point = self.center() + x * x1 + y * y1;
+            if self.contains(point, tol) && other.contains(point, tol) {
+                let hit = EllipseEllipseHit {
+                    first_param: self.parameter_of(point),
+                    point,
+                    second_param: other.parameter_of(point),
+                };
+                if !hits
+                    .iter()
+                    .any(|h: &EllipseEllipseHit| h.point.distance(point) <= tol.confusion)
+                {
+                    hits.push(hit);
+                }
+            }
+        };
+        for root in real_roots(&quartic, tol.confusion) {
+            let x = root.value;
+            let beta = qc * x + qe;
+            if beta.abs() > tol.confusion * (1.0 + beta_scale) {
+                let eta = n0 + n1 * x + n2 * x * x;
+                push(x, -eta / beta, &mut hits);
+            } else {
+                let eta = n0 + n1 * x + n2 * x * x;
+                if eta.abs() > tol.confusion * (1.0 + eta_scale) {
+                    continue;
+                }
+                let delta = d0 + d2 * x * x;
+                if delta < -tol.confusion * (1.0 + d0) {
+                    continue;
+                }
+                let y = delta.max(0.0).sqrt();
+                // The pair `±y` merging into one point is a tangency on
+                // this ellipse's axis: `delta` vanishes there to first
+                // order, so its square root amplifies the rounding in `x`
+                // (`y ~ sqrt(eps)`). The symmetric pair's midpoint is exact.
+                if 2.0 * y <= tol.confusion {
+                    push(x, 0.0, &mut hits);
+                } else {
+                    push(x, y, &mut hits);
+                    push(x, -y, &mut hits);
+                }
+            }
+        }
+        hits.sort_by(|a, b| a.first_param.partial_cmp(&b.first_param).unwrap());
+        match hits.len() {
+            0 => EllipseEllipse3DIntersection::Empty,
+            1 => EllipseEllipse3DIntersection::Tangent(hits[0]),
+            _ => EllipseEllipse3DIntersection::Points(hits),
         }
     }
 }
@@ -1221,7 +1232,7 @@ mod tests {
             2.0,
         )
         .unwrap();
-        match e1.intersect_ellipse(&e2, tol) {
+        match e1.intersect(&e2, tol) {
             EllipseEllipse3DIntersection::Points(hits) => {
                 assert_eq!(hits.len(), 4);
                 for h in &hits {
@@ -1248,7 +1259,7 @@ mod tests {
             2.0,
         )
         .unwrap();
-        match e1.intersect_ellipse(&grazing, tol) {
+        match e1.intersect(&grazing, tol) {
             EllipseEllipse3DIntersection::Tangent(hit) => {
                 assert!(hit.point.distance(Point3D::new(3.0, 0.0, 0.0)) < 1e-12);
                 assert_eq!(hit.first_param, e1.parameter_of(hit.point));
@@ -1265,19 +1276,16 @@ mod tests {
             1.5,
         )
         .unwrap();
-        assert_eq!(
-            e1.intersect_ellipse(&far, tol),
-            EllipseEllipse3DIntersection::Empty
-        );
+        assert_eq!(e1.intersect(&far, tol), EllipseEllipse3DIntersection::Empty);
         // Same center, plane, and radii: coincident.
         assert_eq!(
-            e1.intersect_ellipse(&e1, tol),
+            e1.intersect(&e1, tol),
             EllipseEllipse3DIntersection::Coincident
         );
         // Tilted partner: no closed form.
         let tilted = Ellipse3D::new(Point3D::ORIGIN, Vector3D::X, Vector3D::Z, 3.0, 1.5).unwrap();
         assert_eq!(
-            e1.intersect_ellipse(&tilted, tol),
+            e1.intersect(&tilted, tol),
             EllipseEllipse3DIntersection::NotAnalytic
         );
         // Distinct parallel planes: no meeting.
@@ -1290,7 +1298,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            e1.intersect_ellipse(&lifted, tol),
+            e1.intersect(&lifted, tol),
             EllipseEllipse3DIntersection::Empty
         );
     }
@@ -1328,7 +1336,7 @@ mod tests {
             .unwrap();
             let major = 1.0 + 2.0 * next();
             let e2 = Ellipse3D::from_frame(frame, major, (0.5 + next()).min(major)).unwrap();
-            let analytic = e1.intersect_ellipse(&e2, tol);
+            let analytic = e1.intersect(&e2, tol);
             let generic = intersect_curve_curve(&e1, &e2, tol);
             match analytic {
                 EllipseEllipse3DIntersection::Points(hits) => {

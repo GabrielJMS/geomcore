@@ -112,7 +112,9 @@ pub use intersect::{
     TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
     TorusTorusIntersection,
 };
-pub use intersect::{CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection};
+pub use intersect::{
+    CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
+};
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, SurfaceProjection};

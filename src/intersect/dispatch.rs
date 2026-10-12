@@ -5,12 +5,14 @@
 //! results of the untyped path hold their pieces in an [`InlineList`], so
 //! no intersection result allocates.
 
-use crate::curves::{Curve3D, ElementaryCurve};
+use crate::curves::{Curve3D, ElementaryCurve, ParametricCurve3D};
 use crate::surfaces::{ElementarySurface, Surface};
 use crate::{
-    Circle3D, CircleSurfaceIntersection, ConicSurfaceHit, ConicSurfaceIntersection, Ellipse3D,
-    Hyperbola3D, Line3D, LinePlaneIntersection, LineQuadricIntersection, LineTorusIntersection,
-    Parabola3D,
+    Circle2D, Circle3D, CircleCircle3DIntersection, CircleConic3DIntersection, CircleConicHit,
+    CircleSurfaceIntersection, ConicSurfaceHit, ConicSurfaceIntersection, CurveCurveHit, Ellipse3D,
+    EllipseEllipse3DIntersection, EllipseEllipseHit, Hyperbola3D, Line2D, Line3D,
+    LineCircle3DIntersection, LineConic3DIntersection, LineConicHit, LineLine3DIntersection,
+    LinePlaneIntersection, LineQuadricIntersection, LineTorusIntersection, Parabola3D,
 };
 use crate::{
     Cone, ConeConeIntersection, ConeCylinderIntersection, Cylinder, CylinderCylinderIntersection,
@@ -601,6 +603,245 @@ impl Intersect<Curve3D> for Surface {
     }
 }
 
+reversed!(
+    Circle3D => Line3D,
+    Ellipse3D => Line3D,
+    Parabola3D => Line3D,
+    Hyperbola3D => Line3D,
+    Ellipse3D => Circle3D,
+    Parabola3D => Circle3D,
+    Hyperbola3D => Circle3D,
+    Circle2D => Line2D,
+);
+
+/// The intersection of two curves whatever their types: the general
+/// result of the untyped path.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::curves::Curve3D;
+/// use geomcore::{Circle3D, CurveCurveIntersection, Intersect, Line3D, Point3D, Tolerance, Vector3D};
+/// let line = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+/// let circle = Curve3D::from(Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
+/// let CurveCurveIntersection::Points(hits) = line.intersect(&circle, Tolerance::DEFAULT) else {
+///     panic!("expected hits");
+/// };
+/// let on_line: Vec<f64> = hits.iter().map(|hit| hit.first_param).collect();
+/// assert_eq!(on_line, [-2.0, 2.0]);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CurveCurveIntersection {
+    /// The curves do not meet.
+    Empty,
+    /// The curves coincide.
+    Coincident,
+    /// No closed form for this pair or configuration, or one of the curves
+    /// is a B-spline. The caller decides whether to run a numeric
+    /// intersection.
+    NotAnalytic,
+    /// The hits, ordered by parameter on the first curve; a multiplicity
+    /// of 2 or more marks a tangency.
+    Points(InlineList<CurveCurveHit, 4>),
+}
+
+impl CurveCurveIntersection {
+    /// The hits ordered by first parameter, or `Empty` when there are none.
+    fn points(hits: impl IntoIterator<Item = CurveCurveHit>) -> CurveCurveIntersection {
+        let mut list = InlineList::new();
+        for hit in hits {
+            list.push(hit);
+        }
+        if list.is_empty() {
+            return CurveCurveIntersection::Empty;
+        }
+        list.sort_by(|a, b| a.first_param.total_cmp(&b.first_param));
+        CurveCurveIntersection::Points(list)
+    }
+
+    /// The same intersection seen from the second curve.
+    fn swapped(self) -> CurveCurveIntersection {
+        match self {
+            CurveCurveIntersection::Points(hits) => {
+                CurveCurveIntersection::points(hits.iter().map(|h| CurveCurveHit {
+                    first_param: h.second_param,
+                    second_param: h.first_param,
+                    ..*h
+                }))
+            }
+            other => other,
+        }
+    }
+}
+
+/// A hit at `first` on the first curve and `second` on the second.
+fn pair(first: f64, point: Point3D, second: f64, multiplicity: u32) -> CurveCurveHit {
+    CurveCurveHit {
+        first_param: first,
+        point,
+        second_param: second,
+        multiplicity,
+    }
+}
+
+fn line_line(result: LineLine3DIntersection) -> CurveCurveIntersection {
+    match result {
+        LineLine3DIntersection::Point(s, p, t) => {
+            CurveCurveIntersection::points([pair(s, p, t, 1)])
+        }
+        LineLine3DIntersection::Parallel(_) | LineLine3DIntersection::Skew { .. } => {
+            CurveCurveIntersection::Empty
+        }
+        LineLine3DIntersection::Coincident => CurveCurveIntersection::Coincident,
+    }
+}
+
+/// The multiplicity of a lone line hit: the line-circle and line-conic
+/// results report one hit as tangent even where the line pierces the
+/// curve's plane or crosses a single branch, so tangency is decided by the
+/// directions. A near-tangent pair of roots merges at the closest
+/// approach, where the directions are parallel.
+fn lone_hit_multiplicity(
+    line: &Line3D,
+    curve: &impl ParametricCurve3D,
+    parameter: f64,
+    tol: Tolerance,
+) -> u32 {
+    let a = line.direction();
+    let b = curve.eval_derivative(parameter, 1);
+    if a.cross(b).magnitude() <= tol.angular * b.magnitude() {
+        2
+    } else {
+        1
+    }
+}
+
+fn line_circle(
+    result: LineCircle3DIntersection,
+    line: &Line3D,
+    circle: &Circle3D,
+    tol: Tolerance,
+) -> CurveCurveIntersection {
+    let on_circle = |t: f64, p: Point3D| pair(t, p, circle.parameter_of(p), 1);
+    match result {
+        LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => {
+            CurveCurveIntersection::points([on_circle(t1, p1), on_circle(t2, p2)])
+        }
+        LineCircle3DIntersection::Tangent(t, p) => {
+            let hit = on_circle(t, p);
+            let multiplicity = lone_hit_multiplicity(line, circle, hit.second_param, tol);
+            CurveCurveIntersection::points([CurveCurveHit {
+                multiplicity,
+                ..hit
+            }])
+        }
+        LineCircle3DIntersection::Empty => CurveCurveIntersection::Empty,
+    }
+}
+
+fn line_conic(
+    result: LineConic3DIntersection,
+    line: &Line3D,
+    conic: &impl ParametricCurve3D,
+    tol: Tolerance,
+) -> CurveCurveIntersection {
+    let from = |h: LineConicHit, m: u32| pair(h.line_param, h.point, h.conic_param, m);
+    match result {
+        LineConic3DIntersection::Points(h1, h2) => {
+            CurveCurveIntersection::points([from(h1, 1), from(h2, 1)])
+        }
+        LineConic3DIntersection::Tangent(h) => {
+            let multiplicity = lone_hit_multiplicity(line, conic, h.conic_param, tol);
+            CurveCurveIntersection::points([from(h, multiplicity)])
+        }
+        LineConic3DIntersection::Empty => CurveCurveIntersection::Empty,
+    }
+}
+
+fn circle_circle(
+    result: CircleCircle3DIntersection,
+    a: &Circle3D,
+    b: &Circle3D,
+) -> CurveCurveIntersection {
+    let at = |p: Point3D, m: u32| pair(a.parameter_of(p), p, b.parameter_of(p), m);
+    match result {
+        CircleCircle3DIntersection::Points(p, q) => {
+            CurveCurveIntersection::points([at(p, 1), at(q, 1)])
+        }
+        CircleCircle3DIntersection::Tangent(p) => CurveCurveIntersection::points([at(p, 2)]),
+        CircleCircle3DIntersection::Empty => CurveCurveIntersection::Empty,
+        CircleCircle3DIntersection::Coincident => CurveCurveIntersection::Coincident,
+        CircleCircle3DIntersection::NotAnalytic => CurveCurveIntersection::NotAnalytic,
+    }
+}
+
+fn circle_conic(result: CircleConic3DIntersection) -> CurveCurveIntersection {
+    let from = |h: &CircleConicHit, m: u32| pair(h.circle_param, h.point, h.conic_param, m);
+    match result {
+        CircleConic3DIntersection::Points(hits) => {
+            CurveCurveIntersection::points(hits.iter().map(|h| from(h, 1)))
+        }
+        CircleConic3DIntersection::Tangent(h) => CurveCurveIntersection::points([from(&h, 2)]),
+        CircleConic3DIntersection::Coincident => CurveCurveIntersection::Coincident,
+        CircleConic3DIntersection::Empty => CurveCurveIntersection::Empty,
+        CircleConic3DIntersection::NotAnalytic => CurveCurveIntersection::NotAnalytic,
+    }
+}
+
+fn ellipse_ellipse(result: EllipseEllipse3DIntersection) -> CurveCurveIntersection {
+    let from = |h: &EllipseEllipseHit, m: u32| pair(h.first_param, h.point, h.second_param, m);
+    match result {
+        EllipseEllipse3DIntersection::Points(hits) => {
+            CurveCurveIntersection::points(hits.iter().map(|h| from(h, 1)))
+        }
+        EllipseEllipse3DIntersection::Tangent(h) => CurveCurveIntersection::points([from(&h, 2)]),
+        EllipseEllipse3DIntersection::Empty => CurveCurveIntersection::Empty,
+        EllipseEllipse3DIntersection::Coincident => CurveCurveIntersection::Coincident,
+        EllipseEllipse3DIntersection::NotAnalytic => CurveCurveIntersection::NotAnalytic,
+    }
+}
+
+impl Intersect for ElementaryCurve {
+    type Output = CurveCurveIntersection;
+
+    /// Dispatches to the exact intersection of the pair, or reports
+    /// [`CurveCurveIntersection::NotAnalytic`] for the conic pairs
+    /// without a circle and other than two ellipses, which have no exact
+    /// solver.
+    fn intersect(&self, other: &ElementaryCurve, tol: Tolerance) -> CurveCurveIntersection {
+        use ElementaryCurve as C;
+        match (self, other) {
+            (C::Line(a), C::Line(b)) => line_line(a.intersect(b, tol)),
+            (C::Line(a), C::Circle(b)) => line_circle(a.intersect(b, tol), a, b, tol),
+            (C::Line(a), C::Ellipse(b)) => line_conic(a.intersect(b, tol), a, b, tol),
+            (C::Line(a), C::Parabola(b)) => line_conic(a.intersect(b, tol), a, b, tol),
+            (C::Line(a), C::Hyperbola(b)) => line_conic(a.intersect(b, tol), a, b, tol),
+            (C::Circle(a), C::Circle(b)) => circle_circle(a.intersect(b, tol), a, b),
+            (C::Circle(a), C::Ellipse(b)) => circle_conic(a.intersect(b, tol)),
+            (C::Circle(a), C::Parabola(b)) => circle_conic(a.intersect(b, tol)),
+            (C::Circle(a), C::Hyperbola(b)) => circle_conic(a.intersect(b, tol)),
+            (C::Ellipse(a), C::Ellipse(b)) => ellipse_ellipse(a.intersect(b, tol)),
+            (_, C::Line(_)) | (C::Ellipse(_) | C::Parabola(_) | C::Hyperbola(_), C::Circle(_)) => {
+                other.intersect(self, tol).swapped()
+            }
+            _ => CurveCurveIntersection::NotAnalytic,
+        }
+    }
+}
+
+impl Intersect for Curve3D {
+    type Output = CurveCurveIntersection;
+
+    /// Dispatches to the exact intersection of the pair, or reports
+    /// [`CurveCurveIntersection::NotAnalytic`] when either is a B-spline.
+    fn intersect(&self, other: &Curve3D, tol: Tolerance) -> CurveCurveIntersection {
+        match (self.as_elementary(), other.as_elementary()) {
+            (Some(a), Some(b)) => a.intersect(&b, tol),
+            _ => CurveCurveIntersection::NotAnalytic,
+        }
+    }
+}
+
 /// Up to `N` items stored inline, read as a slice.
 ///
 /// Holds the pieces of an intersection result without allocating.
@@ -701,10 +942,11 @@ mod tests {
 
     use crate::curves::{Curve3D, ParametricCurve3D, PointExtrema3D};
     use crate::surfaces::{ElementarySurface, ParametricSurface};
+    use crate::{Circle2D, Line2D, Point2D, Vector2D};
     use crate::{
         Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D, Plane,
-        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, intersect_curve_surface,
-        marching_intersection,
+        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, intersect_curve_curve,
+        intersect_curve_surface, marching_intersection,
     };
 
     const TOL: Tolerance = Tolerance::DEFAULT;
@@ -1034,6 +1276,9 @@ mod tests {
                 .unwrap()
                 .into(),
             Circle3D::new(Point3D::ORIGIN, z, 1.0).unwrap().into(),
+            Circle3D::new(Point3D::new(1.5, 0.0, 0.0), z, 1.0)
+                .unwrap()
+                .into(),
             Circle3D::new(Point3D::ORIGIN, y, 2.0).unwrap().into(),
             Circle3D::new(Point3D::new(0.5, 0.0, 0.3), x, 1.5)
                 .unwrap()
@@ -1290,6 +1535,303 @@ mod tests {
         assert_eq!(
             hyperbola.intersect_cone(&cone, TOL),
             hyperbola.intersect(&cone, TOL)
+        );
+    }
+
+    fn near(p: Point3D, q: Point3D) -> bool {
+        p.distance(q) <= TOL.confusion * (1.0 + p.distance(Point3D::ORIGIN))
+    }
+
+    /// Hits are ordered, on both curves at their parameters, and the whole
+    /// first curve lies on the second when coincident.
+    fn assert_curve_curve_valid(
+        result: &CurveCurveIntersection,
+        a: &ElementaryCurve,
+        b: &ElementaryCurve,
+    ) {
+        match result {
+            CurveCurveIntersection::Points(hits) => {
+                assert!(!hits.is_empty());
+                for pair in hits.windows(2) {
+                    assert!(pair[0].first_param <= pair[1].first_param, "{hits:?}");
+                }
+                for hit in hits {
+                    assert!(
+                        near(a.eval_point(hit.first_param), hit.point),
+                        "{hit:?} off {a:?}"
+                    );
+                    assert!(
+                        near(b.eval_point(hit.second_param), hit.point),
+                        "{hit:?} off {b:?}"
+                    );
+                    assert!(hit.multiplicity >= 1);
+                }
+            }
+            CurveCurveIntersection::Coincident => {
+                for p in samples(a) {
+                    assert!(
+                        distance_to(b, p) <= TOL.confusion,
+                        "{p:?} of {a:?} off {b:?}"
+                    );
+                }
+            }
+            CurveCurveIntersection::Empty | CurveCurveIntersection::NotAnalytic => {}
+        }
+    }
+
+    #[test]
+    fn test_curve_curve_intersection_is_symmetric_and_valid() {
+        let mut ellipses = curves();
+        ellipses.push(
+            Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Y, 3.0, 1.5)
+                .unwrap()
+                .into(),
+        );
+        for a in &ellipses {
+            for b in &ellipses {
+                let ab = a.intersect(b, TOL);
+                let ba = b.intersect(a, TOL);
+                assert_curve_curve_valid(&ab, a, b);
+                match (&ab, &ba) {
+                    (CurveCurveIntersection::Points(h1), CurveCurveIntersection::Points(h2)) => {
+                        assert_eq!(h1.len(), h2.len(), "{ab:?} vs {ba:?}");
+                        for h in h1 {
+                            assert!(
+                                h2.iter()
+                                    .any(|g| near(g.point, h.point)
+                                        && g.multiplicity == h.multiplicity),
+                                "{ab:?} vs {ba:?}"
+                            );
+                        }
+                    }
+                    _ => assert_eq!(ab, ba),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_curve_curve_intersection_matches_numeric() {
+        // Far along an unbounded curve the numeric seeds thin out.
+        let window = |c: &ElementaryCurve, t: f64| c.period().is_some() || t.abs() <= 5.0;
+        let mut compared = 0;
+        for a in &curves() {
+            for b in &curves() {
+                let hits = match a.intersect(b, TOL) {
+                    CurveCurveIntersection::Points(hits) => hits,
+                    CurveCurveIntersection::Empty => InlineList::new(),
+                    _ => continue,
+                };
+                let numeric = intersect_curve_curve(a, b, TOL);
+                let close = |p: Point3D, q: Point3D| {
+                    p.distance(q) <= 1e-6 * (1.0 + p.distance(Point3D::ORIGIN))
+                };
+                for n in &numeric {
+                    assert!(
+                        hits.iter().any(|h| close(h.point, n.point)),
+                        "numeric {n:?} not exact for {a:?} and {b:?}: {hits:?}"
+                    );
+                }
+                for h in hits.iter().filter(|h| {
+                    h.multiplicity == 1 && window(a, h.first_param) && window(b, h.second_param)
+                }) {
+                    assert!(
+                        numeric.iter().any(|n| close(h.point, n.point)),
+                        "exact {h:?} missed numerically for {a:?} and {b:?}"
+                    );
+                }
+                compared += 1;
+            }
+        }
+        assert!(compared >= 100, "only {compared} pairs compared");
+    }
+
+    #[test]
+    fn test_numeric_curve_curve_hits_mark_tangency() {
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let crossing = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+        let grazing = Line3D::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::X).unwrap();
+        let multiplicities = |hits: Vec<crate::CurveCurveHit>| -> Vec<u32> {
+            hits.iter().map(|h| h.multiplicity).collect()
+        };
+        assert_eq!(
+            multiplicities(intersect_curve_curve(&crossing, &circle, TOL)),
+            [1, 1]
+        );
+        assert_eq!(
+            multiplicities(intersect_curve_curve(&grazing, &circle, TOL)),
+            [2]
+        );
+    }
+
+    #[test]
+    fn test_curve_curve_multiplicity_marks_only_tangency() {
+        let multiplicities = |a: ElementaryCurve, b: ElementaryCurve| -> Vec<u32> {
+            match a.intersect(&b, TOL) {
+                CurveCurveIntersection::Points(hits) => {
+                    hits.iter().map(|h| h.multiplicity).collect()
+                }
+                other => panic!("expected hits, got {other:?}"),
+            }
+        };
+        let circle: ElementaryCurve = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0)
+            .unwrap()
+            .into();
+        let parabola: ElementaryCurve =
+            Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0)
+                .unwrap()
+                .into();
+        let line = |origin: Point3D, direction: Vector3D| -> ElementaryCurve {
+            Line3D::new(origin, direction).unwrap().into()
+        };
+        // Through the circle's plane at a point of the circle: a crossing.
+        let piercing = line(Point3D::new(2.0, 0.0, -1.0), Vector3D::Z);
+        assert_eq!(multiplicities(piercing, circle), [1]);
+        assert_eq!(multiplicities(circle, piercing), [1]);
+        // In the plane, touching the circle, or within tolerance of it.
+        assert_eq!(
+            multiplicities(line(Point3D::new(0.0, 2.0, 0.0), Vector3D::X), circle),
+            [2]
+        );
+        assert_eq!(
+            multiplicities(
+                line(Point3D::new(0.0, 2.0 + 1e-9, 0.0), Vector3D::X),
+                circle
+            ),
+            [2]
+        );
+        // Parallel to the parabola's axis: one crossing. Along the tangent
+        // at the vertex: a tangency.
+        assert_eq!(
+            multiplicities(line(Point3D::new(0.0, 1.0, 0.0), Vector3D::X), parabola),
+            [1]
+        );
+        assert_eq!(
+            multiplicities(line(Point3D::ORIGIN, Vector3D::Y), parabola),
+            [2]
+        );
+        // Coplanar circles touching once.
+        let touching: ElementaryCurve =
+            Circle3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z, 1.0)
+                .unwrap()
+                .into();
+        assert_eq!(multiplicities(circle, touching), [2]);
+    }
+
+    #[test]
+    fn test_curve_curve_intersection_holds_four_hits() {
+        let a = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+        let b = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Y, 3.0, 1.5).unwrap();
+        let CurveCurveIntersection::Points(hits) =
+            ElementaryCurve::from(a).intersect(&ElementaryCurve::from(b), TOL)
+        else {
+            panic!("expected hits");
+        };
+        assert_eq!(hits.len(), 4);
+    }
+
+    #[test]
+    fn test_curve_curve_intersection_without_closed_form_is_not_analytic() {
+        let parabola: ElementaryCurve =
+            Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0)
+                .unwrap()
+                .into();
+        let hyperbola: ElementaryCurve =
+            Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0)
+                .unwrap()
+                .into();
+        assert_eq!(
+            parabola.intersect(&hyperbola, TOL),
+            CurveCurveIntersection::NotAnalytic
+        );
+        let bspline = Curve3D::from(
+            crate::BSplineCurve3D::new(
+                1,
+                vec![Point3D::new(0.0, -1.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+                vec![0.0, 1.0],
+                vec![2, 2],
+                false,
+            )
+            .unwrap(),
+        );
+        let line = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+        assert_eq!(
+            bspline.intersect(&line, TOL),
+            CurveCurveIntersection::NotAnalytic
+        );
+        assert_eq!(
+            line.intersect(&bspline, TOL),
+            CurveCurveIntersection::NotAnalytic
+        );
+        assert_eq!(
+            line.intersect(&line, TOL),
+            CurveCurveIntersection::Coincident
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_deprecated_curve_curve_methods_match_the_trait() {
+        let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
+        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Y, 3.0, 1.5).unwrap();
+        let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        let hyperbola =
+            Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0, 1.0).unwrap();
+        assert_eq!(line.intersect_line(&line, TOL), line.intersect(&line, TOL));
+        assert_eq!(
+            line.intersect_circle(&circle, TOL),
+            line.intersect(&circle, TOL)
+        );
+        assert_eq!(
+            line.intersect_ellipse(&ellipse, TOL),
+            line.intersect(&ellipse, TOL)
+        );
+        assert_eq!(
+            line.intersect_parabola(&parabola, TOL),
+            line.intersect(&parabola, TOL)
+        );
+        assert_eq!(
+            line.intersect_hyperbola(&hyperbola, TOL),
+            line.intersect(&hyperbola, TOL)
+        );
+        assert_eq!(
+            circle.intersect_circle(&circle, TOL),
+            circle.intersect(&circle, TOL)
+        );
+        assert_eq!(
+            circle.intersect_ellipse(&ellipse, TOL),
+            circle.intersect(&ellipse, TOL)
+        );
+        assert_eq!(
+            circle.intersect_parabola(&parabola, TOL),
+            circle.intersect(&parabola, TOL)
+        );
+        assert_eq!(
+            circle.intersect_hyperbola(&hyperbola, TOL),
+            circle.intersect(&hyperbola, TOL)
+        );
+        assert_eq!(
+            ellipse.intersect_ellipse(&ellipse, TOL),
+            ellipse.intersect(&ellipse, TOL)
+        );
+        let line2 = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::new(1.0, 0.0)).unwrap();
+        let circle2 = Circle2D::new(Point2D::new(0.0, 0.0), 2.0).unwrap();
+        assert_eq!(
+            line2.intersect_line(&line2, TOL),
+            line2.intersect(&line2, TOL)
+        );
+        assert_eq!(
+            line2.intersect_circle(&circle2, TOL),
+            line2.intersect(&circle2, TOL)
+        );
+        assert_eq!(
+            circle2.intersect_circle(&circle2, TOL),
+            circle2.intersect(&circle2, TOL)
+        );
+        assert_eq!(
+            circle2.intersect(&line2, TOL),
+            line2.intersect(&circle2, TOL)
         );
     }
 

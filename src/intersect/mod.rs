@@ -18,7 +18,9 @@ use crate::{
 };
 
 mod dispatch;
-pub use dispatch::{CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection};
+pub use dispatch::{
+    CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
+};
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -982,7 +984,7 @@ pub struct CurveCurveExtremum {
     pub distance: f64,
 }
 
-/// One transversal meeting of two 3D curves.
+/// One meeting of two 3D curves.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
     /// Parameter on the first curve.
@@ -991,6 +993,8 @@ pub struct CurveCurveHit {
     pub point: Point3D,
     /// Parameter on the second curve.
     pub second_param: f64,
+    /// 1 where the curves cross, 2 or more where they are tangent.
+    pub multiplicity: u32,
 }
 
 /// Grid points per finite parameter domain in the 2D extrema search.
@@ -1676,6 +1680,8 @@ fn merge_valleys(
 
 /// Generic 3D curve-curve intersection: [`curve_curve_extrema`] filtered
 /// to meetings within `tol.confusion`, ordered by first-curve parameter.
+/// A hit where the tangents are parallel within `tol.angular` has
+/// multiplicity 2.
 /// Overlapping curves report a single representative point; use the
 /// analytic methods to detect coincidence.
 ///
@@ -1696,10 +1702,16 @@ where
     let hits: Vec<CurveCurveHit> = curve_curve_extrema(a, b, tol)
         .into_iter()
         .filter(|e| e.distance <= tol.confusion)
-        .map(|e| CurveCurveHit {
-            first_param: e.first_param,
-            point: a.eval_point(e.first_param),
-            second_param: e.second_param,
+        .map(|e| {
+            let ta = a.eval_derivative(e.first_param, 1);
+            let tb = b.eval_derivative(e.second_param, 1);
+            let sin = ta.cross(tb).magnitude() / (ta.magnitude() * tb.magnitude());
+            CurveCurveHit {
+                first_param: e.first_param,
+                point: a.eval_point(e.first_param),
+                second_param: e.second_param,
+                multiplicity: if sin <= tol.angular { 2 } else { 1 },
+            }
         })
         .collect();
     // Contact-level dedupe (see intersect_curve_surface).
@@ -2508,7 +2520,7 @@ mod tests {
         let ext = curve_curve_extrema(&l1, &l2, tol);
         assert_eq!(ext.len(), 1);
         assert!((ext[0].distance - 1.0).abs() < 1e-9);
-        match l1.intersect_line(&l2, tol) {
+        match l1.intersect(&l2, tol) {
             LineLine3DIntersection::Skew { s, t, distance } => {
                 assert!((ext[0].first_param - s).abs() < 1e-9);
                 assert!((ext[0].second_param - t).abs() < 1e-9);
@@ -2645,7 +2657,7 @@ mod tests {
         // The representative's foot: (3, 9, 5) on the second line.
         let foot = b.eval_point(ext[0].second_param);
         assert!(foot.distance(Point3D::new(3.0, 9.0, 5.0)) < 1e-12);
-        match a.intersect_line(&b, tol) {
+        match a.intersect(&b, tol) {
             LineLine3DIntersection::Parallel(d) => assert!((ext[0].distance - d).abs() < 1e-12),
             _ => panic!("analytic expected parallel"),
         }
@@ -2779,7 +2791,7 @@ mod tests {
         assert!((hits[0].first_param + 2.0).abs() < 1e-9);
         assert!((hits[1].first_param - 2.0).abs() < 1e-9);
         // Cross-check against the analytic solver.
-        match line.intersect_circle(&circle, tol) {
+        match line.intersect(&circle, tol) {
             LineCircle3DIntersection::Points((t1, _), (t2, _)) => {
                 assert!((hits[0].first_param - t1).abs() < 1e-9);
                 assert!((hits[1].first_param - t2).abs() < 1e-9);

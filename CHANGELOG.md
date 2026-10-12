@@ -20,10 +20,12 @@ the Python distribution are versioned in lockstep.
   `TrimmedCurve3D` and only search its range.
 - `Intersect` trait: one entry point for exact intersections,
   `a.intersect(&b, tol)`, implemented in both orders for every pair of
-  elementary surfaces, and for lines against the five elementary
-  surfaces and circles and conics against planes, spheres, cylinders and
-  cones. The output is the pair's own result type, so
-  dispatch is static and nothing allocates.
+  elementary surfaces; lines against the five elementary surfaces and
+  circles and conics against planes, spheres, cylinders and cones; and
+  every curve pair with an exact solver: lines with lines, circles and
+  conics, circles with circles and conics, ellipses with ellipses, and
+  the 2D line and circle pairs. The output is the pair's own result
+  type, so dispatch is static and nothing allocates.
 - `ElementaryCurve` and `ElementarySurface`: `Copy` enums of the
   closed-form curves and surfaces, reached from `Curve3D` and `Surface`
   with `as_elementary()`.
@@ -41,6 +43,22 @@ the Python distribution are versioned in lockstep.
   `Coincident`, `NotAnalytic` (a B-spline, or a circle or conic against
   a torus), or `Points` with up to four `ConicSurfaceHit`s ordered by
   curve parameter, a multiplicity of 2 or more marking a tangency.
+- `CurveCurveIntersection`, the general result of intersecting two 3D
+  curves of unknown type, from `Curve3D` and `ElementaryCurve`: `Empty`
+  (also skew or parallel lines), `Coincident`, `NotAnalytic` (a B-spline,
+  crossing curve planes, or a conic pair other than two ellipses or a
+  circle with a conic), or `Points` with up to four `CurveCurveHit`s
+  ordered by first parameter, with both parameters even where the typed
+  result omits them. A lone line hit counts as tangent only when the
+  directions are parallel: the typed line-circle and line-conic results
+  report `Tangent` for any single hit.
+
+### Changed
+
+- **Breaking:** `CurveCurveHit` has a `multiplicity` field, 1 for a
+  crossing and 2 for a tangency. `intersect_curve_curve` sets it to 2
+  where the tangents are parallel within `tol.angular`. Code that builds
+  a `CurveCurveHit` literal must add the field.
 
 ### Deprecated
 
@@ -49,8 +67,12 @@ the Python distribution are versioned in lockstep.
   same on `Sphere`, `Cylinder`, `Cone` and `Torus`; and the curve
   methods against surfaces, `intersect_plane`, `intersect_sphere`,
   `intersect_cylinder`, `intersect_cone` and `Line3D::intersect_torus`
-  on `Line3D`, `Circle3D`, `Ellipse3D`, `Parabola3D` and `Hyperbola3D`:
-  use `Intersect::intersect`.
+  on `Line3D`, `Circle3D`, `Ellipse3D`, `Parabola3D` and `Hyperbola3D`;
+  and the curve pairs, `intersect_line`, `intersect_circle`,
+  `intersect_ellipse`, `intersect_parabola` and `intersect_hyperbola` on
+  `Line3D`, `Circle3D` and `Ellipse3D`, and `intersect_line` and
+  `intersect_circle` on `Line2D` and `Circle2D`: use
+  `Intersect::intersect`.
 
 ## [0.28.0] - 2026-10-12
 
