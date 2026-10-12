@@ -2,7 +2,8 @@
 //! concrete 2D curve types.
 
 use crate::curves::{Circle2D, Line2D};
-use crate::{Point2D, Vector2D};
+use crate::projection::CurveProjection;
+use crate::{Point2D, Tolerance, Vector2D};
 use std::f64::consts::TAU;
 
 /// Common interface for 2D parametric curves. Implement this to add a new
@@ -69,6 +70,55 @@ pub trait ParametricCurve2D {
     /// [`period`](Self::period) is `Some`.
     fn is_periodic(&self) -> bool {
         self.period().is_some()
+    }
+}
+
+/// Distance extrema from a point to a 2D curve: what a
+/// [`TrimmedCurve2D`](crate::curves::TrimmedCurve2D) needs from its basis
+/// to project onto a piece of it. Mirrors
+/// [`crate::curves::PointExtrema3D`].
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::curves::PointExtrema2D;
+/// use geomcore::{Circle2D, Point2D, Tolerance};
+///
+/// let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+/// let extrema = circle.extrema(Point2D::new(3.0, 0.0), Tolerance::DEFAULT);
+/// assert_eq!(extrema[0].parameter, 0.0);
+/// assert_eq!(extrema[0].distance, 2.0);
+/// ```
+pub trait PointExtrema2D: ParametricCurve2D {
+    /// Parameters on the curve's own domain that include every local
+    /// minimum of the distance from `point` (other stationary points may
+    /// be listed too; a valley of equal minima is represented by one of
+    /// its points), ordered by ascending distance, the global closest
+    /// point first. Distances within `tol.confusion` snap to `0.0`.
+    ///
+    /// A query point with a non-finite coordinate has no extrema.
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection>;
+}
+
+/// The single local minimum of a line, or of a circle (whose distance
+/// from a point falls monotonically to it from the farthest point).
+fn only_minimum(point: Point2D, project: impl Fn() -> CurveProjection) -> Vec<CurveProjection> {
+    if point.is_finite() {
+        vec![project()]
+    } else {
+        Vec::new()
+    }
+}
+
+impl PointExtrema2D for Line2D {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+        only_minimum(point, || self.project_point(point, tol))
+    }
+}
+
+impl PointExtrema2D for Circle2D {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+        only_minimum(point, || self.project_point(point, tol))
     }
 }
 
@@ -179,6 +229,15 @@ impl ParametricCurve2D for Curve2D {
         match self {
             Curve2D::Line(c) => c.eval_points(us),
             Curve2D::Circle(c) => c.eval_points(us),
+        }
+    }
+}
+
+impl PointExtrema2D for Curve2D {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+        match self {
+            Curve2D::Line(c) => PointExtrema2D::extrema(c, point, tol),
+            Curve2D::Circle(c) => PointExtrema2D::extrema(c, point, tol),
         }
     }
 }

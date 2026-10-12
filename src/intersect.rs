@@ -2444,39 +2444,18 @@ mod tests {
         }
     }
 
-    /// A curve restricted to `[lo, hi]` of its parameter (an arc, a
-    /// segment): bounded and not periodic.
-    struct Trimmed<C>(C, f64, f64);
-
-    impl<C: ParametricCurve3D> ParametricCurve3D for Trimmed<C> {
-        fn eval_point(&self, u: f64) -> Point3D {
-            self.0.eval_point(u)
-        }
-
-        fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
-            self.0.eval_derivative(u, order)
-        }
-
-        fn bounds(&self) -> (f64, f64) {
-            (self.1, self.2)
-        }
-
-        fn period(&self) -> Option<f64> {
-            None
-        }
+    fn segment(from: Point3D, to: Point3D) -> crate::TrimmedCurve3D<Line3D> {
+        crate::TrimmedCurve3D::segment(from, to).unwrap()
     }
 
-    fn segment(from: Point3D, to: Point3D) -> Trimmed<Line3D> {
-        let line = Line3D::new(from, to - from).unwrap();
-        Trimmed(line, 0.0, from.distance(to))
-    }
-
-    fn arc(center: Point3D, radius: f64, lo: f64, hi: f64) -> Trimmed<crate::Circle3D> {
-        Trimmed(
-            crate::Circle3D::new(center, Vector3D::Z, radius).unwrap(),
-            lo,
-            hi,
-        )
+    fn arc(
+        center: Point3D,
+        radius: f64,
+        lo: f64,
+        hi: f64,
+    ) -> crate::TrimmedCurve3D<crate::Circle3D> {
+        let circle = crate::Circle3D::new(center, Vector3D::Z, radius).unwrap();
+        crate::TrimmedCurve3D::new(circle, lo, hi).unwrap()
     }
 
     /// Smallest distance over an `n x n` parameter grid of two bounded

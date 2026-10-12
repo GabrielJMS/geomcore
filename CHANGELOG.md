@@ -9,6 +9,25 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- `TrimmedCurve3D` and `TrimmedCurve2D`: a basis curve restricted to a
+  parameter range `[first, last]`, such as a line segment, an arc of a
+  circle or conic, or a piece of a B-spline. The basis keeps its own
+  parametrisation and the range becomes `bounds()`, so
+  `intersect_curve_curve`, `curve_curve_extrema` and
+  `intersect_curve_surface` only report results inside it. On a periodic
+  basis the range may cross the seam, up to one period. A trimmed curve
+  is never periodic. The basis type defaults to `Curve3D`/`Curve2D`.
+  - `segment(start, end)` builds a line segment parametrised by arc
+    length.
+  - `project_point` and `contains` are exact: the closest point is either
+    one of the basis's distance extrema inside the range or one of the two
+    ends.
+- `PointExtrema3D` and `PointExtrema2D` traits: the local minima of the
+  distance from a point to a curve, implemented by every curve type and by
+  the trimmed curves themselves.
+
 ## [0.27.0] - 2026-10-11
 
 ### Added

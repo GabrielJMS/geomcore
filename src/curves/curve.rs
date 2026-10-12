@@ -2,7 +2,8 @@
 //! concrete 3D curve types.
 
 use crate::curves::{BSplineCurve3D, Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D};
-use crate::{Point3D, Vector3D};
+use crate::projection::CurveProjection;
+use crate::{Point3D, Tolerance, Vector3D};
 use std::f64::consts::TAU;
 
 /// Common interface for 3D parametric curves. Implement this to add a new
@@ -67,6 +68,82 @@ pub trait ParametricCurve3D {
     /// [`period`](Self::period) is `Some`.
     fn is_periodic(&self) -> bool {
         self.period().is_some()
+    }
+}
+
+/// Distance extrema from a point to a 3D curve: what a
+/// [`TrimmedCurve3D`](crate::curves::TrimmedCurve3D) needs from its basis
+/// to project onto a piece of it.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::curves::PointExtrema3D;
+/// use geomcore::{Line3D, Point3D, Tolerance, Vector3D};
+///
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// let extrema = line.extrema(Point3D::new(2.0, 1.0, 0.0), Tolerance::DEFAULT);
+/// assert_eq!(extrema[0].parameter, 2.0);
+/// assert_eq!(extrema[0].distance, 1.0);
+/// ```
+pub trait PointExtrema3D: ParametricCurve3D {
+    /// Parameters on the curve's own domain that include every local
+    /// minimum of the distance from `point` (other stationary points may
+    /// be listed too; a valley of equal minima is represented by one of
+    /// its points), ordered by ascending distance, the global closest
+    /// point first. Distances within `tol.confusion` snap to `0.0`.
+    ///
+    /// A query point with a non-finite coordinate has no extrema.
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection>;
+}
+
+/// The single local minimum of a line, or of a circle (whose distance
+/// from a point falls monotonically to it from the farthest point).
+fn only_minimum(point: Point3D, project: impl Fn() -> CurveProjection) -> Vec<CurveProjection> {
+    if point.is_finite() {
+        vec![project()]
+    } else {
+        Vec::new()
+    }
+}
+
+impl PointExtrema3D for Line3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        only_minimum(point, || self.project_point(point, tol))
+    }
+}
+
+impl PointExtrema3D for Circle3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        only_minimum(point, || self.project_point(point, tol))
+    }
+}
+
+impl PointExtrema3D for Ellipse3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        Ellipse3D::extrema(self, point, tol)
+    }
+}
+
+impl PointExtrema3D for Parabola3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        Parabola3D::extrema(self, point, tol)
+    }
+}
+
+impl PointExtrema3D for Hyperbola3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        Hyperbola3D::extrema(self, point, tol)
+    }
+}
+
+impl PointExtrema3D for BSplineCurve3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        if point.is_finite() {
+            BSplineCurve3D::extrema(self, point, tol)
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -298,6 +375,19 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Parabola(c) => c.eval_points(us),
             Curve3D::Hyperbola(c) => c.eval_points(us),
             Curve3D::BSpline(c) => c.eval_points(us),
+        }
+    }
+}
+
+impl PointExtrema3D for Curve3D {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        match self {
+            Curve3D::Line(c) => PointExtrema3D::extrema(c, point, tol),
+            Curve3D::Circle(c) => PointExtrema3D::extrema(c, point, tol),
+            Curve3D::Ellipse(c) => PointExtrema3D::extrema(c, point, tol),
+            Curve3D::Parabola(c) => PointExtrema3D::extrema(c, point, tol),
+            Curve3D::Hyperbola(c) => PointExtrema3D::extrema(c, point, tol),
+            Curve3D::BSpline(c) => PointExtrema3D::extrema(c, point, tol),
         }
     }
 }

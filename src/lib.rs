@@ -16,7 +16,9 @@
 //!   [`curves::Circle3D`], [`curves::Ellipse3D`], [`curves::Parabola3D`],
 //!   [`curves::Hyperbola3D`], [`curves::BSplineCurve3D`],
 //!   [`curves::Line2D`], [`curves::Circle2D`]), the [`curves::Curve3D`]/
-//!   [`curves::Curve2D`] enum adaptors, and the
+//!   [`curves::Curve2D`] enum adaptors, the
+//!   [`curves::TrimmedCurve3D`]/[`curves::TrimmedCurve2D`] pieces of a
+//!   curve over a parameter range (segments, arcs), and the
 //!   [`curves::ParametricCurve3D`]/[`curves::ParametricCurve2D`] traits.
 //! - [`surfaces`] holds the five elementary analytic surfaces
 //!   ([`surfaces::Plane`], [`surfaces::Cylinder`], [`surfaces::Cone`],
@@ -91,6 +93,7 @@ pub use curves::{
     Curve3D, Ellipse3D, EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError,
     InterpParametrization, Line2D, Line3D, LineConstructionError, Parabola3D,
     ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
+    PointExtrema2D, PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D, TrimmedCurveConstructionError,
     parametrize_numeric,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
