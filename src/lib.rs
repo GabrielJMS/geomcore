@@ -90,6 +90,9 @@ pub(crate) mod tol {
 pub(crate) mod curve_math;
 /// Public curve types: lines, conics, and B-spline curves.
 pub mod curves;
+/// Discretization of curves into points joined by straight segments, with
+/// proven chord and angle deviations.
+pub mod discretization;
 /// Axis and frame placement types.
 pub mod frame;
 /// Analytic intersection result types.
@@ -119,6 +122,9 @@ pub use curves::{
     Parabola3D, ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
     PointExtrema2D, PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D, TrimmedCurveConstructionError,
     parametrize_numeric,
+};
+pub use discretization::{
+    Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError, Discretize3D,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;

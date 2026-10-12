@@ -11,6 +11,21 @@ the Python distribution are versioned in lockstep.
 
 ### Added
 
+- Discretization of curves with proven deviations (#17): circles,
+  B-splines and trimmed circles and B-splines become points on the curve
+  joined by straight segments, each segment reporting a proven upper
+  bound on its chord deviation (largest distance from the curve) and
+  angle deviation (largest angle to the curve's tangent). The new
+  `Discretize3D` trait counts the points for a `DiscretizationCriteria`
+  (`point_count`), fills caller-owned slices without allocating
+  (`discretize_into`), or returns a `Discretization3D` (`discretize`).
+  Circles use the exact deviations; B-splines are split per knot span
+  and bounded from each span's Bézier control points. Both end points are
+  the curve's points at the range ends; closed curves end on their first
+  point, with at least three segments. B-splines do not bound the angle
+  deviation yet (they report π). Python: `discretize(max_chord_deviation,
+  max_angle_deviation=None)` on `Circle3D` and `BSplineCurve3D`,
+  returning a `Discretization3D`.
 - A trimmed curve can borrow its basis (#18): the curve traits
   (`ParametricCurve3D`, `ParametricCurve2D`, `PointExtrema3D`,
   `PointExtrema2D`) are implemented for references to curves, so

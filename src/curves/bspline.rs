@@ -972,6 +972,36 @@ impl BSplineCurve3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// The homogeneous Bernstein control points `(x w, y w, z w, w)`
+    /// (`w = 1` if nonrational) of the polynomial piece on the span
+    /// containing `u` (pass a parameter inside the span), over the span's
+    /// own interval, into `points[..=degree]`.
+    pub(crate) fn span_bezier_points(&self, u: f64, points: &mut [[f64; 4]]) {
+        let mut coordinates = [[0.0; math::LARGE]; 3];
+        let mut weights = [1.0; math::LARGE];
+        let dim = if self.is_rational() { 4 } else { 3 };
+        {
+            let [x, y, z] = &mut coordinates;
+            let mut out: [&mut [f64]; 4] = [x, y, z, &mut weights];
+            math::span_bezier(
+                u,
+                self.degree,
+                self.periodic,
+                &self.flat,
+                &self.flat_poles,
+                &mut out[..dim],
+            );
+        }
+        for (k, point) in points.iter_mut().enumerate().take(self.degree + 1) {
+            *point = [
+                coordinates[0][k],
+                coordinates[1][k],
+                coordinates[2][k],
+                weights[k],
+            ];
+        }
+    }
+
     /// The knot-span box hierarchy, built on first use.
     fn span_tree(&self) -> &SpanTree {
         self.spans.get_or_init(|| {

@@ -33,7 +33,10 @@ use geomcore::{
     TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
     TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
-use geomcore::{curve_curve_extrema, intersect_curve_curve};
+use geomcore::{
+    Discretization3D, DiscretizationCriteria, Discretize3D, curve_curve_extrema,
+    intersect_curve_curve,
+};
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
     PyValueError::new_err(e.to_string())
@@ -2521,6 +2524,68 @@ fn py_intersect_marching(
     Ok(out)
 }
 
+/// A discretized 3D curve: points on the curve in order of parameter,
+/// joined by straight segments. `parameters[i]` is the parameter of
+/// `points[i]`; segment `i` joins `points[i]` and `points[i + 1]` and
+/// carries a proven upper bound on its chord deviation (the largest
+/// distance from the curve to the segment) and angle deviation (the
+/// largest angle between the curve's tangent and the segment, π where no
+/// bound exists).
+#[pyclass(name = "Discretization3D", module = "geomcore", frozen)]
+struct PyDiscretization3D(Discretization3D);
+
+#[pymethods]
+impl PyDiscretization3D {
+    /// The parameter of each point, increasing.
+    #[getter]
+    fn parameters(&self) -> Vec<f64> {
+        self.0.parameters.clone()
+    }
+
+    /// The points on the curve.
+    #[getter]
+    fn points(&self) -> Vec<PyPoint3D> {
+        self.0.points.iter().copied().map(PyPoint3D).collect()
+    }
+
+    /// The chord deviation of each segment.
+    #[getter]
+    fn chord_deviations(&self) -> Vec<f64> {
+        self.0.chord_deviations.clone()
+    }
+
+    /// The angle deviation of each segment, in radians.
+    #[getter]
+    fn angle_deviations(&self) -> Vec<f64> {
+        self.0.angle_deviations.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Discretization3D({} points)", self.0.points.len())
+    }
+}
+
+/// The criteria from the keyword arguments of `discretize`.
+fn discretization_criteria(
+    max_chord_deviation: f64,
+    max_angle_deviation: Option<f64>,
+) -> PyResult<DiscretizationCriteria> {
+    let criteria = DiscretizationCriteria::new(max_chord_deviation).map_err(val_err)?;
+    match max_angle_deviation {
+        Some(angle) => criteria.with_max_angle_deviation(angle).map_err(val_err),
+        None => Ok(criteria),
+    }
+}
+
+fn discretize_3d(
+    curve: &impl Discretize3D,
+    max_chord_deviation: f64,
+    max_angle_deviation: Option<f64>,
+) -> PyResult<PyDiscretization3D> {
+    let criteria = discretization_criteria(max_chord_deviation, max_angle_deviation)?;
+    Ok(PyDiscretization3D(curve.discretize(criteria)))
+}
+
 // ---------------------------------------------------------------------------
 // Curves
 // ---------------------------------------------------------------------------
@@ -3053,6 +3118,19 @@ impl PyCircle3D {
     /// Evaluate many parameters at once.
     fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
         self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
+    }
+
+    /// Discretize the circle into points joined by straight segments,
+    /// each segment's chord deviation at most `max_chord_deviation` and,
+    /// if given, its angle deviation at most `max_angle_deviation`
+    /// (radians).
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn discretize(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<PyDiscretization3D> {
+        discretize_3d(&self.0, max_chord_deviation, max_angle_deviation)
     }
 
     /// Evaluate the derivative of the given order (>= 1) at `u`.
@@ -4342,6 +4420,19 @@ impl PyBSplineCurve3D {
         self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
     }
 
+    /// Discretize the curve into points joined by straight segments,
+    /// each segment's chord deviation at most `max_chord_deviation` and,
+    /// if given, its angle deviation at most `max_angle_deviation`
+    /// (radians).
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn discretize(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<PyDiscretization3D> {
+        discretize_3d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// Evaluate the derivative at `u`; orders 1 and 2 are supported.
     fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
         check_curve_order(order, 2)?;
@@ -4995,6 +5086,7 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFrame3D>()?;
     m.add_class::<PyTolerance>()?;
     m.add_class::<PyTransform>()?;
+    m.add_class::<PyDiscretization3D>()?;
 
     let curves = PyModule::new(py, "curves")?;
     curves.add_class::<PyLine3D>()?;

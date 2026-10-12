@@ -1190,3 +1190,40 @@ def test_intersect_rejects_pairs_without_exact_solver():
 def test_per_pair_intersect_methods_warn():
     with pytest.warns(DeprecationWarning, match="Sphere.intersect_sphere is deprecated"):
         Sphere(Point3D.origin(), 1.0).intersect_sphere(Sphere(Point3D(1.0, 0.0, 0.0), 1.0))
+
+
+def _xyz(p):
+    return (p.x, p.y, p.z)
+
+
+def test_discretize_circle_and_bspline():
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    # 2(1 - cos(pi/8)) = 0.152...: eight segments meet 0.16.
+    d = circle.discretize(0.16)
+    assert len(d.points) == len(d.parameters) == 9
+    assert len(d.chord_deviations) == len(d.angle_deviations) == 8
+    assert d.parameters[0] == 0.0 and d.parameters[-1] == pytest.approx(2.0 * math.pi)
+    assert _xyz(d.points[0]) == _xyz(d.points[-1])
+    assert all(dev == pytest.approx(2.0 * (1.0 - math.cos(math.pi / 8))) for dev in d.chord_deviations)
+    assert all(angle == pytest.approx(math.pi / 8) for angle in d.angle_deviations)
+    # A tighter angle limit asks for more points.
+    assert len(circle.discretize(0.16, max_angle_deviation=0.1).points) == 33
+
+    curve = BSplineCurve3D(
+        2,
+        [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 2.0, 0.0), Point3D(2.0, 0.0, 0.0)],
+        [0.0, 1.0],
+        [3, 3],
+        False,
+    )
+    d = curve.discretize(1e-3)
+    assert _xyz(d.points[0]) == (0.0, 0.0, 0.0)
+    assert _xyz(d.points[-1]) == (2.0, 0.0, 0.0)
+    assert all(dev <= 1e-3 for dev in d.chord_deviations)
+    for u, p in zip(d.parameters, d.points):
+        assert curve.eval_point(u).distance(p) < 1e-12
+
+    with pytest.raises(ValueError, match="chord deviation"):
+        circle.discretize(0.0)
+    with pytest.raises(ValueError, match="angle deviation"):
+        curve.discretize(1e-3, max_angle_deviation=-1.0)
