@@ -53,6 +53,15 @@ the Python distribution are versioned in lockstep.
   directions are parallel: the typed line-circle and line-conic results
   report `Tangent` for any single hit.
 
+- Python: `intersect(other, tol=None)` on `Plane`, `Cylinder`, `Cone`,
+  `Sphere`, `Torus`, `Line3D`, `Circle3D`, `Ellipse3D`, `Parabola3D`,
+  `Hyperbola3D`, `Line2D` and `Circle2D`. It picks the exact solver by
+  the type of `other`, works in either order, and returns the same
+  `(kind, payload)` tuple as the matching per-pair method, whose
+  parameters keep their roles: in `circle.intersect(line)` each `t` is
+  a line parameter. A pair without an exact solver, such as a circle
+  and a torus, raises `TypeError`.
+
 ### Changed
 
 - **Breaking:** `CurveCurveHit` has a `multiplicity` field, 1 for a
@@ -73,6 +82,8 @@ the Python distribution are versioned in lockstep.
   `Line3D`, `Circle3D` and `Ellipse3D`, and `intersect_line` and
   `intersect_circle` on `Line2D` and `Circle2D`: use
   `Intersect::intersect`.
+- Python: the per-pair `intersect_*` methods emit a `DeprecationWarning`
+  and are marked deprecated in the stubs; use `intersect`.
 
 ## [0.28.0] - 2026-10-12
 

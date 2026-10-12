@@ -32,9 +32,10 @@ Windows, for Python 3.9+ (abi3 — one wheel covers all versions).
 - Rigid transformations via a single `Transform` type, applied with
   `transformed`.
 - Containment, `project_point` and `extrema` on every curve and surface.
-- Analytic intersections (`intersect_plane`, `intersect_sphere`, ...)
-  returning `(kind, payload)` tuples, with tangency and coincidence
-  reported, and `"not_analytic"` when there is no closed form.
+- Analytic intersections with `a.intersect(b)`, in either order, returning
+  `(kind, payload)` tuples, with tangency and coincidence reported, and
+  `"not_analytic"` when there is no closed form. A pair without an exact
+  solver raises `TypeError`.
 - Numeric intersections over any curve or surface:
   `intersect_curve_surface`, `intersect_curve_curve`,
   `curve_curve_extrema` and `intersect_marching`.

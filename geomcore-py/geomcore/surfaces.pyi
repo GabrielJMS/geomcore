@@ -1,7 +1,9 @@
-from typing import Any, List, Optional, Tuple, final
+from typing import Any, List, Optional, Tuple, Union, final
+
+from typing_extensions import deprecated
 
 from geomcore import Axis3D, Frame3D, Point3D, Tolerance, Transform, Vector3D
-from geomcore.curves import Circle3D
+from geomcore.curves import Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D
 
 @final
 class Plane:
@@ -25,11 +27,31 @@ class Plane:
     def project_points(
         self, points: List[Point3D], tol: Optional[Tolerance] = ...
     ) -> List[Tuple[float, float, float]]: ...
+    def intersect(
+        self,
+        other: Union[
+            Plane,
+            Cylinder,
+            Cone,
+            Sphere,
+            Torus,
+            Line3D,
+            Circle3D,
+            Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
+        ],
+        tol: Optional[Tolerance] = ...,
+    ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_plane(self, other: Plane, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_sphere(self, sphere: Sphere, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cylinder(
         self, cylinder: Cylinder, tol: Optional[Tolerance] = ...
     ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cone(self, cone: Cone, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
 
 @final
@@ -54,6 +76,23 @@ class Cylinder:
     def project_points(
         self, points: List[Point3D], tol: Optional[Tolerance] = ...
     ) -> List[Tuple[float, float, float]]: ...
+    def intersect(
+        self,
+        other: Union[
+            Plane,
+            Cylinder,
+            Cone,
+            Sphere,
+            Torus,
+            Line3D,
+            Circle3D,
+            Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
+        ],
+        tol: Optional[Tolerance] = ...,
+    ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cylinder(
         self, other: Cylinder, tol: Optional[Tolerance] = ...
     ) -> Tuple[str, Any]: ...
@@ -84,9 +123,27 @@ class Cone:
     def project_points(
         self, points: List[Point3D], tol: Optional[Tolerance] = ...
     ) -> List[Tuple[float, float, float]]: ...
+    def intersect(
+        self,
+        other: Union[
+            Plane,
+            Cylinder,
+            Cone,
+            Sphere,
+            Torus,
+            Line3D,
+            Circle3D,
+            Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
+        ],
+        tol: Optional[Tolerance] = ...,
+    ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cylinder(
         self, cylinder: Cylinder, tol: Optional[Tolerance] = ...
     ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cone(self, other: Cone, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
 
 @final
@@ -110,10 +167,29 @@ class Sphere:
     def project_points(
         self, points: List[Point3D], tol: Optional[Tolerance] = ...
     ) -> List[Tuple[float, float, float]]: ...
+    def intersect(
+        self,
+        other: Union[
+            Plane,
+            Cylinder,
+            Cone,
+            Sphere,
+            Torus,
+            Line3D,
+            Circle3D,
+            Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
+        ],
+        tol: Optional[Tolerance] = ...,
+    ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_sphere(self, other: Sphere, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cylinder(
         self, cylinder: Cylinder, tol: Optional[Tolerance] = ...
     ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cone(self, cone: Cone, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
 
 @final
@@ -137,12 +213,29 @@ class Torus:
     def project_points(
         self, points: List[Point3D], tol: Optional[Tolerance] = ...
     ) -> List[Tuple[float, float, float]]: ...
+    def intersect(
+        self,
+        other: Union[
+            Plane,
+            Cylinder,
+            Cone,
+            Sphere,
+            Torus,
+            Line3D,
+        ],
+        tol: Optional[Tolerance] = ...,
+    ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_plane(self, plane: Plane, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_sphere(self, sphere: Sphere, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cylinder(
         self, cylinder: Cylinder, tol: Optional[Tolerance] = ...
     ) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_cone(self, cone: Cone, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
+    @deprecated("use intersect")
     def intersect_torus(self, other: Torus, tol: Optional[Tolerance] = ...) -> Tuple[str, Any]: ...
 
 @final
