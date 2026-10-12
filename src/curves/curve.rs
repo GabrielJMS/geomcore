@@ -49,6 +49,59 @@ pub trait ParametricCurve3D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     fn eval_derivative(&self, u: f64, order: u32) -> Vector3D;
 
+    /// Evaluates the point and the first derivative at parameter `u`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative). B-spline curves override
+    /// it to evaluate their basis functions once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let (point, tangent) = circle.eval_d1(0.0);
+    /// assert_eq!(point, Point3D::new(2.0, 0.0, 0.0));
+    /// assert!((tangent - Vector3D::new(0.0, 2.0, 0.0)).magnitude() < 1e-15);
+    /// ```
+    fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
+        (self.eval_point(u), self.eval_derivative(u, 1))
+    }
+
+    /// Evaluates the point and the first and second derivatives at
+    /// parameter `u`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative). B-spline curves override
+    /// it to evaluate their basis functions once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{BSplineCurve3D, Point3D, Vector3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 1.0, 0.0),
+    ///     Point3D::new(2.0, 0.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap();
+    /// let (point, d1, d2) = curve.eval_d2(0.5);
+    /// assert_eq!(point, Point3D::new(1.0, 0.5, 0.0));
+    /// assert_eq!(d1, Vector3D::new(2.0, 0.0, 0.0));
+    /// assert_eq!(d2, Vector3D::new(0.0, -4.0, 0.0));
+    /// ```
+    fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
+        (
+            self.eval_point(u),
+            self.eval_derivative(u, 1),
+            self.eval_derivative(u, 2),
+        )
+    }
+
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn bounds(&self) -> (f64, f64);
@@ -107,6 +160,14 @@ impl<C: ParametricCurve3D + ?Sized> ParametricCurve3D for &C {
 
     fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         (**self).eval_derivative(u, order)
+    }
+
+    fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
+        (**self).eval_d1(u)
+    }
+
+    fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
+        (**self).eval_d2(u)
     }
 
     fn bounds(&self) -> (f64, f64) {
@@ -297,6 +358,14 @@ impl ParametricCurve3D for BSplineCurve3D {
         BSplineCurve3D::eval_derivative(self, u, order)
     }
 
+    fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
+        BSplineCurve3D::eval_d1(self, u)
+    }
+
+    fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
+        BSplineCurve3D::eval_d2(self, u)
+    }
+
     fn bounds(&self) -> (f64, f64) {
         BSplineCurve3D::bounds(self)
     }
@@ -373,6 +442,28 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Parabola(c) => c.eval_derivative(u, order),
             Curve3D::Hyperbola(c) => c.eval_derivative(u, order),
             Curve3D::BSpline(c) => c.eval_derivative(u, order),
+        }
+    }
+
+    fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
+        match self {
+            Curve3D::Line(c) => ParametricCurve3D::eval_d1(c, u),
+            Curve3D::Circle(c) => ParametricCurve3D::eval_d1(c, u),
+            Curve3D::Ellipse(c) => ParametricCurve3D::eval_d1(c, u),
+            Curve3D::Parabola(c) => ParametricCurve3D::eval_d1(c, u),
+            Curve3D::Hyperbola(c) => ParametricCurve3D::eval_d1(c, u),
+            Curve3D::BSpline(c) => c.eval_d1(u),
+        }
+    }
+
+    fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
+        match self {
+            Curve3D::Line(c) => ParametricCurve3D::eval_d2(c, u),
+            Curve3D::Circle(c) => ParametricCurve3D::eval_d2(c, u),
+            Curve3D::Ellipse(c) => ParametricCurve3D::eval_d2(c, u),
+            Curve3D::Parabola(c) => ParametricCurve3D::eval_d2(c, u),
+            Curve3D::Hyperbola(c) => ParametricCurve3D::eval_d2(c, u),
+            Curve3D::BSpline(c) => c.eval_d2(u),
         }
     }
 

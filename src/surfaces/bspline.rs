@@ -566,6 +566,57 @@ impl BSplineSurface {
         }
     }
 
+    /// Evaluates the point and the first derivatives `[Su, Sv]` at
+    /// parameters `(u, v)`, from one evaluation of the basis functions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Vector3D};
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+    ///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
+    /// ];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let (point, [su, sv]) = surface.eval_d1(0.5, 0.5);
+    /// assert_eq!(point, Point3D::new(1.0, 1.0, 0.0));
+    /// assert_eq!(su, Vector3D::new(2.0, 0.0, 0.0));
+    /// assert_eq!(sv, Vector3D::new(0.0, 2.0, 0.0));
+    /// ```
+    pub fn eval_d1(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2]) {
+        let (s, su, sv) = self.eval_surface_d1(u, v);
+        (s, [su, sv])
+    }
+
+    /// Evaluates the point, the first derivatives `[Su, Sv]` and the second
+    /// derivatives `[Suu, Suv, Svv]` at parameters `(u, v)`, from one
+    /// evaluation of the basis functions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Vector3D};
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
+    ///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 1.0)],
+    /// ];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let (_, _, [suu, suv, svv]) = surface.eval_d2(0.5, 0.5);
+    /// assert_eq!(suu, Vector3D::ZERO);
+    /// assert_eq!(suv, Vector3D::new(0.0, 0.0, 1.0));
+    /// assert_eq!(svv, Vector3D::ZERO);
+    /// ```
+    pub fn eval_d2(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2], [Vector3D; 3]) {
+        let [s, su, sv, suu, suv, svv] = self.eval_surface_d2(u, v);
+        (Point3D::ORIGIN + s, [su, sv], [suu, suv, svv])
+    }
+
     /// Returns whether `point` lies on the surface: the surface is
     /// projected with [`BSplineSurface::project_point`] and the point
     /// counts as contained when the projected distance is within
@@ -942,6 +993,14 @@ impl ParametricSurface for BSplineSurface {
     /// panic conditions (`du + dv` must be 1 or 2).
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
         BSplineSurface::eval_derivative(self, u, v, du, dv)
+    }
+
+    fn eval_d1(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2]) {
+        BSplineSurface::eval_d1(self, u, v)
+    }
+
+    fn eval_d2(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2], [Vector3D; 3]) {
+        BSplineSurface::eval_d2(self, u, v)
     }
 
     fn u_bounds(&self) -> (f64, f64) {

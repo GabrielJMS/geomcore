@@ -87,6 +87,50 @@ fn bench_eval_throughput(c: &mut Criterion) {
         b.iter(|| black_box(surface.eval_points(black_box(&uvs))))
     });
 
+    group.bench_function(
+        "bspline_curve_point_and_two_derivatives_separate_100k",
+        |b| {
+            b.iter(|| {
+                for &u in black_box(&curve_params) {
+                    black_box((
+                        curve.eval_point(u),
+                        curve.eval_derivative(u, 1),
+                        curve.eval_derivative(u, 2),
+                    ));
+                }
+            })
+        },
+    );
+    group.bench_function("bspline_curve_eval_d2_100k", |b| {
+        b.iter(|| {
+            for &u in black_box(&curve_params) {
+                black_box(curve.eval_d2(u));
+            }
+        })
+    });
+
+    group.bench_function("bspline_surface_point_and_derivatives_separate_100k", |b| {
+        b.iter(|| {
+            for &(u, v) in black_box(&uvs) {
+                black_box((
+                    surface.eval_point(u, v),
+                    surface.eval_derivative(u, v, 1, 0),
+                    surface.eval_derivative(u, v, 0, 1),
+                    surface.eval_derivative(u, v, 2, 0),
+                    surface.eval_derivative(u, v, 1, 1),
+                    surface.eval_derivative(u, v, 0, 2),
+                ));
+            }
+        })
+    });
+    group.bench_function("bspline_surface_eval_d2_100k", |b| {
+        b.iter(|| {
+            for &(u, v) in black_box(&uvs) {
+                black_box(surface.eval_d2(u, v));
+            }
+        })
+    });
+
     group.finish();
 }
 
