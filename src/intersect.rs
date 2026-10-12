@@ -1931,6 +1931,14 @@ where
     // Chord deviation allowed per step, and the longest step.
     let sag = 1000.0 * tol.confusion;
     const H_MAX: f64 = 0.1;
+    // Turn always allowed in one step. Beyond it, a step may turn by at
+    // most `CURVATURE_GROWTH` times the previous step's curvature times
+    // its chord: on a smooth curve turn/chord tends to the curvature as
+    // the step is halved, so the step is eventually accepted, while at a
+    // crossing of two branches (where the surfaces touch) the turn onto
+    // the other branch stays finite, and the trace ends there.
+    const FREE_TURN: f64 = 0.05;
+    const CURVATURE_GROWTH: f64 = 4.0;
     let start = a.eval_point(seed[0], seed[1]);
     let t0 = tangent(a, b, seed, tol)?;
     let mut halves: [Vec<Point3D>; 2] = [Vec::new(), Vec::new()];
@@ -1941,6 +1949,8 @@ where
         }
         let (mut x, mut p, mut t) = (seed, start, t0 * dir);
         let mut h = (8.0 * sag).sqrt().min(H_MAX);
+        // Curvature of the last accepted step (none before the first).
+        let mut last_curvature = 0.0;
         for _ in 0..2000 {
             // Predict along the tangent, correct onto both surfaces in the
             // plane normal to it; halve the step until the result stays on
@@ -1954,7 +1964,8 @@ where
                     let q = a.eval_point(y[0], y[1]);
                     let chord = q.distance(p);
                     let turn = t.cross(ty).magnitude().atan2(t.dot(ty));
-                    if ty.dot(t) > 0.0 && chord <= 2.0 * h && chord * turn <= 32.0 * sag {
+                    let smooth = turn <= FREE_TURN.max(CURVATURE_GROWTH * last_curvature * chord);
+                    if ty.dot(t) > 0.0 && chord <= 2.0 * h && chord * turn <= 32.0 * sag && smooth {
                         step = Some((y, q, ty, turn / chord.max(f64::MIN_POSITIVE)));
                         break;
                     }
@@ -1979,6 +1990,7 @@ where
             }
             half.push(q);
             (x, p, t) = (y, q, ty);
+            last_curvature = curvature;
             h = (2.0 * h)
                 .min(H_MAX)
                 .min((8.0 * sag / curvature.max(f64::MIN_POSITIVE)).sqrt());
@@ -2414,6 +2426,65 @@ mod tests {
         let (t0, t1) = curves[0].bounds();
         let gap = curves[0].eval_point(t0).distance(curves[0].eval_point(t1));
         assert!(gap > 10.0, "open line fitted as a loop: end gap {gap}");
+    }
+
+    /// Polyline length of a traced curve.
+    fn traced_length(curve: &BSplineCurve3D) -> f64 {
+        let (t0, t1) = curve.bounds();
+        let n = 4000;
+        let at = |k: usize| curve.eval_point(t0 + (t1 - t0) * k as f64 / n as f64);
+        (0..n).map(|k| at(k).distance(at(k + 1))).sum()
+    }
+
+    /// The torus of radii 3 and 1 about z, and the plane through its
+    /// center tilted `asin(1/3) + d` about y.
+    fn villarceau_pair(d: f64) -> (crate::Torus, crate::Plane) {
+        let torus = crate::Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+        let a = (1.0f64 / 3.0).asin() + d;
+        let plane =
+            crate::Plane::new(Point3D::ORIGIN, Vector3D::new(-a.sin(), 0.0, a.cos())).unwrap();
+        (torus, plane)
+    }
+
+    #[test]
+    fn test_marching_stops_at_a_self_crossing() {
+        // Issue #7: at the Villarceau tilt the section is two circles of
+        // radius 3 crossing where the plane touches the tube. A trace used
+        // to turn onto the other circle there and cover an arc twice.
+        let tol = Tolerance::DEFAULT;
+        let (torus, plane) = villarceau_pair(0.0);
+        let curves = marching_intersection(&torus, &plane, tol);
+        assert!(!curves.is_empty());
+        for curve in &curves {
+            let (t0, t1) = curve.bounds();
+            for k in 0..=40 {
+                let p = curve.eval_point(t0 + (t1 - t0) * k as f64 / 40.0);
+                assert!(torus.project_point(p, tol).distance < 1e-3, "{p:?}");
+                assert!(plane.project_point(p, tol).distance < 1e-3, "{p:?}");
+            }
+        }
+        let total: f64 = curves.iter().map(traced_length).sum();
+        let expected = 4.0 * std::f64::consts::PI * 3.0;
+        assert!(
+            (total - expected).abs() < 1e-3 * expected,
+            "total length {total}, expected {expected}: {:?}",
+            curves.iter().map(traced_length).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_marching_near_the_villarceau_tilt_gives_two_loops() {
+        let tol = Tolerance::DEFAULT;
+        for d in [-1e-3, 1e-3] {
+            let (torus, plane) = villarceau_pair(d);
+            let curves = marching_intersection(&torus, &plane, tol);
+            assert_eq!(curves.len(), 2, "d = {d}");
+            for curve in &curves {
+                let (t0, t1) = curve.bounds();
+                let gap = curve.eval_point(t0).distance(curve.eval_point(t1));
+                assert!(gap < 1e-6, "d = {d}: open curve, end gap {gap}");
+            }
+        }
     }
 
     #[test]

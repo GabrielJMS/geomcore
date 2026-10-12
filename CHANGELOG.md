@@ -38,6 +38,11 @@ the Python distribution are versioned in lockstep.
   planes just short of tangency came back as `ApexPoint`. The parabola
   band for planes off the apex already used the angle, and both now share
   it.
+- `marching_intersection` stops a trace where the intersection crosses
+  itself (#7). At such a point the surfaces touch, and a trace used to
+  turn onto the other branch and report an arc a second time. At the
+  Villarceau tilt of a torus, the section now comes back as the four arcs
+  between the two contact points, with no overlap.
 
 ## [0.27.0] - 2026-10-11
 
