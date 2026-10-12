@@ -12,6 +12,12 @@ _Avoid_: analytic curve, conic (a line is not a conic), primitive
 A plane, cylinder, cone, sphere or torus: a surface with a closed-form definition.
 _Avoid_: analytic surface, quadric (a torus is not a quadric), primitive
 
+**Conic**:
+A circle, ellipse, parabola or hyperbola: an elementary curve other than the line.
+
+**Quadric**:
+A plane, sphere, cylinder or cone: an elementary surface whose implicit equation has degree at most two, the plane being the degree-one case.
+
 **B-spline**:
 A curve or surface defined by poles, knots and optional weights. Every curve or surface is either elementary or a B-spline.
 

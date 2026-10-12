@@ -22,6 +22,10 @@ harness = false
 name = "intersect_dispatch"
 harness = false
 
+[[bench]]
+name = "conic_quadric"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 
