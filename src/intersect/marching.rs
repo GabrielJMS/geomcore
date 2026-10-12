@@ -214,12 +214,9 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let na = a
-        .eval_derivative(x[0], x[1], 1, 0)
-        .cross(a.eval_derivative(x[0], x[1], 0, 1));
-    let nb = b
-        .eval_derivative(x[2], x[3], 1, 0)
-        .cross(b.eval_derivative(x[2], x[3], 0, 1));
+    let (_, [au, av]) = a.eval_d1(x[0], x[1]);
+    let (_, [bu, bv]) = b.eval_d1(x[2], x[3]);
+    let (na, nb) = (au.cross(av), bu.cross(bv));
     let t = na.cross(nb);
     let scale = na.magnitude() * nb.magnitude();
     if t.magnitude() <= tol.angular * scale.max(f64::MIN_POSITIVE) {
@@ -237,7 +234,7 @@ where
     B: ParametricSurface,
 {
     let shift = |s: &dyn ParametricSurface, u: f64, v: f64| {
-        let (su, sv) = (s.eval_derivative(u, v, 1, 0), s.eval_derivative(u, v, 0, 1));
+        let (_, [su, sv]) = s.eval_d1(u, v);
         let m = [[su.dot(su), su.dot(sv)], [su.dot(sv), sv.dot(sv)]];
         solve_2x2(m, [su.dot(d), sv.dot(d)], 1e-12).unwrap_or([0.0, 0.0])
     };
@@ -296,12 +293,9 @@ where
         if f.magnitude() <= 0.1 * tol.confusion && r.abs() <= 0.1 * tol.confusion {
             return Some(x);
         }
-        let cols = [
-            a.eval_derivative(x[0], x[1], 1, 0),
-            a.eval_derivative(x[0], x[1], 0, 1),
-            -b.eval_derivative(x[2], x[3], 1, 0),
-            -b.eval_derivative(x[2], x[3], 0, 1),
-        ];
+        let (_, [au, av]) = a.eval_d1(x[0], x[1]);
+        let (_, [bu, bv]) = b.eval_d1(x[2], x[3]);
+        let cols = [au, av, -bu, -bv];
         let delta = match plane {
             Some((_, normal)) => {
                 let m = [

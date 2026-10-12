@@ -36,6 +36,15 @@ the Python distribution are versioned in lockstep.
   `PointExtrema2D`) are implemented for references to curves, so
   `TrimmedCurve3D<&BSplineCurve3D>` projects onto, intersects and finds
   extrema on a piece of a shared curve without cloning it.
+- Points evaluated together with their derivatives (#27): `eval_d1` and
+  `eval_d2` on `ParametricCurve3D` return the point and its first one or
+  two derivatives, and on `ParametricSurface` the point, `[Su, Sv]` and
+  `[Suu, Suv, Svv]`. B-spline curves and surfaces evaluate their basis
+  functions once for all of them, 1.8× faster than separate calls on a
+  cubic curve and 4× on a bicubic surface; the other types, and new
+  curve and surface types, get them from `eval_point` and
+  `eval_derivative`. The numeric curve–curve extrema and intersection and
+  the marching intersection use them, 12–17% faster on B-splines.
 
 ### Changed
 

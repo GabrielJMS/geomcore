@@ -83,9 +83,8 @@ where
             [d.x, d.y, d.z]
         };
         let jac = |x: [f64; 3]| {
-            let ct = curve.eval_derivative(x[0], 1);
-            let su = surface.eval_derivative(x[1], x[2], 1, 0);
-            let sv = surface.eval_derivative(x[1], x[2], 0, 1);
+            let (_, ct) = curve.eval_d1(x[0]);
+            let (_, [su, sv]) = surface.eval_d1(x[1], x[2]);
             [
                 [ct.x, -su.x, -sv.x],
                 [ct.y, -su.y, -sv.y],

@@ -803,6 +803,54 @@ impl BSplineCurve3D {
         }
     }
 
+    /// Evaluates the point and the first derivative at parameter `u`, from
+    /// one evaluation of the basis functions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Vector3D};
+    /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// let (point, d1) = curve.eval_d1(0.5);
+    /// assert_eq!(point, Point3D::new(1.0, 0.0, 0.0));
+    /// assert_eq!(d1, Vector3D::new(2.0, 0.0, 0.0));
+    /// ```
+    pub fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
+        let e = self.eval_euclidean(u, 1);
+        (
+            Point3D::new(e[0], e[1], e[2]),
+            Vector3D::new(e[3], e[4], e[5]),
+        )
+    }
+
+    /// Evaluates the point and the first and second derivatives at
+    /// parameter `u`, from one evaluation of the basis functions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Vector3D};
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 1.0, 0.0),
+    ///     Point3D::new(2.0, 0.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap();
+    /// let (point, d1, d2) = curve.eval_d2(0.5);
+    /// assert_eq!(point, Point3D::new(1.0, 0.5, 0.0));
+    /// assert_eq!(d1, Vector3D::new(2.0, 0.0, 0.0));
+    /// assert_eq!(d2, Vector3D::new(0.0, -4.0, 0.0));
+    /// ```
+    pub fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
+        let e = self.eval_euclidean(u, 2);
+        (
+            Point3D::new(e[0], e[1], e[2]),
+            Vector3D::new(e[3], e[4], e[5]),
+            Vector3D::new(e[6], e[7], e[8]),
+        )
+    }
+
     /// Computes the exact 2D representation of this B-spline curve in a
     /// surface's parameter space.
     ///

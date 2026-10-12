@@ -35,6 +35,68 @@ pub trait ParametricSurface {
     /// Evaluates the derivative of order `(du, dv)` at parameters `(u, v)`.
     fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D;
 
+    /// Evaluates the point and the first derivatives `[Su, Sv]` at
+    /// parameters `(u, v)`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative). B-spline surfaces
+    /// override it to evaluate their basis functions once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ParametricSurface;
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let (point, [su, sv]) = plane.eval_d1(1.0, 2.0);
+    /// assert_eq!(point, Point3D::new(1.0, 2.0, 0.0));
+    /// assert_eq!(su.cross(sv), Vector3D::Z);
+    /// ```
+    fn eval_d1(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2]) {
+        (
+            self.eval_point(u, v),
+            [
+                self.eval_derivative(u, v, 1, 0),
+                self.eval_derivative(u, v, 0, 1),
+            ],
+        )
+    }
+
+    /// Evaluates the point, the first derivatives `[Su, Sv]` and the second
+    /// derivatives `[Suu, Suv, Svv]` at parameters `(u, v)`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative). B-spline surfaces
+    /// override it to evaluate their basis functions once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ParametricSurface;
+    /// use geomcore::{Point3D, Sphere};
+    ///
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let (point, _, [suu, _, svv]) = sphere.eval_d2(0.0, 0.0);
+    /// assert_eq!(point, Point3D::new(2.0, 0.0, 0.0));
+    /// assert!((suu + (point - Point3D::ORIGIN)).magnitude() < 1e-15);
+    /// assert!((svv + (point - Point3D::ORIGIN)).magnitude() < 1e-15);
+    /// ```
+    fn eval_d2(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2], [Vector3D; 3]) {
+        (
+            self.eval_point(u, v),
+            [
+                self.eval_derivative(u, v, 1, 0),
+                self.eval_derivative(u, v, 0, 1),
+            ],
+            [
+                self.eval_derivative(u, v, 2, 0),
+                self.eval_derivative(u, v, 1, 1),
+                self.eval_derivative(u, v, 0, 2),
+            ],
+        )
+    }
+
     /// Returns the surface's `u` parameter bounds as `(first, last)`.
     /// Unbounded surfaces use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn u_bounds(&self) -> (f64, f64);
@@ -336,6 +398,28 @@ impl ParametricSurface for Surface {
             Surface::Sphere(s) => s.eval_derivative(u, v, du, dv),
             Surface::Torus(s) => s.eval_derivative(u, v, du, dv),
             Surface::BSpline(s) => s.eval_derivative(u, v, du, dv),
+        }
+    }
+
+    fn eval_d1(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2]) {
+        match self {
+            Surface::Plane(s) => ParametricSurface::eval_d1(s, u, v),
+            Surface::Cylinder(s) => ParametricSurface::eval_d1(s, u, v),
+            Surface::Cone(s) => ParametricSurface::eval_d1(s, u, v),
+            Surface::Sphere(s) => ParametricSurface::eval_d1(s, u, v),
+            Surface::Torus(s) => ParametricSurface::eval_d1(s, u, v),
+            Surface::BSpline(s) => s.eval_d1(u, v),
+        }
+    }
+
+    fn eval_d2(&self, u: f64, v: f64) -> (Point3D, [Vector3D; 2], [Vector3D; 3]) {
+        match self {
+            Surface::Plane(s) => ParametricSurface::eval_d2(s, u, v),
+            Surface::Cylinder(s) => ParametricSurface::eval_d2(s, u, v),
+            Surface::Cone(s) => ParametricSurface::eval_d2(s, u, v),
+            Surface::Sphere(s) => ParametricSurface::eval_d2(s, u, v),
+            Surface::Torus(s) => ParametricSurface::eval_d2(s, u, v),
+            Surface::BSpline(s) => s.eval_d2(u, v),
         }
     }
 
