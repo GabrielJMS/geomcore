@@ -1,7 +1,7 @@
 //! Numeric surface-surface intersection by marching: seeds from a
 //! parameter grid, traced along the intersection and fitted.
 
-use crate::curves::{BSplineCurve3D, InterpParametrization};
+use crate::curves::{BSplineCurve3D, PointParametrization};
 use crate::math::{solve_2x2, solve_3x3, solve_4x4};
 use crate::surfaces::ParametricSurface;
 use crate::{Point3D, Tolerance, Vector3D};
@@ -66,7 +66,7 @@ where
         if let Some(points) = trace(a, b, seed, tol) {
             let degree = 3.min(points.len() - 1);
             if let Ok(fit) =
-                BSplineCurve3D::interpolate(&points, degree, InterpParametrization::Centripetal)
+                BSplineCurve3D::interpolate(&points, degree, PointParametrization::Centripetal)
             {
                 curves.push(fit);
             }

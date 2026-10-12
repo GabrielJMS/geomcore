@@ -17,7 +17,7 @@
 use super::analytic::in_period;
 
 /// Maximum supported B-spline degree.
-const MAX_DEGREE: usize = 25;
+pub(crate) const MAX_DEGREE: usize = 25;
 
 /// Error type re-exported here for use by [`validate_direction`]; the
 /// canonical definition (and its docs) live on [`crate::curves`], next to
@@ -234,6 +234,25 @@ fn span_knots<const N: usize>(
         }
         span - degree
     }
+}
+
+/// The non-zero basis functions at `u` on the non-periodic span `span`
+/// (`flat[span] <= u <= flat[span + 1]`, a nonzero-width span), into
+/// `values[..=degree]`; `left` and `right` are scratch.
+pub(crate) fn basis_at<const N: usize>(
+    u: f64,
+    degree: usize,
+    span: usize,
+    flat: &[f64],
+    left: &mut [f64; N],
+    right: &mut [f64; N],
+    values: &mut [f64; N],
+) {
+    for j in 1..=degree {
+        left[j] = u - flat[span + 1 - j];
+        right[j] = flat[span + j] - u;
+    }
+    basis_values(degree, left, right, values);
 }
 
 /// Non-zero basis functions alone (The NURBS Book, A2.2): the value-only

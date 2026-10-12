@@ -60,6 +60,18 @@ the Python distribution are versioned in lockstep.
 
 ### Changed
 
+- `InterpParametrization` is renamed `PointParametrization`: it
+  parametrizes the points of least-squares approximation as well as of
+  interpolation. B-spline interpolation and least-squares approximation
+  are rewritten: each data point's row holds only the basis functions
+  non-zero there, and all three coordinates solve in one pass over a
+  narrow band (half-bandwidth `degree - 1` for interpolation, whose
+  averaged knots zero everything further out, and banded Cholesky of
+  half-bandwidth `degree` for the normal equations of approximation).
+  Interpolating 128 points with a cubic is about 8 times faster, and
+  approximating them with 32 poles about 3.5 times faster, with a
+  handful of allocations instead of hundreds.
+
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.
   A curve lies on the surface when the 2D image evaluates within
