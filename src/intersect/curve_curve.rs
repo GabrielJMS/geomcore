@@ -321,8 +321,10 @@ where
     let (d1, d2) = (la.dir, lb.dir);
     let w = la.origin - lb.origin;
     let (aa, ab, bb) = (d1.dot(d1), d1.dot(d2), d2.dot(d2));
-    let denom = aa * bb - ab * ab;
-    if denom > tol.angular * aa * bb {
+    // `aa * bb - ab²` without its cancellation near parallel;
+    // `denom / (aa * bb)` is the squared sine of the angle between them.
+    let denom = d1.cross(d2).square_magnitude();
+    if denom > tol.angular * tol.angular * aa * bb {
         let (e1, e2) = (d1.dot(w), d2.dot(w));
         let s = la.u0 + (ab * e2 - bb * e1) / denom;
         let t = lb.u0 + (aa * e2 - ab * e1) / denom;

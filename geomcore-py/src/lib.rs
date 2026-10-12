@@ -415,6 +415,22 @@ impl PyTolerance {
         self.0.parametric
     }
 
+    /// The side of the cube, centred on the origin, that models are
+    /// assumed to fit in (model units); the default angular tolerance is
+    /// the default confusion over it.
+    #[classattr]
+    #[allow(non_snake_case)]
+    fn MODEL_SIZE() -> f64 {
+        Tolerance::MODEL_SIZE
+    }
+
+    /// The angle (radians) below which two directions are parallel for
+    /// geometry reaching `extent` from the pivot of the turn: turning by it
+    /// moves that geometry by at most `confusion`. Never below `angular`.
+    fn angular_for_extent(&self, extent: f64) -> f64 {
+        self.0.angular_for_extent(extent)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Tolerance(confusion={}, angular={}, parametric={})",

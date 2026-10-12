@@ -169,6 +169,10 @@ def test_tolerance_defaults():
     custom = Tolerance(confusion=1e-3)
     assert custom.confusion == 1e-3
     assert custom.angular == tol.angular
+    # Models fit in a cube of MODEL_SIZE; angles derive from distances.
+    assert Tolerance.MODEL_SIZE == 1e5
+    assert tol.angular_for_extent(10.0) == 1e-8
+    assert tol.angular_for_extent(1e9) == tol.angular
 
 
 def test_contains_curve():
@@ -1254,7 +1258,7 @@ def test_discretize_ellipse_and_trimmed_curves():
     assert all(angle <= 0.1 for angle in d.angle_deviations)
     # A segment is its own chord.
     segment = TrimmedCurve3D.segment(Point3D(0.0, 0.0, 0.0), Point3D(1.0, 2.0, 2.0))
-    d = segment.discretize(1e-9, max_angle_deviation=1e-9)
+    d = segment.discretize(1e-7, max_angle_deviation=1e-9)
     assert [_xyz(p) for p in d.points] == [(0.0, 0.0, 0.0), (1.0, 2.0, 2.0)]
     assert d.chord_deviations == [0.0]
     arc = TrimmedCurve3D(Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 0.5), -2.0, 3.0)
@@ -1279,8 +1283,11 @@ def test_discretize_2d_curves():
     assert all(dev <= 1e-3 for dev in d.chord_deviations)
     assert all(angle <= 0.05 for angle in d.angle_deviations)
     segment = TrimmedCurve2D.segment(Point2D(0.0, 0.0), Point2D(3.0, 4.0))
-    d = segment.discretize(1e-9)
+    d = segment.discretize(1e-7)
     assert [(p.x, p.y) for p in d.points] == [(0.0, 0.0), (3.0, 4.0)]
     assert d.chord_deviations == [0.0] and d.angle_deviations == [0.0]
     with pytest.raises(ValueError):
         segment.discretize(0.0)
+    # Below the confusion tolerance, segments already lie on the curve.
+    with pytest.raises(ValueError, match="confusion"):
+        segment.discretize(1e-9)

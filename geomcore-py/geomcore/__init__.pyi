@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple, final
+from typing import Any, ClassVar, List, Optional, Tuple, final
 
 from geomcore.curves import BSplineCurve3D
 
@@ -86,6 +86,8 @@ class Tolerance:
     def angular(self) -> float: ...
     @property
     def parametric(self) -> float: ...
+    MODEL_SIZE: ClassVar[float]
+    def angular_for_extent(self, extent: float) -> float: ...
     def __repr__(self) -> str: ...
 
 @final

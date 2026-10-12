@@ -8,7 +8,8 @@ use geomcore::discretization::{
 };
 use geomcore::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Frame2D, Hyperbola3D, Line2D,
-    Line3D, Parabola3D, Point2D, Point3D, TrimmedCurve2D, TrimmedCurve3D, Vector2D, Vector3D,
+    Line3D, Parabola3D, Point2D, Point3D, Tolerance, TrimmedCurve2D, TrimmedCurve3D, Vector2D,
+    Vector3D,
 };
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -634,7 +635,7 @@ fn test_far_along_a_hyperbola_needs_few_points() {
 fn test_a_trimmed_line_is_one_segment() {
     let line = Line3D::new(Point3D::new(1.0, 2.0, 3.0), Vector3D::new(0.0, 3.0, 4.0)).unwrap();
     let segment = TrimmedCurve3D::new(line, -1.0, 2.0).unwrap();
-    let d = segment.discretize(chord_and_angle(1e-9, 1e-9));
+    let d = segment.discretize(chord_and_angle(1e-7, 1e-9));
     assert_eq!(d.parameters, vec![-1.0, 2.0]);
     assert_eq!(d.points, vec![line.eval_point(-1.0), line.eval_point(2.0)]);
     assert_eq!(d.chord_deviations, vec![0.0]);
@@ -796,7 +797,7 @@ fn test_2d_circles_and_arcs_hold_their_deviations() {
 fn test_2d_trimmed_line_is_one_segment() {
     let line = Line2D::new(Point2D::new(1.0, 2.0), Vector2D::new(3.0, 4.0)).unwrap();
     let segment = TrimmedCurve2D::new(line, -1.0, 2.0).unwrap();
-    let d = segment.discretize(chord_and_angle(1e-9, 1e-9));
+    let d = segment.discretize(chord_and_angle(1e-7, 1e-9));
     assert_eq!(d.parameters, vec![-1.0, 2.0]);
     assert_eq!(d.points, vec![line.eval_point(-1.0), line.eval_point(2.0)]);
     assert_eq!(d.chord_deviations, vec![0.0]);
@@ -827,18 +828,31 @@ fn test_2d_borrowed_and_run_time_curves_match_concrete_ones() {
 }
 
 #[test]
-fn test_tiny_chord_deviations_count_without_searching_one_by_one() {
-    let unit = circle(1.0);
-    // 2π / 4 asin(sqrt(ε / 2)) segments, beyond what a buffer can hold.
-    let count = unit.point_count(chord(1e-30)) as f64;
-    let expected = TAU / (4.0 * (0.5e-30_f64).sqrt().asin());
+fn test_chord_deviations_below_the_confusion_tolerance_are_rejected() {
+    let confusion = Tolerance::DEFAULT.confusion;
+    for below in [0.5 * confusion, 1e-30, f64::MIN_POSITIVE] {
+        assert_eq!(
+            DiscretizationCriteria::new(below).err(),
+            Some(DiscretizationCriteriaError::ChordDeviationBelowConfusion)
+        );
+    }
+    assert!(DiscretizationCriteria::new(confusion).is_ok());
+}
+
+#[test]
+fn test_the_finest_criteria_on_the_largest_circle_count_quickly() {
+    // A circle spanning the model size, at the confusion tolerance:
+    // 2π / 4 asin(sqrt(ε / 2r)) segments, found without walking to them.
+    let radius = 0.5 * Tolerance::MODEL_SIZE;
+    let largest = circle(radius);
+    let confusion = Tolerance::DEFAULT.confusion;
+    let count = largest.point_count(chord(confusion)) as f64;
+    let expected = TAU / (4.0 * (confusion / (2.0 * radius)).sqrt().asin());
     assert!(
-        (count / expected - 1.0).abs() < 1e-9,
+        (count / expected - 1.0).abs() < 1e-5,
         "{count} vs {expected}"
     );
-    assert_eq!(unit.point_count(chord(1e-40)), usize::MAX);
-    assert_eq!(unit.point_count(chord(1e-300)), usize::MAX);
-    assert_eq!(wavy().point_count(chord(1e-300)), usize::MAX);
+    assert!(count < 1e7);
 }
 
 #[test]
