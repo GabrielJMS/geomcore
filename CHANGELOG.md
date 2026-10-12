@@ -45,6 +45,22 @@ the Python distribution are versioned in lockstep.
   curve and surface types, get them from `eval_point` and
   `eval_derivative`. The numeric curve–curve extrema and intersection and
   the marching intersection use them, 12–17% faster on B-splines.
+- Elementary curves as exact B-splines (#37): `to_bspline` on `Circle3D`
+  and `Ellipse3D` returns a periodic rational quadratic B-spline over
+  `[0, 2π]` (four quarter turns, eight poles), and on a `TrimmedCurve3D`
+  of a line, circle, ellipse, parabola, hyperbola or `ElementaryCurve` a
+  clamped B-spline over the same range, with the same end points. A
+  segment becomes degree 1 and a parabola one polynomial quadratic piece,
+  both keeping the curve's parameter; a hyperbola becomes one rational
+  quadratic piece, and an arc rational quadratic pieces of at most a
+  quarter turn, closed exactly when it spans a whole turn. Every point
+  lies on the curve; the parameter matches the curve's at the range ends,
+  the knots between pieces (at the pieces' boundary angles) and each
+  piece's middle, and strays at most 0.0161 rad from a circle's angle in
+  between. `ElementaryCurve::to_bspline` and `Curve3D::to_bspline` (a
+  B-spline is cloned) return `BSplineConversionError::Unbounded` for a
+  line, parabola or hyperbola, and a trimmed curve whose B-spline would
+  overflow `f64` returns `NotRepresentable`.
 
 ### Changed
 

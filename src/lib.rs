@@ -116,12 +116,12 @@ pub mod transform;
 pub mod vector;
 
 pub use curves::{
-    BSplineConstructionError, BSplineCurve3D, Circle2D, Circle3D, CircleConstructionError, Curve2D,
-    Curve3D, ElementaryCurve, Ellipse3D, EllipseConstructionError, Hyperbola3D,
-    HyperbolaConstructionError, InterpParametrization, Line2D, Line3D, LineConstructionError,
-    Parabola3D, ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
-    PointExtrema2D, PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D, TrimmedCurveConstructionError,
-    parametrize_numeric,
+    BSplineConstructionError, BSplineConversionError, BSplineCurve3D, Circle2D, Circle3D,
+    CircleConstructionError, Curve2D, Curve3D, ElementaryCurve, Ellipse3D,
+    EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError, InterpParametrization,
+    Line2D, Line3D, LineConstructionError, Parabola3D, ParabolaConstructionError,
+    ParametricCurve2D, ParametricCurve3D, ParametrizeError, PointExtrema2D, PointExtrema3D,
+    TrimmedCurve2D, TrimmedCurve3D, TrimmedCurveConstructionError, parametrize_numeric,
 };
 pub use discretization::{
     Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError, Discretize3D,
