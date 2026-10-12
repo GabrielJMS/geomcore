@@ -793,8 +793,8 @@ impl ParamDomain {
                 .collect(),
             ParamDomain::Interval(lo, hi) => {
                 let u0 = self.reference();
-                let p0 = curve.eval_point(u0);
-                let speed = curve.eval_derivative(u0, 1).magnitude();
+                let (p0, d1) = curve.eval_d1(u0);
+                let speed = d1.magnitude();
                 let first = scale / (16.0 * speed);
                 let first = if first.is_finite() && first > 0.0 {
                     first
@@ -854,11 +854,8 @@ impl Straight {
             ParamDomain::Interval(..) => REACH.iter().flat_map(|&r| [-r, r]).collect(),
         };
         let u0 = dom.reference();
-        let line = Straight {
-            u0,
-            origin: curve.eval_point(u0),
-            dir: curve.eval_derivative(u0, 1),
-        };
+        let (origin, dir) = curve.eval_d1(u0);
+        let line = Straight { u0, origin, dir };
         if line.dir.magnitude() <= 0.0 {
             return None;
         }
@@ -1036,8 +1033,8 @@ where
     // Half the squared distance to the line, its first two derivatives
     // along the curve, and the curve's speed.
     let local = |t: f64| {
-        let r = perp(curve.eval_point(t) - line.origin);
-        let (c1, c2) = (curve.eval_derivative(t, 1), curve.eval_derivative(t, 2));
+        let (p, c1, c2) = curve.eval_d2(t);
+        let r = perp(p - line.origin);
         let c1p = perp(c1);
         (
             (0.5 * r.dot(r), r.dot(c1), c1p.dot(c1p) + r.dot(c2)),
@@ -1115,9 +1112,9 @@ where
     // Half the squared distance with its gradient and Hessian, and the
     // two curves' speeds.
     let local = |s: f64, t: f64| {
-        let (a1, a2) = (a.eval_derivative(s, 1), a.eval_derivative(s, 2));
-        let (b1, b2) = (b.eval_derivative(t, 1), b.eval_derivative(t, 2));
-        let r = a.eval_point(s) - b.eval_point(t);
+        let (pa, a1, a2) = a.eval_d2(s);
+        let (pb, b1, b2) = b.eval_d2(t);
+        let r = pa - pb;
         let cross = -a1.dot(b1);
         (
             (
@@ -1187,8 +1184,8 @@ where
         let s = da.reference();
         let p = a.eval_point(s);
         let objective = |t: f64| {
-            let r = p - b.eval_point(t);
-            let (b1, b2) = (b.eval_derivative(t, 1), b.eval_derivative(t, 2));
+            let (q, b1, b2) = b.eval_d2(t);
+            let r = p - q;
             (0.5 * r.dot(r), -r.dot(b1), b1.dot(b1) - r.dot(b2))
         };
         let t = newton_min_1d(objective, e.second_param, db.bounds(), 1e-14, 100);
@@ -1220,7 +1217,7 @@ fn curve_size<C: ParametricCurve3D>(curve: &C, dom: ParamDomain) -> f64 {
             .map(|u| curve.eval_point(u).distance(p0))
             .fold(0.0, f64::max)
     } else {
-        let (d1, d2) = (curve.eval_derivative(u0, 1), curve.eval_derivative(u0, 2));
+        let (_, d1, d2) = curve.eval_d2(u0);
         let bend = d1.cross(d2).magnitude();
         if bend > 0.0 {
             d1.magnitude().powi(3) / bend
@@ -1487,9 +1484,8 @@ where
             [d.x, d.y, d.z]
         };
         let jac = |x: [f64; 3]| {
-            let ct = curve.eval_derivative(x[0], 1);
-            let su = surface.eval_derivative(x[1], x[2], 1, 0);
-            let sv = surface.eval_derivative(x[1], x[2], 0, 1);
+            let (_, ct) = curve.eval_d1(x[0]);
+            let (_, [su, sv]) = surface.eval_d1(x[1], x[2]);
             [
                 [ct.x, -su.x, -sv.x],
                 [ct.y, -su.y, -sv.y],
@@ -1746,12 +1742,9 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let na = a
-        .eval_derivative(x[0], x[1], 1, 0)
-        .cross(a.eval_derivative(x[0], x[1], 0, 1));
-    let nb = b
-        .eval_derivative(x[2], x[3], 1, 0)
-        .cross(b.eval_derivative(x[2], x[3], 0, 1));
+    let (_, [au, av]) = a.eval_d1(x[0], x[1]);
+    let (_, [bu, bv]) = b.eval_d1(x[2], x[3]);
+    let (na, nb) = (au.cross(av), bu.cross(bv));
     let t = na.cross(nb);
     let scale = na.magnitude() * nb.magnitude();
     if t.magnitude() <= tol.angular * scale.max(f64::MIN_POSITIVE) {
@@ -1769,7 +1762,7 @@ where
     B: ParametricSurface,
 {
     let shift = |s: &dyn ParametricSurface, u: f64, v: f64| {
-        let (su, sv) = (s.eval_derivative(u, v, 1, 0), s.eval_derivative(u, v, 0, 1));
+        let (_, [su, sv]) = s.eval_d1(u, v);
         let m = [[su.dot(su), su.dot(sv)], [su.dot(sv), sv.dot(sv)]];
         solve_2x2(m, [su.dot(d), sv.dot(d)], 1e-12).unwrap_or([0.0, 0.0])
     };
@@ -1828,12 +1821,9 @@ where
         if f.magnitude() <= 0.1 * tol.confusion && r.abs() <= 0.1 * tol.confusion {
             return Some(x);
         }
-        let cols = [
-            a.eval_derivative(x[0], x[1], 1, 0),
-            a.eval_derivative(x[0], x[1], 0, 1),
-            -b.eval_derivative(x[2], x[3], 1, 0),
-            -b.eval_derivative(x[2], x[3], 0, 1),
-        ];
+        let (_, [au, av]) = a.eval_d1(x[0], x[1]);
+        let (_, [bu, bv]) = b.eval_d1(x[2], x[3]);
+        let cols = [au, av, -bu, -bv];
         let delta = match plane {
             Some((_, normal)) => {
                 let m = [

@@ -24,6 +24,26 @@ Reproduce with:
 cargo bench --bench eval_throughput
 ```
 
+## Points with derivatives
+
+The same bench times the point and its derivatives up to second order on
+the curve and the surface above, from separate `eval_point` and
+`eval_derivative` calls and from one `eval_d2` call, which evaluates the
+basis functions once.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per parameter.
+
+| workload | separate calls | `eval_d2` |
+|---|---|---|
+| `BSplineCurve3D`: point, first and second derivatives | ~172 ns | ~95 ns |
+| `BSplineSurface`: point, `Su`, `Sv`, `Suu`, `Suv`, `Svv` | ~856 ns | ~208 ns |
+
+The numeric curve–curve extrema and intersection and the marching
+intersection evaluate through `eval_d1` and `eval_d2`, which made them
+12–17% faster on B-splines; the numeric curve–surface intersection spends
+its time projecting seeds onto the surface and is unchanged.
+
 # Intersection entry point
 
 `benches/intersect_dispatch.rs` times batches of 1024 exact intersections of

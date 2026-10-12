@@ -339,6 +339,14 @@ impl<C: ParametricCurve3D> ParametricCurve3D for TrimmedCurve3D<C> {
         self.basis.eval_derivative(u, order)
     }
 
+    fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
+        self.basis.eval_d1(u)
+    }
+
+    fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
+        self.basis.eval_d2(u)
+    }
+
     fn bounds(&self) -> (f64, f64) {
         (self.first, self.last)
     }
