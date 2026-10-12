@@ -798,10 +798,24 @@ where
         .collect()
 }
 
+/// Five equally spaced parameters around a circle or an ellipse, enough
+/// to decide whether the whole curve lies on a quadric (see
+/// [`conic_lies_on`]).
+pub(crate) const CLOSED_CONIC_SAMPLES: [f64; 5] = [
+    0.0,
+    0.4 * std::f64::consts::PI,
+    0.8 * std::f64::consts::PI,
+    1.2 * std::f64::consts::PI,
+    1.6 * std::f64::consts::PI,
+];
+
 /// Whether the whole conic lies on a quadric surface. On a conic, the
 /// surface's equation is a polynomial of degree at most 4 (in `t`,
-/// `e^t`, or `tan(t/2)` for the parabola, hyperbola, and ellipse), so
-/// five distinct `params` on the surface force it to vanish identically.
+/// `e^t`, or `tan(t/2)` for the parabola, hyperbola, and circle or
+/// ellipse), so five distinct `params` on the surface force it to vanish
+/// identically. Three would not do for a circle on a cylinder or cone:
+/// their section by the circle's plane is a conic, which a circle can
+/// cross at three points without lying on it.
 pub(crate) fn conic_lies_on<C, S>(curve: &C, surface: &S, params: [f64; 5], tol: Tolerance) -> bool
 where
     C: ParametricCurve3D,

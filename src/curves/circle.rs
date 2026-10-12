@@ -8,8 +8,8 @@ use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
-    CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection, ConicSurfaceHit,
-    ImplicitConic, PlacedConic, solve_trig, solve_trig_linear,
+    CLOSED_CONIC_SAMPLES, CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection,
+    ConicSurfaceHit, ImplicitConic, PlacedConic, conic_lies_on, solve_trig, solve_trig_linear,
 };
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
@@ -528,18 +528,6 @@ impl Circle3D {
         std::f64::consts::PI * self.radius() * self.radius()
     }
 
-    /// Whether the whole circle lies on `surface` (three spread samples
-    /// contained — sound, since three non-collinear points fix a circle).
-    fn lies_on_surface<S: crate::surfaces::ParametricSurface>(
-        &self,
-        surface: &S,
-        tol: Tolerance,
-    ) -> bool {
-        [0.0, 2.0943951023931953, 4.188790204786391]
-            .iter()
-            .all(|&t| surface.contains(self.eval_point(t), tol))
-    }
-
     /// Keep trig-solve candidates verified on the surface.
     fn keep_hits<S: crate::surfaces::ParametricSurface>(
         &self,
@@ -881,7 +869,7 @@ impl Intersect<Plane> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, plane: &Plane, tol: Tolerance) -> CircleSurfaceIntersection {
-        if self.lies_on_surface(plane, tol) {
+        if conic_lies_on(self, plane, CLOSED_CONIC_SAMPLES, tol) {
             return CircleSurfaceIntersection::Circle(*self);
         }
         let n = plane.normal();
@@ -925,7 +913,7 @@ impl Intersect<Sphere> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> CircleSurfaceIntersection {
-        if self.lies_on_surface(sphere, tol) {
+        if conic_lies_on(self, sphere, CLOSED_CONIC_SAMPLES, tol) {
             return CircleSurfaceIntersection::Circle(*self);
         }
         let w = self.center() - sphere.center();
@@ -970,7 +958,7 @@ impl Intersect<Cylinder> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> CircleSurfaceIntersection {
-        if self.lies_on_surface(cylinder, tol) {
+        if conic_lies_on(self, cylinder, CLOSED_CONIC_SAMPLES, tol) {
             return CircleSurfaceIntersection::Circle(*self);
         }
         let a = cylinder.axis().direction();
@@ -1021,7 +1009,7 @@ impl Intersect<Cone> for Circle3D {
     /// }
     /// ```
     fn intersect(&self, cone: &Cone, tol: Tolerance) -> CircleSurfaceIntersection {
-        if self.lies_on_surface(cone, tol) {
+        if conic_lies_on(self, cone, CLOSED_CONIC_SAMPLES, tol) {
             return CircleSurfaceIntersection::Circle(*self);
         }
         let a = cone.frame().z_direction();
@@ -1308,6 +1296,7 @@ mod tests {
         Frame2D, Frame3D, Hyperbola3D, Parabola3D, Point2D, Point3D, Tolerance, Transform,
         Vector2D, Vector3D,
     };
+    use std::f64::consts::PI;
 
     // ---- Circle3D construction ----
 
@@ -1916,6 +1905,68 @@ mod tests {
             CircleSurfaceIntersection::Circle(_) => {}
             _ => panic!("expected the whole circle"),
         }
+    }
+
+    /// The circumcircle of an equilateral triangle inscribed in `ellipse`
+    /// with a corner on its major vertex, which the circle puts at its
+    /// parameter 0; the other corners fall at 2π/3 and 4π/3. The circle
+    /// touches the ellipse at the vertex and crosses it at the other two
+    /// corners, and nowhere else.
+    fn circle_through_inscribed_triangle(ellipse: &Ellipse3D) -> Circle3D {
+        let (a, b) = (ellipse.major_radius(), ellipse.minor_radius());
+        // Corners (a, 0) and (x, ±y) with (a - x)² = 3y² on the ellipse:
+        // x is the quadratic's root other than a.
+        let k = 1.0 / (3.0 * b * b);
+        let x = (a * a * k - 1.0) / (1.0 / (a * a) + k) / a;
+        let side = 2.0 * (a - x) / 3f64.sqrt();
+        let radius = side / 3f64.sqrt();
+        let frame = ellipse.frame();
+        let center = frame.origin() + frame.x_direction() * (a - radius);
+        let frame = Frame3D::new(center, frame.z_direction(), frame.x_direction()).unwrap();
+        Circle3D::from_frame(frame, radius).unwrap()
+    }
+
+    /// Asserts `circle` meets `surface` at the three triangle corners
+    /// only, not along its whole length.
+    fn assert_three_corner_hits(
+        circle: &Circle3D,
+        surface: &impl crate::ParametricSurface,
+        result: CircleSurfaceIntersection,
+    ) {
+        let tol = Tolerance::DEFAULT;
+        for t in [0.0, 2.0 * PI / 3.0, 4.0 * PI / 3.0] {
+            assert!(surface.contains(circle.eval_point(t), tol));
+        }
+        assert!(!surface.contains(circle.eval_point(1.0), tol));
+        let CircleSurfaceIntersection::Hits(hits) = result else {
+            panic!("expected the three corners, got {result:?}");
+        };
+        assert_eq!(hits.len(), 3, "{hits:?}");
+        for h in &hits {
+            assert!(surface.contains(h.point, tol));
+        }
+    }
+
+    #[test]
+    fn test_circle3d_on_three_samples_is_not_on_cylinder_or_cone() {
+        use crate::{Cone, Cylinder, Plane, PlaneConeIntersection, PlaneCylinderIntersection};
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::new(0.0, 0.0, 0.5), Vector3D::Z).unwrap();
+        let tilt = Vector3D::new(1.0, 0.0, 1.0).normalized().unwrap();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, tilt, 1.0).unwrap();
+        let PlaneCylinderIntersection::Ellipse(section) = plane.intersect(&cylinder, tol) else {
+            panic!("expected an ellipse");
+        };
+        let circle = circle_through_inscribed_triangle(&section);
+        assert_three_corner_hits(&circle, &cylinder, circle.intersect(&cylinder, tol));
+
+        let axis = Vector3D::new(0.3, 0.0, 1.0);
+        let cone = Cone::new(Point3D::new(0.0, 0.0, -1.0), axis, 0.4, 0.6).unwrap();
+        let PlaneConeIntersection::Ellipse(section) = plane.intersect(&cone, tol) else {
+            panic!("expected an ellipse");
+        };
+        let circle = circle_through_inscribed_triangle(&section);
+        assert_three_corner_hits(&circle, &cone, circle.intersect(&cone, tol));
     }
 
     // ---- Circle3D transformed ----

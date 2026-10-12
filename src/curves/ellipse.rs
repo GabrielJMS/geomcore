@@ -7,8 +7,8 @@ use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
-    ConicSurfaceIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit, conic_lies_on,
-    solve_trig, solve_trig_linear, verify_conic_hits,
+    CLOSED_CONIC_SAMPLES, ConicSurfaceIntersection, EllipseEllipse3DIntersection,
+    EllipseEllipseHit, conic_lies_on, solve_trig, solve_trig_linear, verify_conic_hits,
 };
 use crate::math::real_roots;
 use crate::projection::{self, CurveProjection};
@@ -57,16 +57,6 @@ impl fmt::Display for EllipseConstructionError {
 }
 
 impl std::error::Error for EllipseConstructionError {}
-
-/// Five equally spaced parameters, enough to decide whether a whole
-/// ellipse lies on a quadric (see `conic_lies_on`).
-const ELLIPSE_SAMPLES: [f64; 5] = [
-    0.0,
-    0.4 * std::f64::consts::PI,
-    0.8 * std::f64::consts::PI,
-    1.2 * std::f64::consts::PI,
-    1.6 * std::f64::consts::PI,
-];
 
 /// An ellipse in 3D: a plane [`Frame3D`] (origin plus local x/y directions
 /// defining the plane, the major axis, and the angular origin), a semi-major
@@ -686,7 +676,7 @@ impl Intersect<Sphere> for Ellipse3D {
     /// }
     /// ```
     fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, sphere, ELLIPSE_SAMPLES, tol) {
+        if conic_lies_on(self, sphere, CLOSED_CONIC_SAMPLES, tol) {
             return ConicSurfaceIntersection::Coincident;
         }
         let (a, b) = (self.major_radius, self.minor_radius);
@@ -728,7 +718,7 @@ impl Intersect<Cylinder> for Ellipse3D {
     /// }
     /// ```
     fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cylinder, ELLIPSE_SAMPLES, tol) {
+        if conic_lies_on(self, cylinder, CLOSED_CONIC_SAMPLES, tol) {
             return ConicSurfaceIntersection::Coincident;
         }
         let (a, b) = (self.major_radius, self.minor_radius);
@@ -778,7 +768,7 @@ impl Intersect<Cone> for Ellipse3D {
     /// }
     /// ```
     fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cone, ELLIPSE_SAMPLES, tol) {
+        if conic_lies_on(self, cone, CLOSED_CONIC_SAMPLES, tol) {
             return ConicSurfaceIntersection::Coincident;
         }
         let (a, b) = (self.major_radius, self.minor_radius);

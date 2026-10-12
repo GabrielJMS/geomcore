@@ -9,6 +9,15 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Fixed
+
+- `Circle3D` against a cylinder or cone no longer reports `Circle` (the
+  whole circle on the surface) for a circle that only meets it at three
+  points (#10). Whether the circle lies on the surface was decided from
+  three samples, which fixes a circle on a plane or sphere but not on a
+  cylinder or cone, whose section by the circle's plane is a conic. It
+  now takes five, like the ellipse.
+
 ## [0.29.0] - 2026-10-12
 
 ### Added
