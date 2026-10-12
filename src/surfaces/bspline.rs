@@ -7,6 +7,7 @@
 //! `[i_u][i_v][h]`, together with the flattened knot sequences for each
 //! direction, so evaluation never re-derives them.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -19,7 +20,7 @@ use crate::surfaces::ParametricSurface;
 use crate::{Point3D, Tolerance, Transform, Vector3D};
 
 pub use crate::curves::BSplineConstructionError;
-use crate::curves::KnotInsertionError;
+use crate::curves::{BSplineSplitError, KnotInsertionError};
 
 /// A tensor-product B-spline (optionally rational, optionally periodic in
 /// either direction) surface in 3D, evaluated by de Boor's algorithm applied
@@ -730,6 +731,483 @@ impl BSplineSurface {
             h: self.h,
             patches: Lazy::default(),
         })
+    }
+
+    /// Returns the sub-patch of the surface over `u_range` and `v_range`,
+    /// clamped and non-periodic in both directions, whose bounds are
+    /// exactly the two ranges and which evaluates as this surface there.
+    ///
+    /// Each direction is cut as [`crate::BSplineCurve3D::extract`] cuts a
+    /// curve, every row or column of the net in the same pass, the `v`
+    /// direction only over the rows the `u` cut kept; a range already
+    /// equal to the bounds of a clamped direction leaves it alone. A
+    /// periodic direction accepts a range across its seam.
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::extract`], for either range against
+    /// its direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, BSplineSplitError, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 2, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let patch = surface.extract((0.25, 0.5), (0.0, 0.75)).unwrap();
+    /// assert_eq!(patch.u_knots(), &[0.25, 0.5]);
+    /// assert_eq!(patch.v_knots(), &[0.0, 0.75]);
+    /// let (p, q) = (surface.eval_point(0.3, 0.6), patch.eval_point(0.3, 0.6));
+    /// assert!(p.distance(q) < 1e-12);
+    /// assert_eq!(
+    ///     surface.extract((0.5, 0.25), (0.0, 1.0)),
+    ///     Err(BSplineSplitError::EmptyRange)
+    /// );
+    /// ```
+    pub fn extract(
+        &self,
+        u_range: (f64, f64),
+        v_range: (f64, f64),
+    ) -> Result<BSplineSurface, BSplineSplitError> {
+        self.extract_ranges(Some(u_range), Some(v_range))
+    }
+
+    /// Returns the piece of the surface over `[first, last]` in `u`,
+    /// clamped and non-periodic in `u`, the `v` direction unchanged; see
+    /// [`BSplineSurface::extract`].
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::extract`], against the `u` bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let piece = surface.extract_u(0.5, 1.0).unwrap();
+    /// assert_eq!(piece.u_knots(), &[0.5, 1.0]);
+    /// assert_eq!(piece.v_knots(), surface.v_knots());
+    /// ```
+    pub fn extract_u(&self, first: f64, last: f64) -> Result<BSplineSurface, BSplineSplitError> {
+        self.extract_ranges(Some((first, last)), None)
+    }
+
+    /// Returns the piece of the surface over `[first, last]` in `v`,
+    /// clamped and non-periodic in `v`, the `u` direction unchanged; see
+    /// [`BSplineSurface::extract`].
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::extract`], against the `v` bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..2)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     1, 2, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let piece = surface.extract_v(0.0, 0.4).unwrap();
+    /// assert_eq!(piece.v_knots(), &[0.0, 0.4]);
+    /// let (p, q) = (surface.eval_point(0.5, 0.2), piece.eval_point(0.5, 0.2));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn extract_v(&self, first: f64, last: f64) -> Result<BSplineSurface, BSplineSplitError> {
+        self.extract_ranges(None, Some((first, last)))
+    }
+
+    /// Splits the surface at `u` into the pieces over `[first, u]` and
+    /// `[u, last]` of its `u` bounds, clamped and non-periodic in `u`, the
+    /// `v` direction unchanged; they evaluate as this surface over their
+    /// ranges and meet along the `u` isoparametric curve at `u`. See
+    /// [`crate::BSplineCurve3D::split_at`].
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::split_at`], against the `u` bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let (low, high) = surface.split_u_at(0.5).unwrap();
+    /// assert_eq!(low.poles().last(), high.poles().first());
+    /// let (p, q) = (surface.eval_point(0.7, 0.3), high.eval_point(0.7, 0.3));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn split_u_at(
+        &self,
+        u: f64,
+    ) -> Result<(BSplineSurface, BSplineSurface), BSplineSplitError> {
+        let (first, last) = self.u_param_range();
+        curve::check_split(u, (first, last))?;
+        let cut = self.cut_u(&[first, u, last]);
+        let piece = |j| self.with_net(Direction::clamped(&cut, j), self.v(), cut.piece_net(j));
+        Ok((piece(0), piece(1)))
+    }
+
+    /// Splits the surface at `v` into the pieces over `[first, v]` and
+    /// `[v, last]` of its `v` bounds, clamped and non-periodic in `v`, the
+    /// `u` direction unchanged; see [`BSplineSurface::split_u_at`].
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::split_at`], against the `v` bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..2)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     1, 2, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let (low, high) = surface.split_v_at(0.25).unwrap();
+    /// assert_eq!(low.v_knots(), &[0.0, 0.25]);
+    /// assert_eq!(high.v_knots(), &[0.25, 1.0]);
+    /// ```
+    pub fn split_v_at(
+        &self,
+        v: f64,
+    ) -> Result<(BSplineSurface, BSplineSurface), BSplineSplitError> {
+        let (first, last) = self.v_param_range();
+        curve::check_split(v, (first, last))?;
+        let cut = self.cut_v(&self.flat_poles, self.n_u, &[first, v, last]);
+        let piece = |j| self.with_net(self.u(), Direction::clamped(&cut, j), cut.piece_net(j));
+        Ok((piece(0), piece(1)))
+    }
+
+    /// Returns the polynomial (or rational) patch of each pair of knot
+    /// spans within the bounds as a Bézier B-spline surface, both
+    /// directions a single span with end knots of multiplicity
+    /// `degree + 1`: `patches[i][j]` covers the `i`-th `u` span and the
+    /// `j`-th `v` span.
+    ///
+    /// The net is refined once per direction, every interior knot raised
+    /// to its degree as for [`crate::BSplineCurve3D::to_bezier_pieces`],
+    /// the `v` refinement running over the `u`-refined net, and the
+    /// patches are read off it. A periodic direction is decomposed from
+    /// its lower bound.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..4)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 2, poles, vec![0.0, 1.0, 2.0], vec![3, 1, 3], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let patches = surface.to_bezier_patches();
+    /// assert_eq!((patches.len(), patches[0].len()), (2, 1));
+    /// assert_eq!(patches[1][0].u_knots(), &[1.0, 2.0]);
+    /// let (p, q) = (surface.eval_point(1.5, 0.5), patches[1][0].eval_point(1.5, 0.5));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn to_bezier_patches(&self) -> Vec<Vec<BSplineSurface>> {
+        let (u0, u1) = self.u_param_range();
+        let (v0, v1) = self.v_param_range();
+        let u_cut = self.cut_u(&curve::span_breaks(&self.u_knots, u0, u1));
+        let v_cut = self.cut_v(
+            u_cut.poles(),
+            u_cut.count(),
+            &curve::span_breaks(&self.v_knots, v0, v1),
+        );
+        (0..u_cut.len())
+            .map(|i| {
+                let rows = u_cut.piece_poles(i);
+                (0..v_cut.len())
+                    .map(|j| {
+                        let net = v_cut.block(rows.clone(), v_cut.piece_poles(j));
+                        let (u, v) = (Direction::clamped(&u_cut, i), Direction::clamped(&v_cut, j));
+                        self.with_net(u, v, net)
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Returns the surface with its `u` direction traversed the other way:
+    /// its point at `(u, v)` is this surface's point at
+    /// `(first + last - u, v)` over the same bounds, so `Su` changes sign.
+    /// The rows of the net are listed in reverse order and the `u` knots
+    /// mirrored, as for [`crate::BSplineCurve3D::reversed`]; a periodic
+    /// direction stays periodic.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let reversed = surface.reversed_u();
+    /// assert_eq!(reversed.eval_point(0.0, 0.5), surface.eval_point(1.0, 0.5));
+    /// assert_eq!(reversed.reversed_u(), surface);
+    /// ```
+    pub fn reversed_u(&self) -> BSplineSurface {
+        let n = self.n_u;
+        let old = |i| curve::reversed_pole(i, n, self.u_degree, self.u_periodic, self.u_mults[0]);
+        let row = self.n_v * self.h;
+        let mut flat_poles = Vec::with_capacity(self.flat_poles.len());
+        for i in 0..n {
+            flat_poles.extend_from_slice(&self.flat_poles[old(i) * row..][..row]);
+        }
+        let (knots, mults) =
+            curve::reversed_knots(&self.u_knots, &self.u_mults, self.u_param_range());
+        BSplineSurface {
+            poles: (0..n).map(|i| self.poles[old(i)].clone()).collect(),
+            weights: self
+                .weights
+                .as_ref()
+                .map(|w| (0..n).map(|i| w[old(i)].clone()).collect()),
+            ..self.with_parts(
+                Direction::new(knots, mults, self.u_periodic),
+                self.v(),
+                flat_poles,
+            )
+        }
+    }
+
+    /// Returns the surface with its `v` direction traversed the other way:
+    /// its point at `(u, v)` is this surface's point at
+    /// `(u, first + last - v)`, so `Sv` changes sign; see
+    /// [`BSplineSurface::reversed_u`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..2)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     1, 2, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let reversed = surface.reversed_v();
+    /// assert_eq!(reversed.eval_point(0.5, 0.25), surface.eval_point(0.5, 0.75));
+    /// assert_eq!(reversed.reversed_v(), surface);
+    /// ```
+    pub fn reversed_v(&self) -> BSplineSurface {
+        let n = self.n_v;
+        let old = |j| curve::reversed_pole(j, n, self.v_degree, self.v_periodic, self.v_mults[0]);
+        let order: Vec<usize> = (0..n).map(old).collect();
+        let h = self.h;
+        let mut flat_poles = Vec::with_capacity(self.flat_poles.len());
+        for row in self.flat_poles.chunks_exact(n * h) {
+            for &j in &order {
+                flat_poles.extend_from_slice(&row[j * h..][..h]);
+            }
+        }
+        fn reverse<T: Copy>(rows: &[Vec<T>], order: &[usize]) -> Vec<Vec<T>> {
+            rows.iter()
+                .map(|row| order.iter().map(|&j| row[j]).collect())
+                .collect()
+        }
+        let (knots, mults) =
+            curve::reversed_knots(&self.v_knots, &self.v_mults, self.v_param_range());
+        BSplineSurface {
+            poles: reverse(&self.poles, &order),
+            weights: self.weights.as_ref().map(|w| reverse(w, &order)),
+            ..self.with_parts(
+                self.u(),
+                Direction::new(knots, mults, self.v_periodic),
+                flat_poles,
+            )
+        }
+    }
+
+    /// [`BSplineSurface::extract`] in the directions given a range, the
+    /// others left unchanged.
+    fn extract_ranges(
+        &self,
+        u_range: Option<(f64, f64)>,
+        v_range: Option<(f64, f64)>,
+    ) -> Result<BSplineSurface, BSplineSplitError> {
+        if let Some((first, last)) = u_range {
+            curve::check_piece(first, last, self.u_param_range(), self.u_periodic)?;
+        }
+        if let Some((first, last)) = v_range {
+            curve::check_piece(first, last, self.v_param_range(), self.v_periodic)?;
+        }
+        let untouched = |range: Option<(f64, f64)>, knots, mults, degree, periodic| {
+            range.is_none_or(|range| curve::clamped_to(knots, mults, degree, periodic, range))
+        };
+        if untouched(
+            u_range,
+            &self.u_knots,
+            &self.u_mults,
+            self.u_degree,
+            self.u_periodic,
+        ) && untouched(
+            v_range,
+            &self.v_knots,
+            &self.v_mults,
+            self.v_degree,
+            self.v_periodic,
+        ) {
+            return Ok(self.clone());
+        }
+        let (u, net) = match u_range {
+            Some(range)
+                if !curve::clamped_to(
+                    &self.u_knots,
+                    &self.u_mults,
+                    self.u_degree,
+                    self.u_periodic,
+                    range,
+                ) =>
+            {
+                let cut = self.cut_u(&[range.0, range.1]);
+                (Direction::clamped(&cut, 0), Cow::Owned(cut.piece_net(0)))
+            }
+            _ => (self.u(), Cow::Borrowed(self.flat_poles.as_slice())),
+        };
+        let (v, net) = match v_range {
+            Some(range)
+                if !curve::clamped_to(
+                    &self.v_knots,
+                    &self.v_mults,
+                    self.v_degree,
+                    self.v_periodic,
+                    range,
+                ) =>
+            {
+                let rows = net.len() / (self.n_v * self.h);
+                let cut = self.cut_v(&net, rows, &[range.0, range.1]);
+                (Direction::clamped(&cut, 0), cut.piece_net(0))
+            }
+            _ => (self.v(), net.into_owned()),
+        };
+        Ok(self.with_net(u, v, net))
+    }
+
+    /// The `u` direction cut at the increasing `cuts`, every column of
+    /// the net in the same pass.
+    fn cut_u(&self, cuts: &[f64]) -> curve::Cut {
+        curve::cut(
+            self.u_degree,
+            self.u_periodic,
+            &self.u_flat,
+            &self.flat_poles,
+            1,
+            self.n_v * self.h,
+            cuts,
+        )
+    }
+
+    /// The `v` direction of `net`, `rows` rows of this surface's `v`
+    /// poles laid out as its own net, cut at the increasing `cuts`.
+    fn cut_v(&self, net: &[f64], rows: usize, cuts: &[f64]) -> curve::Cut {
+        curve::cut(
+            self.v_degree,
+            self.v_periodic,
+            &self.v_flat,
+            net,
+            rows,
+            self.h,
+            cuts,
+        )
+    }
+
+    /// The `u` direction as it is.
+    fn u(&self) -> Direction {
+        Direction {
+            knots: self.u_knots.clone(),
+            mults: self.u_mults.clone(),
+            flat: self.u_flat.clone(),
+            periodic: self.u_periodic,
+        }
+    }
+
+    /// The `v` direction as it is.
+    fn v(&self) -> Direction {
+        Direction {
+            knots: self.v_knots.clone(),
+            mults: self.v_mults.clone(),
+            flat: self.v_flat.clone(),
+            periodic: self.v_periodic,
+        }
+    }
+
+    /// A surface of this one's degrees and rationality over the
+    /// directions `u` and `v` and the flat net `flat_poles`, its pole and
+    /// weight grids unpacked from the net.
+    fn with_net(&self, u: Direction, v: Direction, flat_poles: Vec<f64>) -> BSplineSurface {
+        let surface = self.with_parts(u, v, flat_poles);
+        let (poles, weights) =
+            unpack_flat_poles(&surface.flat_poles, surface.n_u, surface.n_v, self.h);
+        BSplineSurface {
+            poles,
+            weights,
+            ..surface
+        }
+    }
+
+    /// [`BSplineSurface::with_net`] with empty pole and weight grids, for
+    /// the caller to fill.
+    fn with_parts(&self, u: Direction, v: Direction, flat_poles: Vec<f64>) -> BSplineSurface {
+        let n_v = v.count(self.v_degree);
+        BSplineSurface {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_periodic: u.periodic,
+            v_periodic: v.periodic,
+            poles: Vec::new(),
+            weights: None,
+            u_knots: u.knots,
+            u_mults: u.mults,
+            v_knots: v.knots,
+            v_mults: v.mults,
+            u_flat: u.flat,
+            v_flat: v.flat,
+            n_u: flat_poles.len() / (n_v * self.h),
+            n_v,
+            flat_poles,
+            h: self.h,
+            patches: Lazy::default(),
+        }
     }
 
     /// Returns the image of this surface under `transform`: every control
@@ -1829,6 +2307,42 @@ fn nowhere_convex([a, b, c]: [math::Interval; 3]) -> bool {
     (x != 0.0 || y != 0.0) && x * x * a.hi + 2.0 * x * y * along + y * y * c.hi < 0.0
 }
 
+/// One direction of a surface: its knots, multiplicities, flat knots and
+/// periodicity.
+struct Direction {
+    knots: Vec<f64>,
+    mults: Vec<u32>,
+    flat: Vec<f64>,
+    periodic: bool,
+}
+
+impl Direction {
+    fn new(knots: Vec<f64>, mults: Vec<u32>, periodic: bool) -> Direction {
+        Direction {
+            flat: curve::flat_knots(&knots, &mults),
+            knots,
+            mults,
+            periodic,
+        }
+    }
+
+    /// The clamped direction of piece `j` of `cut`.
+    fn clamped(cut: &curve::Cut, j: usize) -> Direction {
+        let (knots, mults) = cut.piece_knots(j);
+        Direction::new(knots, mults, false)
+    }
+
+    /// The number of poles along the direction for `degree`.
+    fn count(&self, degree: usize) -> usize {
+        let ends = if self.periodic {
+            self.mults[self.mults.len() - 1] as usize
+        } else {
+            degree + 1
+        };
+        self.flat.len() - ends
+    }
+}
+
 /// Packs the pole grid (and, if rational, weights) into a flat, row-major
 /// `[i_u][i_v][h]` coordinate buffer: `(x, y, z)` per pole if `weights` is
 /// `None`, else the homogeneous `(x*w, y*w, z*w, w)`.
@@ -2597,6 +3111,365 @@ mod tests {
         );
         assert_eq!(surface.insert_u_knot(1.0, 0).unwrap(), surface);
         assert_eq!(surface.refine_v_knots(&[]).unwrap(), surface);
+    }
+
+    // ---- split, extract, reverse ----
+
+    /// The shortest nonzero knot span of `knots`.
+    fn shortest_span(knots: &[f64]) -> f64 {
+        knots
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// The largest pole coordinate of `surface`, at least 1.
+    fn size(surface: &BSplineSurface) -> f64 {
+        surface
+            .poles()
+            .iter()
+            .flatten()
+            .map(|p| p.x.abs().max(p.y.abs()).max(p.z.abs()))
+            .fold(1.0, f64::max)
+    }
+
+    /// `piece` is a valid surface evaluating as `surface` over its bounds,
+    /// points and derivatives up to second order on a dense grid, points
+    /// on a grid of its knots. A direction given a range is clamped,
+    /// non-periodic and bounded exactly by it; the others are unchanged.
+    /// Derivative tolerances grow as in the curve tests where the piece's
+    /// spans are shorter than the surface's.
+    fn assert_patch(
+        surface: &BSplineSurface,
+        piece: &BSplineSurface,
+        u_range: Option<(f64, f64)>,
+        v_range: Option<(f64, f64)>,
+    ) {
+        assert!(
+            BSplineSurface::new(
+                piece.u_degree(),
+                piece.v_degree(),
+                piece.poles().to_vec(),
+                piece.u_knots().to_vec(),
+                piece.u_multiplicities().to_vec(),
+                piece.v_knots().to_vec(),
+                piece.v_multiplicities().to_vec(),
+                piece.is_u_periodic(),
+                piece.is_v_periodic(),
+            )
+            .is_ok()
+        );
+        assert_eq!(piece.is_rational(), surface.is_rational());
+        let check = |range: Option<(f64, f64)>,
+                     bounds: (f64, f64),
+                     periodic: bool,
+                     degree: usize,
+                     mults: &[u32],
+                     original: ((f64, f64), bool)| {
+            match range {
+                Some(range) => {
+                    assert_eq!(bounds, range);
+                    assert!(!periodic);
+                    let end = degree as u32 + 1;
+                    assert_eq!((mults[0], mults[mults.len() - 1]), (end, end));
+                }
+                None => assert_eq!((bounds, periodic), original),
+            }
+        };
+        check(
+            u_range,
+            piece.u_param_range(),
+            piece.is_u_periodic(),
+            piece.u_degree(),
+            piece.u_multiplicities(),
+            (surface.u_param_range(), surface.is_u_periodic()),
+        );
+        check(
+            v_range,
+            piece.v_param_range(),
+            piece.is_v_periodic(),
+            piece.v_degree(),
+            piece.v_multiplicities(),
+            (surface.v_param_range(), surface.is_v_periodic()),
+        );
+        let size = size(surface);
+        let stretch = (shortest_span(surface.u_knots()) / shortest_span(piece.u_knots()))
+            .max(shortest_span(surface.v_knots()) / shortest_span(piece.v_knots()))
+            .max(1.0);
+        let grid = |(first, last): (f64, f64)| -> Vec<f64> {
+            (0..16)
+                .map(|i| first + (last - first) * (i as f64 + 0.5) / 16.0)
+                .collect()
+        };
+        let (us, vs) = (grid(piece.u_param_range()), grid(piece.v_param_range()));
+        for &u in &us {
+            for &v in &vs {
+                let (p, [su, sv], [suu, suv, svv]) = surface.eval_d2(u, v);
+                let (q, [tu, tv], [tuu, tuv, tvv]) = piece.eval_d2(u, v);
+                let pairs = [
+                    (p - Point3D::ORIGIN, q - Point3D::ORIGIN, 1.0),
+                    (su, tu, stretch),
+                    (sv, tv, stretch),
+                    (suu, tuu, stretch * stretch),
+                    (suv, tuv, stretch * stretch),
+                    (svv, tvv, stretch * stretch),
+                ];
+                for (k, (a, b, scale)) in pairs.into_iter().enumerate() {
+                    let tol = 1e-12 * (size * scale).max(a.magnitude());
+                    assert!(
+                        (a - b).magnitude() <= tol,
+                        "({u}, {v}), output {k}: {a:?} vs {b:?}"
+                    );
+                }
+            }
+        }
+        for &u in piece.u_knots() {
+            for &v in piece.v_knots() {
+                let (p, q) = (surface.eval_point(u, v), piece.eval_point(u, v));
+                assert!(p.distance(q) <= 1e-12 * size, "({u}, {v}): {p:?} vs {q:?}");
+            }
+        }
+    }
+
+    /// Ranges of a direction with the given bounds and knots: a middle
+    /// one, the whole, from and to an interior knot and, if periodic,
+    /// across the seam and over a whole period from a knot.
+    fn ranges((first, last): (f64, f64), knots: &[f64], periodic: bool) -> Vec<(f64, f64)> {
+        let at = |t: f64| first + t * (last - first);
+        let mut out = vec![(at(0.13), at(0.71)), (first, last)];
+        if let Some(&k) = knots.iter().find(|&&k| k > first && k < last) {
+            out.extend([(k, at(0.9)), (at(0.05), k)]);
+            if periodic {
+                out.push((k, k + (last - first)));
+            }
+        }
+        if periodic {
+            out.extend([(at(0.6), at(1.3)), (at(-0.4), at(0.2))]);
+        }
+        out
+    }
+
+    #[test]
+    fn test_extract_sub_patches_evaluate_as_the_surface() {
+        for surface in insertion_surfaces() {
+            let u_ranges = ranges(
+                surface.u_param_range(),
+                surface.u_knots(),
+                surface.is_u_periodic(),
+            );
+            let v_ranges = ranges(
+                surface.v_param_range(),
+                surface.v_knots(),
+                surface.is_v_periodic(),
+            );
+            for &u in &u_ranges {
+                let piece = surface.extract_u(u.0, u.1).unwrap();
+                assert_patch(&surface, &piece, Some(u), None);
+                for &v in &v_ranges {
+                    let piece = surface.extract(u, v).unwrap();
+                    assert_patch(&surface, &piece, Some(u), Some(v));
+                }
+            }
+            for &v in &v_ranges {
+                let piece = surface.extract_v(v.0, v.1).unwrap();
+                assert_patch(&surface, &piece, None, Some(v));
+            }
+        }
+    }
+
+    #[test]
+    fn test_extract_whole_clamped_surface_is_the_surface() {
+        let surface = insertion_surface(true, false, false);
+        let whole = surface
+            .extract(surface.u_param_range(), surface.v_param_range())
+            .unwrap();
+        assert_eq!(whole, surface);
+        // The `u` double knot at 2 of the cubic takes one more copy.
+        let (low, high) = surface.split_u_at(2.0).unwrap();
+        assert_eq!(
+            low.poles().len() + high.poles().len(),
+            surface.poles().len() + 2
+        );
+    }
+
+    #[test]
+    fn test_extract_matches_curve_extraction() {
+        let surface = insertion_surface(true, true, false);
+        let (u, v) = ((4.5, 7.25), (0.25, 1.5));
+        let patch = surface.extract(u, v).unwrap();
+        // Row `i` of a `u` extraction is the `u` extraction of column `i`.
+        let by_u = surface.extract_u(u.0, u.1).unwrap();
+        for j in 0..surface.poles()[0].len() {
+            let column: Vec<Point3D> = surface.poles().iter().map(|row| row[j]).collect();
+            let weights = surface
+                .weights()
+                .unwrap()
+                .iter()
+                .map(|row| row[j])
+                .collect();
+            let curve = BSplineCurve3D::new_rational(
+                3,
+                column,
+                weights,
+                surface.u_knots().to_vec(),
+                surface.u_multiplicities().to_vec(),
+                true,
+            )
+            .unwrap()
+            .extract(u.0, u.1)
+            .unwrap();
+            assert_eq!(curve.knots(), by_u.u_knots());
+            for (row, q) in by_u.poles().iter().zip(curve.poles()) {
+                assert!(row[j].distance(*q) < 1e-12, "{:?} vs {q:?}", row[j]);
+            }
+        }
+        assert_patch(&surface, &patch, Some(u), Some(v));
+    }
+
+    #[test]
+    fn test_split_u_and_v_meet_along_the_split() {
+        for surface in insertion_surfaces() {
+            let (u0, u1) = surface.u_param_range();
+            let (v0, v1) = surface.v_param_range();
+            for u in [u0 + 0.37 * (u1 - u0), surface.u_knots()[1]] {
+                let (low, high) = surface.split_u_at(u).unwrap();
+                assert_patch(&surface, &low, Some((u0, u)), None);
+                assert_patch(&surface, &high, Some((u, u1)), None);
+                assert_eq!(low.poles().last(), high.poles().first());
+            }
+            for v in [v0 + 0.37 * (v1 - v0), surface.v_knots()[1]] {
+                let (low, high) = surface.split_v_at(v).unwrap();
+                assert_patch(&surface, &low, None, Some((v0, v)));
+                assert_patch(&surface, &high, None, Some((v, v1)));
+                for (a, b) in low.poles().iter().zip(high.poles()) {
+                    assert_eq!(a.last(), b.first());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bezier_patches_one_per_span_pair() {
+        for surface in insertion_surfaces() {
+            let (u0, u1) = surface.u_param_range();
+            let (v0, v1) = surface.v_param_range();
+            let u_breaks = curve::span_breaks(surface.u_knots(), u0, u1);
+            let v_breaks = curve::span_breaks(surface.v_knots(), v0, v1);
+            let patches = surface.to_bezier_patches();
+            assert_eq!(patches.len(), u_breaks.len() - 1);
+            let (p, q) = (surface.u_degree() as u32, surface.v_degree() as u32);
+            for (row, us) in patches.iter().zip(u_breaks.windows(2)) {
+                assert_eq!(row.len(), v_breaks.len() - 1);
+                for (patch, vs) in row.iter().zip(v_breaks.windows(2)) {
+                    assert_eq!((patch.u_knots(), patch.v_knots()), (us, vs));
+                    assert_eq!(patch.u_multiplicities(), &[p + 1, p + 1]);
+                    assert_eq!(patch.v_multiplicities(), &[q + 1, q + 1]);
+                    assert_patch(&surface, patch, Some((us[0], us[1])), Some((vs[0], vs[1])));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_reversed_u_and_v_mirror_the_parameters() {
+        for surface in insertion_surfaces() {
+            let (u0, u1) = surface.u_param_range();
+            let (v0, v1) = surface.v_param_range();
+            let size = size(&surface);
+            for along_u in [true, false] {
+                let reversed = if along_u {
+                    surface.reversed_u()
+                } else {
+                    surface.reversed_v()
+                };
+                assert_eq!(reversed.u_param_range(), (u0, u1));
+                assert_eq!(reversed.v_param_range(), (v0, v1));
+                assert_eq!(reversed.is_u_periodic(), surface.is_u_periodic());
+                assert_eq!(reversed.is_v_periodic(), surface.is_v_periodic());
+                for i in 0..=12 {
+                    for j in 0..=12 {
+                        let u = u0 + (u1 - u0) * (i as f64 + 0.3) / 13.0;
+                        let v = v0 + (v1 - v0) * (j as f64 + 0.3) / 13.0;
+                        let (mu, mv) = if along_u {
+                            (u0 + u1 - u, v)
+                        } else {
+                            (u, v0 + v1 - v)
+                        };
+                        let (p, [su, sv], [suu, suv, svv]) = surface.eval_d2(mu, mv);
+                        let (q, [tu, tv], [tuu, tuv, tvv]) = reversed.eval_d2(u, v);
+                        let (su, sv) = if along_u { (-su, sv) } else { (su, -sv) };
+                        let pairs = [
+                            (p - Point3D::ORIGIN, q - Point3D::ORIGIN),
+                            (su, tu),
+                            (sv, tv),
+                            (suu, tuu),
+                            (-suv, tuv),
+                            (svv, tvv),
+                        ];
+                        for (k, (a, b)) in pairs.into_iter().enumerate() {
+                            let tol = 1e-12 * size.max(a.magnitude());
+                            assert!(
+                                (a - b).magnitude() <= tol,
+                                "({u}, {v}), output {k}: {a:?} vs {b:?}"
+                            );
+                        }
+                    }
+                }
+                let back = if along_u {
+                    reversed.reversed_u()
+                } else {
+                    reversed.reversed_v()
+                };
+                assert_eq!(back.poles(), surface.poles());
+                assert_eq!(back.weights(), surface.weights());
+                assert_eq!(back.u_multiplicities(), surface.u_multiplicities());
+                assert_eq!(back.v_multiplicities(), surface.v_multiplicities());
+                for (knots, original, (first, last)) in [
+                    (back.u_knots(), surface.u_knots(), (u0, u1)),
+                    (back.v_knots(), surface.v_knots(), (v0, v1)),
+                ] {
+                    let scale = first.abs().max(last.abs());
+                    for (k, l) in knots.iter().zip(original) {
+                        assert!((k - l).abs() <= f64::EPSILON * scale, "{k} vs {l}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_surface_split_and_extract_errors() {
+        let surface = insertion_surface(true, false, true);
+        let (u0, u1) = surface.u_param_range();
+        let (v0, v1) = surface.v_param_range();
+        assert_eq!(
+            surface.split_u_at(f64::NAN),
+            Err(BSplineSplitError::NonFinite)
+        );
+        assert_eq!(surface.split_u_at(u0), Err(BSplineSplitError::EmptyRange));
+        assert_eq!(surface.split_v_at(v1), Err(BSplineSplitError::EmptyRange));
+        assert_eq!(
+            surface.split_v_at(v1 + 1.0),
+            Err(BSplineSplitError::OutOfRange)
+        );
+        assert_eq!(
+            surface.extract((u0 - 0.1, u1), (v0, v1)),
+            Err(BSplineSplitError::OutOfRange)
+        );
+        assert_eq!(
+            surface.extract((u0, u1), (v0, v0 + 2.0 * (v1 - v0))),
+            Err(BSplineSplitError::ExceedsPeriod)
+        );
+        assert_eq!(
+            surface.extract_v(v1, v0),
+            Err(BSplineSplitError::EmptyRange)
+        );
+        assert_eq!(
+            surface.extract_u(u0, f64::INFINITY),
+            Err(BSplineSplitError::NonFinite)
+        );
+        // The periodic `v` direction takes a range across its seam.
+        assert!(surface.extract_v(v1 - 0.5, v1 + 0.5).is_ok());
     }
 
     // ---- transformed ----

@@ -116,6 +116,37 @@ impl fmt::Display for KnotInsertionError {
 
 impl std::error::Error for KnotInsertionError {}
 
+/// Error returned when a [`BSplineCurve3D`], or a direction of a
+/// [`crate::BSplineSurface`], cannot be split at a parameter or have a
+/// piece extracted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BSplineSplitError {
+    /// A parameter is NaN or infinite.
+    NonFinite,
+    /// A parameter lies outside the bounds: a split parameter on any
+    /// B-spline, a range end on a non-periodic one.
+    OutOfRange,
+    /// The range is empty (`first >= last`), or the split parameter is a
+    /// bound, which would leave an empty piece.
+    EmptyRange,
+    /// The range is longer than the period of a periodic B-spline.
+    ExceedsPeriod,
+}
+
+impl fmt::Display for BSplineSplitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            BSplineSplitError::NonFinite => "a parameter is NaN or infinite",
+            BSplineSplitError::OutOfRange => "a parameter is outside the bounds",
+            BSplineSplitError::EmptyRange => "a piece would have an empty range",
+            BSplineSplitError::ExceedsPeriod => "the range is longer than the period",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for BSplineSplitError {}
+
 /// A B-spline (optionally rational, optionally periodic) curve in 3D,
 /// evaluated by de Boor's algorithm.
 ///
@@ -873,6 +904,224 @@ impl BSplineCurve3D {
             flat_poles: refined.poles,
             spans: Lazy::default(),
         })
+    }
+
+    /// Returns the piece of the curve over `[first, last]` as a clamped,
+    /// non-periodic B-spline of the same degree, whose bounds are exactly
+    /// `(first, last)` and which evaluates as this curve there, points and
+    /// derivatives.
+    ///
+    /// Both ends are raised to multiplicity `degree` in one refinement of
+    /// the knot spans between them, an end already a knot of that
+    /// multiplicity being left alone, and only the poles of the piece are
+    /// kept. A rational curve gives a rational piece. On a periodic curve,
+    /// as for a [`crate::TrimmedCurve3D`], any `first` is accepted and the
+    /// piece may cross the seam, `last` lying past the upper bound, but
+    /// spans at most one period. Extracting the whole range of a
+    /// non-periodic curve clamps it, and returns a clamped one unchanged.
+    ///
+    /// # Errors
+    ///
+    /// [`BSplineSplitError::NonFinite`] if an end is NaN or infinite,
+    /// [`BSplineSplitError::EmptyRange`] if `first >= last`,
+    /// [`BSplineSplitError::OutOfRange`] if the range leaves the
+    /// [`BSplineCurve3D::bounds`] of a non-periodic curve, and
+    /// [`BSplineSplitError::ExceedsPeriod`] if it is longer than the
+    /// period of a periodic one.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, BSplineSplitError, Point3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 2.0, 0.0),
+    ///     Point3D::new(2.0, 2.0, 1.0),
+    ///     Point3D::new(3.0, 0.0, 1.0),
+    ///     Point3D::new(4.0, 1.0, 0.0),
+    /// ];
+    /// let curve =
+    ///     BSplineCurve3D::new(3, poles, vec![0.0, 1.0, 2.0], vec![4, 1, 4], false).unwrap();
+    /// let piece = curve.extract(0.5, 1.5).unwrap();
+    /// assert_eq!(piece.bounds(), (0.5, 1.5));
+    /// assert_eq!(piece.multiplicities(), &[4, 1, 4]);
+    /// for u in [0.5, 0.8, 1.2, 1.5] {
+    ///     assert!(piece.eval_point(u).distance(curve.eval_point(u)) < 1e-12);
+    /// }
+    /// assert_eq!(curve.extract(1.5, 0.5), Err(BSplineSplitError::EmptyRange));
+    /// ```
+    pub fn extract(&self, first: f64, last: f64) -> Result<BSplineCurve3D, BSplineSplitError> {
+        math::check_piece(first, last, self.bounds(), self.periodic)?;
+        let range = (first, last);
+        if math::clamped_to(&self.knots, &self.mults, self.degree, self.periodic, range) {
+            return Ok(self.clone());
+        }
+        Ok(self.piece(&self.cut(&[first, last]), 0))
+    }
+
+    /// Splits the curve at `u` into the pieces over `[first, u]` and
+    /// `[u, last]` of its [`BSplineCurve3D::bounds`]: clamped, non-periodic
+    /// B-splines of the same degree, evaluating as this curve over their
+    /// ranges and meeting at the point at `u`. A periodic curve is opened
+    /// at its seam; to open it elsewhere, use
+    /// [`BSplineCurve3D::extract`] over one period.
+    ///
+    /// `u` is raised to multiplicity `degree` by one refinement, which
+    /// also clamps an unclamped end, and the poles are shared out between
+    /// the two pieces.
+    ///
+    /// # Errors
+    ///
+    /// [`BSplineSplitError::NonFinite`] if `u` is NaN or infinite,
+    /// [`BSplineSplitError::OutOfRange`] if it lies outside the bounds,
+    /// and [`BSplineSplitError::EmptyRange`] if it is one of them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, BSplineSplitError, Point3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 2.0, 0.0),
+    ///     Point3D::new(3.0, 2.0, 1.0),
+    ///     Point3D::new(4.0, 0.0, 1.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+    /// let (left, right) = curve.split_at(0.25).unwrap();
+    /// assert_eq!((left.bounds(), right.bounds()), ((0.0, 0.25), (0.25, 1.0)));
+    /// assert_eq!(left.poles()[3], right.poles()[0]);
+    /// assert!(left.eval_point(0.1).distance(curve.eval_point(0.1)) < 1e-12);
+    /// assert!(right.eval_point(0.7).distance(curve.eval_point(0.7)) < 1e-12);
+    /// assert_eq!(curve.split_at(1.0), Err(BSplineSplitError::EmptyRange));
+    /// ```
+    pub fn split_at(&self, u: f64) -> Result<(BSplineCurve3D, BSplineCurve3D), BSplineSplitError> {
+        let (first, last) = self.bounds();
+        math::check_split(u, (first, last))?;
+        let cut = self.cut(&[first, u, last]);
+        Ok((self.piece(&cut, 0), self.piece(&cut, 1)))
+    }
+
+    /// Returns the polynomial (or rational) piece of each knot span within
+    /// the [`BSplineCurve3D::bounds`], in order, as a Bézier B-spline: one
+    /// span with both end knots of multiplicity `degree + 1`, its poles
+    /// the span's Bézier control points.
+    ///
+    /// Every interior knot is raised to multiplicity `degree` in one
+    /// refinement of the whole curve, and the pieces are read off it, each
+    /// sharing its first pole with the previous piece's last. A periodic
+    /// curve is decomposed from its lower bound.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    ///
+    /// let poles: Vec<Point3D> =
+    ///     (0..6).map(|i| Point3D::new(i as f64, (i % 2) as f64, 0.0)).collect();
+    /// let knots = vec![0.0, 1.0, 2.0, 3.0];
+    /// let curve = BSplineCurve3D::new(3, poles, knots, vec![4, 1, 1, 4], false).unwrap();
+    /// let pieces = curve.to_bezier_pieces();
+    /// assert_eq!(pieces.len(), 3);
+    /// assert_eq!(pieces[1].bounds(), (1.0, 2.0));
+    /// assert_eq!(pieces[1].multiplicities(), &[4, 4]);
+    /// assert!(pieces[1].eval_point(1.5).distance(curve.eval_point(1.5)) < 1e-12);
+    /// ```
+    pub fn to_bezier_pieces(&self) -> Vec<BSplineCurve3D> {
+        let (first, last) = self.bounds();
+        let cut = self.cut(&math::span_breaks(&self.knots, first, last));
+        (0..cut.len()).map(|j| self.piece(&cut, j)).collect()
+    }
+
+    /// Returns the curve traversed the other way: its point at `u` is this
+    /// curve's point at `first + last - u` over the same
+    /// [`BSplineCurve3D::bounds`], so its derivatives of odd order change
+    /// sign.
+    ///
+    /// The poles (and weights) are listed in reverse order and the knots
+    /// mirrored, the bounds exactly; a periodic curve stays periodic, its
+    /// poles also rotated to keep the seam. Reversing twice gives the
+    /// curve back, the interior knots within rounding of the mirroring.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 2.0, 0.0),
+    ///     Point3D::new(3.0, 2.0, 1.0),
+    ///     Point3D::new(4.0, 0.0, 1.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+    /// let reversed = curve.reversed();
+    /// assert_eq!(reversed.eval_point(0.0), curve.eval_point(1.0));
+    /// let (d, e) = (curve.eval_derivative(0.3, 1), reversed.eval_derivative(0.7, 1));
+    /// assert!((d + e).magnitude() < 1e-12);
+    /// assert_eq!(reversed.reversed(), curve);
+    /// ```
+    pub fn reversed(&self) -> BSplineCurve3D {
+        let n = self.poles.len();
+        let old = |i| math::reversed_pole(i, n, self.degree, self.periodic, self.mults[0]);
+        let dim = self.dim();
+        let mut flat_poles = Vec::with_capacity(self.flat_poles.len());
+        for i in 0..n {
+            flat_poles.extend_from_slice(&self.flat_poles[old(i) * dim..][..dim]);
+        }
+        let (knots, mults) = math::reversed_knots(&self.knots, &self.mults, self.bounds());
+        BSplineCurve3D {
+            degree: self.degree,
+            periodic: self.periodic,
+            poles: (0..n).map(|i| self.poles[old(i)]).collect(),
+            weights: self
+                .weights
+                .as_ref()
+                .map(|w| (0..n).map(|i| w[old(i)]).collect()),
+            flat: math::flat_knots(&knots, &mults),
+            knots,
+            mults,
+            flat_poles,
+            spans: Lazy::default(),
+        }
+    }
+
+    /// The curve cut at the increasing `cuts`, checked against its bounds.
+    fn cut(&self, cuts: &[f64]) -> math::Cut {
+        math::cut(
+            self.degree,
+            self.periodic,
+            &self.flat,
+            &self.flat_poles,
+            1,
+            self.dim(),
+            cuts,
+        )
+    }
+
+    /// Piece `j` of `cut` as a clamped curve.
+    fn piece(&self, cut: &math::Cut, j: usize) -> BSplineCurve3D {
+        let (knots, mults) = cut.piece_knots(j);
+        let flat = math::flat_knots(&knots, &mults);
+        let flat_poles = cut.piece_net(j);
+        let (poles, weights) = unpack_flat_poles(&flat_poles, self.is_rational());
+        BSplineCurve3D {
+            degree: self.degree,
+            periodic: false,
+            poles,
+            weights,
+            knots,
+            mults,
+            flat,
+            flat_poles,
+            spans: Lazy::default(),
+        }
+    }
+
+    /// Coordinates per pole in the flat pole buffer.
+    fn dim(&self) -> usize {
+        if self.is_rational() { 4 } else { 3 }
     }
 
     /// Returns the curve's parameter bounds `(first, last)`.
@@ -2244,54 +2493,68 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_refine_knots_random_curves() {
-        let mut state = 0x9e37_79b9_7f4a_7c15u64;
-        let mut next = move || {
+    /// A xorshift generator of uniform values in `[0, 1)`.
+    fn uniform(seed: u64) -> impl FnMut() -> f64 {
+        let mut state = seed;
+        move || {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
             (state >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    /// A random curve of degree `1 + case % 5`, periodic for even `case`,
+    /// rational for `case` a multiple of 3, with random knots and
+    /// multiplicities; `None` when they leave too few poles.
+    fn random_curve(case: usize, next: &mut impl FnMut() -> f64) -> Option<BSplineCurve3D> {
+        let degree = 1 + case % 5;
+        let periodic = case.is_multiple_of(2);
+        let rational = case.is_multiple_of(3);
+        let n_knots = 2 + (next() * 6.0) as usize;
+        let mut knots = vec![next() * 4.0 - 2.0];
+        for _ in 1..n_knots {
+            knots.push(knots[knots.len() - 1] + 0.3 + 0.7 * next());
+        }
+        let mut mults: Vec<u32> = (0..n_knots)
+            .map(|_| 1 + (next() * degree as f64) as u32)
+            .collect();
+        let last = n_knots - 1;
+        if periodic {
+            mults[last] = mults[0];
+        } else {
+            mults[0] = degree as u32 + 1;
+            mults[last] = degree as u32 + 1;
+        }
+        let sum: u32 = mults.iter().sum();
+        let n_poles = if periodic {
+            (sum - mults[last]) as usize
+        } else {
+            sum as usize - degree - 1
         };
+        if n_poles < degree + 1 {
+            return None;
+        }
+        let poles: Vec<Point3D> = (0..n_poles)
+            .map(|_| Point3D::new(4.0 * next() - 2.0, 4.0 * next() - 2.0, 4.0 * next() - 2.0))
+            .collect();
+        let curve = if rational {
+            let weights = (0..n_poles).map(|_| 0.3 + 2.0 * next()).collect();
+            BSplineCurve3D::new_rational(degree, poles, weights, knots, mults, periodic)
+        } else {
+            BSplineCurve3D::new(degree, poles, knots, mults, periodic)
+        };
+        Some(curve.unwrap())
+    }
+
+    #[test]
+    fn test_refine_knots_random_curves() {
+        let mut next = uniform(0x9e37_79b9_7f4a_7c15);
         let mut checked = 0;
         for case in 0..400 {
-            let degree = 1 + case % 5;
-            let periodic = case % 2 == 0;
-            let rational = case % 3 == 0;
-            let n_knots = 2 + (next() * 6.0) as usize;
-            let mut knots = vec![next() * 4.0 - 2.0];
-            for _ in 1..n_knots {
-                knots.push(knots[knots.len() - 1] + 0.3 + 0.7 * next());
-            }
-            let mut mults: Vec<u32> = (0..n_knots)
-                .map(|_| 1 + (next() * degree as f64) as u32)
-                .collect();
-            let last = n_knots - 1;
-            if periodic {
-                mults[last] = mults[0];
-            } else {
-                mults[0] = degree as u32 + 1;
-                mults[last] = degree as u32 + 1;
-            }
-            let sum: u32 = mults.iter().sum();
-            let n_poles = if periodic {
-                (sum - mults[last]) as usize
-            } else {
-                sum as usize - degree - 1
-            };
-            if n_poles < degree + 1 {
+            let Some(curve) = random_curve(case, &mut next) else {
                 continue;
-            }
-            let poles: Vec<Point3D> = (0..n_poles)
-                .map(|_| Point3D::new(4.0 * next() - 2.0, 4.0 * next() - 2.0, 4.0 * next() - 2.0))
-                .collect();
-            let curve = if rational {
-                let weights = (0..n_poles).map(|_| 0.3 + 2.0 * next()).collect();
-                BSplineCurve3D::new_rational(degree, poles, weights, knots, mults, periodic)
-            } else {
-                BSplineCurve3D::new(degree, poles, knots, mults, periodic)
-            }
-            .unwrap();
+            };
             // Existing knots and quarter points of spans, kept within the
             // multiplicity limits.
             let (first, last) = curve.bounds();
@@ -2388,6 +2651,379 @@ mod tests {
         ] {
             assert!(!e.to_string().is_empty());
         }
+    }
+
+    // ---- split, extract, reverse ----
+
+    /// The largest pole coordinate of `curve`, at least 1.
+    fn size(curve: &BSplineCurve3D) -> f64 {
+        curve
+            .poles()
+            .iter()
+            .map(|p| p.x.abs().max(p.y.abs()).max(p.z.abs()))
+            .fold(1.0, f64::max)
+    }
+
+    /// `a` and `b` agree within 1e-12 relative to `size` and to `a`.
+    fn assert_close(a: Vector3D, b: Vector3D, size: f64, context: &str) {
+        let tol = 1e-12 * size.max(a.magnitude());
+        assert!((a - b).magnitude() <= tol, "{context}: {a:?} vs {b:?}");
+    }
+
+    /// The shortest nonzero knot span of `curve`.
+    fn shortest_span(curve: &BSplineCurve3D) -> f64 {
+        curve
+            .knots()
+            .windows(2)
+            .map(|w| w[1] - w[0])
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// `piece` is a valid clamped non-periodic curve over exactly
+    /// `(first, last)` evaluating as `curve` there: points and first two
+    /// derivatives on a dense grid, points at its knots and ends. A piece
+    /// with a span shorter than any of `curve` computes its derivatives of
+    /// order `k` from poles that much closer together, their rounding
+    /// growing as the ratio to the power `k`.
+    fn assert_piece(curve: &BSplineCurve3D, piece: &BSplineCurve3D, (first, last): (f64, f64)) {
+        let p = curve.degree();
+        assert_eq!(piece.bounds(), (first, last));
+        assert_eq!(piece.degree(), p);
+        assert!(!piece.is_periodic());
+        assert_eq!(piece.is_rational(), curve.is_rational());
+        let mults = piece.multiplicities();
+        assert_eq!(
+            (mults[0], mults[mults.len() - 1]),
+            (p as u32 + 1, p as u32 + 1)
+        );
+        let rebuilt = match piece.weights() {
+            Some(w) => BSplineCurve3D::new_rational(
+                p,
+                piece.poles().to_vec(),
+                w.to_vec(),
+                piece.knots().to_vec(),
+                mults.to_vec(),
+                false,
+            ),
+            None => BSplineCurve3D::new(
+                p,
+                piece.poles().to_vec(),
+                piece.knots().to_vec(),
+                mults.to_vec(),
+                false,
+            ),
+        };
+        assert!(rebuilt.is_ok(), "invalid piece: {rebuilt:?}");
+        let size = size(curve);
+        let stretch = (shortest_span(curve) / shortest_span(piece)).max(1.0);
+        for i in 0..48 {
+            let u = first + (last - first) * (i as f64 + 0.5) / 48.0;
+            let (p, d1, d2) = curve.eval_d2(u);
+            let (q, e1, e2) = piece.eval_d2(u);
+            assert_close(
+                p - Point3D::ORIGIN,
+                q - Point3D::ORIGIN,
+                size,
+                &format!("u = {u}"),
+            );
+            assert_close(d1, e1, size * stretch, &format!("d1 at {u}"));
+            assert_close(d2, e2, size * stretch * stretch, &format!("d2 at {u}"));
+        }
+        for &u in piece.knots() {
+            let (p, q) = (curve.eval_point(u), piece.eval_point(u));
+            assert_close(
+                p - Point3D::ORIGIN,
+                q - Point3D::ORIGIN,
+                size,
+                &format!("knot {u}"),
+            );
+        }
+    }
+
+    #[test]
+    fn test_extract_evaluates_as_the_curve() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let at = |t: f64| first + t * (last - first);
+            let interior: Vec<f64> = curve
+                .knots()
+                .iter()
+                .copied()
+                .filter(|&k| k > first && k < last)
+                .collect();
+            let mut ranges = vec![(at(0.13), at(0.71)), (first, last), (at(0.4), at(0.41))];
+            if let (Some(&k0), Some(&k1)) = (interior.first(), interior.last()) {
+                ranges.extend([(k0, at(0.9)), (at(0.05), k1), (first, k0), (k1, last)]);
+            }
+            if curve.is_periodic() {
+                // Across the seam, wholly in the next or previous period,
+                // and whole periods opened anywhere.
+                ranges.extend([
+                    (at(0.6), at(1.3)),
+                    (at(-0.4), at(0.2)),
+                    (at(1.1), at(1.5)),
+                    (at(-1.7), at(-1.2)),
+                    (at(0.37), at(0.37) + (last - first)),
+                    (last, 2.0 * last - first),
+                    (at(-1.0), first),
+                ]);
+                if let Some(&k) = interior.first() {
+                    ranges.push((k, k + (last - first)));
+                }
+            }
+            for (a, b) in ranges {
+                let piece = curve.extract(a, b).unwrap();
+                assert_piece(&curve, &piece, (a, b));
+            }
+            // A period on, the seam is the same knot, not a sliver span off.
+            if curve.is_periodic() {
+                let next = curve.extract(last, 2.0 * last - first).unwrap();
+                let this = curve.extract(first, last).unwrap();
+                assert_eq!(next.multiplicities(), this.multiplicities());
+            }
+        }
+    }
+
+    #[test]
+    fn test_extract_at_knots_of_full_multiplicity_copies_poles() {
+        // Cubic with a triple knot at 2: the curve is two independent
+        // pieces, and extracting either inserts nothing.
+        let poles: Vec<Point3D> = (0..7)
+            .map(|i| Point3D::new(i as f64, ((i * 5) % 3) as f64, 0.5 * i as f64))
+            .collect();
+        let weights = vec![1.0, 2.0, 0.5, 1.5, 0.7, 1.1, 3.0];
+        let knots = vec![0.0, 2.0, 3.0];
+        let curve =
+            BSplineCurve3D::new_rational(3, poles, weights, knots, vec![4, 3, 4], false).unwrap();
+        let left = curve.extract(0.0, 2.0).unwrap();
+        assert_eq!(left.poles(), &curve.poles()[..4]);
+        assert_eq!(left.weights(), Some(&curve.weights().unwrap()[..4]));
+        let right = curve.extract(2.0, 3.0).unwrap();
+        assert_eq!(right.poles(), &curve.poles()[3..]);
+        assert_piece(&curve, &left, (0.0, 2.0));
+        assert_piece(&curve, &right, (2.0, 3.0));
+        // The whole of a clamped curve is the curve.
+        assert_eq!(curve.extract(0.0, 3.0).unwrap(), curve);
+        let (l, r) = curve.split_at(2.0).unwrap();
+        assert_eq!((l, r), (left, right));
+    }
+
+    #[test]
+    fn test_extract_clamps_an_unclamped_curve() {
+        let curve = unclamped_curve();
+        let piece = curve.extract(2.0, 7.0).unwrap();
+        assert_eq!(piece.knots()[0], 2.0);
+        assert_piece(&curve, &piece, (2.0, 7.0));
+    }
+
+    #[test]
+    fn test_split_at_gives_two_continuous_pieces() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let mut cuts = vec![first + 0.37 * (last - first), first + 0.01 * (last - first)];
+            cuts.extend(curve.knots().iter().filter(|&&k| k > first && k < last));
+            for u in cuts {
+                let (left, right) = curve.split_at(u).unwrap();
+                assert_piece(&curve, &left, (first, u));
+                assert_piece(&curve, &right, (u, last));
+                // `u` raised to the degree, its pole shared.
+                assert_eq!(left.poles().last(), right.poles().first());
+                let present = curve
+                    .knots()
+                    .iter()
+                    .position(|&k| k == u)
+                    .map_or(0, |i| curve.multiplicities()[i] as usize);
+                let whole = curve.extract(first, last).unwrap().poles().len();
+                assert_eq!(
+                    left.poles().len() + right.poles().len(),
+                    whole + curve.degree() - present + 1
+                );
+                let size = size(&curve);
+                let (p, d) = left.eval_d1(u);
+                let (q, e) = right.eval_d1(u);
+                assert_close(
+                    p - Point3D::ORIGIN,
+                    q - Point3D::ORIGIN,
+                    size,
+                    "split point",
+                );
+                if !curve.knots().contains(&u) {
+                    assert_close(d, e, size, "split tangent");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_to_bezier_pieces_one_per_span() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let breaks = math::span_breaks(curve.knots(), first, last);
+            let pieces = curve.to_bezier_pieces();
+            assert_eq!(pieces.len(), breaks.len() - 1);
+            let p = curve.degree() as u32;
+            for (piece, w) in pieces.iter().zip(breaks.windows(2)) {
+                assert_eq!(piece.knots(), w);
+                assert_eq!(piece.multiplicities(), &[p + 1, p + 1]);
+                assert_piece(&curve, piece, (w[0], w[1]));
+            }
+            for pair in pieces.windows(2) {
+                assert_eq!(pair[0].poles().last(), pair[1].poles().first());
+            }
+        }
+    }
+
+    #[test]
+    fn test_split_extract_and_bezier_pieces_of_random_curves() {
+        let mut next = uniform(0x2545_f491_4f6c_dd1d);
+        let mut checked = 0;
+        for case in 0..300 {
+            let Some(curve) = random_curve(case, &mut next) else {
+                continue;
+            };
+            let (first, last) = curve.bounds();
+            let period = last - first;
+            let (s, t) = (next(), next());
+            let (a, b) = if curve.is_periodic() {
+                // Anywhere within two periods, up to one period long.
+                let a = first + (2.0 * s - 0.5) * period;
+                (a, a + t * period)
+            } else {
+                (first + s.min(t) * period, first + s.max(t) * period)
+            };
+            if a < b {
+                assert_piece(&curve, &curve.extract(a, b).unwrap(), (a, b));
+            }
+            let u = first + (0.05 + 0.9 * next()) * period;
+            let (left, right) = curve.split_at(u).unwrap();
+            assert_piece(&curve, &left, (first, u));
+            assert_piece(&curve, &right, (u, last));
+            for piece in curve.to_bezier_pieces() {
+                assert_eq!(piece.poles().len(), curve.degree() + 1);
+                assert_piece(&curve, &piece, piece.bounds());
+            }
+            checked += 1;
+        }
+        assert!(checked > 200, "{checked}");
+    }
+
+    #[test]
+    fn test_split_and_extract_errors() {
+        for curve in [clamped_curve(false), periodic_seam_curve(true)] {
+            let (first, last) = curve.bounds();
+            let mid = 0.5 * (first + last);
+            for u in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert_eq!(curve.split_at(u), Err(BSplineSplitError::NonFinite));
+                assert_eq!(curve.extract(u, mid), Err(BSplineSplitError::NonFinite));
+                assert_eq!(curve.extract(mid, u), Err(BSplineSplitError::NonFinite));
+            }
+            for u in [first - 1e-9, last + 1e-9] {
+                assert_eq!(curve.split_at(u), Err(BSplineSplitError::OutOfRange));
+            }
+            for u in [first, last] {
+                assert_eq!(curve.split_at(u), Err(BSplineSplitError::EmptyRange));
+            }
+            assert_eq!(curve.extract(mid, mid), Err(BSplineSplitError::EmptyRange));
+            assert_eq!(
+                curve.extract(mid, first),
+                Err(BSplineSplitError::EmptyRange)
+            );
+        }
+        let curve = clamped_curve(true);
+        assert_eq!(curve.extract(-0.1, 1.0), Err(BSplineSplitError::OutOfRange));
+        assert_eq!(
+            curve.extract(1.0, 4.0 + 1e-9),
+            Err(BSplineSplitError::OutOfRange)
+        );
+        let curve = periodic_seam_curve(false);
+        assert!(curve.extract(-5.0, 1.0).is_ok());
+        assert_eq!(
+            curve.extract(-5.0, 1.0 + 1e-6),
+            Err(BSplineSplitError::ExceedsPeriod)
+        );
+        for e in [
+            BSplineSplitError::NonFinite,
+            BSplineSplitError::OutOfRange,
+            BSplineSplitError::EmptyRange,
+            BSplineSplitError::ExceedsPeriod,
+        ] {
+            assert!(!e.to_string().is_empty());
+        }
+    }
+
+    /// `reversed` evaluates as `curve` at the mirrored parameter, odd
+    /// derivatives with the opposite sign, and reverses back to `curve`.
+    fn assert_reversed(curve: &BSplineCurve3D, reversed: &BSplineCurve3D) {
+        let (first, last) = curve.bounds();
+        assert_eq!(reversed.bounds(), (first, last));
+        assert_eq!(reversed.is_periodic(), curve.is_periodic());
+        assert_eq!(reversed.is_rational(), curve.is_rational());
+        let size = size(curve);
+        let mut params: Vec<f64> = (0..=48)
+            .map(|i| first + (last - first) * i as f64 / 48.0)
+            .collect();
+        if curve.is_periodic() {
+            params.extend([first - 0.3 * (last - first), last + 0.45 * (last - first)]);
+        }
+        for u in params {
+            let mirrored = match u {
+                u if u == first => last,
+                u if u == last => first,
+                u => first + last - u,
+            };
+            let (p, d1, d2) = curve.eval_d2(mirrored);
+            let (q, e1, e2) = reversed.eval_d2(u);
+            assert_close(
+                p - Point3D::ORIGIN,
+                q - Point3D::ORIGIN,
+                size,
+                &format!("u = {u}"),
+            );
+            // At a knot the two sides of a jump in a derivative trade
+            // places.
+            if !curve.knots().contains(&mirrored) {
+                assert_close(d1, -e1, size, &format!("d1 at {u}"));
+                assert_close(d2, e2, size, &format!("d2 at {u}"));
+            }
+        }
+        let back = reversed.reversed();
+        assert_eq!(back.poles(), curve.poles());
+        assert_eq!(back.weights(), curve.weights());
+        assert_eq!(back.multiplicities(), curve.multiplicities());
+        let scale = first.abs().max(last.abs());
+        for (k, l) in back.knots().iter().zip(curve.knots()) {
+            assert!((k - l).abs() <= f64::EPSILON * scale, "{k} vs {l}");
+        }
+        assert_eq!(back.bounds(), curve.bounds());
+    }
+
+    #[test]
+    fn test_reversed_mirrors_the_parameter() {
+        for curve in all_insertion_curves() {
+            let reversed = curve.reversed();
+            assert_reversed(&curve, &reversed);
+        }
+        let mut next = uniform(0x0bad_5eed_1234_5678);
+        for case in 0..200 {
+            if let Some(curve) = random_curve(case, &mut next) {
+                assert_reversed(&curve, &curve.reversed());
+            }
+        }
+        // Dyadic knots mirror exactly: reversing twice gives the curve back.
+        let poles: Vec<Point3D> = (0..6)
+            .map(|i| Point3D::new(i as f64, (i * i % 4) as f64, 0.0))
+            .collect();
+        let weights = vec![1.0, 0.5, 2.0, 1.25, 0.75, 1.0];
+        let knots = vec![0.0, 1.0, 2.5, 4.0];
+        let curve = BSplineCurve3D::new_rational(3, poles, weights, knots, vec![4, 1, 1, 4], false)
+            .unwrap()
+            .extract(0.5, 3.75)
+            .unwrap();
+        assert_eq!(curve.reversed().reversed(), curve);
+        assert_eq!(
+            periodic_ring_curve().reversed().reversed(),
+            periodic_ring_curve()
+        );
     }
 
     #[test]

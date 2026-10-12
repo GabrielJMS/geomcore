@@ -1,8 +1,11 @@
-//! Knot insertion and refinement on B-spline curves and surfaces.
+//! Knot insertion and refinement on B-spline curves and surfaces, and the
+//! splitting built on them.
 //!
 //! Informational only, like the other benches: one knot, then 8 and 64
 //! knots in one refinement, into clamped curves of 32 poles, and 8 knots
-//! into a bicubic 6x6 surface in either direction.
+//! into a bicubic 6x6 surface in either direction; then the Bézier
+//! decomposition of a cubic curve of 32 poles and of the bicubic 6x6
+//! surface, and the extraction of the middle of the curve.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -102,5 +105,29 @@ fn bench_knot_insertion(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_knot_insertion);
+fn bench_split_extract(c: &mut Criterion) {
+    let mut group = c.benchmark_group("split_extract");
+    for (name, rational) in [("polynomial", false), ("rational", true)] {
+        let curve = curve(3, rational);
+        let (first, last) = curve.bounds();
+        group.bench_function(format!("curve_degree3_{name}_bezier_pieces"), |b| {
+            b.iter(|| black_box(&curve).to_bezier_pieces())
+        });
+        let (a, z) = (first + 0.3 * (last - first), first + 0.6 * (last - first));
+        group.bench_function(format!("curve_degree3_{name}_extract_middle"), |b| {
+            b.iter(|| {
+                black_box(&curve)
+                    .extract(black_box(a), black_box(z))
+                    .unwrap()
+            })
+        });
+    }
+    let surface = surface();
+    group.bench_function("surface_6x6_bicubic_bezier_patches", |b| {
+        b.iter(|| black_box(&surface).to_bezier_patches())
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_knot_insertion, bench_split_extract);
 criterion_main!(benches);

@@ -153,3 +153,32 @@ Reproduce with:
 ```sh
 cargo bench --bench knot_insertion
 ```
+
+# Splitting and Bézier decomposition
+
+The `split_extract` group of `benches/knot_insertion.rs` times
+`to_bezier_pieces` on clamped cubic curves of 32 poles (29 pieces),
+`extract` of the middle 30% of their range, and `to_bezier_patches` on a
+bicubic 6×6 surface (9 patches).
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12), with other jobs running (load
+average around 13): times vary by up to 20% between runs.
+
+| call | polynomial | rational |
+|---|---|---|
+| `to_bezier_pieces`, cubic curve, 32 poles | ~5.7 µs | ~6.5 µs |
+| `extract` of the middle, same curves | ~0.60 µs | ~0.43 µs |
+| `to_bezier_patches`, bicubic 6×6 surface | ~8.3 µs | |
+
+Every interior knot is raised to multiplicity `degree` in one refinement
+pass (about 1 µs for the curve), then each piece is sliced out of the
+refined list. Most of the time goes to building the pieces: each curve
+owns five or six buffers, and each surface patch about twelve. An
+extraction refines only the poles around its two ends.
+
+Reproduce with:
+
+```sh
+cargo bench --bench knot_insertion -- split_extract
+```

@@ -14,16 +14,20 @@
 //! knots tiled endlessly, each copy shifted by the period, with pole indices
 //! wrapping modulo the pole count; tiled knots are computed on demand.
 
+use std::borrow::Cow;
+use std::ops::Range;
+
 use super::analytic::in_period;
 
 /// Maximum supported B-spline degree.
 pub(crate) const MAX_DEGREE: usize = 25;
 
-/// Error types re-exported here for use by [`validate_direction`] and
-/// [`insert_knots`]; the canonical definitions (and their docs) live on
-/// [`crate::curves`], next to [`crate::curves::BSplineCurve3D`], the type
-/// that actually constructs and reports these errors.
-pub(crate) use crate::curves::{BSplineConstructionError, KnotInsertionError};
+/// Error types re-exported here for use by [`validate_direction`],
+/// [`insert_knots`] and [`check_piece`]; the canonical definitions (and
+/// their docs) live on [`crate::curves`], next to
+/// [`crate::curves::BSplineCurve3D`], the type that actually constructs
+/// and reports these errors.
+pub(crate) use crate::curves::{BSplineConstructionError, BSplineSplitError, KnotInsertionError};
 
 /// Builds the flattened knot sequence: knot `i` repeated `mults[i]` times.
 ///
@@ -1168,17 +1172,7 @@ fn refine_periodic(
         tiled(block, n as isize),
         new_seam - seam,
     ));
-    let mut new_knots = Vec::with_capacity(old_knots.len() + inserted.len());
-    let (mut i, mut j) = (0, 0);
-    while i < old_knots.len() || j < inserted.len() {
-        if j == inserted.len() || (i < old_knots.len() && old_knots[i] <= inserted[j]) {
-            new_knots.push(old_knots[i]);
-            i += 1;
-        } else {
-            new_knots.push(inserted[j]);
-            j += 1;
-        }
-    }
+    let new_knots = merge_sorted(&old_knots, &inserted);
     let count = old_knots.len() - p as usize - 1;
     let offset = seam as isize - p - 1;
     let mut window_poles = vec![0.0; lanes * count * dim];
@@ -1213,6 +1207,340 @@ fn refine_periodic(
         out.extend_from_slice(&refined[(l * new_count + start) * dim..][..new_n * dim]);
     }
     out
+}
+
+/// The non-decreasing `a` and `b` merged into one non-decreasing list.
+fn merge_sorted(a: &[f64], b: &[f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() || j < b.len() {
+        if j == b.len() || (i < a.len() && a[i] <= b[j]) {
+            out.push(a[i]);
+            i += 1;
+        } else {
+            out.push(b[j]);
+            j += 1;
+        }
+    }
+    out
+}
+
+/// Checks the range `[first, last]` of a piece of a direction with the
+/// given `bounds`. A periodic direction accepts any start, so a piece may
+/// cross the seam, but no more than one period, with the same slack as
+/// [`crate::TrimmedCurve3D::new`].
+pub(crate) fn check_piece(
+    first: f64,
+    last: f64,
+    bounds: (f64, f64),
+    periodic: bool,
+) -> Result<(), BSplineSplitError> {
+    if !first.is_finite() || !last.is_finite() {
+        return Err(BSplineSplitError::NonFinite);
+    }
+    if first >= last {
+        return Err(BSplineSplitError::EmptyRange);
+    }
+    if periodic {
+        if last - first > (bounds.1 - bounds.0) * (1.0 + 1e-12) {
+            return Err(BSplineSplitError::ExceedsPeriod);
+        }
+    } else if first < bounds.0 || last > bounds.1 {
+        return Err(BSplineSplitError::OutOfRange);
+    }
+    Ok(())
+}
+
+/// Checks a parameter `u` at which to split a direction with the given
+/// `bounds`: strictly between them, so neither piece is empty.
+pub(crate) fn check_split(u: f64, bounds: (f64, f64)) -> Result<(), BSplineSplitError> {
+    if !u.is_finite() {
+        return Err(BSplineSplitError::NonFinite);
+    }
+    if u < bounds.0 || u > bounds.1 {
+        return Err(BSplineSplitError::OutOfRange);
+    }
+    if u == bounds.0 || u == bounds.1 {
+        return Err(BSplineSplitError::EmptyRange);
+    }
+    Ok(())
+}
+
+/// Whether a direction is clamped, both end knots of multiplicity
+/// `degree + 1`, with bounds exactly `(first, last)`: a piece over that
+/// range is the direction itself.
+pub(crate) fn clamped_to(
+    knots: &[f64],
+    mults: &[u32],
+    degree: usize,
+    periodic: bool,
+    (first, last): (f64, f64),
+) -> bool {
+    let end = degree as u32 + 1;
+    !periodic
+        && (mults[0], mults[mults.len() - 1]) == (end, end)
+        && (knots[0], knots[knots.len() - 1]) == (first, last)
+}
+
+/// A direction cut at increasing parameters (see [`cut`]): the refined
+/// stretch of it from the first cut to the last, in which every cut is a
+/// knot of multiplicity `degree` or more.
+pub(crate) struct Cut {
+    degree: usize,
+    lanes: usize,
+    dim: usize,
+    /// Flat knots of the stretch.
+    flat: Vec<f64>,
+    /// `lanes` rows of `count` poles, laid out as the poles passed to
+    /// [`cut`].
+    poles: Vec<f64>,
+    count: usize,
+    /// Each cut, with the indices in `flat` of its first and last copies.
+    cuts: Vec<(f64, usize, usize)>,
+}
+
+impl Cut {
+    /// The number of pieces, one between each two consecutive cuts.
+    pub(crate) fn len(&self) -> usize {
+        self.cuts.len() - 1
+    }
+
+    /// The knots and multiplicities of piece `j`: its two cuts, of
+    /// multiplicity `degree + 1`, around the knots between them.
+    pub(crate) fn piece_knots(&self, j: usize) -> (Vec<f64>, Vec<u32>) {
+        let (a, _, from) = self.cuts[j];
+        let (b, to, _) = self.cuts[j + 1];
+        let interior = &self.flat[from + 1..to];
+        let mut knots = Vec::with_capacity(interior.len() + 2);
+        let mut mults = Vec::with_capacity(interior.len() + 2);
+        knots.push(a);
+        mults.push(self.degree as u32 + 1);
+        for &k in interior {
+            if knots.last() == Some(&k) {
+                *mults.last_mut().expect("a knot per multiplicity") += 1;
+            } else {
+                knots.push(k);
+                mults.push(1);
+            }
+        }
+        knots.push(b);
+        mults.push(self.degree as u32 + 1);
+        (knots, mults)
+    }
+
+    /// The indices of the poles of piece `j` in each row of the stretch.
+    pub(crate) fn piece_poles(&self, j: usize) -> Range<usize> {
+        self.cuts[j].2 - self.degree..self.cuts[j + 1].1
+    }
+
+    /// The `lanes` rows of poles of piece `j`, laid out as the stretch's.
+    pub(crate) fn piece_net(&self, j: usize) -> Vec<f64> {
+        let Range { start, end } = self.piece_poles(j);
+        let row = self.count * self.dim;
+        let mut out = Vec::with_capacity(self.lanes * (end - start) * self.dim);
+        for l in 0..self.lanes {
+            out.extend_from_slice(
+                &self.poles[l * row + start * self.dim..][..(end - start) * self.dim],
+            );
+        }
+        out
+    }
+
+    /// The poles of rows `rows` and columns `columns` of the stretch, row
+    /// after row: a patch of a surface net cut in `v`, the stretch's lanes
+    /// being the net's rows.
+    pub(crate) fn block(&self, rows: Range<usize>, columns: Range<usize>) -> Vec<f64> {
+        let row = self.count * self.dim;
+        let width = columns.len() * self.dim;
+        let mut out = Vec::with_capacity(rows.len() * width);
+        for l in rows {
+            out.extend_from_slice(&self.poles[l * row + columns.start * self.dim..][..width]);
+        }
+        out
+    }
+
+    /// Each row of the stretch, its poles of `dim` coordinates.
+    pub(crate) fn poles(&self) -> &[f64] {
+        &self.poles
+    }
+
+    /// The pole count per row of the stretch.
+    pub(crate) fn count(&self) -> usize {
+        self.count
+    }
+}
+
+/// Cuts a direction into clamped pieces at the increasing `cuts` (two or
+/// more, checked by [`check_piece`]), raising each cut to multiplicity
+/// `degree` in one pass of [`refine_poles`]; `poles`, `lanes` and `dim`
+/// are as for [`insert_knots`].
+///
+/// Only the knot spans from the first cut to the last are refined: their
+/// knots, and the poles weighting them, are copied out as a non-periodic
+/// stretch (borrowed when they are contiguous), a periodic direction's
+/// from its tiled knots and wrapped poles (see [`refine_periodic`]), so a
+/// stretch may cross the seam. A cut already of multiplicity `degree` or
+/// more is not inserted. Piece `j` then has the stretch's poles from the
+/// one at the last copy of cut `j` to the one before the first copy of
+/// cut `j + 1`, two pieces sharing the pole at their common cut.
+#[allow(clippy::too_many_arguments)] // flat-buffer direction signature
+pub(crate) fn cut(
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    poles: &[f64],
+    lanes: usize,
+    dim: usize,
+    cuts: &[f64],
+) -> Cut {
+    let p = degree;
+    let (a, b) = (cuts[0], cuts[cuts.len() - 1]);
+    let (old, stretch): (Cow<[f64]>, Cow<[f64]>) = if periodic {
+        let last = flat[flat.len() - 1];
+        let seam = flat.iter().rev().take_while(|&&k| k == last).count();
+        let n = flat.len() - seam;
+        let (block, first, period) = (&flat[..n], flat[0], last - flat[0]);
+        let len = n as isize;
+        let knot = |t: isize| match flat.get(t as usize) {
+            Some(&k) if t >= 0 => k,
+            _ => block[t.rem_euclid(len) as usize] + period * t.div_euclid(len) as f64,
+        };
+        // The last tiled index whose knot is at or below (`strict`: below)
+        // `x`, from a guess corrected for rounding.
+        let last_index = |x: f64, strict: bool| {
+            let before = |k: f64| if strict { k < x } else { k <= x };
+            let tile = ((x - first) / period).floor();
+            let mut t = tile as isize * len
+                + block.partition_point(|&k| before(k + period * tile)) as isize
+                - 1;
+            while before(knot(t + 1)) {
+                t += 1;
+            }
+            while !before(knot(t)) {
+                t -= 1;
+            }
+            t
+        };
+        let (ia, ib) = (last_index(a, false), last_index(b, true));
+        let p = p as isize;
+        let offset = seam as isize - p - 1;
+        let mut stretch = Vec::with_capacity(lanes * (ib - ia + p + 1) as usize * dim);
+        for l in 0..lanes {
+            for t in ia - p..=ib {
+                let pole = l * n + (t - offset).rem_euclid(len) as usize;
+                stretch.extend_from_slice(&poles[pole * dim..][..dim]);
+            }
+        }
+        let old = (ia - p..=ib + p + 1).map(knot).collect();
+        (Cow::Owned(old), Cow::Owned(stretch))
+    } else {
+        let n = flat.len() - p - 1;
+        let ia = flat[..n].partition_point(|&k| k <= a) - 1;
+        let ib = flat[..=n].partition_point(|&k| k < b) - 1;
+        let old = &flat[ia - p..=ib + p + 1];
+        let stretch = if lanes == 1 {
+            Cow::Borrowed(&poles[(ia - p) * dim..(ib + 1) * dim])
+        } else {
+            let mut stretch = Vec::with_capacity(lanes * (ib + 1 + p - ia) * dim);
+            for l in 0..lanes {
+                stretch.extend_from_slice(&poles[(l * n + ia - p) * dim..(l * n + ib + 1) * dim]);
+            }
+            Cow::Owned(stretch)
+        };
+        (Cow::Borrowed(old), stretch)
+    };
+    // A cut within rounding of a knot, such as a seam one period on
+    // computed by the caller, is that knot rather than a sliver span away.
+    // The cuts and knots are both sorted: each pass below walks them
+    // together.
+    let near = 4.0 * f64::EPSILON * old[0].abs().max(old[old.len() - 1].abs());
+    let range = old[p]..=old[old.len() - 1 - p];
+    let mut at = Vec::with_capacity(cuts.len());
+    let mut i = 0;
+    for &c in cuts {
+        while old[i] < c {
+            i += 1;
+        }
+        let snap = |j: usize| Some(old[j]).filter(|&k| (k - c).abs() <= near && range.contains(&k));
+        at.push(snap(i).or_else(|| snap(i.checked_sub(1)?)).unwrap_or(c));
+    }
+    if at.windows(2).any(|w| w[0] >= w[1]) {
+        at.copy_from_slice(cuts);
+    }
+    let mut insert = Vec::with_capacity(at.len() * p);
+    let mut i = 0;
+    for &c in &at {
+        while old[i] < c {
+            i += 1;
+        }
+        let present = old[i..].iter().take_while(|&&k| k == c).count();
+        insert.extend(std::iter::repeat_n(c, p.saturating_sub(present)));
+    }
+    let count = old.len() - p - 1 + insert.len();
+    let (new, poles) = if insert.is_empty() {
+        (old.into_owned(), stretch.into_owned())
+    } else {
+        let new = merge_sorted(&old, &insert);
+        let mut out = vec![0.0; lanes * count * dim];
+        refine_poles(p, &old, &new, &insert, &stretch, lanes, dim, &mut out);
+        (new, out)
+    };
+    let mut i = 0;
+    let cuts = cuts
+        .iter()
+        .zip(&at)
+        .map(|(&c, &k)| {
+            while new[i] < k {
+                i += 1;
+            }
+            let copies = new[i..].iter().take_while(|&&x| x == k).count();
+            (c, i, i + copies - 1)
+        })
+        .collect();
+    Cut {
+        degree,
+        lanes,
+        dim,
+        flat: new,
+        poles,
+        count,
+        cuts,
+    }
+}
+
+/// The knots and multiplicities of a direction with the given `bounds`
+/// reversed: knot `k` becomes `first + last - k`, the bounds trading
+/// places exactly.
+pub(crate) fn reversed_knots(
+    knots: &[f64],
+    mults: &[u32],
+    (first, last): (f64, f64),
+) -> (Vec<f64>, Vec<u32>) {
+    let mirror = |k: f64| {
+        if k == first {
+            last
+        } else if k == last {
+            first
+        } else {
+            first + last - k
+        }
+    };
+    (
+        knots.iter().rev().map(|&k| mirror(k)).collect(),
+        mults.iter().rev().copied().collect(),
+    )
+}
+
+/// The index of the old pole that pole `i` of a reversed direction of `n`
+/// poles takes: the mirror image, which on a periodic direction with seam
+/// multiplicity `seam` is also rotated so that pole `i` keeps weighting
+/// the basis function starting at tiled knot `i + seam - degree - 1`.
+pub(crate) fn reversed_pole(i: usize, n: usize, degree: usize, periodic: bool, seam: u32) -> usize {
+    if periodic {
+        (degree as isize - seam as isize - i as isize).rem_euclid(n as isize) as usize
+    } else {
+        n - 1 - i
+    }
 }
 
 #[cfg(test)]

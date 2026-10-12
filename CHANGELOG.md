@@ -59,6 +59,20 @@ the Python distribution are versioned in lockstep.
   a non-periodic B-spline) is a `KnotInsertionError`. `BSplineSurface`
   also gains `poles`, `weights`, `u_knots`, `u_multiplicities`, `v_knots`
   and `v_multiplicities`.
+- Splitting, extraction and reversal of B-spline curves and surfaces
+  (#34): `split_at(u)`, `extract(first, last)`, `reversed()` and
+  `to_bezier_pieces()` on `BSplineCurve3D`, and `split_u_at`,
+  `split_v_at`, `extract(u_range, v_range)`, `extract_u`, `extract_v`,
+  `reversed_u`, `reversed_v` and `to_bezier_patches()` on
+  `BSplineSurface`. Pieces are clamped, non-periodic B-splines that
+  evaluate as the original over their range; on a periodic curve or
+  surface a range may cross the seam and span up to one period. The cuts
+  are raised to full multiplicity in one refinement pass, so a cubic
+  curve of 32 poles splits into its 29 Bézier pieces in about 6 µs.
+  Reversal mirrors the parameter (`first + last - u`) and keeps a
+  periodic shape periodic. A non-finite parameter, one outside the
+  bounds, an empty range, a periodic range longer than one period or a
+  split at an end is a `BSplineSplitError`.
 
 ### Changed
 
