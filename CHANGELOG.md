@@ -36,6 +36,10 @@ the Python distribution are versioned in lockstep.
   `Circle3D`, `Ellipse3D`, `BSplineCurve3D` and `TrimmedCurve3D`,
   returning a `Discretization3D`, and on `Circle2D` and `TrimmedCurve2D`,
   returning a `Discretization2D`.
+  Any positive chord deviation is accepted, also below the confusion
+  tolerance; the points cannot lie closer to the curve than their
+  coordinates' rounding, about 1e-15 times the curve's distance from the
+  origin.
 - A trimmed curve can borrow its basis (#18): the curve traits
   (`ParametricCurve3D`, `ParametricCurve2D`, `PointExtrema3D`,
   `PointExtrema2D`) are implemented for references to curves, so
@@ -79,11 +83,6 @@ the Python distribution are versioned in lockstep.
   cone or torus; unbounded geometry (lines, planes, cylinders, cones,
   parabolas, hyperbolas) keeps `tol.angular`. Two circles or conics are
   coplanar when either lies in the other's plane.
-- **Breaking:** `DiscretizationCriteria::new` rejects a maximum chord
-  deviation below the default confusion tolerance (1e-7) with the new
-  `DiscretizationCriteriaError::ChordDeviationBelowConfusion`: a segment
-  that close to the curve already lies on it, and the count grew without
-  bound as the deviation shrank. Python raises `ValueError`.
 - **Breaking:** `Frame2D::new` rejects directions off square by more
   than the angular tolerance (`|x·y| > 1e-12`), where the parametric
   tolerance (1e-9) was used: axes 1e-9 off square move a point across
