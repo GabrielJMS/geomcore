@@ -11,7 +11,8 @@ use pyo3::types::PyModule;
 
 use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D,
-    InterpParametrization, Line2D, Line3D, Parabola3D,
+    InterpParametrization, Line2D, Line3D, Parabola3D, ParametricCurve3D, PointExtrema2D,
+    PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D,
 };
 use geomcore::intersect_curve_surface;
 use geomcore::marching_intersection;
@@ -1712,6 +1713,85 @@ fn extract_curve3d(obj: &Bound<'_, PyAny>) -> PyResult<Curve3D> {
     ))
 }
 
+/// A 3D curve passed to a generic function: a whole curve, or a piece of
+/// one, whose range bounds the search.
+enum CurveArg {
+    Whole(Curve3D),
+    Trimmed(TrimmedCurve3D),
+}
+
+impl ParametricCurve3D for CurveArg {
+    fn eval_point(&self, u: f64) -> Point3D {
+        match self {
+            CurveArg::Whole(c) => c.eval_point(u),
+            CurveArg::Trimmed(c) => c.eval_point(u),
+        }
+    }
+
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
+        match self {
+            CurveArg::Whole(c) => c.eval_derivative(u, order),
+            CurveArg::Trimmed(c) => c.eval_derivative(u, order),
+        }
+    }
+
+    fn bounds(&self) -> (f64, f64) {
+        match self {
+            CurveArg::Whole(c) => c.bounds(),
+            CurveArg::Trimmed(c) => c.bounds(),
+        }
+    }
+
+    fn period(&self) -> Option<f64> {
+        match self {
+            CurveArg::Whole(c) => c.period(),
+            CurveArg::Trimmed(c) => c.period(),
+        }
+    }
+
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
+        match self {
+            CurveArg::Whole(c) => c.eval_points(us),
+            CurveArg::Trimmed(c) => c.eval_points(us),
+        }
+    }
+}
+
+fn extract_curve_arg(obj: &Bound<'_, PyAny>) -> PyResult<CurveArg> {
+    if let Ok(c) = obj.extract::<PyRef<'_, PyTrimmedCurve3D>>() {
+        return Ok(CurveArg::Trimmed(c.0.clone()));
+    }
+    extract_curve3d(obj).map(CurveArg::Whole).map_err(|_| {
+        PyTypeError::new_err(
+            "expected a geomcore 3D curve (Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D, BSplineCurve3D or TrimmedCurve3D)",
+        )
+    })
+}
+
+fn curve3d_to_py(py: Python<'_>, curve: Curve3D) -> PyResult<Py<PyAny>> {
+    match curve {
+        Curve3D::Line(c) => Ok(PyLine3D(c).into_pyobject(py)?.into_any().unbind()),
+        Curve3D::Circle(c) => Ok(PyCircle3D(c).into_pyobject(py)?.into_any().unbind()),
+        Curve3D::Ellipse(c) => Ok(PyEllipse3D(c).into_pyobject(py)?.into_any().unbind()),
+        Curve3D::Parabola(c) => Ok(PyParabola3D(c).into_pyobject(py)?.into_any().unbind()),
+        Curve3D::Hyperbola(c) => Ok(PyHyperbola3D(c).into_pyobject(py)?.into_any().unbind()),
+        Curve3D::BSpline(c) => Ok(PyBSplineCurve3D(c).into_pyobject(py)?.into_any().unbind()),
+        _ => Err(PyValueError::new_err("unsupported 3d curve variant")),
+    }
+}
+
+fn extract_curve2d(obj: &Bound<'_, PyAny>) -> PyResult<Curve2D> {
+    if let Ok(c) = obj.extract::<PyRef<'_, PyLine2D>>() {
+        return Ok(Curve2D::from(c.0));
+    }
+    if let Ok(c) = obj.extract::<PyRef<'_, PyCircle2D>>() {
+        return Ok(Curve2D::from(c.0));
+    }
+    Err(PyTypeError::new_err(
+        "expected a geomcore 2D curve (Line2D or Circle2D)",
+    ))
+}
+
 /// A generic intersection hit: `(curve parameter, (u, v), point)`.
 type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
 
@@ -1731,8 +1811,8 @@ fn py_curve_curve_extrema(
     tol: Option<PyTolerance>,
 ) -> PyResult<Vec<(f64, f64, f64)>> {
     let tol = tol.map(|t| t.0).unwrap_or_default();
-    let a = extract_curve3d(curve_a)?;
-    let b = extract_curve3d(curve_b)?;
+    let a = extract_curve_arg(curve_a)?;
+    let b = extract_curve_arg(curve_b)?;
     Ok(curve_curve_extrema(&a, &b, tol)
         .iter()
         .map(|e| (e.first_param, e.second_param, e.distance))
@@ -1752,8 +1832,8 @@ fn py_intersect_curve_curve(
     tol: Option<PyTolerance>,
 ) -> PyResult<Vec<(f64, Py<PyAny>, f64)>> {
     let tol = tol.map(|t| t.0).unwrap_or_default();
-    let a = extract_curve3d(curve_a)?;
-    let b = extract_curve3d(curve_b)?;
+    let a = extract_curve_arg(curve_a)?;
+    let b = extract_curve_arg(curve_b)?;
     let mut out = Vec::new();
     for h in intersect_curve_curve(&a, &b, tol) {
         out.push((
@@ -1780,7 +1860,7 @@ fn py_intersect_curve_surface(
     tol: Option<PyTolerance>,
 ) -> PyResult<Vec<CurveHitPy>> {
     let tol = tol.map(|t| t.0).unwrap_or_default();
-    let c = extract_curve3d(curve)?;
+    let c = extract_curve_arg(curve)?;
     let s = extract_surface(surface)?;
     let mut out = Vec::new();
     for h in intersect_curve_surface(&c, &s, tol) {
@@ -1807,7 +1887,7 @@ fn py_parametrize_numeric(
     tol: Option<PyTolerance>,
 ) -> PyResult<Vec<(f64, f64)>> {
     let tol = tol.map(|t| t.0).unwrap_or_default();
-    let c = extract_curve3d(curve)?;
+    let c = extract_curve_arg(curve)?;
     let s = extract_surface(surface)?;
     Ok(parametrize_numeric(&c, &s, n, tol)
         .iter()
@@ -3637,6 +3717,290 @@ impl PyCircle2D {
     }
 }
 
+/// The highest derivative order a 3D basis curve evaluates.
+fn max_curve_order(curve: &Curve3D) -> u32 {
+    match curve {
+        Curve3D::BSpline(_) => 2,
+        _ => u32::MAX,
+    }
+}
+
+/// A 3D curve restricted to the parameter range `[first, last]` of a
+/// basis curve: a line segment, an arc of a circle or conic, or a piece of
+/// a B-spline. Geometry only, with no vertices or orientation.
+///
+/// The basis keeps its parametrisation and `bounds()` is
+/// `(first, last)`. On a periodic basis (circle, ellipse, periodic
+/// B-spline) the range may cross the seam, up to one period. Pass it to
+/// `curve_curve_extrema`, `intersect_curve_curve`,
+/// `intersect_curve_surface` or `parametrize_numeric` to search only the
+/// range.
+#[pyclass(name = "TrimmedCurve3D", module = "geomcore.curves")]
+#[derive(Clone)]
+struct PyTrimmedCurve3D(TrimmedCurve3D);
+
+#[pymethods]
+impl PyTrimmedCurve3D {
+    #[new]
+    /// Restrict `basis` (any 3D curve) to the parameter range
+    /// `[first, last]`. Raises `ValueError` for non-finite ends, an empty
+    /// range, a range outside a non-periodic basis's bounds, or one longer
+    /// than a periodic basis's period.
+    fn py_new(basis: &Bound<'_, PyAny>, first: f64, last: f64) -> PyResult<Self> {
+        let basis = extract_curve3d(basis)?;
+        Ok(PyTrimmedCurve3D(
+            TrimmedCurve3D::new(basis, first, last).map_err(val_err)?,
+        ))
+    }
+
+    /// The segment from `start` to `end`, parametrised by arc length from
+    /// `start` over `[0, |end - start|]`.
+    #[staticmethod]
+    fn segment(start: PyPoint3D, end: PyPoint3D) -> PyResult<Self> {
+        let segment = TrimmedCurve3D::segment(start.0, end.0).map_err(val_err)?;
+        Ok(PyTrimmedCurve3D(segment.into_curve3d()))
+    }
+
+    /// The basis curve.
+    fn basis(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        curve3d_to_py(py, self.0.basis().clone())
+    }
+
+    /// The start of the parameter range.
+    fn first(&self) -> f64 {
+        self.0.first()
+    }
+
+    /// The end of the parameter range.
+    fn last(&self) -> f64 {
+        self.0.last()
+    }
+
+    /// The (first, last) parameter bounds.
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve3D::bounds(&self.0)
+    }
+
+    /// The point at the start of the range.
+    fn start_point(&self) -> PyPoint3D {
+        PyPoint3D(self.0.start_point())
+    }
+
+    /// The point at the end of the range.
+    fn end_point(&self) -> PyPoint3D {
+        PyPoint3D(self.0.end_point())
+    }
+
+    /// Evaluate the basis point at parameter `u` (not checked against the
+    /// range).
+    fn eval_point(&self, u: f64) -> PyPoint3D {
+        PyPoint3D(self.0.eval_point(u))
+    }
+
+    /// Evaluate many parameters at once.
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint3D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint3D).collect()
+    }
+
+    /// Evaluate the derivative of the given order (>= 1) at `u`, within
+    /// the orders the basis supports.
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector3D> {
+        check_curve_order(order, max_curve_order(self.0.basis()))?;
+        Ok(PyVector3D(self.0.eval_derivative(u, order)))
+    }
+
+    /// Returns whether `point` lies on the trimmed curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// The basis's distance extrema from `point` inside the range, plus
+    /// the two ends, as `(parameter, distance)` tuples ordered by
+    /// ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        PointExtrema3D::extrema(&self.0, point.0, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
+    /// Projects `point` onto the trimmed curve, returning
+    /// `(parameter, distance)`: the closest basis extremum inside the
+    /// range, or the nearer end.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the trimmed curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        let (s, e) = (self.0.start_point(), self.0.end_point());
+        format!(
+            "TrimmedCurve3D(first={}, last={}, start=({}, {}, {}), end=({}, {}, {}))",
+            self.0.first(),
+            self.0.last(),
+            s.x,
+            s.y,
+            s.z,
+            e.x,
+            e.y,
+            e.z
+        )
+    }
+}
+
+/// A 2D curve restricted to the parameter range `[first, last]` of a
+/// basis curve: a line segment or a circular arc, typically a trimmed
+/// pcurve in a surface's (u, v) parameter space. Mirrors `TrimmedCurve3D`.
+#[pyclass(name = "TrimmedCurve2D", module = "geomcore.curves")]
+#[derive(Clone)]
+struct PyTrimmedCurve2D(TrimmedCurve2D);
+
+#[pymethods]
+impl PyTrimmedCurve2D {
+    #[new]
+    /// Restrict `basis` (a Line2D or Circle2D) to the parameter range
+    /// `[first, last]`, under the rules of `TrimmedCurve3D`.
+    fn py_new(basis: &Bound<'_, PyAny>, first: f64, last: f64) -> PyResult<Self> {
+        let basis = extract_curve2d(basis)?;
+        Ok(PyTrimmedCurve2D(
+            TrimmedCurve2D::new(basis, first, last).map_err(val_err)?,
+        ))
+    }
+
+    /// The segment from `start` to `end`, parametrised by arc length from
+    /// `start` over `[0, |end - start|]`.
+    #[staticmethod]
+    fn segment(start: PyPoint2D, end: PyPoint2D) -> PyResult<Self> {
+        let segment = TrimmedCurve2D::segment(start.0, end.0).map_err(val_err)?;
+        Ok(PyTrimmedCurve2D(segment.into_curve2d()))
+    }
+
+    /// The basis curve.
+    fn basis(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        curve2d_to_py(py, *self.0.basis())
+    }
+
+    /// The start of the parameter range.
+    fn first(&self) -> f64 {
+        self.0.first()
+    }
+
+    /// The end of the parameter range.
+    fn last(&self) -> f64 {
+        self.0.last()
+    }
+
+    /// The (first, last) parameter bounds.
+    fn bounds(&self) -> (f64, f64) {
+        (self.0.first(), self.0.last())
+    }
+
+    /// The point at the start of the range.
+    fn start_point(&self) -> PyPoint2D {
+        PyPoint2D(self.0.start_point())
+    }
+
+    /// The point at the end of the range.
+    fn end_point(&self) -> PyPoint2D {
+        PyPoint2D(self.0.end_point())
+    }
+
+    /// Evaluate the basis point at parameter `u` (not checked against the
+    /// range).
+    fn eval_point(&self, u: f64) -> PyPoint2D {
+        PyPoint2D(self.0.eval_point(u))
+    }
+
+    /// Evaluate many parameters at once.
+    fn eval_points(&self, us: Vec<f64>) -> Vec<PyPoint2D> {
+        self.0.eval_points(&us).into_iter().map(PyPoint2D).collect()
+    }
+
+    /// Evaluate the derivative of the given order (>= 1) at `u`.
+    fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector2D> {
+        check_curve_order(order, u32::MAX)?;
+        Ok(PyVector2D(self.0.eval_derivative(u, order)))
+    }
+
+    /// Returns whether `point` lies on the trimmed curve within `tol`
+    /// (`Tolerance.default()` when omitted).
+    #[pyo3(signature = (point, tol = None))]
+    fn contains(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .contains(point.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
+    /// The basis's distance extrema from `point` inside the range, plus
+    /// the two ends, as `(parameter, distance)` tuples ordered by
+    /// ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        PointExtrema2D::extrema(&self.0, point.0, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
+    /// Projects `point` onto the trimmed curve, returning
+    /// `(parameter, distance)`: the closest basis extremum inside the
+    /// range, or the nearer end.
+    #[pyo3(signature = (point, tol = None))]
+    fn project_point(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> (f64, f64) {
+        let proj = self
+            .0
+            .project_point(point.0, tol.map(|t| t.0).unwrap_or_default());
+        (proj.parameter, proj.distance)
+    }
+
+    /// Projects each point in `points` onto the trimmed curve, returning a
+    /// `(parameter, distance)` tuple per point.
+    #[pyo3(signature = (points, tol = None))]
+    fn project_points(&self, points: Vec<PyPoint2D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        let tol = tol.map(|t| t.0).unwrap_or_default();
+        self.0
+            .project_points(&points, tol)
+            .iter()
+            .map(|p| (p.parameter, p.distance))
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        let (s, e) = (self.0.start_point(), self.0.end_point());
+        format!(
+            "TrimmedCurve2D(first={}, last={}, start=({}, {}), end=({}, {}))",
+            self.0.first(),
+            self.0.last(),
+            s.x,
+            s.y,
+            e.x,
+            e.y
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Module wiring
 // ---------------------------------------------------------------------------
@@ -3663,6 +4027,8 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     curves.add_class::<PyBSplineCurve3D>()?;
     curves.add_class::<PyLine2D>()?;
     curves.add_class::<PyCircle2D>()?;
+    curves.add_class::<PyTrimmedCurve3D>()?;
+    curves.add_class::<PyTrimmedCurve2D>()?;
     m.add_submodule(&curves)?;
 
     let surfaces = PyModule::new(py, "surfaces")?;

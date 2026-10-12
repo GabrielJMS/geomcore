@@ -9,6 +9,16 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Python: `geomcore.curves.TrimmedCurve3D` and `TrimmedCurve2D`, built
+  from any curve of the matching dimension and a range, or with
+  `segment(start, end)`. They have `basis()`, `first()`, `last()`,
+  `bounds()`, the end points, evaluation, `extrema`, `project_point(s)`
+  and `contains`. `curve_curve_extrema`, `intersect_curve_curve`,
+  `intersect_curve_surface` and `parametrize_numeric` accept a
+  `TrimmedCurve3D` and only search its range.
+
 ## [0.28.0] - 2026-10-12
 
 ### Added

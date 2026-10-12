@@ -928,3 +928,90 @@ def test_conic_projection_of_non_finite_point_is_nan():
             u, d = curve.project_point(p)
             assert math.isnan(u) and math.isnan(d)
             assert curve.extrema(p) == []
+
+
+def test_trimmed_curve_segment_and_arc():
+    from geomcore.curves import Line3D, TrimmedCurve3D
+
+    segment = TrimmedCurve3D.segment(Point3D.origin(), Point3D(3.0, 4.0, 0.0))
+    assert segment.bounds() == (0.0, 5.0)
+    assert isinstance(segment.basis(), Line3D)
+    assert segment.end_point().y == pytest.approx(4.0)
+    # Beyond the end: the projection clamps to it.
+    u, d = segment.project_point(Point3D(6.0, 8.0, 0.0))
+    assert u == pytest.approx(5.0)
+    assert d == pytest.approx(5.0)
+    assert not segment.contains(Point3D(6.0, 8.0, 0.0))
+
+    # The right half of the unit circle, across the seam at angle 0.
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    arc = TrimmedCurve3D(circle, 1.5 * math.pi, 2.5 * math.pi)
+    assert isinstance(arc.basis(), Circle3D)
+    u, d = arc.project_point(Point3D(3.0, 0.0, 0.0))
+    assert u == pytest.approx(2.0 * math.pi)
+    assert d == pytest.approx(2.0)
+    u, _ = arc.project_point(Point3D(-3.0, 0.1, 0.0))
+    assert u == pytest.approx(2.5 * math.pi)
+    assert arc.contains(Point3D(0.0, 1.0, 0.0))
+    assert not arc.contains(Point3D(-1.0, 0.0, 0.0))
+    assert [e[0] for e in arc.extrema(Point3D(3.0, 0.0, 0.0))][0] == pytest.approx(2.0 * math.pi)
+
+
+def test_trimmed_curve_rejects_bad_ranges():
+    from geomcore.curves import Line3D, TrimmedCurve3D
+
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    for first, last in [(1.0, 1.0), (2.0, 1.0), (0.0, 7.0), (math.nan, 1.0)]:
+        with pytest.raises(ValueError):
+            TrimmedCurve3D(circle, first, last)
+    with pytest.raises(ValueError):
+        TrimmedCurve3D.segment(Point3D.origin(), Point3D.origin())
+    with pytest.raises(TypeError):
+        TrimmedCurve3D(TrimmedCurve3D(Line3D(Point3D.origin(), Vector3D.x()), 0.0, 1.0), 0.0, 1.0)
+    curve = BSplineCurve3D(1, [Point3D.origin(), Point3D(2.0, 0.0, 0.0)], [0.0, 1.0], [2, 2], False)
+    with pytest.raises(ValueError):
+        TrimmedCurve3D(curve, -0.5, 0.5)
+    with pytest.raises(ValueError):
+        TrimmedCurve3D(curve, 0.0, 1.0).eval_derivative(0.5, 3)
+
+
+def test_generic_functions_search_only_the_range():
+    from geomcore import curve_curve_extrema, intersect_curve_curve, intersect_curve_surface
+    from geomcore.curves import TrimmedCurve3D
+
+    segment = TrimmedCurve3D.segment(Point3D(-2.0, 0.5, 0.0), Point3D(2.0, 0.5, 0.0))
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    assert len(intersect_curve_curve(segment, circle)) == 2
+    quarter = TrimmedCurve3D(circle, 0.0, math.pi / 2)
+    hits = intersect_curve_curve(segment, quarter)
+    assert len(hits) == 1
+    assert hits[0][1].x > 0.0
+
+    a = TrimmedCurve3D.segment(Point3D.origin(), Point3D(1.0, 0.0, 0.0))
+    b = TrimmedCurve3D.segment(Point3D(3.0, -1.0, 1.0), Point3D(3.0, 1.0, 1.0))
+    assert curve_curve_extrema(a, b)[0][2] == pytest.approx(math.sqrt(5.0))
+
+    sphere = Sphere(Point3D.origin(), 1.0)
+    half = TrimmedCurve3D.segment(Point3D.origin(), Point3D(2.0, 0.0, 0.0))
+    hits = intersect_curve_surface(half, sphere)
+    assert len(hits) == 1
+    assert hits[0][0] == pytest.approx(1.0)
+
+
+def test_trimmed_curve_2d():
+    from geomcore.curves import Circle2D, TrimmedCurve2D
+
+    arc = TrimmedCurve2D(Circle2D(Point2D.origin(), 2.0), 0.0, math.pi / 2)
+    assert isinstance(arc.basis(), Circle2D)
+    u, _ = arc.project_point(Point2D(1.0, 1.0))
+    assert u == pytest.approx(math.pi / 4)
+    u, _ = arc.project_point(Point2D(-1.0, -5.0))
+    assert u == 0.0
+    assert arc.contains(Point2D(0.0, 2.0))
+    assert not arc.contains(Point2D(-2.0, 0.0))
+
+    segment = TrimmedCurve2D.segment(Point2D.origin(), Point2D(0.0, 2.0))
+    assert isinstance(segment.basis(), Line2D)
+    assert segment.bounds() == (0.0, 2.0)
+    with pytest.raises(TypeError):
+        TrimmedCurve2D(Circle3D(Point3D.origin(), Vector3D.z(), 1.0), 0.0, 1.0)
