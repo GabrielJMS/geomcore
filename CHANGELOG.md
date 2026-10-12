@@ -45,6 +45,20 @@ the Python distribution are versioned in lockstep.
   curve and surface types, get them from `eval_point` and
   `eval_derivative`. The numeric curve–curve extrema and intersection and
   the marching intersection use them, 12–17% faster on B-splines.
+- Knot insertion on B-spline curves and surfaces (#33): `insert_knot(u,
+  times)` and `refine_knots(&knots)` on `BSplineCurve3D`, and
+  `insert_u_knot`, `insert_v_knot`, `refine_u_knots` and `refine_v_knots`
+  on `BSplineSurface`, return the same shape with more poles, every point
+  and derivative unchanged. A refinement inserts a sorted list of knots,
+  repeats allowed, in one pass rather than knot by knot, refining every
+  row or column of a surface's net together: 64 knots into a cubic curve
+  of 32 poles take about 1.5 µs. Rational shapes are refined in
+  homogeneous coordinates; periodic ones stay periodic, either bound
+  naming the seam knot. A knot outside the bounds, non-finite or out of
+  order, or a multiplicity above the degree (`degree + 1` at the ends of
+  a non-periodic B-spline) is a `KnotInsertionError`. `BSplineSurface`
+  also gains `poles`, `weights`, `u_knots`, `u_multiplicities`, `v_knots`
+  and `v_multiplicities`.
 
 ### Changed
 

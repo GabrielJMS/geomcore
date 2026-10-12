@@ -17,13 +17,13 @@
 use super::analytic::in_period;
 
 /// Maximum supported B-spline degree.
-const MAX_DEGREE: usize = 25;
+pub(crate) const MAX_DEGREE: usize = 25;
 
-/// Error type re-exported here for use by [`validate_direction`]; the
-/// canonical definition (and its docs) live on [`crate::curves`], next to
-/// [`crate::curves::BSplineCurve3D`], the type that actually constructs and
-/// reports these errors.
-pub(crate) use crate::curves::BSplineConstructionError;
+/// Error types re-exported here for use by [`validate_direction`] and
+/// [`insert_knots`]; the canonical definitions (and their docs) live on
+/// [`crate::curves`], next to [`crate::curves::BSplineCurve3D`], the type
+/// that actually constructs and reports these errors.
+pub(crate) use crate::curves::{BSplineConstructionError, KnotInsertionError};
 
 /// Builds the flattened knot sequence: knot `i` repeated `mults[i]` times.
 ///
@@ -881,6 +881,338 @@ pub(crate) fn validate_direction(
         return Err(BSplineConstructionError::PoleCountMismatch);
     }
     Ok(())
+}
+
+/// A B-spline direction after knot insertion (see [`insert_knots`]).
+pub(crate) struct Refined {
+    pub(crate) knots: Vec<f64>,
+    pub(crate) mults: Vec<u32>,
+    pub(crate) flat: Vec<f64>,
+    /// Laid out as the poles passed to [`insert_knots`].
+    pub(crate) poles: Vec<f64>,
+}
+
+/// Inserts the non-decreasing `insert` knots into a direction in one
+/// pass, leaving the shape unchanged; a value equal to an existing knot
+/// raises its multiplicity, any other value becomes a new knot. On a
+/// periodic direction both parameter bounds name the seam knot.
+///
+/// `poles` holds `lanes` independent rows of the direction's poles, each
+/// pole `dim` coordinates (homogeneous for a rational shape), laid out
+/// row after row: a curve is one row, a surface refined in `u` one row
+/// whose poles are its whole `v` rows, a surface refined in `v` one row
+/// per `u` index. `flat` is the plain [`flat_knots`] of `knots`/`mults`.
+#[allow(clippy::too_many_arguments)] // flat-buffer direction signature
+pub(crate) fn insert_knots(
+    degree: usize,
+    periodic: bool,
+    knots: &[f64],
+    mults: &[u32],
+    flat: &[f64],
+    poles: &[f64],
+    lanes: usize,
+    dim: usize,
+    insert: &[f64],
+) -> Result<Refined, KnotInsertionError> {
+    let (first, last) = param_range(flat, degree, periodic, flat.len());
+    if insert.iter().any(|x| !x.is_finite()) {
+        return Err(KnotInsertionError::NonFiniteKnot);
+    }
+    if insert.windows(2).any(|w| w[1] < w[0]) {
+        return Err(KnotInsertionError::KnotsNotSorted);
+    }
+    if insert
+        .first()
+        .zip(insert.last())
+        .is_some_and(|(&lo, &hi)| lo < first || hi > last)
+    {
+        return Err(KnotInsertionError::KnotOutOfRange);
+    }
+    if insert.is_empty() {
+        return Ok(Refined {
+            knots: knots.to_vec(),
+            mults: mults.to_vec(),
+            flat: flat.to_vec(),
+            poles: poles.to_vec(),
+        });
+    }
+    let seam = |x: f64| periodic && (x == first || x == last);
+    let seam_count = insert.iter().filter(|&&x| seam(x)).count() as u32;
+    let mut new_knots = Vec::with_capacity(knots.len() + insert.len());
+    let mut new_mults = Vec::with_capacity(knots.len() + insert.len());
+    let mut pending = insert.iter().copied().filter(|&x| !seam(x)).peekable();
+    let end = knots.len() - 1;
+    for (i, (&k, &m)) in knots.iter().zip(mults).enumerate() {
+        while let Some(&x) = pending.peek()
+            && x < k
+        {
+            let mut count = 0;
+            while pending.next_if_eq(&x).is_some() {
+                count += 1;
+            }
+            new_knots.push(x);
+            new_mults.push(count);
+        }
+        let mut m = m;
+        while pending.next_if_eq(&k).is_some() {
+            m += 1;
+        }
+        if periodic && (i == 0 || i == end) {
+            m += seam_count;
+        }
+        new_knots.push(k);
+        new_mults.push(m);
+    }
+    debug_assert!(pending.next().is_none());
+    let end = new_mults.len() - 1;
+    let too_large = new_mults.iter().enumerate().any(|(i, &m)| {
+        let limit = if !periodic && (i == 0 || i == end) {
+            degree + 1
+        } else {
+            degree
+        };
+        m as usize > limit
+    });
+    if too_large {
+        return Err(KnotInsertionError::MultiplicityTooLarge);
+    }
+    let new_flat = flat_knots(&new_knots, &new_mults);
+    let new_poles = if periodic {
+        // Seam insertions first, at the seam's first copy.
+        let mut tiled_insert = vec![first; seam_count as usize];
+        tiled_insert.extend(insert.iter().copied().filter(|&x| !seam(x)));
+        refine_periodic(
+            degree,
+            flat,
+            &new_flat,
+            mults[0] as usize,
+            &tiled_insert,
+            poles,
+            lanes,
+            dim,
+        )
+    } else {
+        let mut out = vec![0.0; poles.len() + insert.len() * lanes * dim];
+        refine_poles(degree, flat, &new_flat, insert, poles, lanes, dim, &mut out);
+        out
+    };
+    Ok(Refined {
+        knots: new_knots,
+        mults: new_mults,
+        flat: new_flat,
+        poles: new_poles,
+    })
+}
+
+/// The poles after inserting the knots `x` into the flat knots `old` in
+/// one pass (The NURBS Book, A5.4), `new` being `old` and `x` merged, for
+/// `x` non-decreasing within `[old[degree], old[old.len() - 1 - degree]]`.
+///
+/// `poles` and `out` hold `lanes` rows of poles of `dim` coordinates (see
+/// [`insert_knots`]), the old and the new pole counts per row. The poles
+/// away from the inserted knots are copied; each inserted knot then blends
+/// `degree` poles, right to left, every row with the same coefficients.
+#[allow(clippy::too_many_arguments)] // flat-buffer direction signature
+pub(crate) fn refine_poles(
+    degree: usize,
+    old: &[f64],
+    new: &[f64],
+    x: &[f64],
+    poles: &[f64],
+    lanes: usize,
+    dim: usize,
+    out: &mut [f64],
+) {
+    match (lanes, dim) {
+        (1, 3) => refine_rows::<3>(degree, old, new, x, poles, 1, 3, out),
+        (1, 4) => refine_rows::<4>(degree, old, new, x, poles, 1, 4, out),
+        _ => refine_rows::<0>(degree, old, new, x, poles, lanes, dim, out),
+    }
+}
+
+/// [`refine_poles`] with a compile-time pole width `D`, or any width
+/// (`dim`) when `D == 0`.
+#[allow(clippy::too_many_arguments)] // see `refine_poles`
+fn refine_rows<const D: usize>(
+    degree: usize,
+    old: &[f64],
+    new: &[f64],
+    x: &[f64],
+    poles: &[f64],
+    lanes: usize,
+    dim: usize,
+    out: &mut [f64],
+) {
+    let p = degree;
+    let dim = if D == 0 { dim } else { D };
+    let n = old.len() - p - 1;
+    let s = x.len();
+    if s == 0 {
+        out.copy_from_slice(poles);
+        return;
+    }
+    debug_assert_eq!(new.len(), old.len() + s);
+    debug_assert_eq!(poles.len(), lanes * n * dim);
+    debug_assert_eq!(out.len(), lanes * (n + s) * dim);
+    let (row, new_row) = (n * dim, (n + s) * dim);
+    // The last `s` in `degree..n` with `old[s] <= u`.
+    let span = |u: f64| p + old[p..n].partition_point(|&k| k <= u) - 1;
+    let a = span(x[0]);
+    let b = span(x[s - 1]) + 1;
+    for l in 0..lanes {
+        let (src, dst) = (&poles[l * row..][..row], &mut out[l * new_row..][..new_row]);
+        dst[..(a - p + 1) * dim].copy_from_slice(&src[..(a - p + 1) * dim]);
+        dst[(b - 1 + s) * dim..].copy_from_slice(&src[(b - 1) * dim..]);
+    }
+    let copy_old = |out: &mut [f64], to: usize, from: usize| {
+        for l in 0..lanes {
+            out[l * new_row + to * dim..][..dim]
+                .copy_from_slice(&poles[l * row + from * dim..][..dim]);
+        }
+    };
+    let copy_new = |out: &mut [f64], to: usize, from: usize| {
+        for l in 0..lanes {
+            let base = l * new_row;
+            out.copy_within(base + from * dim..base + (from + 1) * dim, base + to * dim);
+        }
+    };
+    // Pole `to` becomes `alpha * pole[to] + (1 - alpha) * pole[to + 1]`.
+    let blend = |out: &mut [f64], to: usize, alpha: f64| {
+        for l in 0..lanes {
+            let (left, right) = out[l * new_row + to * dim..][..2 * dim].split_at_mut(dim);
+            for (q, &r) in left.iter_mut().zip(right.iter()) {
+                *q = alpha * *q + (1.0 - alpha) * r;
+            }
+        }
+    };
+    let mut i = b + p - 1;
+    let mut k = b + p + s - 1;
+    for &xj in x.iter().rev() {
+        while xj <= old[i] && i > a {
+            copy_old(out, k - p - 1, i - p - 1);
+            k -= 1;
+            i -= 1;
+        }
+        copy_new(out, k - p - 1, k - p);
+        for l in 1..=p {
+            let to = k - p + l - 1;
+            let alpha = new[k + l] - xj;
+            if alpha == 0.0 {
+                copy_new(out, to, to + 1);
+            } else {
+                blend(out, to, alpha / (new[k + l] - old[i - p + l]));
+            }
+        }
+        k -= 1;
+    }
+}
+
+/// [`refine_poles`] on a periodic direction, whose `n` poles weight the
+/// basis functions of one period's flat knots tiled endlessly (see
+/// [`window`]): pole `i` weights the function starting at tiled knot
+/// `i + seam - degree - 1`, `seam` being the seam multiplicity.
+///
+/// The direction is unwrapped into a non-periodic one over a window of
+/// tiled knots, the poles repeated as they wrap, whose parameter range
+/// runs from the old knot at or below the first new pole's interior knots
+/// to the seam one period on. Every periodic copy of `x` in that range is
+/// inserted by [`refine_poles`], and the new period's poles are read off
+/// the refined window: a new pole depends only on its interior knots,
+/// which the refined window holds with every knot in between. `x` lists
+/// the knots to insert within `[first, last)`, the seam ones as `first`.
+#[allow(clippy::too_many_arguments)] // see `refine_poles`
+fn refine_periodic(
+    degree: usize,
+    flat: &[f64],
+    new_flat: &[f64],
+    seam: usize,
+    x: &[f64],
+    poles: &[f64],
+    lanes: usize,
+    dim: usize,
+) -> Vec<f64> {
+    let (first, period) = (flat[0], flat[flat.len() - 1] - flat[0]);
+    let new_seam = seam + x.iter().take_while(|&&k| k == first).count();
+    let (n, new_n) = (flat.len() - seam, new_flat.len() - new_seam);
+    let (block, new_block) = (&flat[..n], &new_flat[..new_n]);
+    let tiled = |block: &[f64], k: isize| {
+        let len = block.len() as isize;
+        block[k.rem_euclid(len) as usize] + period * k.div_euclid(len) as f64
+    };
+    let p = degree as isize;
+    // Tiled index of the knot starting the first new pole's support.
+    let new_start = new_seam as isize - p - 1;
+    // The window's range starts at the last copy of the old knot at or
+    // below the first interior knot of that support.
+    let (index, tile) = (
+        (new_start + 1).rem_euclid(new_n as isize) as usize,
+        (new_start + 1).div_euclid(new_n as isize),
+    );
+    let old_index = block.partition_point(|&k| k <= new_block[index]) - 1;
+    let anchor = old_index as isize + tile * n as isize;
+    let anchor_knot = tiled(block, anchor);
+    let window_start = anchor - p;
+    let window_end = (n + seam) as isize - 1;
+    let old_knots: Vec<f64> = (window_start..=window_end + p)
+        .map(|k| tiled(block, k))
+        .collect();
+    let mut inserted = Vec::with_capacity(x.len() * (1 - tile) as usize + new_seam - seam);
+    for t in tile..=0 {
+        inserted.extend(
+            x.iter()
+                .map(|&k| k + period * t as f64)
+                .filter(|&k| k >= anchor_knot),
+        );
+    }
+    inserted.extend(std::iter::repeat_n(
+        tiled(block, n as isize),
+        new_seam - seam,
+    ));
+    let mut new_knots = Vec::with_capacity(old_knots.len() + inserted.len());
+    let (mut i, mut j) = (0, 0);
+    while i < old_knots.len() || j < inserted.len() {
+        if j == inserted.len() || (i < old_knots.len() && old_knots[i] <= inserted[j]) {
+            new_knots.push(old_knots[i]);
+            i += 1;
+        } else {
+            new_knots.push(inserted[j]);
+            j += 1;
+        }
+    }
+    let count = old_knots.len() - p as usize - 1;
+    let offset = seam as isize - p - 1;
+    let mut window_poles = vec![0.0; lanes * count * dim];
+    for l in 0..lanes {
+        for w in 0..count {
+            let pole = (window_start + w as isize - offset).rem_euclid(n as isize) as usize;
+            window_poles[(l * count + w) * dim..][..dim]
+                .copy_from_slice(&poles[(l * n + pole) * dim..][..dim]);
+        }
+    }
+    let new_count = count + inserted.len();
+    let mut refined = vec![0.0; lanes * new_count * dim];
+    refine_poles(
+        degree,
+        &old_knots,
+        &new_knots,
+        &inserted,
+        &window_poles,
+        lanes,
+        dim,
+        &mut refined,
+    );
+    // Window pole `w` weights the new tiled function `w + shift`, aligned
+    // on the last copy of the anchor knot.
+    let anchor_last = (new_block.partition_point(|&k| k <= block[old_index]) - 1) as isize
+        + tile * new_n as isize;
+    let shift = anchor_last - (new_knots.partition_point(|&k| k <= anchor_knot) as isize - 1);
+    let start = (new_start - shift) as usize;
+    debug_assert!(start + new_n <= new_count);
+    let mut out = Vec::with_capacity(lanes * new_n * dim);
+    for l in 0..lanes {
+        out.extend_from_slice(&refined[(l * new_count + start) * dim..][..new_n * dim]);
+    }
+    out
 }
 
 #[cfg(test)]

@@ -83,6 +83,39 @@ impl fmt::Display for BSplineConstructionError {
 
 impl std::error::Error for BSplineConstructionError {}
 
+/// Error returned when knots cannot be inserted into a [`BSplineCurve3D`]
+/// or a direction of a [`crate::BSplineSurface`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnotInsertionError {
+    /// A knot to insert is NaN or infinite.
+    NonFiniteKnot,
+    /// A knot to insert lies outside the parameter bounds.
+    KnotOutOfRange,
+    /// The knots to insert are not in non-decreasing order.
+    KnotsNotSorted,
+    /// A multiplicity would exceed its maximum: the degree, or
+    /// `degree + 1` at the end knots of a non-periodic B-spline.
+    MultiplicityTooLarge,
+}
+
+impl fmt::Display for KnotInsertionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            KnotInsertionError::NonFiniteKnot => "a knot to insert is not finite",
+            KnotInsertionError::KnotOutOfRange => {
+                "a knot to insert is outside the parameter bounds"
+            }
+            KnotInsertionError::KnotsNotSorted => "the knots to insert are not sorted",
+            KnotInsertionError::MultiplicityTooLarge => {
+                "a knot multiplicity would exceed its maximum"
+            }
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for KnotInsertionError {}
+
 /// A B-spline (optionally rational, optionally periodic) curve in 3D,
 /// evaluated by de Boor's algorithm.
 ///
@@ -719,6 +752,129 @@ impl BSplineCurve3D {
         }
     }
 
+    /// Returns the same curve with the knot `u` inserted `times` times:
+    /// its multiplicity rises by `times` (or it becomes a new knot of
+    /// multiplicity `times`) and the curve gains `times` poles, while every
+    /// point and derivative stays the same.
+    ///
+    /// A rational curve is refined in homogeneous coordinates. On a
+    /// periodic curve both bounds name the seam knot, whose first and last
+    /// multiplicities rise together; the result stays periodic. Inserting
+    /// zero times returns the curve unchanged. A value equal to an existing
+    /// knot raises its multiplicity; any other value, however close,
+    /// becomes a new knot.
+    ///
+    /// # Errors
+    ///
+    /// [`KnotInsertionError::NonFiniteKnot`] if `u` is NaN or infinite,
+    /// [`KnotInsertionError::KnotOutOfRange`] if it lies outside
+    /// [`BSplineCurve3D::bounds`], and
+    /// [`KnotInsertionError::MultiplicityTooLarge`] if its multiplicity
+    /// would exceed the degree (`degree + 1` at the end knots of a
+    /// non-periodic curve, so a clamped end takes no more).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, KnotInsertionError, Point3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 2.0, 0.0),
+    ///     Point3D::new(3.0, 2.0, 1.0),
+    ///     Point3D::new(4.0, 0.0, 1.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+    /// let refined = curve.insert_knot(0.25, 2).unwrap();
+    /// assert_eq!(refined.knots(), &[0.0, 0.25, 1.0]);
+    /// assert_eq!(refined.multiplicities(), &[4, 2, 4]);
+    /// assert_eq!(refined.poles().len(), 6);
+    /// for u in [0.0, 0.1, 0.25, 0.6, 1.0] {
+    ///     assert!(refined.eval_point(u).distance(curve.eval_point(u)) < 1e-12);
+    /// }
+    /// assert_eq!(
+    ///     curve.insert_knot(0.25, 4),
+    ///     Err(KnotInsertionError::MultiplicityTooLarge)
+    /// );
+    /// ```
+    pub fn insert_knot(&self, u: f64, times: u32) -> Result<BSplineCurve3D, KnotInsertionError> {
+        let copies = [u; math::MAX_DEGREE + 1];
+        // More copies than any multiplicity allows fail the same way.
+        self.refine_knots(&copies[..(times as usize).min(copies.len())])
+    }
+
+    /// Returns the same curve with all of `knots` inserted in one pass:
+    /// each value inserted once, a repeated value as many times as it
+    /// appears. The curve gains one pole per value while every point and
+    /// derivative stays the same; see [`BSplineCurve3D::insert_knot`] for
+    /// rational and periodic curves.
+    ///
+    /// The poles are computed once for the whole list rather than knot by
+    /// knot: each value blends `degree` poles, and the other poles are
+    /// copied once.
+    ///
+    /// # Errors
+    ///
+    /// [`KnotInsertionError::NonFiniteKnot`] if a value is NaN or infinite,
+    /// [`KnotInsertionError::KnotsNotSorted`] if `knots` is not in
+    /// non-decreasing order, [`KnotInsertionError::KnotOutOfRange`] if a
+    /// value lies outside [`BSplineCurve3D::bounds`], and
+    /// [`KnotInsertionError::MultiplicityTooLarge`] as for
+    /// [`BSplineCurve3D::insert_knot`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, KnotInsertionError, Point3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 2.0, 0.0),
+    ///     Point3D::new(3.0, 2.0, 1.0),
+    ///     Point3D::new(4.0, 0.0, 1.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+    /// let refined = curve.refine_knots(&[0.25, 0.5, 0.5, 0.75]).unwrap();
+    /// assert_eq!(refined.knots(), &[0.0, 0.25, 0.5, 0.75, 1.0]);
+    /// assert_eq!(refined.multiplicities(), &[4, 1, 2, 1, 4]);
+    /// for u in [0.0, 0.3, 0.5, 0.9, 1.0] {
+    ///     assert!(refined.eval_point(u).distance(curve.eval_point(u)) < 1e-12);
+    /// }
+    /// assert_eq!(
+    ///     curve.refine_knots(&[0.5, 0.25]),
+    ///     Err(KnotInsertionError::KnotsNotSorted)
+    /// );
+    /// ```
+    pub fn refine_knots(&self, knots: &[f64]) -> Result<BSplineCurve3D, KnotInsertionError> {
+        if knots.is_empty() {
+            return Ok(self.clone());
+        }
+        let dim = if self.is_rational() { 4 } else { 3 };
+        let refined = math::insert_knots(
+            self.degree,
+            self.periodic,
+            &self.knots,
+            &self.mults,
+            &self.flat,
+            &self.flat_poles,
+            1,
+            dim,
+            knots,
+        )?;
+        let (poles, weights) = unpack_flat_poles(&refined.poles, self.is_rational());
+        Ok(BSplineCurve3D {
+            degree: self.degree,
+            periodic: self.periodic,
+            poles,
+            weights,
+            knots: refined.knots,
+            mults: refined.mults,
+            flat: refined.flat,
+            flat_poles: refined.poles,
+            spans: Lazy::default(),
+        })
+    }
+
     /// Returns the curve's parameter bounds `(first, last)`.
     ///
     /// For a clamped (non-periodic) curve this is the active span
@@ -1257,6 +1413,28 @@ fn pack_flat_poles(poles: &[Point3D], weights: Option<&[f64]>) -> Vec<f64> {
             .zip(ws)
             .flat_map(|(p, &w)| [p.x * w, p.y * w, p.z * w, w])
             .collect(),
+    }
+}
+
+/// The poles (and, if `rational`, weights) of a flat buffer laid out as
+/// [`pack_flat_poles`] writes it.
+fn unpack_flat_poles(flat: &[f64], rational: bool) -> (Vec<Point3D>, Option<Vec<f64>>) {
+    if rational {
+        let (chunks, _) = flat.as_chunks::<4>();
+        let poles = chunks
+            .iter()
+            .map(|&[x, y, z, w]| Point3D::new(x / w, y / w, z / w))
+            .collect();
+        (poles, Some(chunks.iter().map(|c| c[3]).collect()))
+    } else {
+        let (chunks, _) = flat.as_chunks::<3>();
+        (
+            chunks
+                .iter()
+                .map(|&[x, y, z]| Point3D::new(x, y, z))
+                .collect(),
+            None,
+        )
     }
 }
 
@@ -1821,6 +1999,395 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(curve.eval_point(u)), tol));
         }
         assert_eq!(mirrored.transformed(m), curve);
+    }
+
+    // ---- knot insertion ----
+
+    /// Nonuniform clamped cubic with an interior double knot, rational if
+    /// `rational`.
+    fn clamped_curve(rational: bool) -> BSplineCurve3D {
+        let poles: Vec<Point3D> = (0..8)
+            .map(|i| Point3D::new(i as f64, (i * i % 5) as f64, (i % 3) as f64 - 1.0))
+            .collect();
+        let knots = vec![0.0, 0.7, 1.0, 2.5, 4.0];
+        let mults = vec![4, 1, 2, 1, 4];
+        if rational {
+            let weights = vec![1.0, 0.4, 2.5, 1.2, 0.8, 3.0, 0.6, 1.5];
+            BSplineCurve3D::new_rational(3, poles, weights, knots, mults, false).unwrap()
+        } else {
+            BSplineCurve3D::new(3, poles, knots, mults, false).unwrap()
+        }
+    }
+
+    /// Unclamped non-periodic quadratic: bounds `(2, 7)`, both bound knots
+    /// interior to the knot vector.
+    fn unclamped_curve() -> BSplineCurve3D {
+        let poles: Vec<Point3D> = (0..7)
+            .map(|i| Point3D::new(i as f64, ((i * 3) % 4) as f64, 0.5 * i as f64))
+            .collect();
+        let knots: Vec<f64> = (0..10).map(f64::from).collect();
+        BSplineCurve3D::new(2, poles, knots, vec![1; 10], false).unwrap()
+    }
+
+    /// Periodic cubic with a double seam knot, rational if `rational`.
+    fn periodic_seam_curve(rational: bool) -> BSplineCurve3D {
+        let poles = periodic_ring_curve().poles().to_vec();
+        let knots = vec![0.0, 1.5, 3.0, 4.0, 5.0, 6.0];
+        let mults = vec![2, 1, 1, 1, 1, 2];
+        if rational {
+            let weights = vec![1.0, 2.0, 0.5, 1.5, 0.8, 1.2];
+            BSplineCurve3D::new_rational(3, poles, weights, knots, mults, true).unwrap()
+        } else {
+            BSplineCurve3D::new(3, poles, knots, mults, true).unwrap()
+        }
+    }
+
+    /// Periodic quadratic with three poles: a period shorter than the
+    /// supports of the new poles.
+    fn short_periodic_curve() -> BSplineCurve3D {
+        let poles = vec![
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(-0.5, 0.9, 0.2),
+            Point3D::new(-0.5, -0.9, -0.2),
+        ];
+        BSplineCurve3D::new(2, poles, vec![0.0, 0.5, 2.0, 3.0], vec![1; 4], true).unwrap()
+    }
+
+    /// `refined` evaluates as `curve`, point and first two derivatives,
+    /// within 1e-12 relative to the curve's size, at a spread of
+    /// parameters, at every knot of both, and, on a periodic curve, past
+    /// the bounds.
+    fn assert_same_curve(curve: &BSplineCurve3D, refined: &BSplineCurve3D) {
+        assert_eq!(refined.bounds(), curve.bounds());
+        assert_eq!(refined.is_periodic(), curve.is_periodic());
+        assert_eq!(refined.is_rational(), curve.is_rational());
+        let rebuilt = match refined.weights() {
+            Some(w) => BSplineCurve3D::new_rational(
+                refined.degree(),
+                refined.poles().to_vec(),
+                w.to_vec(),
+                refined.knots().to_vec(),
+                refined.multiplicities().to_vec(),
+                refined.is_periodic(),
+            ),
+            None => BSplineCurve3D::new(
+                refined.degree(),
+                refined.poles().to_vec(),
+                refined.knots().to_vec(),
+                refined.multiplicities().to_vec(),
+                refined.is_periodic(),
+            ),
+        };
+        assert!(rebuilt.is_ok(), "invalid refinement: {rebuilt:?}");
+        let size = curve
+            .poles()
+            .iter()
+            .map(|p| p.x.abs().max(p.y.abs()).max(p.z.abs()))
+            .fold(1.0, f64::max);
+        let (first, last) = curve.bounds();
+        let mut params: Vec<f64> = (0..=40)
+            .map(|i| first + (last - first) * i as f64 / 40.0)
+            .collect();
+        params.extend(curve.knots().iter().chain(refined.knots()));
+        if curve.is_periodic() {
+            let period = last - first;
+            params.extend([first - 0.3 * period, last + 0.45 * period]);
+        }
+        for u in params {
+            let (p, d1, d2) = curve.eval_d2(u);
+            let (q, e1, e2) = refined.eval_d2(u);
+            let pairs = [
+                (p - Point3D::ORIGIN, q - Point3D::ORIGIN),
+                (d1, e1),
+                (d2, e2),
+            ];
+            for (k, (a, b)) in pairs.into_iter().enumerate() {
+                let tol = 1e-12 * size.max(a.magnitude());
+                assert!(
+                    (a - b).magnitude() <= tol,
+                    "u = {u}, order {k}: {a:?} vs {b:?}"
+                );
+            }
+        }
+    }
+
+    fn all_insertion_curves() -> Vec<BSplineCurve3D> {
+        vec![
+            clamped_curve(false),
+            clamped_curve(true),
+            unclamped_curve(),
+            periodic_ring_curve(),
+            periodic_seam_curve(false),
+            periodic_seam_curve(true),
+            short_periodic_curve(),
+        ]
+    }
+
+    #[test]
+    fn test_insert_knot_keeps_shape_everywhere() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let p = curve.degree() as u32;
+            let mut values: Vec<(f64, u32)> = vec![
+                (first + 0.37 * (last - first), 1),
+                (first + 0.61 * (last - first), p),
+            ];
+            // Raise interior knots to the degree.
+            for (&k, &m) in curve.knots().iter().zip(curve.multiplicities()) {
+                if k > first && k < last && m < p {
+                    values.push((k, p - m));
+                }
+            }
+            for (u, times) in values {
+                let refined = curve.insert_knot(u, times).unwrap();
+                assert_eq!(refined.poles().len(), curve.poles().len() + times as usize);
+                let index = refined.knots().iter().position(|&k| k == u).unwrap();
+                let before = curve
+                    .knots()
+                    .iter()
+                    .position(|&k| k == u)
+                    .map_or(0, |i| curve.multiplicities()[i]);
+                assert_eq!(refined.multiplicities()[index], before + times);
+                assert_same_curve(&curve, &refined);
+            }
+        }
+    }
+
+    #[test]
+    fn test_insert_knot_at_bounds() {
+        // Periodic: either bound raises the seam at both ends.
+        for curve in [periodic_ring_curve(), periodic_seam_curve(true)] {
+            let (first, last) = curve.bounds();
+            let seam = curve.multiplicities()[0];
+            for u in [first, last] {
+                let refined = curve.insert_knot(u, 1).unwrap();
+                let mults = refined.multiplicities();
+                assert_eq!((mults[0], mults[mults.len() - 1]), (seam + 1, seam + 1));
+                assert_eq!(refined.poles().len(), curve.poles().len() + 1);
+                assert_same_curve(&curve, &refined);
+            }
+            let full = curve.insert_knot(first, 3 - seam).unwrap();
+            assert_same_curve(&curve, &full);
+            assert_eq!(
+                curve.insert_knot(last, 4 - seam),
+                Err(KnotInsertionError::MultiplicityTooLarge)
+            );
+        }
+        // Unclamped: the bounds are interior knots of the knot vector.
+        let curve = unclamped_curve();
+        for u in [2.0, 7.0] {
+            let refined = curve.insert_knot(u, 1).unwrap();
+            assert_same_curve(&curve, &refined);
+            assert_eq!(
+                curve.insert_knot(u, 2),
+                Err(KnotInsertionError::MultiplicityTooLarge)
+            );
+        }
+        // Clamped: the end knots are already at `degree + 1`.
+        let curve = clamped_curve(false);
+        for u in [0.0, 4.0] {
+            assert_eq!(
+                curve.insert_knot(u, 1),
+                Err(KnotInsertionError::MultiplicityTooLarge)
+            );
+        }
+    }
+
+    #[test]
+    fn test_refine_knots_keeps_shape_and_matches_single_insertions() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let at = |t: f64| first + t * (last - first);
+            // New knots (one repeated), an existing interior knot, and on a
+            // periodic curve the seam, at both bounds when the degree
+            // allows.
+            let mut knots = vec![at(0.05), at(0.3), at(0.3), at(0.52), at(0.9)];
+            if let Some(&k) = curve.knots().iter().find(|&&k| k > first && k < last) {
+                knots.push(k);
+            }
+            if curve.is_periodic() {
+                knots.push(first);
+                if curve.multiplicities()[0] + 2 <= curve.degree() as u32 {
+                    knots.push(last);
+                }
+            }
+            knots.sort_by(f64::total_cmp);
+            let refined = curve.refine_knots(&knots).unwrap();
+            assert_eq!(refined.poles().len(), curve.poles().len() + knots.len());
+            assert_same_curve(&curve, &refined);
+            let mut one_by_one = curve.clone();
+            for &u in &knots {
+                one_by_one = one_by_one.insert_knot(u, 1).unwrap();
+            }
+            assert_eq!(one_by_one.knots(), refined.knots());
+            assert_eq!(one_by_one.multiplicities(), refined.multiplicities());
+            for (a, b) in one_by_one.poles().iter().zip(refined.poles()) {
+                assert!(a.distance(*b) < 1e-12, "{a:?} vs {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_refine_knots_many_per_span() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let knots: Vec<f64> = (1..64)
+                .map(|i| first + (last - first) * i as f64 / 64.0)
+                .collect();
+            let refined = curve.refine_knots(&knots).unwrap();
+            assert_same_curve(&curve, &refined);
+            // Refining again keeps refining the same shape.
+            let twice = refined
+                .refine_knots(&[first + 0.01 * (last - first)])
+                .unwrap();
+            assert_same_curve(&curve, &twice);
+        }
+    }
+
+    #[test]
+    fn test_refine_knots_random_curves() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut checked = 0;
+        for case in 0..400 {
+            let degree = 1 + case % 5;
+            let periodic = case % 2 == 0;
+            let rational = case % 3 == 0;
+            let n_knots = 2 + (next() * 6.0) as usize;
+            let mut knots = vec![next() * 4.0 - 2.0];
+            for _ in 1..n_knots {
+                knots.push(knots[knots.len() - 1] + 0.3 + 0.7 * next());
+            }
+            let mut mults: Vec<u32> = (0..n_knots)
+                .map(|_| 1 + (next() * degree as f64) as u32)
+                .collect();
+            let last = n_knots - 1;
+            if periodic {
+                mults[last] = mults[0];
+            } else {
+                mults[0] = degree as u32 + 1;
+                mults[last] = degree as u32 + 1;
+            }
+            let sum: u32 = mults.iter().sum();
+            let n_poles = if periodic {
+                (sum - mults[last]) as usize
+            } else {
+                sum as usize - degree - 1
+            };
+            if n_poles < degree + 1 {
+                continue;
+            }
+            let poles: Vec<Point3D> = (0..n_poles)
+                .map(|_| Point3D::new(4.0 * next() - 2.0, 4.0 * next() - 2.0, 4.0 * next() - 2.0))
+                .collect();
+            let curve = if rational {
+                let weights = (0..n_poles).map(|_| 0.3 + 2.0 * next()).collect();
+                BSplineCurve3D::new_rational(degree, poles, weights, knots, mults, periodic)
+            } else {
+                BSplineCurve3D::new(degree, poles, knots, mults, periodic)
+            }
+            .unwrap();
+            // Existing knots and quarter points of spans, kept within the
+            // multiplicity limits.
+            let (first, last) = curve.bounds();
+            let mut candidates = vec![];
+            for w in curve.knots().windows(2) {
+                for t in [0.0, 0.25, 0.5, 0.75] {
+                    let u = w[0] + t * (w[1] - w[0]);
+                    if u >= first && u <= last {
+                        candidates.push(u);
+                    }
+                }
+            }
+            candidates.push(last);
+            let mut insert = vec![];
+            for &u in &candidates {
+                for _ in 0..(next() * 3.0) as usize {
+                    insert.push(u);
+                }
+            }
+            let mut refined = curve.refine_knots(&insert);
+            while refined == Err(KnotInsertionError::MultiplicityTooLarge) {
+                insert.remove((next() * insert.len() as f64) as usize);
+                refined = curve.refine_knots(&insert);
+            }
+            let refined = refined.unwrap();
+            assert_eq!(refined.poles().len(), curve.poles().len() + insert.len());
+            assert_same_curve(&curve, &refined);
+            checked += 1;
+        }
+        assert!(checked > 250, "{checked}");
+    }
+
+    #[test]
+    fn test_insert_zero_times_or_no_knots_is_unchanged() {
+        let curve = clamped_curve(true);
+        assert_eq!(curve.insert_knot(1.3, 0).unwrap(), curve);
+        assert_eq!(curve.refine_knots(&[]).unwrap(), curve);
+    }
+
+    #[test]
+    fn test_knot_insertion_errors() {
+        for curve in [clamped_curve(false), periodic_ring_curve()] {
+            let (first, last) = curve.bounds();
+            for u in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert_eq!(
+                    curve.insert_knot(u, 1),
+                    Err(KnotInsertionError::NonFiniteKnot)
+                );
+                assert_eq!(
+                    curve.refine_knots(&[first, u]),
+                    Err(KnotInsertionError::NonFiniteKnot)
+                );
+            }
+            for u in [first - 1e-9, last + 1e-9] {
+                assert_eq!(
+                    curve.insert_knot(u, 1),
+                    Err(KnotInsertionError::KnotOutOfRange)
+                );
+            }
+            let mid = 0.5 * (first + last);
+            assert_eq!(
+                curve.refine_knots(&[mid, mid - 0.1]),
+                Err(KnotInsertionError::KnotsNotSorted)
+            );
+            assert_eq!(
+                curve.insert_knot(mid, 4),
+                Err(KnotInsertionError::MultiplicityTooLarge)
+            );
+            assert_eq!(
+                curve.insert_knot(mid, u32::MAX),
+                Err(KnotInsertionError::MultiplicityTooLarge)
+            );
+            assert_eq!(
+                curve.refine_knots(&[mid, mid, mid, mid]),
+                Err(KnotInsertionError::MultiplicityTooLarge)
+            );
+        }
+        // The double knot of the clamped curve takes one more.
+        let curve = clamped_curve(false);
+        assert!(curve.insert_knot(1.0, 1).is_ok());
+        assert_eq!(
+            curve.insert_knot(1.0, 2),
+            Err(KnotInsertionError::MultiplicityTooLarge)
+        );
+    }
+
+    #[test]
+    fn test_knot_insertion_error_display() {
+        for e in [
+            KnotInsertionError::NonFiniteKnot,
+            KnotInsertionError::KnotOutOfRange,
+            KnotInsertionError::KnotsNotSorted,
+            KnotInsertionError::MultiplicityTooLarge,
+        ] {
+            assert!(!e.to_string().is_empty());
+        }
     }
 
     #[test]

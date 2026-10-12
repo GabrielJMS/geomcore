@@ -26,6 +26,10 @@ harness = false
 name = "conic_quadric"
 harness = false
 
+[[bench]]
+name = "knot_insertion"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 

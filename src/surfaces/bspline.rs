@@ -19,6 +19,7 @@ use crate::surfaces::ParametricSurface;
 use crate::{Point3D, Tolerance, Transform, Vector3D};
 
 pub use crate::curves::BSplineConstructionError;
+use crate::curves::KnotInsertionError;
 
 /// A tensor-product B-spline (optionally rational, optionally periodic in
 /// either direction) surface in 3D, evaluated by de Boor's algorithm applied
@@ -415,6 +416,320 @@ impl BSplineSurface {
     /// ```
     pub fn is_rational(&self) -> bool {
         self.weights.is_some()
+    }
+
+    /// Returns the control net, `poles()[i_u][i_v]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.poles()[1][1], Point3D::new(1.0, 1.0, 1.0));
+    /// ```
+    pub fn poles(&self) -> &[Vec<Point3D>] {
+        &self.poles
+    }
+
+    /// Returns the per-pole weights, laid out as [`BSplineSurface::poles`],
+    /// or `None` if the surface is not rational.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.weights(), None);
+    /// ```
+    pub fn weights(&self) -> Option<&[Vec<f64>]> {
+        self.weights.as_deref()
+    }
+
+    /// Returns the (non-flattened) knot values of the `u` direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.u_knots(), &[0.0, 1.0]);
+    /// ```
+    pub fn u_knots(&self) -> &[f64] {
+        &self.u_knots
+    }
+
+    /// Returns the knot multiplicities of the `u` direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.u_multiplicities(), &[2, 2]);
+    /// ```
+    pub fn u_multiplicities(&self) -> &[u32] {
+        &self.u_mults
+    }
+
+    /// Returns the (non-flattened) knot values of the `v` direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.v_knots(), &[0.0, 1.0]);
+    /// ```
+    pub fn v_knots(&self) -> &[f64] {
+        &self.v_knots
+    }
+
+    /// Returns the knot multiplicities of the `v` direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::Point3D;
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.v_multiplicities(), &[2, 2]);
+    /// ```
+    pub fn v_multiplicities(&self) -> &[u32] {
+        &self.v_mults
+    }
+
+    /// Returns the same surface with the knot `u` inserted `times` times in
+    /// the `u` direction: the net gains `times` rows of poles, every point
+    /// and derivative staying the same. Every column of the net is refined
+    /// in the same pass.
+    ///
+    /// Rational and periodic directions behave as for
+    /// [`crate::BSplineCurve3D::insert_knot`].
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::insert_knot`], against the `u` bounds,
+    /// degree and multiplicities.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let refined = surface.insert_u_knot(0.5, 2).unwrap();
+    /// assert_eq!(refined.u_multiplicities(), &[3, 2, 3]);
+    /// assert_eq!(refined.poles().len(), 5);
+    /// let (p, q) = (surface.eval_point(0.3, 0.6), refined.eval_point(0.3, 0.6));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn insert_u_knot(&self, u: f64, times: u32) -> Result<BSplineSurface, KnotInsertionError> {
+        let copies = [u; curve::MAX_DEGREE + 1];
+        self.refine_u_knots(&copies[..(times as usize).min(copies.len())])
+    }
+
+    /// Returns the same surface with the knot `v` inserted `times` times in
+    /// the `v` direction: every row of the net gains `times` poles, every
+    /// point and derivative staying the same. Every row is refined in the
+    /// same pass.
+    ///
+    /// Rational and periodic directions behave as for
+    /// [`crate::BSplineCurve3D::insert_knot`].
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::insert_knot`], against the `v` bounds,
+    /// degree and multiplicities.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..2)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     1, 2, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let refined = surface.insert_v_knot(0.25, 1).unwrap();
+    /// assert_eq!(refined.v_knots(), &[0.0, 0.25, 1.0]);
+    /// assert_eq!(refined.poles()[0].len(), 4);
+    /// let (p, q) = (surface.eval_point(0.3, 0.6), refined.eval_point(0.3, 0.6));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn insert_v_knot(&self, v: f64, times: u32) -> Result<BSplineSurface, KnotInsertionError> {
+        let copies = [v; curve::MAX_DEGREE + 1];
+        self.refine_v_knots(&copies[..(times as usize).min(copies.len())])
+    }
+
+    /// Returns the same surface with all of `knots` inserted in the `u`
+    /// direction in one pass, each value once, a repeated value as many
+    /// times as it appears: the net gains one row of poles per value,
+    /// every point and derivative staying the same.
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::refine_knots`], against the `u` bounds,
+    /// degree and multiplicities.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, KnotInsertionError, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let refined = surface.refine_u_knots(&[0.25, 0.5, 0.5]).unwrap();
+    /// assert_eq!(refined.u_knots(), &[0.0, 0.25, 0.5, 1.0]);
+    /// assert_eq!(refined.u_multiplicities(), &[3, 1, 2, 3]);
+    /// assert_eq!(
+    ///     surface.refine_u_knots(&[0.5, 1.5]),
+    ///     Err(KnotInsertionError::KnotOutOfRange)
+    /// );
+    /// ```
+    pub fn refine_u_knots(&self, knots: &[f64]) -> Result<BSplineSurface, KnotInsertionError> {
+        if knots.is_empty() {
+            return Ok(self.clone());
+        }
+        let refined = curve::insert_knots(
+            self.u_degree,
+            self.u_periodic,
+            &self.u_knots,
+            &self.u_mults,
+            &self.u_flat,
+            &self.flat_poles,
+            1,
+            self.n_v * self.h,
+            knots,
+        )?;
+        let n_u = self.n_u + knots.len();
+        let (poles, weights) = unpack_flat_poles(&refined.poles, n_u, self.n_v, self.h);
+        Ok(BSplineSurface {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+            poles,
+            weights,
+            u_knots: refined.knots,
+            u_mults: refined.mults,
+            v_knots: self.v_knots.clone(),
+            v_mults: self.v_mults.clone(),
+            u_flat: refined.flat,
+            v_flat: self.v_flat.clone(),
+            flat_poles: refined.poles,
+            n_u,
+            n_v: self.n_v,
+            h: self.h,
+            patches: Lazy::default(),
+        })
+    }
+
+    /// Returns the same surface with all of `knots` inserted in the `v`
+    /// direction in one pass, each value once, a repeated value as many
+    /// times as it appears: every row of the net gains one pole per value,
+    /// every point and derivative staying the same.
+    ///
+    /// # Errors
+    ///
+    /// As [`crate::BSplineCurve3D::refine_knots`], against the `v` bounds,
+    /// degree and multiplicities.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..2)
+    ///     .map(|i| (0..3).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     1, 2, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![3, 3], false, false,
+    /// )
+    /// .unwrap();
+    /// let refined = surface.refine_v_knots(&[0.2, 0.4, 0.6, 0.8]).unwrap();
+    /// assert_eq!(refined.poles()[1].len(), 7);
+    /// let (p, q) = (surface.eval_point(0.5, 0.45), refined.eval_point(0.5, 0.45));
+    /// assert!(p.distance(q) < 1e-12);
+    /// ```
+    pub fn refine_v_knots(&self, knots: &[f64]) -> Result<BSplineSurface, KnotInsertionError> {
+        if knots.is_empty() {
+            return Ok(self.clone());
+        }
+        let refined = curve::insert_knots(
+            self.v_degree,
+            self.v_periodic,
+            &self.v_knots,
+            &self.v_mults,
+            &self.v_flat,
+            &self.flat_poles,
+            self.n_u,
+            self.h,
+            knots,
+        )?;
+        let n_v = self.n_v + knots.len();
+        let (poles, weights) = unpack_flat_poles(&refined.poles, self.n_u, n_v, self.h);
+        Ok(BSplineSurface {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+            poles,
+            weights,
+            u_knots: self.u_knots.clone(),
+            u_mults: self.u_mults.clone(),
+            v_knots: refined.knots,
+            v_mults: refined.mults,
+            u_flat: self.u_flat.clone(),
+            v_flat: refined.flat,
+            flat_poles: refined.poles,
+            n_u: self.n_u,
+            n_v,
+            h: self.h,
+            patches: Lazy::default(),
+        })
     }
 
     /// Returns the image of this surface under `transform`: every control
@@ -1533,6 +1848,34 @@ fn pack_flat_poles(poles: &[Vec<Point3D>], weights: Option<&Vec<Vec<f64>>>, h: u
     out
 }
 
+/// The `n_u x n_v` pole grid (and, if `h == 4`, weight grid) of a flat
+/// buffer laid out as [`pack_flat_poles`] writes it.
+#[allow(clippy::type_complexity)] // the grids as `BSplineSurface` stores them
+fn unpack_flat_poles(
+    flat: &[f64],
+    n_u: usize,
+    n_v: usize,
+    h: usize,
+) -> (Vec<Vec<Point3D>>, Option<Vec<Vec<f64>>>) {
+    let rows = || flat.chunks_exact(n_v * h).take(n_u);
+    let poles = rows()
+        .map(|row| {
+            row.chunks_exact(h)
+                .map(|c| {
+                    let w = if h == 4 { c[3] } else { 1.0 };
+                    Point3D::new(c[0] / w, c[1] / w, c[2] / w)
+                })
+                .collect()
+        })
+        .collect();
+    let weights = (h == 4).then(|| {
+        rows()
+            .map(|row| row.chunks_exact(4).map(|c| c[3]).collect())
+            .collect()
+    });
+    (poles, weights)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1965,6 +2308,295 @@ mod tests {
         }
         assert!(proj.distance <= best + 1e-9);
         assert!(best - proj.distance < 1e-2);
+    }
+
+    // ---- knot insertion ----
+
+    use crate::BSplineCurve3D;
+
+    /// Cubic in `u` (periodic: six uniform rows; else clamped with a
+    /// double knot), quadratic in `v` (periodic nonuniform or clamped),
+    /// rational if `rational`.
+    fn insertion_surface(rational: bool, u_periodic: bool, v_periodic: bool) -> BSplineSurface {
+        let (u_knots, u_mults) = if u_periodic {
+            ((0..7).map(f64::from).collect(), vec![1; 7])
+        } else {
+            (vec![0.0, 0.8, 2.0, 3.0], vec![4, 1, 2, 4])
+        };
+        let (v_knots, v_mults) = if v_periodic {
+            (vec![0.0, 1.0, 2.5, 3.0, 4.0], vec![1; 5])
+        } else {
+            (vec![0.0, 1.0, 2.0], vec![3, 1, 3])
+        };
+        let (n_u, n_v) = (if u_periodic { 6 } else { 7 }, 4);
+        let poles: Vec<Vec<Point3D>> = (0..n_u)
+            .map(|i| {
+                (0..n_v)
+                    .map(|j| {
+                        let (x, y) = (i as f64, j as f64);
+                        Point3D::new(
+                            x + 0.3 * y.sin(),
+                            y + 0.2 * (x * y).cos(),
+                            x.sin() * y.cos(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect();
+        let weights: Vec<Vec<f64>> = (0..n_u)
+            .map(|i| {
+                (0..n_v)
+                    .map(|j| 0.5 + ((i * 7 + j * 3) % 5) as f64 * 0.4)
+                    .collect()
+            })
+            .collect();
+        if rational {
+            BSplineSurface::new_rational(
+                3, 2, poles, weights, u_knots, u_mults, v_knots, v_mults, u_periodic, v_periodic,
+            )
+        } else {
+            BSplineSurface::new(
+                3, 2, poles, u_knots, u_mults, v_knots, v_mults, u_periodic, v_periodic,
+            )
+        }
+        .unwrap()
+    }
+
+    fn insertion_surfaces() -> Vec<BSplineSurface> {
+        [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (true, false, true),
+            (true, true, true),
+        ]
+        .into_iter()
+        .map(|(r, u, v)| insertion_surface(r, u, v))
+        .collect()
+    }
+
+    /// `refined` is a valid surface evaluating as `surface`, point and
+    /// derivatives up to second order, within 1e-12 relative to its size,
+    /// over a grid including every knot of both.
+    fn assert_same_surface(surface: &BSplineSurface, refined: &BSplineSurface) {
+        let rebuilt = match refined.weights() {
+            Some(w) => BSplineSurface::new_rational(
+                refined.u_degree(),
+                refined.v_degree(),
+                refined.poles().to_vec(),
+                w.to_vec(),
+                refined.u_knots().to_vec(),
+                refined.u_multiplicities().to_vec(),
+                refined.v_knots().to_vec(),
+                refined.v_multiplicities().to_vec(),
+                refined.is_u_periodic(),
+                refined.is_v_periodic(),
+            ),
+            None => BSplineSurface::new(
+                refined.u_degree(),
+                refined.v_degree(),
+                refined.poles().to_vec(),
+                refined.u_knots().to_vec(),
+                refined.u_multiplicities().to_vec(),
+                refined.v_knots().to_vec(),
+                refined.v_multiplicities().to_vec(),
+                refined.is_u_periodic(),
+                refined.is_v_periodic(),
+            ),
+        };
+        assert!(rebuilt.is_ok(), "invalid refinement: {rebuilt:?}");
+        assert_eq!(refined.u_param_range(), surface.u_param_range());
+        assert_eq!(refined.v_param_range(), surface.v_param_range());
+        let size = surface
+            .poles()
+            .iter()
+            .flatten()
+            .map(|p| p.x.abs().max(p.y.abs()).max(p.z.abs()))
+            .fold(1.0, f64::max);
+        let params = |(first, last): (f64, f64), a: &[f64], b: &[f64]| {
+            let mut out: Vec<f64> = (0..=12)
+                .map(|i| first + (last - first) * i as f64 / 12.0)
+                .collect();
+            out.extend(a.iter().chain(b));
+            out
+        };
+        let us = params(
+            surface.u_param_range(),
+            surface.u_knots(),
+            refined.u_knots(),
+        );
+        let vs = params(
+            surface.v_param_range(),
+            surface.v_knots(),
+            refined.v_knots(),
+        );
+        for &u in &us {
+            for &v in &vs {
+                let (p, [su, sv], [suu, suv, svv]) = surface.eval_d2(u, v);
+                let (q, [tu, tv], [tuu, tuv, tvv]) = refined.eval_d2(u, v);
+                let pairs = [
+                    (p - Point3D::ORIGIN, q - Point3D::ORIGIN),
+                    (su, tu),
+                    (sv, tv),
+                    (suu, tuu),
+                    (suv, tuv),
+                    (svv, tvv),
+                ];
+                for (k, (a, b)) in pairs.into_iter().enumerate() {
+                    let tol = 1e-12 * size.max(a.magnitude());
+                    assert!(
+                        (a - b).magnitude() <= tol,
+                        "({u}, {v}), output {k}: {a:?} vs {b:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_insert_u_and_v_knot_keep_shape() {
+        for surface in insertion_surfaces() {
+            let (u0, u1) = surface.u_param_range();
+            let (v0, v1) = surface.v_param_range();
+            for (u, times) in [(u0 + 0.37 * (u1 - u0), 3), (surface.u_knots()[1], 1)] {
+                let refined = surface.insert_u_knot(u, times).unwrap();
+                assert_eq!(
+                    refined.poles().len(),
+                    surface.poles().len() + times as usize
+                );
+                assert_eq!(refined.v_knots(), surface.v_knots());
+                assert_same_surface(&surface, &refined);
+            }
+            for (v, times) in [(v0 + 0.37 * (v1 - v0), 2), (surface.v_knots()[1], 1)] {
+                let refined = surface.insert_v_knot(v, times).unwrap();
+                assert_eq!(refined.poles().len(), surface.poles().len());
+                assert_eq!(
+                    refined.poles()[0].len(),
+                    surface.poles()[0].len() + times as usize
+                );
+                assert_same_surface(&surface, &refined);
+            }
+            if surface.is_u_periodic() {
+                let refined = surface.insert_u_knot(u1, 2).unwrap();
+                assert_eq!(refined.u_multiplicities()[0], 3);
+                assert_same_surface(&surface, &refined);
+            }
+            if surface.is_v_periodic() {
+                let refined = surface.insert_v_knot(v0, 1).unwrap();
+                assert_eq!(refined.v_multiplicities()[0], 2);
+                assert_same_surface(&surface, &refined);
+                assert_eq!(
+                    surface.insert_v_knot(v1, 2),
+                    Err(KnotInsertionError::MultiplicityTooLarge)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_refine_u_and_v_knots_match_curve_refinement() {
+        for surface in insertion_surfaces() {
+            let (u0, u1) = surface.u_param_range();
+            let (v0, v1) = surface.v_param_range();
+            let u_insert = [
+                u0,
+                u0 + 0.2 * (u1 - u0),
+                u0 + 0.2 * (u1 - u0),
+                u0 + 0.7 * (u1 - u0),
+            ];
+            let v_insert = [v0 + 0.1 * (v1 - v0), v0 + 0.55 * (v1 - v0), v1];
+            let start = usize::from(!surface.is_u_periodic());
+            let end = v_insert.len() - usize::from(!surface.is_v_periodic());
+            let (u_insert, v_insert) = (&u_insert[start..], &v_insert[..end]);
+            let by_u = surface.refine_u_knots(u_insert).unwrap();
+            assert_same_surface(&surface, &by_u);
+            let by_v = surface.refine_v_knots(v_insert).unwrap();
+            assert_same_surface(&surface, &by_v);
+            let both = by_u.refine_v_knots(v_insert).unwrap();
+            assert_same_surface(&surface, &both);
+            // Each column (row) is refined as a curve with the `u` (`v`)
+            // knots would be.
+            let line = |poles: Vec<Point3D>, weights: Option<Vec<f64>>, u: bool| {
+                let (degree, knots, mults, periodic) = if u {
+                    (
+                        3,
+                        surface.u_knots(),
+                        surface.u_multiplicities(),
+                        surface.is_u_periodic(),
+                    )
+                } else {
+                    (
+                        2,
+                        surface.v_knots(),
+                        surface.v_multiplicities(),
+                        surface.is_v_periodic(),
+                    )
+                };
+                let (knots, mults) = (knots.to_vec(), mults.to_vec());
+                match weights {
+                    Some(w) => {
+                        BSplineCurve3D::new_rational(degree, poles, w, knots, mults, periodic)
+                    }
+                    None => BSplineCurve3D::new(degree, poles, knots, mults, periodic),
+                }
+                .unwrap()
+            };
+            for j in 0..surface.poles()[0].len() {
+                let column = surface.poles().iter().map(|row| row[j]).collect();
+                let weights = surface
+                    .weights()
+                    .map(|w| w.iter().map(|row| row[j]).collect());
+                let curve = line(column, weights, true).refine_knots(u_insert).unwrap();
+                for (row, q) in by_u.poles().iter().zip(curve.poles()) {
+                    assert!(row[j].distance(*q) < 1e-12, "{:?} vs {q:?}", row[j]);
+                }
+            }
+            for (i, row) in surface.poles().iter().enumerate() {
+                let weights = surface.weights().map(|w| w[i].clone());
+                let curve = line(row.clone(), weights, false)
+                    .refine_knots(v_insert)
+                    .unwrap();
+                for (p, q) in by_v.poles()[i].iter().zip(curve.poles()) {
+                    assert!(p.distance(*q) < 1e-12, "{p:?} vs {q:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_surface_knot_insertion_errors() {
+        let surface = insertion_surface(true, false, true);
+        assert_eq!(
+            surface.insert_u_knot(f64::NAN, 1),
+            Err(KnotInsertionError::NonFiniteKnot)
+        );
+        assert_eq!(
+            surface.insert_v_knot(-0.5, 1),
+            Err(KnotInsertionError::KnotOutOfRange)
+        );
+        assert_eq!(
+            surface.refine_u_knots(&[1.0, 0.5]),
+            Err(KnotInsertionError::KnotsNotSorted)
+        );
+        assert_eq!(
+            surface.refine_v_knots(&[0.5, 0.25]),
+            Err(KnotInsertionError::KnotsNotSorted)
+        );
+        // The clamped `u` ends are full; the `u` double knot takes one more.
+        assert_eq!(
+            surface.insert_u_knot(0.0, 1),
+            Err(KnotInsertionError::MultiplicityTooLarge)
+        );
+        assert_eq!(
+            surface.insert_u_knot(2.0, 2),
+            Err(KnotInsertionError::MultiplicityTooLarge)
+        );
+        assert_eq!(
+            surface.insert_v_knot(1.0, 2),
+            Err(KnotInsertionError::MultiplicityTooLarge)
+        );
+        assert_eq!(surface.insert_u_knot(1.0, 0).unwrap(), surface);
+        assert_eq!(surface.refine_v_knots(&[]).unwrap(), surface);
     }
 
     // ---- transformed ----

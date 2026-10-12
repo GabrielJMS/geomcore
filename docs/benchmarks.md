@@ -121,3 +121,35 @@ Reproduce with:
 ```sh
 cargo bench --bench conic_quadric
 ```
+
+# Knot insertion
+
+`benches/knot_insertion.rs` times `insert_knot` with one knot and
+`refine_knots` with 8 and 64 knots spread over clamped curves of 32
+poles, and `refine_u_knots` / `refine_v_knots` with 8 knots on a bicubic
+6×6 surface. Each call returns a new B-spline, so the times include
+allocating and filling it.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12), with other jobs running: times vary
+by 10–20% between runs.
+
+| shape | 1 knot | 8 knots | 64 knots |
+|---|---|---|---|
+| cubic curve, 32 poles | ~345 ns | ~460 ns | ~1.49 µs |
+| rational cubic curve, 32 poles | ~375 ns | ~520 ns | ~1.59 µs |
+| quadratic curve, 32 poles | ~325 ns | ~455 ns | ~1.36 µs |
+| bicubic 6×6 surface, in `u` | | ~1.02 µs | |
+| bicubic 6×6 surface, in `v` | | ~0.98 µs | |
+
+A refinement computes the new poles in one pass over the list, each knot
+blending `degree` poles while the rest are copied once, so 64 knots cost
+about four times one knot rather than 64 times: most of the time for a
+few knots goes to allocating the new curve. A surface refines all rows or
+columns of its net in the same pass, sharing the blending coefficients.
+
+Reproduce with:
+
+```sh
+cargo bench --bench knot_insertion
+```
