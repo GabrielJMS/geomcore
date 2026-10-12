@@ -11,9 +11,7 @@ use crate::intersect::{
     LineConicHit, LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
     LineQuadricIntersection, LineTorusHit, LineTorusIntersection, PlacedConic,
 };
-use crate::math::{
-    QuadraticSolution, quadratic_centre, roots_with_tangency, solve_2x2, solve_quadratic,
-};
+use crate::math::{QuadraticSolution, quadratic_centre, roots_with_tangency, solve_quadratic};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{
@@ -395,6 +393,33 @@ impl Line3D {
         self.intersect(circle, tol)
     }
 
+    /// How this line meets the plane of a figure reaching `extent` from
+    /// `centre`: in the plane when turning the line into it moves the line
+    /// by at most `tol.confusion` across the figure, the offset measured
+    /// at the line point closest to `centre` (ADR 0006).
+    fn meet_plane_near(
+        &self,
+        plane: &Plane,
+        centre: Point3D,
+        extent: f64,
+        tol: Tolerance,
+    ) -> LinePlaneIntersection {
+        let n = plane.normal();
+        let b = n.dot(self.direction());
+        let foot = self.parameter_of(centre);
+        let c = n.dot(self.eval_point(foot) - plane.frame().origin());
+        if b.abs() <= tol.angular_for_extent(extent) {
+            if c.abs() <= tol.confusion {
+                LinePlaneIntersection::Coincident
+            } else {
+                LinePlaneIntersection::Parallel
+            }
+        } else {
+            let t = foot - c / b;
+            LinePlaneIntersection::Point(t, self.eval_point(t))
+        }
+    }
+
     /// Shared solve for [`Line3D::intersect_ellipse`],
     /// [`Line3D::intersect_parabola`], and [`Line3D::intersect_hyperbola`]:
     /// a transversal line meets the conic's plane once (graze or miss); a
@@ -410,7 +435,7 @@ impl Line3D {
         conic_parameter_of: impl Fn(Point3D) -> f64,
         tol: Tolerance,
     ) -> LineConic3DIntersection {
-        match self.intersect(&conic.plane, tol) {
+        match self.meet_plane_near(&conic.plane, conic.origin, conic.extent, tol) {
             LinePlaneIntersection::Point(t, p) => {
                 if contains(p) {
                     LineConic3DIntersection::Tangent(LineConicHit {
@@ -874,6 +899,12 @@ impl Intersect<Cylinder> for Line3D {
         let a = cylinder.axis().direction();
         let da = d.dot(a);
         let qa = 1.0 - da * da;
+        // `qa` is the squared sine of the line's angle to the axis, so
+        // the line is parallel to it below the squared angular tolerance.
+        let tol = Tolerance {
+            angular: tol.angular * tol.angular,
+            ..tol
+        };
         // Coefficients about the line point at parameter t0.
         let coeffs = |t0: f64| {
             let w = self.eval_point(t0) - cylinder.axis().origin();
@@ -1099,8 +1130,10 @@ impl Intersect<Line3D> for Line3D {
         let (d1, d2) = (self.direction(), other.direction());
         let w0 = self.origin() - other.origin();
         let b = d1.dot(d2);
-        let denom = 1.0 - b * b;
-        if denom.abs() <= tol.angular {
+        // The squared sine of the angle between the unit directions:
+        // `1 - b²` cancels to zero below about 1e-8 rad.
+        let denom = d1.cross(d2).square_magnitude();
+        if denom <= tol.angular * tol.angular {
             // Parallel: distance from other's origin to self, or coincident.
             if other.contains(self.origin(), tol) {
                 LineLine3DIntersection::Coincident
@@ -1129,8 +1162,9 @@ impl Intersect<Circle3D> for Line3D {
     /// Intersects this line with a 3D circle.
     ///
     /// A transversal line meets the circle's plane once: on-circle hits
-    /// graze, the rest miss. A line lying in the plane reduces to the 2D
-    /// problem (both 2D images exist in closed form), mapping hits back
+    /// graze, the rest miss. A line lying in the plane (turning it into
+    /// the plane moves it by at most `tol.confusion` across the circle)
+    /// reduces to the 2D problem in the circle's frame, mapping hits back
     /// with the plane evaluation and this line's inverse parameter.
     ///
     /// # Examples
@@ -1150,7 +1184,7 @@ impl Intersect<Circle3D> for Line3D {
     /// ```
     fn intersect(&self, circle: &Circle3D, tol: Tolerance) -> LineCircle3DIntersection {
         let plane = Plane::from_frame(circle.frame());
-        match self.intersect(&plane, tol) {
+        match self.meet_plane_near(&plane, circle.center(), circle.radius(), tol) {
             LinePlaneIntersection::Point(t, p) => {
                 if circle.contains(p, tol) {
                     LineCircle3DIntersection::Tangent(t, p)
@@ -1160,14 +1194,21 @@ impl Intersect<Circle3D> for Line3D {
             }
             LinePlaneIntersection::Parallel => LineCircle3DIntersection::Empty,
             LinePlaneIntersection::Coincident => {
-                let l2 = match self.parametrize_on(plane, tol) {
-                    Ok(Curve2D::Line(l)) => l,
-                    _ => return LineCircle3DIntersection::Empty,
+                // The line in the circle's frame coordinates, through its
+                // point closest to the centre.
+                let (x, y) = (plane.frame().x_direction(), plane.frame().y_direction());
+                let (d, w) = (
+                    self.direction(),
+                    self.eval_point(self.parameter_of(circle.center())) - circle.center(),
+                );
+                let Ok(l2) = Line2D::new(
+                    Point2D::new(w.dot(x), w.dot(y)),
+                    Vector2D::new(d.dot(x), d.dot(y)),
+                ) else {
+                    return LineCircle3DIntersection::Empty;
                 };
-                let c2 = match circle.parametrize_on(plane, tol) {
-                    Ok(Curve2D::Circle(c)) => c,
-                    _ => return LineCircle3DIntersection::Empty,
-                };
+                let c2 = Circle2D::new(Point2D::ORIGIN, circle.radius())
+                    .expect("radius is non-negative by construction");
                 match l2.intersect(&c2, tol) {
                     LineCircle2DIntersection::Points((_, p1), (_, p2)) => {
                         let (q1, q2) = (plane.eval_point(p1.x, p1.y), plane.eval_point(p2.x, p2.y));
@@ -1220,6 +1261,7 @@ impl Intersect<Ellipse3D> for Line3D {
             y: frame.y_direction(),
             origin: ellipse.center(),
             implicit: ImplicitConic::ellipse(ellipse.major_radius(), ellipse.minor_radius()),
+            extent: ellipse.major_radius().max(ellipse.minor_radius()),
         };
         self.intersect_frame_conic(
             &conic,
@@ -1263,6 +1305,7 @@ impl Intersect<Parabola3D> for Line3D {
             y: frame.y_direction(),
             origin: parabola.apex(),
             implicit: ImplicitConic::parabola(parabola.focal()),
+            extent: f64::INFINITY,
         };
         self.intersect_frame_conic(
             &conic,
@@ -1306,6 +1349,7 @@ impl Intersect<Hyperbola3D> for Line3D {
             y: frame.y_direction(),
             origin: hyperbola.center(),
             implicit: ImplicitConic::hyperbola(hyperbola.major_radius(), hyperbola.minor_radius()),
+            extent: f64::INFINITY,
         };
         self.intersect_frame_conic(
             &conic,
@@ -1321,8 +1365,8 @@ impl Intersect<Line2D> for Line2D {
 
     /// Intersects this line with another 2D line.
     ///
-    /// The 2x2 system solves both parameters at once; singularity (against
-    /// `tol.angular`) falls back to a coincidence check.
+    /// The 2x2 system solves both parameters at once; directions parallel
+    /// within `tol.angular` fall back to a coincidence check.
     ///
     /// # Examples
     ///
@@ -1343,17 +1387,18 @@ impl Intersect<Line2D> for Line2D {
     fn intersect(&self, other: &Line2D, tol: Tolerance) -> LineLine2DIntersection {
         let (d1, d2) = (self.direction(), other.direction());
         let w = other.origin() - self.origin();
-        let lhs = [[d1.x, -d2.x], [d1.y, -d2.y]];
-        match solve_2x2(lhs, [w.x, w.y], tol.angular) {
-            Some([s, t]) => LineLine2DIntersection::Point(s, self.eval_point(s), t),
-            None => {
-                if other.contains(self.origin(), tol) {
-                    LineLine2DIntersection::Coincident
-                } else {
-                    LineLine2DIntersection::Parallel
-                }
-            }
+        // The sine of the angle between the unit directions.
+        let cross = d1.x * d2.y - d1.y * d2.x;
+        if cross.abs() <= tol.angular {
+            return if other.contains(self.origin(), tol) {
+                LineLine2DIntersection::Coincident
+            } else {
+                LineLine2DIntersection::Parallel
+            };
         }
+        let s = (w.x * d2.y - w.y * d2.x) / cross;
+        let t = (w.x * d1.y - w.y * d1.x) / cross;
+        LineLine2DIntersection::Point(s, self.eval_point(s), t)
     }
 }
 

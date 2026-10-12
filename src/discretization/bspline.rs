@@ -19,7 +19,7 @@
 //! clearly fewer steps than it does, so a span whose second derivative
 //! varies gets fewer points.
 
-use super::sealed::{DiscretizeRange3D, Run};
+use super::sealed::{DiscretizeRange, Run};
 use super::{DiscretizationCriteria, smallest_count};
 use crate::math::bernstein;
 use crate::{BSplineCurve3D, Point3D};
@@ -34,6 +34,12 @@ const MAX_DEPTH: u32 = 30;
 /// How many times a span may be halved looking for a bound on the angle
 /// deviation: a piece next to a cusp never gets one.
 const MAX_UNBOUNDED_DEPTH: u32 = 8;
+
+/// A lower bound on the speed below this fraction of the largest
+/// derivative control point counts as none: the poles nearly coincide, and
+/// bounding the turning there would take as many points as the gap is
+/// small.
+const MIN_SPEED_RATIO: f64 = 1e-6;
 
 /// A piece is halved only if its halves need fewer than this fraction of
 /// its steps.
@@ -185,9 +191,6 @@ impl Piece {
             return turning(&directions[..n]);
         }
         // Scaled Bernstein coefficients multiply by convolution.
-        let scaled = |values: &mut [f64]| {
-            bernstein::scale(values);
-        };
         let mut weights = [0.0; CAPACITY];
         let mut weight_differences = [0.0; CAPACITY];
         for i in 0..=n {
@@ -196,8 +199,8 @@ impl Piece {
         for i in 0..n {
             weight_differences[i] = p[i + 1][3] - p[i][3];
         }
-        scaled(&mut weights[..=n]);
-        scaled(&mut weight_differences[..n]);
+        bernstein::scale(&mut weights[..=n]);
+        bernstein::scale(&mut weight_differences[..n]);
         for c in 0..3 {
             let mut coordinates = [0.0; CAPACITY];
             let mut differences = [0.0; CAPACITY];
@@ -207,8 +210,8 @@ impl Piece {
             for i in 0..n {
                 differences[i] = p[i + 1][c] - p[i][c];
             }
-            scaled(&mut coordinates[..=n]);
-            scaled(&mut differences[..n]);
+            bernstein::scale(&mut coordinates[..=n]);
+            bernstein::scale(&mut differences[..n]);
             let mut product = [0.0; DIRECTION_CAPACITY];
             let product = &mut product[..2 * n];
             bernstein::add_product(&differences[..n], &weights[..=n], 1.0, product);
@@ -253,7 +256,7 @@ impl Piece {
             let halves = left.segments(criteria).zip(right.segments(criteria));
             let worth = match (segments, halves) {
                 (None, _) => true,
-                (Some(k), Some((l, r))) => ((l + r) as f64) < SPLIT_GAIN * k as f64,
+                (Some(k), Some((l, r))) => (l as f64 + r as f64) < SPLIT_GAIN * k as f64,
                 (Some(_), None) => false,
             };
             if worth {
@@ -281,7 +284,8 @@ impl Piece {
 /// of the polynomial with Bernstein coefficients `d`, of degree `m`: the
 /// tangent's direction turns at most `|D'| / |D|` per unit of parameter,
 /// `|D'|` is at most `m max |Δd_j|`, and `|D|` at least the smallest
-/// component of the `d_j` along their mean direction, if positive.
+/// component of the `d_j` along their mean direction, if positive and not
+/// negligible (see [`MIN_SPEED_RATIO`]).
 fn turning(d: &[[f64; 3]]) -> Option<f64> {
     let m = d.len().checked_sub(1)?;
     // The mean of the coefficients' directions, not of the coefficients:
@@ -295,7 +299,8 @@ fn turning(d: &[[f64; 3]]) -> Option<f64> {
         .iter()
         .map(|v| (v[0] * sum[0] + v[1] * sum[1] + v[2] * sum[2]) / length)
         .fold(f64::INFINITY, f64::min);
-    if slowest.is_nan() || slowest <= 0.0 {
+    let fastest = d.iter().map(|v| norm(*v)).fold(0.0, f64::max);
+    if slowest.is_nan() || slowest <= MIN_SPEED_RATIO * fastest {
         return None;
     }
     let change = (0..m)
@@ -324,7 +329,9 @@ fn chord_segments(constant: f64, max: f64) -> usize {
     })
 }
 
-impl DiscretizeRange3D for BSplineCurve3D {
+impl DiscretizeRange for BSplineCurve3D {
+    type Point = Point3D;
+
     fn for_each_run<F>(
         &self,
         first: f64,
@@ -342,7 +349,15 @@ impl DiscretizeRange3D for BSplineCurve3D {
             rational: self.is_rational(),
             points: [[0.0; 4]; CAPACITY],
         };
+        // A span overlapping an end of the range by a rounding error, as
+        // when a range overshoots a knot, would make a segment of no
+        // length: the end's neighbouring span covers it instead.
+        let negligible = 1e-12 * (last - first).max(first.abs()).max(last.abs());
         self.for_each_span_in(first, last, |(span_start, span_end), (a, b)| {
+            let at_one_end = (a == first) != (b == last);
+            if at_one_end && b - a <= negligible {
+                return;
+            }
             self.span_bezier_points(0.5 * (span_start + span_end), &mut piece.points);
             piece.first = span_start;
             piece.last = span_end;
