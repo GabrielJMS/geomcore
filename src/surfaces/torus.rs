@@ -3,7 +3,7 @@
 
 use crate::Intersect;
 use crate::frame::frame_error;
-use crate::intersect::{QuadraticSolution, solve_quadratic};
+use crate::math::{QuadraticSolution, solve_quadratic};
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
 use crate::{

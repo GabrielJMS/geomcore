@@ -6,11 +6,8 @@ use crate::Intersect;
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
-use crate::intersect::{
-    ConicSurfaceIntersection, QuadraticSolution, conic_lies_on, roots_with_tangency,
-    solve_quadratic, verify_conic_hits,
-};
-use crate::math::real_roots;
+use crate::intersect::{ConicSurfaceIntersection, conic_lies_on, verify_conic_hits};
+use crate::math::{QuadraticSolution, real_roots, roots_with_tangency, solve_quadratic};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;

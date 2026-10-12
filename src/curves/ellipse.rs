@@ -8,9 +8,9 @@ use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
     CLOSED_CONIC_SAMPLES, ConicSurfaceIntersection, EllipseEllipse3DIntersection,
-    EllipseEllipseHit, conic_lies_on, solve_trig, solve_trig_linear, verify_conic_hits,
+    EllipseEllipseHit, conic_lies_on, verify_conic_hits,
 };
-use crate::math::real_roots;
+use crate::math::{real_roots, solve_trig, solve_trig_linear};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;

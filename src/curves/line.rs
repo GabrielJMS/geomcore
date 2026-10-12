@@ -9,10 +9,11 @@ use crate::frame::frame_error;
 use crate::intersect::{
     ImplicitConic, LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection,
     LineConicHit, LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection,
-    LineQuadricIntersection, LineTorusHit, LineTorusIntersection, PlacedConic, QuadraticSolution,
-    quadratic_centre, roots_with_tangency, solve_quadratic,
+    LineQuadricIntersection, LineTorusHit, LineTorusIntersection, PlacedConic,
 };
-use crate::math::solve_2x2;
+use crate::math::{
+    QuadraticSolution, quadratic_centre, roots_with_tangency, solve_2x2, solve_quadratic,
+};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::{

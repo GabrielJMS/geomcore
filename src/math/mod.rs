@@ -15,11 +15,16 @@
 
 pub(crate) mod bernstein;
 pub(crate) mod boxtree;
+pub(crate) mod equation;
 pub(crate) mod poly;
 pub(crate) mod solve;
 
 // Re-exported for the curve-curve/generic consumers landing next;
 // the allow expires then.
+pub(crate) use equation::{
+    QuadraticSolution, quadratic_centre, roots_with_tangency, solve_quadratic, solve_trig,
+    solve_trig_linear,
+};
 #[allow(dead_code, unused_imports)]
 pub(crate) use poly::RealRoot;
 pub(crate) use poly::real_roots;

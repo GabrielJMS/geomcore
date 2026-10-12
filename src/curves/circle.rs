@@ -9,8 +9,9 @@ use crate::curves::parametrize::{self, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
     CLOSED_CONIC_SAMPLES, CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection,
-    ConicSurfaceHit, ImplicitConic, PlacedConic, conic_lies_on, solve_trig, solve_trig_linear,
+    ConicSurfaceHit, ImplicitConic, PlacedConic, conic_lies_on,
 };
+use crate::math::{solve_trig, solve_trig_linear};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
