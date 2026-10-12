@@ -497,3 +497,40 @@ fn test_degree_one_segments_have_no_angle_deviation() {
     let line = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
     assert_eq!(line.discretize(chord(1e-3)).angle_deviations, vec![0.0]);
 }
+
+#[test]
+fn test_rational_angle_deviations_are_proven() {
+    for curve in [uneven_weights(), skewed_weights(), rational_circle()] {
+        for criteria in [
+            chord(1e-3),
+            chord_and_angle(1e-2, 0.2),
+            chord_and_angle(1e-4, 0.02),
+        ] {
+            let d = curve.discretize(criteria);
+            assert_proven(&curve, &d, criteria, 8.0);
+            // Only an angle limit halves a piece to find its bound: the
+            // tight bend of the skewed weights needs it.
+            if criteria.max_angle_deviation().is_some() {
+                assert!(unbounded_segments(&d).is_empty());
+            }
+        }
+    }
+}
+
+#[test]
+fn test_a_rational_circle_needs_few_more_points_than_the_exact_one() {
+    let exact = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let ratio = |criteria| {
+        rational_circle().point_count(criteria) as f64 / exact.point_count(criteria) as f64
+    };
+    for max in [1e-2, 1e-4, 1e-6] {
+        assert!(ratio(chord(max)) <= 1.4, "{max}: {}", ratio(chord(max)));
+    }
+    // A step's tangent and chord may differ by its whole turning, where a
+    // circle's differ by half of it: an angle limit costs about twice the
+    // exact circle's points.
+    for (max, angle) in [(1e-2, 0.2), (1e-2, 0.05), (1e-5, 0.01)] {
+        let r = ratio(chord_and_angle(max, angle));
+        assert!(r <= 3.0, "{max}, {angle}: {r}");
+    }
+}

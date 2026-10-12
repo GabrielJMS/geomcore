@@ -22,6 +22,7 @@
 use super::sealed::{DiscretizeRange3D, Run};
 use super::{DiscretizationCriteria, smallest_count};
 use crate::curves::ParametricCurve3D;
+use crate::math::bernstein;
 use crate::{BSplineCurve3D, Point3D};
 use std::f64::consts::PI;
 
@@ -32,12 +33,16 @@ const CAPACITY: usize = 26;
 const MAX_DEPTH: u32 = 30;
 
 /// How many times a span may be halved looking for a bound on the angle
-/// deviation (a piece with a cusp never gets one).
-const MAX_UNBOUNDED_DEPTH: u32 = 6;
+/// deviation: a piece next to a cusp never gets one.
+const MAX_UNBOUNDED_DEPTH: u32 = 8;
 
 /// A piece is halved only if its halves need fewer than this fraction of
 /// its steps.
 const SPLIT_GAIN: f64 = 0.85;
+
+/// Coefficients of the polynomial giving a rational piece's tangent
+/// direction, of degree `2 × 25 − 1`.
+const DIRECTION_CAPACITY: usize = 2 * (CAPACITY - 1);
 
 /// A homogeneous control point `(x w, y w, z w, w)`.
 type Homogeneous = [f64; 4];
@@ -163,17 +168,58 @@ impl Piece {
 
     /// `T` such that the tangent turns by at most `T / k` over each of
     /// `k` equal steps, `None` where no lower bound on the speed exists.
-    /// Rational pieces are not bounded yet.
+    ///
+    /// The tangent of a nonrational piece has the direction of the
+    /// differences of its control points. The tangent of a rational piece
+    /// `X / W` has the direction of `X' W − X W'` (its derivative times
+    /// `W²`, `W` being positive), a polynomial of degree `2n − 1` whose
+    /// Bernstein coefficients come from the products of the homogeneous
+    /// control points' differences and weights.
     fn turning(&self) -> Option<f64> {
-        if self.rational {
-            return None;
-        }
         let p = self.control();
-        let mut differences = [[0.0; 3]; CAPACITY];
-        for (i, d) in differences.iter_mut().enumerate().take(self.degree) {
-            *d = std::array::from_fn(|c| p[i + 1][c] - p[i][c]);
+        let n = self.degree;
+        let mut directions = [[0.0; 3]; DIRECTION_CAPACITY];
+        if !self.rational {
+            for (i, d) in directions.iter_mut().enumerate().take(n) {
+                *d = std::array::from_fn(|c| p[i + 1][c] - p[i][c]);
+            }
+            return turning(&directions[..n]);
         }
-        turning(&differences[..self.degree])
+        // Scaled Bernstein coefficients multiply by convolution.
+        let scaled = |values: &mut [f64]| {
+            bernstein::scale(values);
+        };
+        let mut weights = [0.0; CAPACITY];
+        let mut weight_differences = [0.0; CAPACITY];
+        for i in 0..=n {
+            weights[i] = p[i][3];
+        }
+        for i in 0..n {
+            weight_differences[i] = p[i + 1][3] - p[i][3];
+        }
+        scaled(&mut weights[..=n]);
+        scaled(&mut weight_differences[..n]);
+        for c in 0..3 {
+            let mut coordinates = [0.0; CAPACITY];
+            let mut differences = [0.0; CAPACITY];
+            for i in 0..=n {
+                coordinates[i] = p[i][c];
+            }
+            for i in 0..n {
+                differences[i] = p[i + 1][c] - p[i][c];
+            }
+            scaled(&mut coordinates[..=n]);
+            scaled(&mut differences[..n]);
+            let mut product = [0.0; DIRECTION_CAPACITY];
+            let product = &mut product[..2 * n];
+            bernstein::add_product(&differences[..n], &weights[..=n], 1.0, product);
+            bernstein::add_product(&coordinates[..=n], &weight_differences[..n], -1.0, product);
+            bernstein::unscale(product);
+            for (d, &value) in directions.iter_mut().zip(product.iter()) {
+                d[c] = value;
+            }
+        }
+        turning(&directions[..2 * n])
     }
 
     /// The fewest equal steps meeting the criteria, `None` if the angle
@@ -183,9 +229,6 @@ impl Piece {
         let Some(limit) = criteria.angle_limit() else {
             return Some(chord);
         };
-        if self.rational {
-            return Some(chord);
-        }
         let turning = self.turning()?;
         let angle = smallest_count(turning / limit, |k| angle_deviation(turning, k) <= limit);
         Some(chord.max(angle))
@@ -242,7 +285,9 @@ impl Piece {
 /// component of the `d_j` along their mean direction, if positive.
 fn turning(d: &[[f64; 3]]) -> Option<f64> {
     let m = d.len().checked_sub(1)?;
-    let sum: [f64; 3] = std::array::from_fn(|c| d.iter().map(|v| v[c]).sum());
+    // The mean of the coefficients' directions, not of the coefficients:
+    // a few large ones would pull it away from the others.
+    let sum: [f64; 3] = std::array::from_fn(|c| d.iter().map(|v| v[c] / norm(*v)).sum());
     let length = norm(sum);
     if length.is_nan() || length <= 0.0 {
         return None;
