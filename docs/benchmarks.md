@@ -123,6 +123,45 @@ Reproduce with:
 cargo bench --bench conic_quadric
 ```
 
+# Discretization
+
+`benches/discretization.rs` discretizes 3000 model-like edges: two thirds
+cubic B-splines with 1 to 7 spans, one third quarter-circle arcs (half
+rational quadratic B-splines, half trimmed `Circle3D`s). Every edge is a
+run-time `TrimmedCurve3D`, and its maximum chord deviation is 1e-2 or 1e-3
+times its size, with no angle limit. Three measurements: counting the
+points, filling one set of buffers reused across the edges (count, then
+fill), and the allocating call.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per edge.
+
+| chord deviation | points per edge (mean, p95) | count | fill, reused buffer | allocating |
+|---|---|---|---|---|
+| 1e-2 × size | 13.3, 24 | ~1.37 µs | ~4.46 µs | ~4.47 µs |
+| 1e-3 × size | 36.2, 67 | ~1.52 µs | ~5.65 µs | ~5.68 µs |
+
+This is the baseline for later optimizations, and well above the
+prototype's 4–20 ns per point. Timing the pieces of one cubic span
+(about 430 ns to count) shows where it goes:
+
+- extracting the span's Bézier control points: ~170 ns, redone by every
+  call, twice when filling;
+- trying a halving of the span: ~64 ns per split, most of it copying
+  control point arrays sized for the highest degree;
+- the leaf's turning bound, computed for its reported angle deviation
+  even when the angle is not limited: ~65 ns.
+
+Filling costs about three counts: it plans the count again, then visits
+the runs to write them. Allocating adds little to filling a reused
+buffer.
+
+Reproduce with:
+
+```sh
+cargo bench --bench discretization
+```
+
 # Curve–surface intersection on B-splines
 
 `benches/intersect_curve_surface.rs` times `intersect_curve_surface` for 64
