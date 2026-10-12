@@ -174,7 +174,10 @@ fn solve_band(band: &mut [f64], bandwidth: usize, rhs: &mut [Point3D]) {
             if factor == 0.0 {
                 continue;
             }
-            for (a, &b) in row[start + 1..start + end - k].iter_mut().zip(&pivot_row[1..]) {
+            for (a, &b) in row[start + 1..start + end - k]
+                .iter_mut()
+                .zip(&pivot_row[1..])
+            {
                 *a -= factor * b;
             }
             let bi = &mut rhs[k + 1 + d];

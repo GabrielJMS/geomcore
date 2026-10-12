@@ -116,18 +116,10 @@ impl std::error::Error for BSplineConstructionError {}
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct BSplineCurve3D {
-    degree: usize,
-    periodic: bool,
+    knots: math::KnotVector,
     poles: Vec<Point3D>,
+    /// One weight per pole if rational.
     weights: Option<Vec<f64>>,
-    knots: Vec<f64>,
-    mults: Vec<u32>,
-    /// Cached flat (expanded) knot sequence: knot `i` repeated `mults[i]`
-    /// times.
-    flat: Vec<f64>,
-    /// Cached flat pole buffer: `dim` coordinates per pole, where
-    /// `dim = 4` (homogeneous `(x*w, y*w, z*w, w)`) if rational, else `3`.
-    flat_poles: Vec<f64>,
     /// Bounding-box hierarchy of the knot spans, built on the first
     /// projection.
     spans: Lazy<SpanTree>,
@@ -236,20 +228,11 @@ impl BSplineCurve3D {
                 return Err(BSplineConstructionError::NonPositiveWeight);
             }
         }
-        math::validate_direction(degree, poles.len(), &knots, &multiplicities, periodic)?;
-
-        let flat = math::flat_knots(&knots, &multiplicities);
-        let flat_poles = pack_flat_poles(&poles, weights.as_deref());
-
+        let knots = math::KnotVector::new(degree, knots, multiplicities, periodic, poles.len())?;
         Ok(BSplineCurve3D {
-            degree,
-            periodic,
+            knots,
             poles,
             weights,
-            knots,
-            mults: multiplicities,
-            flat,
-            flat_poles,
             spans: Lazy::default(),
         })
     }
@@ -267,21 +250,12 @@ impl BSplineCurve3D {
         flat: Vec<f64>,
         periodic: bool,
     ) -> BSplineCurve3D {
-        debug_assert!(
-            math::validate_direction(degree, poles.len(), &knots, &multiplicities, periodic)
-                .is_ok()
-        );
-        debug_assert_eq!(flat, math::flat_knots(&knots, &multiplicities));
-        let flat_poles = pack_flat_poles(&poles, weights.as_deref());
+        let knots = math::KnotVector::from_validated(degree, knots, multiplicities, flat, periodic);
+        debug_assert_eq!(knots.pole_count(), poles.len());
         BSplineCurve3D {
-            degree,
-            periodic,
+            knots,
             poles,
             weights,
-            knots,
-            mults: multiplicities,
-            flat,
-            flat_poles,
             spans: Lazy::default(),
         }
     }
@@ -297,7 +271,7 @@ impl BSplineCurve3D {
     /// assert_eq!(curve.degree(), 1);
     /// ```
     pub fn degree(&self) -> usize {
-        self.degree
+        self.knots.degree()
     }
 
     /// Returns whether the curve is periodic (closed).
@@ -311,7 +285,7 @@ impl BSplineCurve3D {
     /// assert!(!curve.is_periodic());
     /// ```
     pub fn is_periodic(&self) -> bool {
-        self.periodic
+        self.knots.is_periodic()
     }
 
     /// Returns whether the curve is rational (has per-pole weights).
@@ -367,7 +341,7 @@ impl BSplineCurve3D {
     /// assert_eq!(curve.knots(), &[0.0, 1.0]);
     /// ```
     pub fn knots(&self) -> &[f64] {
-        &self.knots
+        self.knots.knots()
     }
 
     /// Returns the knot multiplicities.
@@ -381,7 +355,7 @@ impl BSplineCurve3D {
     /// assert_eq!(curve.multiplicities(), &[2, 2]);
     /// ```
     pub fn multiplicities(&self) -> &[u32] {
-        &self.mults
+        self.knots.multiplicities()
     }
 
     /// Returns the image of this curve under `transform`: every control
@@ -408,16 +382,10 @@ impl BSplineCurve3D {
             .iter()
             .map(|&p| transform.apply_point(p))
             .collect();
-        let flat_poles = pack_flat_poles(&poles, self.weights.as_deref());
         BSplineCurve3D {
-            degree: self.degree,
-            periodic: self.periodic,
+            knots: self.knots.clone(),
             poles,
             weights: self.weights.clone(),
-            knots: self.knots.clone(),
-            mults: self.mults.clone(),
-            flat: self.flat.clone(),
-            flat_poles,
             spans: Lazy::default(),
         }
     }
@@ -437,8 +405,7 @@ impl BSplineCurve3D {
     /// assert_eq!(curve.bounds(), (0.0, 1.0));
     /// ```
     pub fn bounds(&self) -> (f64, f64) {
-        let sum_mults: u32 = self.mults.iter().sum();
-        math::param_range(&self.flat, self.degree, self.periodic, sum_mults as usize)
+        self.knots.bounds()
     }
 
     /// Evaluates the point on the curve at parameter `u`.
@@ -455,8 +422,7 @@ impl BSplineCurve3D {
     /// assert_eq!(curve.eval_point(0.5), Point3D::new(1.0, 0.0, 0.0));
     /// ```
     pub fn eval_point(&self, u: f64) -> Point3D {
-        let euc = self.eval_euclidean(u, 0);
-        Point3D::new(euc[0], euc[1], euc[2])
+        math::point(&self.knots, self.pole_view(), u)
     }
 
     /// Evaluates the points on the curve at each parameter in `us`.
@@ -495,11 +461,8 @@ impl BSplineCurve3D {
     pub fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
         match order {
             0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
-            1 | 2 => {
-                let euc = self.eval_euclidean(u, order as usize);
-                let base = order as usize * 3;
-                Vector3D::new(euc[base], euc[base + 1], euc[base + 2])
-            }
+            1 => math::derivatives::<1>(&self.knots, self.pole_view(), u)[1],
+            2 => math::derivatives::<2>(&self.knots, self.pole_view(), u)[2],
             _ => panic!(
                 "eval_derivative: order {order} is not supported (only first and second derivatives are supported)"
             ),
@@ -520,11 +483,8 @@ impl BSplineCurve3D {
     /// assert_eq!(d1, Vector3D::new(2.0, 0.0, 0.0));
     /// ```
     pub fn eval_d1(&self, u: f64) -> (Point3D, Vector3D) {
-        let e = self.eval_euclidean(u, 1);
-        (
-            Point3D::new(e[0], e[1], e[2]),
-            Vector3D::new(e[3], e[4], e[5]),
-        )
+        let [c, d1, _] = math::derivatives::<1>(&self.knots, self.pole_view(), u);
+        (Point3D::ORIGIN + c, d1)
     }
 
     /// Evaluates the point and the first and second derivatives at
@@ -546,12 +506,8 @@ impl BSplineCurve3D {
     /// assert_eq!(d2, Vector3D::new(0.0, -4.0, 0.0));
     /// ```
     pub fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
-        let e = self.eval_euclidean(u, 2);
-        (
-            Point3D::new(e[0], e[1], e[2]),
-            Vector3D::new(e[3], e[4], e[5]),
-            Vector3D::new(e[6], e[7], e[8]),
-        )
+        let [c, d1, d2] = math::derivatives::<2>(&self.knots, self.pole_view(), u);
+        (Point3D::ORIGIN + c, d1, d2)
     }
 
     /// Computes the exact 2D representation of this B-spline curve in a
@@ -635,7 +591,7 @@ impl BSplineCurve3D {
                 params.push(breaks[k]);
             }
         }
-        if !self.periodic {
+        if !self.is_periodic() {
             params.push(first);
             params.push(last);
         } else if ends[n - 1].end_falling && ends[0].start_rising {
@@ -708,7 +664,7 @@ impl BSplineCurve3D {
             best.0
         });
         let (first, last) = self.bounds();
-        let t = if self.periodic && best.1 == last {
+        let t = if self.is_periodic() && best.1 == last {
             first
         } else {
             best.1
@@ -732,45 +688,22 @@ impl BSplineCurve3D {
     /// containing `u` (pass a parameter inside the span), over the span's
     /// own interval, into `points[..=degree]`.
     pub(crate) fn span_bezier_points(&self, u: f64, points: &mut [[f64; 4]]) {
-        let mut coordinates = [[0.0; math::LARGE]; 3];
-        let mut weights = [1.0; math::LARGE];
-        let dim = if self.is_rational() { 4 } else { 3 };
-        {
-            let [x, y, z] = &mut coordinates;
-            let mut out: [&mut [f64]; 4] = [x, y, z, &mut weights];
-            math::span_bezier(
-                u,
-                self.degree,
-                self.periodic,
-                &self.flat,
-                &self.flat_poles,
-                &mut out[..dim],
-            );
-        }
-        for (k, point) in points.iter_mut().enumerate().take(self.degree + 1) {
-            *point = [
-                coordinates[0][k],
-                coordinates[1][k],
-                coordinates[2][k],
-                weights[k],
-            ];
+        math::span_bezier(&self.knots, self.pole_view(), u, points);
+    }
+
+    /// The poles as read by evaluation.
+    fn pole_view(&self) -> math::Poles<'_> {
+        math::Poles {
+            points: &self.poles,
+            weights: self.weights.as_deref(),
         }
     }
 
     /// The knot-span box hierarchy, built on first use.
     fn span_tree(&self) -> &SpanTree {
         self.spans.get_or_init(|| {
-            let (first, last) = self.bounds();
-            let breaks = math::span_breaks(&self.knots, first, last);
-            let dim = if self.is_rational() { 4 } else { 3 };
-            let boxes = math::span_boxes(
-                &breaks,
-                self.degree,
-                self.periodic,
-                &self.flat,
-                &self.flat_poles,
-                dim,
-            );
+            let breaks = self.knots.breaks();
+            let boxes = math::span_boxes(&self.knots, self.pole_view(), &breaks);
             SpanTree {
                 tree: BoxTree::new(&boxes, 1),
                 breaks,
@@ -791,7 +724,7 @@ impl BSplineCurve3D {
     fn scan_span(&self, point: Point3D, a: f64, b: f64, minima: &mut Vec<f64>) -> SpanEnds {
         // `G` has up to `3 * degree` coefficients.
         const SMALL: usize = 3 * math::SMALL;
-        if self.degree < math::SMALL {
+        if self.degree() < math::SMALL {
             self.scan_span_sized::<SMALL>(point, a, b, minima)
         } else {
             self.scan_span_sized::<{ crate::math::bernstein::CAPACITY }>(point, a, b, minima)
@@ -806,22 +739,17 @@ impl BSplineCurve3D {
         minima: &mut Vec<f64>,
     ) -> SpanEnds {
         use crate::math::bernstein::{add_product, rising_roots, scale, unscale};
-        let p = self.degree;
+        let p = self.degree();
         let rational = self.is_rational();
-        let dim = if rational { 4 } else { 3 };
+        let mut points = [[0.0; 4]; math::LARGE];
+        self.span_bezier_points(0.5 * (a + b), &mut points);
         let mut bezier = [[0.0; N]; 3];
         let mut weight = [1.0; N];
-        {
-            let [x, y, z] = &mut bezier;
-            let mut out: [&mut [f64]; 4] = [x, y, z, &mut weight];
-            math::span_bezier(
-                0.5 * (a + b),
-                p,
-                self.periodic,
-                &self.flat,
-                &self.flat_poles,
-                &mut out[..dim],
-            );
+        for (k, x) in points.iter().enumerate().take(p + 1) {
+            for c in 0..3 {
+                bezier[c][k] = x[c];
+            }
+            weight[k] = x[3];
         }
         let q = [point.x, point.y, point.z];
         // Offsets `A` per coordinate and their differences (`A'` up to the
@@ -894,47 +822,18 @@ impl BSplineCurve3D {
     /// [`BSplineCurve3D::bounds`].
     fn refine_projection(&self, point: Point3D, t: f64, bounds: Option<(f64, f64)>) -> f64 {
         let objective = |t: f64| {
-            let e = self.eval_euclidean(math::inward(t, bounds), 2);
-            let r = [e[0] - point.x, e[1] - point.y, e[2] - point.z];
-            let dot = |a: &[f64], b: &[f64]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-            (
-                0.5 * dot(&r, &r),
-                dot(&e[3..6], &r),
-                dot(&e[3..6], &e[3..6]) + dot(&e[6..9], &r),
-            )
+            let [c, d1, d2] =
+                math::derivatives::<2>(&self.knots, self.pole_view(), math::inward(t, bounds));
+            let r = c - (point - Point3D::ORIGIN);
+            (0.5 * r.dot(r), d1.dot(r), d1.dot(d1) + d2.dot(r))
         };
         let t = newton_min_1d(objective, t, bounds, 1e-14, 100);
-        if self.periodic {
+        if self.is_periodic() {
             let (first, last) = self.bounds();
             first + (t - first).rem_euclid(last - first)
         } else {
             t
         }
-    }
-
-    /// Evaluates the value and derivatives up to `n` (`n <= 2`) at `u`,
-    /// returning Euclidean coordinates as `[f, f', f'']` flattened (9
-    /// values, trailing ones zero if `n < 2`).
-    fn eval_euclidean(&self, u: f64, n: usize) -> [f64; 9] {
-        let dim = if self.is_rational() { 4 } else { 3 };
-        let mut raw = [0.0f64; 3 * 4];
-        math::eval_dn(
-            u,
-            self.degree,
-            self.periodic,
-            &self.flat,
-            &self.flat_poles,
-            dim,
-            n,
-            &mut raw,
-        );
-        let mut euc = [0.0f64; 9];
-        if self.is_rational() {
-            math::rational_derivatives(&raw, n, &mut euc);
-        } else {
-            euc.copy_from_slice(&raw[..9]);
-        }
-        euc
     }
 }
 
@@ -947,20 +846,6 @@ struct SpanEnds {
     start_rising: bool,
     /// Whether the distance does not rise moving to the span end.
     end_falling: bool,
-}
-
-/// Packs poles (and, if rational, weights) into a flat coordinate buffer:
-/// `(x, y, z)` per pole if `weights` is `None`, else the homogeneous
-/// `(x*w, y*w, z*w, w)`.
-fn pack_flat_poles(poles: &[Point3D], weights: Option<&[f64]>) -> Vec<f64> {
-    match weights {
-        None => poles.iter().flat_map(|p| [p.x, p.y, p.z]).collect(),
-        Some(ws) => poles
-            .iter()
-            .zip(ws)
-            .flat_map(|(p, &w)| [p.x * w, p.y * w, p.z * w, w])
-            .collect(),
-    }
 }
 
 #[cfg(test)]

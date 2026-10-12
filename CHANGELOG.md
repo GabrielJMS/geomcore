@@ -71,6 +71,14 @@ the Python distribution are versioned in lockstep.
   Interpolating 128 points with a cubic is about 8 times faster, and
   approximating them with 32 poles about 3.5 times faster, with a
   handful of allocations instead of hundreds.
+- B-spline curves and surfaces store their poles once, as points with a
+  separate weight per pole when rational, instead of keeping a second,
+  homogeneous copy. Evaluation reads them in place, folding each weight
+  into its basis function. Points evaluate on a path of their own that
+  skips the derivative tables, and the basis recurrence takes its
+  reciprocals ahead of the chain that uses them. A cubic curve point is
+  about 1.6 times faster and its second derivatives about 1.4 times; on
+  surfaces, points gain about 10% and second derivatives about 15%.
 
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.

@@ -1,331 +1,207 @@
 //! Internal B-spline surface evaluation: tensor-product NURBS on top of the
 //! curve engine ([`crate::curve_math::bspline`]).
 //!
-//! A B-spline surface is a tensor product of two directional B-spline bases.
-//! Poles are stored row-major as `[i_u][i_v][h]`, where `i_u` indexes the `u`
-//! direction (`n_u` rows), `i_v` indexes the `v` direction (`n_v` columns),
-//! and `h` is the per-pole coordinate stride (`h = 3` for polynomial surfaces,
-//! `h = 4` for the homogeneous coordinates `(x*w, y*w, z*w, w)` of a rational
-//! surface).
+//! A B-spline surface is a tensor product of two directional B-spline bases,
+//! one [`KnotVector`] per direction. Poles are read through a [`Poles`]
+//! view, row-major `[i_u][i_v]`: `i_u` indexes the `u` direction (rows) and
+//! `i_v` the `v` direction (columns), with a separate weight per pole if
+//! rational.
 //!
-//! Evaluation is a direct tensor product: [`curve::window`] gives the
+//! Evaluation is a direct tensor product: [`KnotVector::window`] gives the
 //! non-zero basis functions (and derivatives) in each direction with the
 //! pole indices they weight, already wrapped for periodic directions, and
 //! only the `(u_degree + 1) * (v_degree + 1)` poles they select are summed.
 //! The cost depends on the degrees only, never on the pole counts, and
 //! nothing is allocated.
 //!
-//! For rational surfaces the whole computation is carried out in homogeneous
-//! coordinates (`h = 4`), and the quotient rule is applied per output at the
-//! very end: `S = H/w`, `Su = (Hu_xyz - S*Hu_w)/w`, `Sv = (Hv_xyz - S*Hv_w)/w`.
+//! A rational surface folds each weight into the product of its basis
+//! functions, summing the homogeneous point `(x w, y w, z w, w)` and its
+//! derivatives, and applies the quotient rule at the very end.
+//!
+//! Bernstein nets of patches are row-major `[k_u][k_v][h]`, with `h = 4`
+//! homogeneous coordinates per point if rational, else `h = 3`.
 
 use super::super::curve_math::bspline as curve;
+use crate::curve_math::bspline::{KnotVector, Poles};
 use crate::{Point3D, Vector3D};
 
-/// Evaluates the surface point `S(u, v)`.
-///
-/// `poles_homog` is the flat, row-major `[i_u][i_v][h]` pole buffer with `h`
-/// coordinates per pole (`h = 3` polynomial, `h = 4` homogeneous). `u_flat` /
-/// `v_flat` are the plain [`curve::flat_knots`] of each direction.
-#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
-pub(crate) fn surface_d0(
+/// The surface point `S(u, v)`: the value-only path of
+/// [`surface_derivatives`].
+#[inline]
+pub(crate) fn surface_point(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
     u: f64,
     v: f64,
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    u_flat: &[f64],
-    v_flat: &[f64],
-    poles_homog: &[f64],
-    n_u: usize,
-    n_v: usize,
-    h: usize,
 ) -> Point3D {
-    debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
-    let [hs, ..] = if u_degree.max(v_degree) < curve::SMALL {
-        tensor::<{ curve::SMALL }>(
-            u,
-            v,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-            0,
-        )
+    if u_knots.degree().max(v_knots.degree()) < curve::SMALL {
+        point_sized::<{ curve::SMALL }>(u_knots, v_knots, poles, u, v)
     } else {
-        tensor::<{ curve::LARGE }>(
-            u,
-            v,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-            0,
-        )
-    };
-    if h == 4 {
-        let w = hs[3];
-        Point3D::new(hs[0] / w, hs[1] / w, hs[2] / w)
-    } else {
-        Point3D::new(hs[0], hs[1], hs[2])
+        point_sized::<{ curve::LARGE }>(u_knots, v_knots, poles, u, v)
     }
 }
 
-/// Evaluates the surface value and both first partial derivatives,
-/// returning `(S, Su, Sv)`.
-///
-/// Layout of `poles_homog` and the knot flats is as for [`surface_d0`]. For
-/// rational surfaces the first-order quotient rule is applied to the
-/// homogeneous results.
-#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
-pub(crate) fn surface_d1(
+#[inline]
+fn point_sized<const N: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
     u: f64,
     v: f64,
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    u_flat: &[f64],
-    v_flat: &[f64],
-    poles_homog: &[f64],
-    n_u: usize,
-    n_v: usize,
-    h: usize,
-) -> (Point3D, Vector3D, Vector3D) {
-    debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
-    let [h_s, h_su, h_sv, ..] = if u_degree.max(v_degree) < curve::SMALL {
-        tensor::<{ curve::SMALL }>(
-            u,
-            v,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-            1,
-        )
-    } else {
-        tensor::<{ curve::LARGE }>(
-            u,
-            v,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-            1,
-        )
+) -> Point3D {
+    let mut u_values = [0.0f64; N];
+    let mut v_values = [0.0f64; N];
+    let first_u = u_knots.basis(u, &mut u_values);
+    let first_v = v_knots.basis(v, &mut v_values);
+    let s = match poles.weights {
+        Some(weights) => point_sum::<N, true>(
+            u_knots,
+            v_knots,
+            poles.points,
+            weights,
+            &u_values,
+            &v_values,
+            first_u,
+            first_v,
+        ),
+        None => point_sum::<N, false>(
+            u_knots,
+            v_knots,
+            poles.points,
+            &[],
+            &u_values,
+            &v_values,
+            first_u,
+            first_v,
+        ),
     };
-
-    if h == 4 {
-        // Rational quotient rule, first order:
-        //   S  = H / w
-        //   Su = (Hu_xyz - S * Hu_w) / w
-        //   Sv = (Hv_xyz - S * Hv_w) / w
-        let w = h_s[3];
-        let s = Point3D::new(h_s[0] / w, h_s[1] / w, h_s[2] / w);
-        let su = Vector3D::new(
-            (h_su[0] - s.x * h_su[3]) / w,
-            (h_su[1] - s.y * h_su[3]) / w,
-            (h_su[2] - s.z * h_su[3]) / w,
-        );
-        let sv = Vector3D::new(
-            (h_sv[0] - s.x * h_sv[3]) / w,
-            (h_sv[1] - s.y * h_sv[3]) / w,
-            (h_sv[2] - s.z * h_sv[3]) / w,
-        );
-        (s, su, sv)
+    if poles.weights.is_some() {
+        let inverse = 1.0 / s[3];
+        Point3D::new(s[0] * inverse, s[1] * inverse, s[2] * inverse)
     } else {
-        let s = Point3D::new(h_s[0], h_s[1], h_s[2]);
-        let su = Vector3D::new(h_su[0], h_su[1], h_su[2]);
-        let sv = Vector3D::new(h_sv[0], h_sv[1], h_sv[2]);
-        (s, su, sv)
+        Point3D::new(s[0], s[1], s[2])
     }
 }
 
-/// Evaluates the surface value with its first and second partial
-/// derivatives, returning `[S, Su, Sv, Suu, Suv, Svv]` (the point as a
-/// vector from the origin).
+/// `Σ_i Σ_j Nu_i Nv_j w_ij (P_ij, 1)` over the local poles (`w_ij = 1`
+/// unless `RATIONAL`), from the non-zero basis functions of each direction
+/// and the first pole they weight.
+#[allow(clippy::too_many_arguments)] // both directions' bases and poles
+#[inline]
+fn point_sum<const N: usize, const RATIONAL: bool>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    points: &[Point3D],
+    weights: &[f64],
+    u_values: &[f64; N],
+    v_values: &[f64; N],
+    first_u: usize,
+    first_v: usize,
+) -> [f64; 4] {
+    let (p, q) = (u_knots.degree(), v_knots.degree());
+    let n_v = v_knots.pole_count();
+    let wraps = v_knots.wraps(first_v);
+    let mut sum = [0.0f64; 4];
+    for (i, &nu) in u_values.iter().enumerate().take(p + 1) {
+        let row = u_knots.pole_index(first_u, i) * n_v;
+        let mut along = [0.0f64; 4];
+        for (j, &nv) in v_values.iter().enumerate().take(q + 1) {
+            // Only a periodic direction's last spans wrap.
+            let index = row
+                + if wraps {
+                    v_knots.pole_index(first_v, j)
+                } else {
+                    first_v + j
+                };
+            let point = points[index];
+            let b = if RATIONAL { nv * weights[index] } else { nv };
+            along[0] += b * point.x;
+            along[1] += b * point.y;
+            along[2] += b * point.z;
+            along[3] += b;
+        }
+        for c in 0..4 {
+            sum[c] += nu * along[c];
+        }
+    }
+    sum
+}
+
+/// The surface point (as a vector from the origin) and its partial
+/// derivatives up to total order `ORDER` (`<= 2`), `[S, Su, Sv, Suu, Suv,
+/// Svv]`, those beyond `ORDER` zero.
 ///
-/// Layout of `poles_homog` and the knot flats is as for [`surface_d0`]. For
-/// rational surfaces the second-order quotient rule is applied to the
-/// homogeneous results:
-/// `Suu = (Huu - 2 w_u Su - w_uu S)/w`,
-/// `Suv = (Huv - w_u Sv - w_v Su - w_uv S)/w`,
-/// `Svv = (Hvv - 2 w_v Sv - w_vv S)/w`.
-#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
-pub(crate) fn surface_d2(
+/// A rational surface applies the quotient rule to the homogeneous
+/// results: `S = H / w`, `Su = (Hu - wu S) / w`,
+/// `Suu = (Huu - 2 wu Su - wuu S) / w`,
+/// `Suv = (Huv - wu Sv - wv Su - wuv S) / w`, and alike along `v`.
+pub(crate) fn surface_derivatives<const ORDER: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
     u: f64,
     v: f64,
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    u_flat: &[f64],
-    v_flat: &[f64],
-    poles_homog: &[f64],
-    n_u: usize,
-    n_v: usize,
-    h: usize,
 ) -> [Vector3D; 6] {
-    debug_assert_eq!(poles_homog.len(), n_u * n_v * h);
-    let hs = if u_degree.max(v_degree) < curve::SMALL {
-        tensor::<{ curve::SMALL }>(
-            u,
-            v,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-            2,
-        )
-    } else {
-        tensor::<{ curve::LARGE }>(
-            u,
-            v,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-            2,
-        )
-    };
-    let xyz = |a: [f64; 4]| Vector3D::new(a[0], a[1], a[2]);
-    let [s, su, sv, suu, suv, svv] = hs.map(xyz);
-    if h != 4 {
+    let sums = tensor::<ORDER>(u_knots, v_knots, poles, u, v);
+    let [s, su, sv, suu, suv, svv] = sums.map(|a| Vector3D::new(a[0], a[1], a[2]));
+    if poles.weights.is_none() {
         return [s, su, sv, suu, suv, svv];
     }
-    let [w, wu, wv, wuu, wuv, wvv] = hs.map(|a| a[3]);
-    let inv = 1.0 / w;
-    let s = s * inv;
-    let su = (su - wu * s) * inv;
-    let sv = (sv - wv * s) * inv;
-    let suu = (suu - 2.0 * wu * su - wuu * s) * inv;
-    let suv = (suv - wu * sv - wv * su - wuv * s) * inv;
-    let svv = (svv - 2.0 * wv * sv - wvv * s) * inv;
+    let [w, wu, wv, wuu, wuv, wvv] = sums.map(|a| a[3]);
+    let inverse = 1.0 / w;
+    let s = s * inverse;
+    let su = (su - wu * s) * inverse;
+    let sv = (sv - wv * s) * inverse;
+    let suu = (suu - 2.0 * wu * su - wuu * s) * inverse;
+    let suv = (suv - wu * sv - wv * su - wuv * s) * inverse;
+    let svv = (svv - 2.0 * wv * sv - wvv * s) * inverse;
     [s, su, sv, suu, suv, svv]
 }
 
 /// Axis-aligned bounding boxes `[min_x, min_y, min_z, max_x, max_y,
-/// max_z]` of the Euclidean control poles of every knot-span patch,
-/// row-major over the spans between consecutive `u_breaks` (outer) and
-/// `v_breaks` (inner).
+/// max_z]` of the control poles of every knot-span patch, row-major over
+/// the spans between consecutive `u_breaks` (outer) and `v_breaks` (inner).
 ///
 /// By the convex hull property (weights are positive) each patch lies in
 /// its box, so the distance to the box bounds the distance to the patch
 /// from below.
-#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
 pub(crate) fn patch_boxes(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
     u_breaks: &[f64],
     v_breaks: &[f64],
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    u_flat: &[f64],
-    v_flat: &[f64],
-    poles_homog: &[f64],
-    n_u: usize,
-    n_v: usize,
-    h: usize,
 ) -> Vec<[f64; 6]> {
-    if u_degree.max(v_degree) < curve::SMALL {
-        boxes::<{ curve::SMALL }>(
-            u_breaks,
-            v_breaks,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-        )
+    if u_knots.degree().max(v_knots.degree()) < curve::SMALL {
+        boxes::<{ curve::SMALL }>(u_knots, v_knots, poles, u_breaks, v_breaks)
     } else {
-        boxes::<{ curve::LARGE }>(
-            u_breaks,
-            v_breaks,
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            u_flat,
-            v_flat,
-            poles_homog,
-            n_u,
-            n_v,
-            h,
-        )
+        boxes::<{ curve::LARGE }>(u_knots, v_knots, poles, u_breaks, v_breaks)
     }
 }
 
-#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
 fn boxes<const N: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
     u_breaks: &[f64],
     v_breaks: &[f64],
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    u_flat: &[f64],
-    v_flat: &[f64],
-    poles_homog: &[f64],
-    n_u: usize,
-    n_v: usize,
-    h: usize,
 ) -> Vec<[f64; 6]> {
     // The window at a span's midpoint selects exactly the poles of that
     // span's patch.
-    let span_window = |w: &[f64], degree, periodic, flat, n| {
+    let span_window = |w: &[f64], knots: &KnotVector| {
         let mut out = curve::Window::<N>::new();
-        curve::window(0.5 * (w[0] + w[1]), degree, periodic, flat, n, 0, &mut out);
+        knots.window(0.5 * (w[0] + w[1]), 0, &mut out);
         out
     };
     let v_windows: Vec<curve::Window<N>> = v_breaks
         .windows(2)
-        .map(|w| span_window(w, v_degree, v_periodic, v_flat, n_v))
+        .map(|w| span_window(w, v_knots))
         .collect();
+    let n_v = v_knots.pole_count();
     let mut out = Vec::with_capacity((u_breaks.len() - 1) * v_windows.len());
     for w in u_breaks.windows(2) {
-        let wu = span_window(w, u_degree, u_periodic, u_flat, n_u);
+        let wu = span_window(w, u_knots);
         for wv in &v_windows {
             let mut b = [
                 f64::INFINITY,
@@ -335,17 +211,11 @@ fn boxes<const N: usize>(
                 f64::NEG_INFINITY,
                 f64::NEG_INFINITY,
             ];
-            for i in 0..=u_degree {
+            for i in 0..=u_knots.degree() {
                 let row = wu.pole(i) * n_v;
-                for j in 0..=v_degree {
-                    let base = (row + wv.pole(j)) * h;
-                    let inv = if h == 4 {
-                        1.0 / poles_homog[base + 3]
-                    } else {
-                        1.0
-                    };
-                    for c in 0..3 {
-                        let x = poles_homog[base + c] * inv;
+                for j in 0..=v_knots.degree() {
+                    let p = poles.points[row + wv.pole(j)];
+                    for (c, x) in [p.x, p.y, p.z].into_iter().enumerate() {
                         b[c] = b[c].min(x);
                         b[c + 3] = b[c + 3].max(x);
                     }
@@ -358,14 +228,14 @@ fn boxes<const N: usize>(
 }
 
 /// One direction of a knot-span patch: its span's
-/// [`curve::bezier_matrix`] (row-major, `(degree + 1)^2` values), first
+/// [`KnotVector::bezier_matrix`] (row-major, `(degree + 1)^2` values), first
 /// pole index, degree and pole count.
 pub(crate) type SpanMatrix<'a> = (&'a [f64], usize, usize, usize);
 
 /// Bernstein control net of a knot-span patch over its own parameter
 /// rectangle, written row-major `[k_u][k_v][h]` to `out`
 /// (`(u_degree + 1) * (v_degree + 1) * h` values, homogeneous when
-/// `h == 4`); `scratch` holds as many.
+/// rational); `scratch` holds as many.
 ///
 /// The tensor product of each direction's span matrix applied to the
 /// patch's poles, the pole indices wrapping modulo the pole count (a
@@ -373,16 +243,15 @@ pub(crate) type SpanMatrix<'a> = (&'a [f64], usize, usize, usize);
 pub(crate) fn patch_bezier(
     u: SpanMatrix,
     v: SpanMatrix,
-    poles_homog: &[f64],
-    h: usize,
+    poles: Poles,
     scratch: &mut [f64],
     out: &mut [f64],
 ) {
-    match (h, u.2.max(v.2) < curve::SMALL) {
-        (4, true) => bezier_net::<4, { curve::SMALL }>(u, v, poles_homog, scratch, out),
-        (4, false) => bezier_net::<4, { curve::LARGE }>(u, v, poles_homog, scratch, out),
-        (_, true) => bezier_net::<3, { curve::SMALL }>(u, v, poles_homog, scratch, out),
-        (_, false) => bezier_net::<3, { curve::LARGE }>(u, v, poles_homog, scratch, out),
+    match (poles.weights.is_some(), u.2.max(v.2) < curve::SMALL) {
+        (true, true) => bezier_net::<4, { curve::SMALL }>(u, v, poles, scratch, out),
+        (true, false) => bezier_net::<4, { curve::LARGE }>(u, v, poles, scratch, out),
+        (false, true) => bezier_net::<3, { curve::SMALL }>(u, v, poles, scratch, out),
+        (false, false) => bezier_net::<3, { curve::LARGE }>(u, v, poles, scratch, out),
     }
 }
 
@@ -390,7 +259,7 @@ pub(crate) fn patch_bezier(
 fn bezier_net<const H: usize, const N: usize>(
     (mu, first_u, p, n_u): SpanMatrix,
     (mv, first_v, q, n_v): SpanMatrix,
-    poles_homog: &[f64],
+    poles: Poles,
     scratch: &mut [f64],
     out: &mut [f64],
 ) {
@@ -401,10 +270,10 @@ fn bezier_net<const H: usize, const N: usize>(
         let start = ((first_u + i) % n_u) * n_v;
         let mut row = [[0.0f64; H]; N];
         for j in 0..n {
-            let pole = point(poles_homog, start + (first_v + j) % n_v);
+            let homogeneous = poles.homogeneous(start + (first_v + j) % n_v);
             for (x, weights) in row.iter_mut().zip(mv.chunks_exact(n)) {
                 for c in 0..H {
-                    x[c] += weights[j] * pole[c];
+                    x[c] += weights[j] * homogeneous[c];
                 }
             }
         }
@@ -802,78 +671,83 @@ pub(crate) fn distance_bounds(
     }
 }
 
-/// Homogeneous `[H, Hu, Hv, Huu, Huv, Hvv]` at `(u, v)`, each in the first
-/// `h` slots; the derivatives beyond `order` are zero.
-#[allow(clippy::too_many_arguments)] // tensor-product evaluation signature
-fn tensor<const N: usize>(
+/// Homogeneous `[H, Hu, Hv, Huu, Huv, Hvv]` at `(u, v)` (`w = 1` if
+/// nonrational), the derivatives beyond total order `ORDER` zero.
+fn tensor<const ORDER: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
     u: f64,
     v: f64,
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    u_flat: &[f64],
-    v_flat: &[f64],
-    poles_homog: &[f64],
-    n_u: usize,
-    n_v: usize,
-    h: usize,
-    order: usize,
 ) -> [[f64; 4]; 6] {
-    let mut wu = curve::Window::<N>::new();
-    let mut wv = curve::Window::<N>::new();
-    curve::window(u, u_degree, u_periodic, u_flat, n_u, order, &mut wu);
-    curve::window(v, v_degree, v_periodic, v_flat, n_v, order, &mut wv);
-    // Fixed strides and orders let the loops unroll.
-    match (h, order) {
-        (3, 0) => sum::<N, 3, 0>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
-        (3, 1) => sum::<N, 3, 1>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
-        (3, _) => sum::<N, 3, 2>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
-        (_, 0) => sum::<N, 4, 0>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
-        (_, 1) => sum::<N, 4, 1>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
-        _ => sum::<N, 4, 2>(&wu, &wv, u_degree, v_degree, poles_homog, n_v),
+    fn sized<const N: usize, const ORDER: usize>(
+        u_knots: &KnotVector,
+        v_knots: &KnotVector,
+        poles: Poles,
+        u: f64,
+        v: f64,
+    ) -> [[f64; 4]; 6] {
+        let mut wu = curve::Window::<N>::new();
+        let mut wv = curve::Window::<N>::new();
+        u_knots.window(u, ORDER, &mut wu);
+        v_knots.window(v, ORDER, &mut wv);
+        match poles.weights {
+            Some(weights) => {
+                sum::<N, ORDER, true>(&wu, &wv, u_knots, v_knots, poles.points, weights)
+            }
+            None => sum::<N, ORDER, false>(&wu, &wv, u_knots, v_knots, poles.points, &[]),
+        }
+    }
+    if u_knots.degree().max(v_knots.degree()) < curve::SMALL {
+        sized::<{ curve::SMALL }, ORDER>(u_knots, v_knots, poles, u, v)
+    } else {
+        sized::<{ curve::LARGE }, ORDER>(u_knots, v_knots, poles, u, v)
     }
 }
 
-/// `Σ_i Σ_j Nu_i Nv_j P_ij` over the local poles, with the mixed basis
-/// derivatives up to total order `D` in the slots of [`tensor`].
-fn sum<const N: usize, const H: usize, const D: usize>(
+/// `Σ_i Σ_j Nu_i Nv_j w_ij (P_ij, 1)` over the local poles (`w_ij = 1`
+/// unless `RATIONAL`), with the mixed basis derivatives up to total order
+/// `ORDER` in the slots of [`tensor`].
+fn sum<const N: usize, const ORDER: usize, const RATIONAL: bool>(
     wu: &curve::Window<N>,
     wv: &curve::Window<N>,
-    u_degree: usize,
-    v_degree: usize,
-    poles: &[f64],
-    n_v: usize,
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    points: &[Point3D],
+    weights: &[f64],
 ) -> [[f64; 4]; 6] {
+    let n_v = v_knots.pole_count();
     let mut out = [[0.0f64; 4]; 6];
-    for i in 0..=u_degree {
+    for i in 0..=u_knots.degree() {
         let row = wu.pole(i) * n_v;
-        // Along v: the value row and its v-derivatives up to order D.
-        let mut along = [[0.0f64; H]; 3];
-        for j in 0..=v_degree {
-            let base = (row + wv.pole(j)) * H;
-            let pole: &[f64; H] = poles[base..base + H].try_into().unwrap();
-            for (k, acc) in along.iter_mut().enumerate().take(D + 1) {
-                let n = wv.ders[k][j];
-                for c in 0..H {
-                    acc[c] += n * pole[c];
-                }
+        // Along v: the value row and its v-derivatives up to order ORDER.
+        let mut along = [[0.0f64; 4]; 3];
+        for j in 0..=v_knots.degree() {
+            let index = row + wv.pole(j);
+            let p = points[index];
+            let weight = if RATIONAL { weights[index] } else { 1.0 };
+            for (k, acc) in along.iter_mut().enumerate().take(ORDER + 1) {
+                let b = wv.ders[k][j] * weight;
+                acc[0] += b * p.x;
+                acc[1] += b * p.y;
+                acc[2] += b * p.z;
+                acc[3] += b;
             }
         }
         let nu = wu.ders[0][i];
-        for c in 0..H {
+        for c in 0..4 {
             out[0][c] += nu * along[0][c];
         }
-        if D >= 1 {
+        if ORDER >= 1 {
             let du = wu.ders[1][i];
-            for c in 0..H {
+            for c in 0..4 {
                 out[1][c] += du * along[0][c];
                 out[2][c] += nu * along[1][c];
             }
         }
-        if D >= 2 {
+        if ORDER >= 2 {
             let (du, duu) = (wu.ders[1][i], wu.ders[2][i]);
-            for c in 0..H {
+            for c in 0..4 {
                 out[3][c] += duu * along[0][c];
                 out[4][c] += du * along[1][c];
                 out[5][c] += nu * along[2][c];
@@ -894,29 +768,41 @@ mod tests {
     //   P10=(1,0,0) P11=(1,1,1)
     // (row-major [i_u][i_v]). Bilinear interpolation gives
     //   S(u,v) = (u, v, u*v), Su = (1, 0, v), Sv = (0, 1, u).
-    fn bilinear_poles() -> Vec<f64> {
+    fn bilinear_poles() -> Vec<Point3D> {
         vec![
-            0.0, 0.0, 0.0, // P00
-            0.0, 1.0, 0.0, // P01
-            1.0, 0.0, 0.0, // P10
-            1.0, 1.0, 1.0, // P11
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(0.0, 1.0, 0.0),
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(1.0, 1.0, 1.0),
         ]
+    }
+
+    fn unit_linear() -> KnotVector {
+        KnotVector::new(1, vec![0.0, 1.0], vec![2, 2], false, 2).unwrap()
     }
 
     #[test]
     fn test_bilinear_patch_point_by_hand() {
         let poles = bilinear_poles();
-        let flat = curve::flat_knots(&[0.0, 1.0], &[2, 2]);
-        let s = surface_d0(0.5, 0.5, 1, 1, false, false, &flat, &flat, &poles, 2, 2, 3);
+        let knots = unit_linear();
+        let view = Poles {
+            points: &poles,
+            weights: None,
+        };
+        let s = surface_point(&knots, &knots, view, 0.5, 0.5);
         assert_close3(&[s.x, s.y, s.z], &[0.5, 0.5, 0.25]);
     }
 
     #[test]
     fn test_bilinear_patch_derivatives_by_hand() {
         let poles = bilinear_poles();
-        let flat = curve::flat_knots(&[0.0, 1.0], &[2, 2]);
+        let knots = unit_linear();
+        let view = Poles {
+            points: &poles,
+            weights: None,
+        };
         // At (u, v) = (0.3, 0.7): S=(0.3,0.7,0.21), Su=(1,0,0.7), Sv=(0,1,0.3).
-        let (s, su, sv) = surface_d1(0.3, 0.7, 1, 1, false, false, &flat, &flat, &poles, 2, 2, 3);
+        let [s, su, sv, ..] = surface_derivatives::<1>(&knots, &knots, view, 0.3, 0.7);
         assert_close3(&[s.x, s.y, s.z], &[0.3, 0.7, 0.21]);
         assert_close3(&[su.x, su.y, su.z], &[1.0, 0.0, 0.7]);
         assert_close3(&[sv.x, sv.y, sv.z], &[0.0, 1.0, 0.3]);
@@ -997,43 +883,27 @@ mod tests {
                 Some(w.as_array().unwrap().iter().map(arr_f64).collect())
             }
         });
-        let h = if weights.is_some() { 4 } else { 3 };
-
-        // Pack row-major [i_u][i_v][h].
-        let mut poles = Vec::with_capacity(n_u * n_v * h);
-        for iu in 0..n_u {
-            for iv in 0..n_v {
-                let p = &pole_grid[iu][iv];
-                match &weights {
-                    Some(ws) => {
-                        let w = ws[iu][iv];
-                        poles.extend_from_slice(&[p[0] * w, p[1] * w, p[2] * w, w]);
-                    }
-                    None => poles.extend_from_slice(&p[0..3]),
-                }
-            }
-        }
-
-        let u_flat = curve::flat_knots(&u_knots, &u_mults);
-        let v_flat = curve::flat_knots(&v_knots, &v_mults);
+        let poles: Vec<Point3D> = pole_grid
+            .iter()
+            .flatten()
+            .map(|p| Point3D::new(p[0], p[1], p[2]))
+            .collect();
+        let weights: Option<Vec<f64>> = weights.map(|w| w.concat());
+        let view = Poles {
+            points: &poles,
+            weights: weights.as_deref(),
+        };
+        let u_vector = KnotVector::new(u_degree, u_knots, u_mults, u_periodic, n_u).unwrap();
+        let v_vector = KnotVector::new(v_degree, v_knots, v_mults, v_periodic, n_v).unwrap();
 
         for sample in case["samples"].as_array().unwrap() {
             let u = sample["u"].as_f64().unwrap();
             let v = sample["v"].as_f64().unwrap();
 
-            let s0 = surface_d0(
-                u, v, u_degree, v_degree, u_periodic, v_periodic, &u_flat, &v_flat, &poles, n_u,
-                n_v, h,
-            );
-            let (s, su, sv) = surface_d1(
-                u, v, u_degree, v_degree, u_periodic, v_periodic, &u_flat, &v_flat, &poles, n_u,
-                n_v, h,
-            );
-
-            let [_, _, _, suu, suv, svv] = surface_d2(
-                u, v, u_degree, v_degree, u_periodic, v_periodic, &u_flat, &v_flat, &poles, n_u,
-                n_v, h,
-            );
+            let s0 = surface_point(&u_vector, &v_vector, view, u, v);
+            let [s, su, sv, ..] = surface_derivatives::<1>(&u_vector, &v_vector, view, u, v);
+            let [_, _, _, suu, suv, svv] =
+                surface_derivatives::<2>(&u_vector, &v_vector, view, u, v);
             for (key, d) in [("d2u", suu), ("d2uv", suv), ("d2v", svv)] {
                 check(name, u, v, key, &[d.x, d.y, d.z], &arr_f64(&sample[key]));
             }

@@ -2,10 +2,9 @@
 //! first derivatives, rational (weighted) poles, and periodic (closed) surfaces
 //! in either direction, a thin wrapper over [`crate::surface_math::bspline`].
 //!
-//! Construction packs the pole grid (and, for rational surfaces, the weight
-//! grid) into a cached homogeneous flat buffer laid out row-major as
-//! `[i_u][i_v][h]`, together with the flattened knot sequences for each
-//! direction, so evaluation never re-derives them.
+//! Construction stores the pole grid row-major, with a separate weight per
+//! pole if rational, and each direction's knot vector with its flattened
+//! knot sequence, so evaluation never re-derives them.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -63,27 +62,12 @@ pub use crate::curves::BSplineConstructionError;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct BSplineSurface {
-    u_degree: usize,
-    v_degree: usize,
-    u_periodic: bool,
-    v_periodic: bool,
-    poles: Vec<Vec<Point3D>>,
-    weights: Option<Vec<Vec<f64>>>,
-    u_knots: Vec<f64>,
-    u_mults: Vec<u32>,
-    v_knots: Vec<f64>,
-    v_mults: Vec<u32>,
-    /// Cached flat (expanded) knot sequence for each direction.
-    u_flat: Vec<f64>,
-    v_flat: Vec<f64>,
-    /// Cached flat pole buffer, row-major `[i_u][i_v][h]`, with `h = 4`
-    /// (homogeneous `(x*w, y*w, z*w, w)`) if rational, else `h = 3`.
-    flat_poles: Vec<f64>,
-    /// Grid dimensions: `n_u` rows (u direction), `n_v` columns (v direction).
-    n_u: usize,
-    n_v: usize,
-    /// Per-pole coordinate stride (`4` rational, `3` otherwise).
-    h: usize,
+    u_knots: curve::KnotVector,
+    v_knots: curve::KnotVector,
+    /// The pole grid, row-major `[i_u][i_v]`: a row per `u` pole.
+    poles: Vec<Point3D>,
+    /// One weight per pole, laid out as `poles`, if rational.
+    weights: Option<Vec<f64>>,
     /// Bounding-box hierarchy of the knot-span patches, built on the first
     /// projection.
     patches: Lazy<PatchTree>,
@@ -298,31 +282,14 @@ impl BSplineSurface {
         }
 
         // Validate each direction: u over grid rows, v over grid columns.
-        curve::validate_direction(u_degree, n_u, &u_knots, &u_multiplicities, u_periodic)?;
-        curve::validate_direction(v_degree, n_v, &v_knots, &v_multiplicities, v_periodic)?;
-
-        let u_flat = curve::flat_knots(&u_knots, &u_multiplicities);
-        let v_flat = curve::flat_knots(&v_knots, &v_multiplicities);
-        let h = if weights.is_some() { 4 } else { 3 };
-        let flat_poles = pack_flat_poles(&poles, weights.as_ref(), h);
+        let u_knots = curve::KnotVector::new(u_degree, u_knots, u_multiplicities, u_periodic, n_u)?;
+        let v_knots = curve::KnotVector::new(v_degree, v_knots, v_multiplicities, v_periodic, n_v)?;
 
         Ok(BSplineSurface {
-            u_degree,
-            v_degree,
-            u_periodic,
-            v_periodic,
-            poles,
-            weights,
             u_knots,
-            u_mults: u_multiplicities,
             v_knots,
-            v_mults: v_multiplicities,
-            u_flat,
-            v_flat,
-            flat_poles,
-            n_u,
-            n_v,
-            h,
+            poles: poles.concat(),
+            weights: weights.map(|w| w.concat()),
             patches: Lazy::default(),
         })
     }
@@ -342,7 +309,7 @@ impl BSplineSurface {
     /// assert_eq!(surface.u_degree(), 1);
     /// ```
     pub fn u_degree(&self) -> usize {
-        self.u_degree
+        self.u_knots.degree()
     }
 
     /// Returns the surface's degree in the `v` direction.
@@ -360,7 +327,7 @@ impl BSplineSurface {
     /// assert_eq!(surface.v_degree(), 1);
     /// ```
     pub fn v_degree(&self) -> usize {
-        self.v_degree
+        self.v_knots.degree()
     }
 
     /// Returns whether the surface is periodic (closed) in the `u` direction.
@@ -378,7 +345,7 @@ impl BSplineSurface {
     /// assert!(!surface.is_u_periodic());
     /// ```
     pub fn is_u_periodic(&self) -> bool {
-        self.u_periodic
+        self.u_knots.is_periodic()
     }
 
     /// Returns whether the surface is periodic (closed) in the `v` direction.
@@ -396,7 +363,7 @@ impl BSplineSurface {
     /// assert!(!surface.is_v_periodic());
     /// ```
     pub fn is_v_periodic(&self) -> bool {
-        self.v_periodic
+        self.v_knots.is_periodic()
     }
 
     /// Returns whether the surface is rational (has per-pole weights).
@@ -440,29 +407,15 @@ impl BSplineSurface {
     /// assert_eq!(moved.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 4.25));
     /// ```
     pub fn transformed(&self, transform: Transform) -> BSplineSurface {
-        let poles: Vec<Vec<Point3D>> = self
-            .poles
-            .iter()
-            .map(|row| row.iter().map(|&p| transform.apply_point(p)).collect())
-            .collect();
-        let flat_poles = pack_flat_poles(&poles, self.weights.as_ref(), self.h);
         BSplineSurface {
-            u_degree: self.u_degree,
-            v_degree: self.v_degree,
-            u_periodic: self.u_periodic,
-            v_periodic: self.v_periodic,
-            poles,
-            weights: self.weights.clone(),
             u_knots: self.u_knots.clone(),
-            u_mults: self.u_mults.clone(),
             v_knots: self.v_knots.clone(),
-            v_mults: self.v_mults.clone(),
-            u_flat: self.u_flat.clone(),
-            v_flat: self.v_flat.clone(),
-            flat_poles,
-            n_u: self.n_u,
-            n_v: self.n_v,
-            h: self.h,
+            poles: self
+                .poles
+                .iter()
+                .map(|&p| transform.apply_point(p))
+                .collect(),
+            weights: self.weights.clone(),
             patches: Lazy::default(),
         }
     }
@@ -485,20 +438,7 @@ impl BSplineSurface {
     /// assert_eq!(surface.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 0.25));
     /// ```
     pub fn eval_point(&self, u: f64, v: f64) -> Point3D {
-        math::surface_d0(
-            u,
-            v,
-            self.u_degree,
-            self.v_degree,
-            self.u_periodic,
-            self.v_periodic,
-            &self.u_flat,
-            &self.v_flat,
-            &self.flat_poles,
-            self.n_u,
-            self.n_v,
-            self.h,
-        )
+        math::surface_point(&self.u_knots, &self.v_knots, self.pole_view(), u, v)
     }
 
     /// Evaluates the points on the surface at each `(u, v)` in `uvs`.
@@ -682,28 +622,9 @@ impl BSplineSurface {
                 search.search(root, rect, creases);
             }
         }
-        let (u0, u1) = self.u_param_range();
-        let (v0, v1) = self.v_param_range();
-        let u_regions = curve::smooth_regions(
-            &self.u_knots,
-            &self.u_mults,
-            self.u_degree,
-            self.u_periodic,
-            u0,
-            u1,
-        );
-        let v_regions = curve::smooth_regions(
-            &self.v_knots,
-            &self.v_mults,
-            self.v_degree,
-            self.v_periodic,
-            v0,
-            v1,
-        );
-        let (u_period, v_period) = (
-            self.u_periodic.then_some(u1 - u0),
-            self.v_periodic.then_some(v1 - v0),
-        );
+        let u_regions = self.u_knots.smooth_regions();
+        let v_regions = self.v_knots.smooth_regions();
+        let (u_period, v_period) = (self.u_knots.period(), self.v_knots.period());
         // A minimum on a subpatch edge inside a smooth region is where the
         // search stopped, not necessarily a minimum of the surface: polish
         // across subpatches.
@@ -818,54 +739,21 @@ impl BSplineSurface {
     /// The patch bounding-box hierarchy, built on first use.
     fn patch_tree(&self) -> &PatchTree {
         self.patches.get_or_init(|| {
-            let (u0, u1) = self.u_param_range();
-            let (v0, v1) = self.v_param_range();
-            let u_breaks = curve::span_breaks(&self.u_knots, u0, u1);
-            let v_breaks = curve::span_breaks(&self.v_knots, v0, v1);
+            let u_breaks = self.u_knots.breaks();
+            let v_breaks = self.v_knots.breaks();
             let boxes = math::patch_boxes(
+                &self.u_knots,
+                &self.v_knots,
+                self.pole_view(),
                 &u_breaks,
                 &v_breaks,
-                self.u_degree,
-                self.v_degree,
-                self.u_periodic,
-                self.v_periodic,
-                &self.u_flat,
-                &self.v_flat,
-                &self.flat_poles,
-                self.n_u,
-                self.n_v,
-                self.h,
             );
             PatchTree {
                 tree: BoxTree::new(&boxes, v_breaks.len() - 1),
-                u_spans: curve::span_bezier_matrices(
-                    &u_breaks,
-                    self.u_degree,
-                    self.u_periodic,
-                    &self.u_flat,
-                    self.n_u,
-                ),
-                v_spans: curve::span_bezier_matrices(
-                    &v_breaks,
-                    self.v_degree,
-                    self.v_periodic,
-                    &self.v_flat,
-                    self.n_v,
-                ),
-                u_creases: curve::crease_breaks(
-                    &self.u_knots,
-                    &self.u_mults,
-                    self.u_degree,
-                    self.u_periodic,
-                    &u_breaks,
-                ),
-                v_creases: curve::crease_breaks(
-                    &self.v_knots,
-                    &self.v_mults,
-                    self.v_degree,
-                    self.v_periodic,
-                    &v_breaks,
-                ),
+                u_spans: self.u_knots.span_bezier_matrices(&u_breaks),
+                v_spans: self.v_knots.span_bezier_matrices(&v_breaks),
+                u_creases: self.u_knots.crease_breaks(&u_breaks),
+                v_creases: self.v_knots.crease_breaks(&v_breaks),
                 u_breaks,
                 v_breaks,
             }
@@ -874,39 +762,28 @@ impl BSplineSurface {
 
     /// Shared first-derivative evaluation, returning `(S, Su, Sv)`.
     fn eval_surface_d1(&self, u: f64, v: f64) -> (Point3D, Vector3D, Vector3D) {
-        math::surface_d1(
-            u,
-            v,
-            self.u_degree,
-            self.v_degree,
-            self.u_periodic,
-            self.v_periodic,
-            &self.u_flat,
-            &self.v_flat,
-            &self.flat_poles,
-            self.n_u,
-            self.n_v,
-            self.h,
-        )
+        let [s, su, sv, ..] =
+            math::surface_derivatives::<1>(&self.u_knots, &self.v_knots, self.pole_view(), u, v);
+        (Point3D::ORIGIN + s, su, sv)
     }
 
     /// Shared second-derivative evaluation, returning
     /// `[S, Su, Sv, Suu, Suv, Svv]` (the point as a vector).
     fn eval_surface_d2(&self, u: f64, v: f64) -> [Vector3D; 6] {
-        math::surface_d2(
-            u,
-            v,
-            self.u_degree,
-            self.v_degree,
-            self.u_periodic,
-            self.v_periodic,
-            &self.u_flat,
-            &self.v_flat,
-            &self.flat_poles,
-            self.n_u,
-            self.n_v,
-            self.h,
-        )
+        math::surface_derivatives::<2>(&self.u_knots, &self.v_knots, self.pole_view(), u, v)
+    }
+
+    /// The poles as read by evaluation.
+    fn pole_view(&self) -> curve::Poles<'_> {
+        curve::Poles {
+            points: &self.poles,
+            weights: self.weights.as_deref(),
+        }
+    }
+
+    /// Values per point of a Bernstein net: homogeneous if rational.
+    fn net_stride(&self) -> usize {
+        if self.is_rational() { 4 } else { 3 }
     }
 
     /// Box-bounded Newton minimisation of `|S(u,v) - point|^2` from the
@@ -946,8 +823,8 @@ impl BSplineSurface {
             }
         };
         (
-            wrap(u, self.u_periodic, u0, u1),
-            wrap(v, self.v_periodic, v0, v1),
+            wrap(u, self.is_u_periodic(), u0, u1),
+            wrap(v, self.is_v_periodic(), v0, v1),
         )
     }
 
@@ -955,24 +832,12 @@ impl BSplineSurface {
     /// flat span, for a periodic direction the full period `(knots[0],
     /// knots[last])`.
     fn u_param_range(&self) -> (f64, f64) {
-        let sum_mults: u32 = self.u_mults.iter().sum();
-        curve::param_range(
-            &self.u_flat,
-            self.u_degree,
-            self.u_periodic,
-            sum_mults as usize,
-        )
+        self.u_knots.bounds()
     }
 
     /// `v` parameter bounds `(first, last)`, analogous to [`Self::u_param_range`].
     fn v_param_range(&self) -> (f64, f64) {
-        let sum_mults: u32 = self.v_mults.iter().sum();
-        curve::param_range(
-            &self.v_flat,
-            self.v_degree,
-            self.v_periodic,
-            sum_mults as usize,
-        )
+        self.v_knots.bounds()
     }
 }
 
@@ -1012,21 +877,11 @@ impl ParametricSurface for BSplineSurface {
     }
 
     fn u_period(&self) -> Option<f64> {
-        if self.u_periodic {
-            let (first, last) = self.u_param_range();
-            Some(last - first)
-        } else {
-            None
-        }
+        self.u_knots.period()
     }
 
     fn v_period(&self) -> Option<f64> {
-        if self.v_periodic {
-            let (first, last) = self.v_param_range();
-            Some(last - first)
-        } else {
-            None
-        }
+        self.v_knots.period()
     }
 
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
@@ -1055,6 +910,7 @@ struct PatchSearch<'a> {
     /// Net shape: `rows x cols` points of `h` values, `size` in all.
     rows: usize,
     cols: usize,
+    h: usize,
     size: usize,
     /// Storage of the pending subpatches' nets, `size` values per slot.
     nets: Vec<f64>,
@@ -1138,13 +994,15 @@ impl<'a> PatchSearch<'a> {
     /// local one if `all`), subpatches within `resolution` of the best
     /// distance so far being settled.
     fn new(surface: &'a BSplineSurface, point: Point3D, resolution: f64, all: bool) -> Self {
-        let (rows, cols) = (surface.u_degree + 1, surface.v_degree + 1);
-        let size = rows * cols * surface.h;
+        let (rows, cols) = (surface.u_degree() + 1, surface.v_degree() + 1);
+        let h = surface.net_stride();
+        let size = rows * cols * h;
         PatchSearch {
             surface,
             point,
             rows,
             cols,
+            h,
             size,
             nets: Vec::new(),
             free: Vec::new(),
@@ -1166,23 +1024,22 @@ impl<'a> PatchSearch<'a> {
         let slot = self.slot();
         let n_vspans = patches.v_breaks.len() - 1;
         let (a, b) = (k / n_vspans, k % n_vspans);
-        let (p, q) = (s.u_degree, s.v_degree);
+        let (p, q) = (s.u_degree(), s.v_degree());
         let (mu, mv) = ((p + 1) * (p + 1), (q + 1) * (q + 1));
         math::patch_bezier(
             (
                 &patches.u_spans.1[a * mu..(a + 1) * mu],
                 patches.u_spans.0[a],
                 p,
-                s.n_u,
+                s.u_knots.pole_count(),
             ),
             (
                 &patches.v_spans.1[b * mv..(b + 1) * mv],
                 patches.v_spans.0[b],
                 q,
-                s.n_v,
+                s.v_knots.pole_count(),
             ),
-            &s.flat_poles,
-            s.h,
+            s.pole_view(),
             &mut self.scratch,
             &mut self.nets[slot..slot + self.size],
         );
@@ -1219,7 +1076,7 @@ impl<'a> PatchSearch<'a> {
                         &mut self.nets[node.slot..node.slot + self.size],
                         self.rows,
                         self.cols,
-                        self.surface.h,
+                        self.h,
                         direction == 0,
                         side,
                     );
@@ -1289,11 +1146,7 @@ impl<'a> PatchSearch<'a> {
                 edge,
             });
         }
-        math::net_points(
-            &self.nets[slot..slot + self.size],
-            self.surface.h,
-            &mut self.points,
-        );
+        math::net_points(&self.nets[slot..slot + self.size], self.h, &mut self.points);
         for (s, t) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
             let p = self.points[s * (rows - 1) * cols + t * (cols - 1)];
             let distance = Point3D::new(p[0], p[1], p[2]).distance(self.point);
@@ -1333,7 +1186,7 @@ impl<'a> PatchSearch<'a> {
     /// (`[u0, u1, v0, v1]`), leaving its Euclidean control points in
     /// `points`.
     fn verdict(&mut self, node: &Subpatch, creases: [bool; 4]) -> Verdict {
-        let (rows, cols, h) = (self.rows, self.cols, self.surface.h);
+        let (rows, cols, h) = (self.rows, self.cols, self.h);
         let net = &self.nets[node.slot..node.slot + self.size];
         math::net_points(net, h, &mut self.points);
         let q = [self.point.x, self.point.y, self.point.z];
@@ -1461,15 +1314,7 @@ impl<'a> PatchSearch<'a> {
             let (a, b) = self.nets.split_at_mut(left);
             (&mut b[..self.size], &mut a[right..right + self.size])
         };
-        math::halve_net(
-            &self.scratch,
-            self.rows,
-            self.cols,
-            self.surface.h,
-            along_u,
-            lo,
-            hi,
-        );
+        math::halve_net(&self.scratch, self.rows, self.cols, self.h, along_u, lo, hi);
         let r = node.rect;
         let (first, second) = if along_u {
             let mid = 0.5 * (r[0] + r[1]);
@@ -1512,25 +1357,6 @@ fn nowhere_convex([a, b, c]: [math::Interval; 3]) -> bool {
     };
     let along = if x * y >= 0.0 { b.hi } else { b.lo };
     (x != 0.0 || y != 0.0) && x * x * a.hi + 2.0 * x * y * along + y * y * c.hi < 0.0
-}
-
-/// Packs the pole grid (and, if rational, weights) into a flat, row-major
-/// `[i_u][i_v][h]` coordinate buffer: `(x, y, z)` per pole if `weights` is
-/// `None`, else the homogeneous `(x*w, y*w, z*w, w)`.
-fn pack_flat_poles(poles: &[Vec<Point3D>], weights: Option<&Vec<Vec<f64>>>, h: usize) -> Vec<f64> {
-    let mut out = Vec::with_capacity(poles.len() * poles[0].len() * h);
-    for (iu, row) in poles.iter().enumerate() {
-        for (iv, p) in row.iter().enumerate() {
-            match weights {
-                Some(ws) => {
-                    let w = ws[iu][iv];
-                    out.extend_from_slice(&[p.x * w, p.y * w, p.z * w, w]);
-                }
-                None => out.extend_from_slice(&[p.x, p.y, p.z]),
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -2293,7 +2119,7 @@ mod tests {
         ] {
             let patches = s.patch_tree();
             let mut search = PatchSearch::new(&s, Point3D::ORIGIN, 0.0, true);
-            let (rows, cols, h) = (s.u_degree + 1, s.v_degree + 1, s.h);
+            let (rows, cols, h) = (s.u_degree() + 1, s.v_degree() + 1, s.net_stride());
             for k in 0..patches.len() {
                 let (rect, _) = patches.patch(k);
                 let root = search.root(patches, k).unwrap();
