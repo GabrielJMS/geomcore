@@ -1,0 +1,3 @@
+# No batch-transform architecture
+
+Transforms stay per shape (`transformed`, composed with `Transform::then`); there is no structure-of-arrays layout or batch API for moving many shapes at once. Measured on 0.27, moving 1000 cylinders takes about 60 µs. Moving 1000 bicubic B-spline surfaces takes about 630 µs, about 410 µs of which is copying their arrays, so vectorizing the maths could save about 0.2 ms at most. A single B-spline point projection costs about 25 µs, as much as moving 40 such surfaces. Moving a whole solid is a placement transform composed in the topology layer, which is outside geomcore, not a rewrite of every face. Data-oriented work in geomcore targets one-against-many queries instead, plus an in-place B-spline transform that removes the copy.
