@@ -444,6 +444,59 @@ fn fill<C: DiscretizeRange + ?Sized>(
     };
 }
 
+/// Parameters, points, chord deviations and angle deviations.
+type Buffers<P> = (Vec<f64>, Vec<P>, Vec<f64>, Vec<f64>);
+
+/// The discretization of `[first, last]` in a single pass, into buffers
+/// that grow as the runs come: parameters, points, chord deviations and
+/// angle deviations, as [`fill`] writes them.
+fn collect<C: DiscretizeRange + ?Sized>(
+    curve: &C,
+    (first, last): (f64, f64),
+    closed: bool,
+    criteria: &DiscretizationCriteria,
+    point_at_parameter: impl Fn(f64) -> C::Point,
+) -> Buffers<C::Point> {
+    let gather = |min_segments, out: &mut Buffers<C::Point>| {
+        let (parameters, points, chord_deviations, angle_deviations) = out;
+        parameters.clear();
+        points.clear();
+        chord_deviations.clear();
+        angle_deviations.clear();
+        let mut runs = 0usize;
+        curve.for_each_run(first, last, criteria, min_segments, |run, point_at| {
+            runs += 1;
+            let step = 1.0 / run.segments as f64;
+            for j in 0..run.segments {
+                let s = j as f64 * step;
+                parameters.push(run.first + (run.last - run.first) * s);
+                points.push(point_at(s));
+            }
+            chord_deviations.extend(std::iter::repeat_n(run.chord_deviation, run.segments));
+            angle_deviations.extend(std::iter::repeat_n(run.angle_deviation, run.segments));
+        });
+        runs
+    };
+    let mut out = Default::default();
+    let runs = gather(1, &mut out);
+    // The same rule as `plan`.
+    if closed && out.2.len() < 3 {
+        gather(3usize.div_ceil(runs), &mut out);
+    }
+    let (mut parameters, mut points, chord_deviations, angle_deviations) = out;
+    let start = point_at_parameter(first);
+    parameters.push(last);
+    points.push(start);
+    let n = points.len();
+    parameters[0] = first;
+    points[0] = start;
+    parameters[n - 1] = last;
+    if !closed {
+        points[n - 1] = point_at_parameter(last);
+    }
+    (parameters, points, chord_deviations, angle_deviations)
+}
+
 /// The smallest count `k >= 1` with `fits(k)`, `fits` being monotone,
 /// searched from the estimate `guess` (which may be off by rounding, or
 /// by far): `usize::MAX` if no count fits.
@@ -494,8 +547,24 @@ fn smallest_count(guess: f64, fits: impl Fn(usize) -> bool) -> usize {
 /// writing points of type `$point`) over the whole bounds of bounded
 /// curves.
 macro_rules! discretize_bounded {
-    ($discretize:ident, $point:ty: $($curve:ty),*) => {$(
+    ($discretize:ident, $discretization:ident, $point:ty: $($curve:ty),*) => {$(
         impl $discretize for $curve {
+            fn discretize(&self, criteria: DiscretizationCriteria) -> $discretization {
+                let (parameters, points, chord_deviations, angle_deviations) = collect(
+                    self,
+                    self.bounds(),
+                    self.is_periodic(),
+                    &criteria,
+                    |u| self.eval_point(u),
+                );
+                $discretization {
+                    parameters,
+                    points,
+                    chord_deviations,
+                    angle_deviations,
+                }
+            }
+
             fn point_count(&self, criteria: DiscretizationCriteria) -> usize {
                 plan(self, self.bounds(), self.is_periodic(), &criteria).0
             }
@@ -526,14 +595,30 @@ macro_rules! discretize_bounded {
     )*};
 }
 
-discretize_bounded!(Discretize3D, Point3D: Circle3D, Ellipse3D, BSplineCurve3D);
-discretize_bounded!(Discretize2D, Point2D: Circle2D);
+discretize_bounded!(Discretize3D, Discretization3D, Point3D: Circle3D, Ellipse3D, BSplineCurve3D);
+discretize_bounded!(Discretize2D, Discretization2D, Point2D: Circle2D);
 
 /// Implements a discretization trait for a trimmed curve type over its
 /// range: closed when the range spans a whole period of its basis.
 macro_rules! discretize_trimmed {
-    ($discretize:ident, $point:ty, $trimmed:ident, $parametric:ident) => {
+    ($discretize:ident, $discretization:ident, $point:ty, $trimmed:ident, $parametric:ident) => {
         impl<C: DiscretizeRange<Point = $point> + $parametric> $discretize for $trimmed<C> {
+            fn discretize(&self, criteria: DiscretizationCriteria) -> $discretization {
+                let (parameters, points, chord_deviations, angle_deviations) = collect(
+                    self.basis(),
+                    self.bounds(),
+                    spans_period(self.bounds(), self.basis().period()),
+                    &criteria,
+                    |u| self.basis().eval_point(u),
+                );
+                $discretization {
+                    parameters,
+                    points,
+                    chord_deviations,
+                    angle_deviations,
+                }
+            }
+
             fn point_count(&self, criteria: DiscretizationCriteria) -> usize {
                 let closed = spans_period(self.bounds(), self.basis().period());
                 plan(self.basis(), self.bounds(), closed, &criteria).0
@@ -570,8 +655,20 @@ fn spans_period((first, last): (f64, f64), period: Option<f64>) -> bool {
     period.is_some_and(|period| last - first >= period * (1.0 - 1e-12))
 }
 
-discretize_trimmed!(Discretize3D, Point3D, TrimmedCurve3D, ParametricCurve3D);
-discretize_trimmed!(Discretize2D, Point2D, TrimmedCurve2D, ParametricCurve2D);
+discretize_trimmed!(
+    Discretize3D,
+    Discretization3D,
+    Point3D,
+    TrimmedCurve3D,
+    ParametricCurve3D
+);
+discretize_trimmed!(
+    Discretize2D,
+    Discretization2D,
+    Point2D,
+    TrimmedCurve2D,
+    ParametricCurve2D
+);
 
 impl<C: DiscretizeRange + ?Sized> DiscretizeRange for &C {
     type Point = C::Point;

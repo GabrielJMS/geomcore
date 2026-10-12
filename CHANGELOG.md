@@ -79,6 +79,12 @@ the Python distribution are versioned in lockstep.
   reciprocals ahead of the chain that uses them. A cubic curve point is
   about 1.6 times faster and its second derivatives about 1.4 times; on
   surfaces, points gain about 10% and second derivatives about 15%.
+- `discretize` walks the curve once, growing its result, instead of
+  counting the points twice and then filling them. A B-spline piece's
+  bounds are computed once and handed to its halves, and a rational
+  piece builds its tangent's direction from a table of Bernstein product
+  factors shared by the whole curve. A cubic B-spline discretizes 2 to 3
+  times faster, a rational one about 7 times.
 
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.

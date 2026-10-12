@@ -22,7 +22,6 @@
 use super::sealed::{DiscretizeRange, Run};
 use super::{DiscretizationCriteria, smallest_count};
 use crate::curves::ParametricCurve3D;
-use crate::math::bernstein;
 use crate::{BSplineCurve3D, Point3D};
 use std::f64::consts::PI;
 
@@ -180,8 +179,8 @@ impl Piece {
     /// `X / W` has the direction of `X' W − X W'` (its derivative times
     /// `W²`, `W` being positive), a polynomial of degree `2n − 1` whose
     /// Bernstein coefficients come from the products of the homogeneous
-    /// control points' differences and weights.
-    fn turning(&self) -> Option<f64> {
+    /// control points' differences and weights (see [`Context`]).
+    fn turning(&self, context: &Context) -> Option<f64> {
         let p = self.control();
         let n = self.degree;
         let mut directions = [[0.0; 3]; DIRECTION_CAPACITY];
@@ -191,93 +190,138 @@ impl Piece {
             }
             return turning(&directions[..n]);
         }
-        // Scaled Bernstein coefficients multiply by convolution.
-        let mut weights = [0.0; CAPACITY];
-        let mut weight_differences = [0.0; CAPACITY];
-        for i in 0..=n {
-            weights[i] = p[i][3];
-        }
         for i in 0..n {
-            weight_differences[i] = p[i + 1][3] - p[i][3];
-        }
-        bernstein::scale(&mut weights[..=n]);
-        bernstein::scale(&mut weight_differences[..n]);
-        for c in 0..3 {
-            let mut coordinates = [0.0; CAPACITY];
-            let mut differences = [0.0; CAPACITY];
-            for i in 0..=n {
-                coordinates[i] = p[i][c];
-            }
-            for i in 0..n {
-                differences[i] = p[i + 1][c] - p[i][c];
-            }
-            bernstein::scale(&mut coordinates[..=n]);
-            bernstein::scale(&mut differences[..n]);
-            let mut product = [0.0; DIRECTION_CAPACITY];
-            let product = &mut product[..2 * n];
-            bernstein::add_product(&differences[..n], &weights[..=n], 1.0, product);
-            bernstein::add_product(&coordinates[..=n], &weight_differences[..n], -1.0, product);
-            bernstein::unscale(product);
-            for (d, &value) in directions.iter_mut().zip(product.iter()) {
-                d[c] = value;
+            let difference: Homogeneous = std::array::from_fn(|c| p[i + 1][c] - p[i][c]);
+            let factors = &context.product_factors[i * (n + 1)..=i * (n + 1) + n];
+            for ((d, q), &f) in directions[i..].iter_mut().zip(p).zip(factors) {
+                for c in 0..3 {
+                    d[c] += f * (difference[c] * q[3] - q[c] * difference[3]);
+                }
             }
         }
         turning(&directions[..2 * n])
     }
 
-    /// The fewest equal steps meeting the criteria, `None` if the angle
-    /// deviation is limited but has no bound on this piece.
-    fn segments(&self, criteria: &DiscretizationCriteria) -> Option<usize> {
-        let chord = chord_segments(self.chord_constant(), criteria.max_chord_deviation);
-        let Some(limit) = criteria.angle_limit() else {
-            return Some(chord);
+    /// The piece's bounds for the criteria.
+    fn bounds(&self, context: &Context) -> Bounds {
+        let chord_constant = self.chord_constant();
+        let chord = chord_segments(chord_constant, context.criteria.max_chord_deviation);
+        let Some(limit) = context.criteria.angle_limit() else {
+            return Bounds {
+                chord_constant,
+                turning: None,
+                segments: Some(chord),
+            };
         };
-        let turning = self.turning()?;
-        let angle = smallest_count(turning / limit, |k| angle_deviation(turning, k) <= limit);
-        Some(chord.max(angle))
+        let turning = self.turning(context);
+        let segments = turning.map(|turning| {
+            let angle = smallest_count(turning / limit, |k| angle_deviation(turning, k) <= limit);
+            chord.max(angle)
+        });
+        Bounds {
+            chord_constant,
+            turning,
+            segments,
+        }
     }
 
-    /// Visits the leaves of the halving of this piece, each as a run.
+    /// Visits the leaves of the halving of this piece, of `bounds`, each
+    /// as a run.
     fn visit_leaves<F>(
         &self,
-        criteria: &DiscretizationCriteria,
+        bounds: Bounds,
+        context: &Context,
         depth: u32,
         min_segments: usize,
         visit: &mut F,
     ) where
         F: FnMut(Run, &dyn Fn(f64) -> Point3D),
     {
-        let segments = self.segments(criteria);
-        let may_split = match segments {
+        let may_split = match bounds.segments {
             Some(k) => depth < MAX_DEPTH && k > 2,
             None => depth < MAX_UNBOUNDED_DEPTH,
         };
         if may_split {
             let (left, right) = self.split(0.5);
-            let halves = left.segments(criteria).zip(right.segments(criteria));
-            let worth = match (segments, halves) {
+            let (left_bounds, right_bounds) = (left.bounds(context), right.bounds(context));
+            let halves = left_bounds.segments.zip(right_bounds.segments);
+            let worth = match (bounds.segments, halves) {
                 (None, _) => true,
                 (Some(k), Some((l, r))) => (l as f64 + r as f64) < SPLIT_GAIN * k as f64,
                 (Some(_), None) => false,
             };
             if worth {
-                left.visit_leaves(criteria, depth + 1, min_segments, visit);
-                right.visit_leaves(criteria, depth + 1, min_segments, visit);
+                left.visit_leaves(left_bounds, context, depth + 1, min_segments, visit);
+                right.visit_leaves(right_bounds, context, depth + 1, min_segments, visit);
                 return;
             }
         }
-        let chord_constant = self.chord_constant();
-        let segments = segments
-            .unwrap_or_else(|| chord_segments(chord_constant, criteria.max_chord_deviation))
+        let criteria = context.criteria;
+        let segments = bounds
+            .segments
+            .unwrap_or_else(|| chord_segments(bounds.chord_constant, criteria.max_chord_deviation))
             .max(min_segments);
+        let turning = match criteria.angle_limit() {
+            Some(_) => bounds.turning,
+            None => self.turning(context),
+        };
         let run = Run {
             first: self.first,
             last: self.last,
             segments,
-            chord_deviation: chord_deviation(chord_constant, segments),
-            angle_deviation: self.turning().map_or(PI, |t| angle_deviation(t, segments)),
+            chord_deviation: chord_deviation(bounds.chord_constant, segments),
+            angle_deviation: turning.map_or(PI, |t| angle_deviation(t, segments)),
         };
         visit(run, &|s| self.point_at(s));
+    }
+}
+
+/// A piece's bounds for the criteria.
+#[derive(Clone, Copy)]
+struct Bounds {
+    /// See [`Piece::chord_constant`].
+    chord_constant: f64,
+    /// See [`Piece::turning`]; computed only if the angle deviation is
+    /// limited.
+    turning: Option<f64>,
+    /// The fewest equal steps meeting the criteria, `None` if the angle
+    /// deviation is limited but has no bound.
+    segments: Option<usize>,
+}
+
+/// What the pieces of one curve share.
+struct Context<'a> {
+    criteria: &'a DiscretizationCriteria,
+    /// For a rational curve of degree `n`, the factor of the product of
+    /// the `i`-th Bernstein polynomial of degree `n − 1` and the `j`-th of
+    /// degree `n` in the `(i + j)`-th of degree `2n − 1`,
+    /// `C(n − 1, i) C(n, j) / C(2n − 1, i + j)`, at `i (n + 1) + j`.
+    product_factors: [f64; (CAPACITY - 1) * CAPACITY],
+}
+
+impl<'a> Context<'a> {
+    fn new(criteria: &'a DiscretizationCriteria, degree: usize, rational: bool) -> Self {
+        let mut product_factors = [0.0; (CAPACITY - 1) * CAPACITY];
+        if rational && degree > 0 {
+            let n = degree;
+            let mut binomials = [[0.0; 2 * CAPACITY]; 3];
+            for (row, m) in binomials.iter_mut().zip([n - 1, n, 2 * n - 1]) {
+                row[0] = 1.0;
+                for k in 0..m {
+                    row[k + 1] = row[k] * (m - k) as f64 / (k + 1) as f64;
+                }
+            }
+            let [low, high, product] = binomials;
+            for i in 0..n {
+                for j in 0..=n {
+                    product_factors[i * (n + 1) + j] = low[i] * high[j] / product[i + j];
+                }
+            }
+        }
+        Self {
+            criteria,
+            product_factors,
+        }
     }
 }
 
@@ -358,6 +402,7 @@ impl DiscretizeRange for BSplineCurve3D {
             }
             None => (0..=0, 0.0),
         };
+        let context = Context::new(criteria, self.degree(), self.is_rational());
         let mut piece = Piece {
             first: 0.0,
             last: 0.0,
@@ -380,9 +425,9 @@ impl DiscretizeRange for BSplineCurve3D {
                     self.span_bezier_points(0.5 * (span_start + span_end), &mut piece.points);
                     piece.first = span_start;
                     piece.last = span_end;
-                    piece
-                        .restricted(a, b)
-                        .visit_leaves(criteria, 0, min_segments, &mut visit);
+                    let piece = piece.restricted(a, b);
+                    let bounds = piece.bounds(&context);
+                    piece.visit_leaves(bounds, &context, 0, min_segments, &mut visit);
                 }
                 span_start = span_end;
             }
