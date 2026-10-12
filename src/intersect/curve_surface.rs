@@ -3,11 +3,12 @@
 //! B-spline surface by subdivision of their Bézier pieces (see
 //! [`bspline_curve_surface`]).
 
+use super::completeness::{Region, box_union, meet, of_unsettled, span};
 use super::pieces::{
     CurvePieces, Pool, apart_along, bounding_box, box_size, dot, euclidean, meets_at_most_once,
     net_normal, norm, sub,
 };
-use super::{Completeness, CurveSurfaceHit, IncompleteReason};
+use super::{Completeness, CurveSurfaceHit};
 use crate::curves::BSplineCurve3D;
 use crate::math::boxtree::{Aabb, boxes_apart};
 use crate::math::solve_3x3;
@@ -217,50 +218,30 @@ pub struct CurveSurfaceRegion {
     pub max_corner: Point3D,
 }
 
-impl CurveSurfaceRegion {
+impl Region for CurveSurfaceRegion {
     fn touches(&self, other: &CurveSurfaceRegion) -> bool {
-        let meet = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| a0 <= b1 && b0 <= a1;
         meet(self.curve_range, other.curve_range)
             && meet(self.u_range, other.u_range)
             && meet(self.v_range, other.v_range)
     }
 
     fn union(&self, other: &CurveSurfaceRegion) -> CurveSurfaceRegion {
-        let span = |(a0, a1): (f64, f64), (b0, b1): (f64, f64)| (a0.min(b0), a1.max(b1));
-        let (p, q) = (self.min_corner, other.min_corner);
-        let (r, s) = (self.max_corner, other.max_corner);
+        let (min_corner, max_corner) = box_union(
+            (self.min_corner, self.max_corner),
+            (other.min_corner, other.max_corner),
+        );
         CurveSurfaceRegion {
             curve_range: span(self.curve_range, other.curve_range),
             u_range: span(self.u_range, other.u_range),
             v_range: span(self.v_range, other.v_range),
-            min_corner: Point3D::new(p.x.min(q.x), p.y.min(q.y), p.z.min(q.z)),
-            max_corner: Point3D::new(r.x.max(s.x), r.y.max(s.y), r.z.max(s.z)),
+            min_corner,
+            max_corner,
         }
     }
-}
 
-/// `regions` with every group of touching ones merged into one, ordered
-/// by the start of their curve ranges.
-fn merged(mut regions: Vec<CurveSurfaceRegion>) -> Vec<CurveSurfaceRegion> {
-    let mut out: Vec<CurveSurfaceRegion> = Vec::new();
-    while let Some(mut region) = regions.pop() {
-        loop {
-            let before = out.len();
-            out.retain(|r| {
-                let touches = region.touches(r);
-                if touches {
-                    region = region.union(r);
-                }
-                !touches
-            });
-            if out.len() == before {
-                break;
-            }
-        }
-        out.push(region);
+    fn start(&self) -> f64 {
+        self.curve_range.0
     }
-    out.sort_by(|a, b| a.curve_range.0.total_cmp(&b.curve_range.0));
-    out
 }
 
 /// Halvings allowed per pair of pieces whose boxes overlap, pooled over
@@ -580,21 +561,9 @@ impl<'a> Search<'a> {
             euclidean(self.curves.get(node.curve), &mut self.curve_points);
             regions.push(self.region(&node, &bounding_box(&self.curve_points)));
         }
-        let completeness = if regions.is_empty() {
-            Completeness::Complete
-        } else {
-            Completeness::Incomplete {
-                reason: if exhausted {
-                    IncompleteReason::BudgetExhausted
-                } else {
-                    IncompleteReason::Unseparated
-                },
-                regions: merged(regions),
-            }
-        };
         CurveSurfaceHits {
             hits: self.hits(),
-            completeness,
+            completeness: of_unsettled(regions, exhausted),
         }
     }
 
@@ -760,7 +729,7 @@ mod tests {
     use super::*;
     use crate::Point3D;
     use crate::curves::{Curve3D, ParametricCurve3D, TrimmedCurve3D};
-    use crate::intersect::{intersect_curve_surface, sampled_curve_surface};
+    use crate::intersect::{IncompleteReason, intersect_curve_surface, sampled_curve_surface};
     use crate::surfaces::Surface;
 
     const TOL: Tolerance = Tolerance::DEFAULT;

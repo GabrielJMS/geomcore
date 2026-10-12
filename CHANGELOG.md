@@ -101,6 +101,26 @@ the Python distribution are versioned in lockstep.
   only reads the hits keeps compiling unless it names the `Vec` type;
   call `into_hits()` there.
   See ADR 0006. Python is unchanged and still returns the list of hits.
+- **Breaking:** numeric curve–curve intersection and extrema report
+  whether their search was complete (#32), like the curve–surface case:
+  `intersect_curve_curve` returns `CurveCurveHits` (`hits()`,
+  `into_hits()`) and `curve_curve_extrema` returns `CurveCurveExtrema`
+  (`minima()`, `into_minima()`), both reading as the slice of their
+  results and carrying a `Completeness` whose regions are
+  `CurveCurveRegion`s: a parameter range on each curve and a box in
+  space. Two B-spline curves are `Complete` when every pair of pieces
+  was proven apart (for extrema, to hold no minimum) or solved. A tangent
+  contact or a straight overlap, where the pieces run along one line
+  within `tol.confusion`, no longer exhausts the budget: it is kept as a
+  region (`Unseparated`) and the search goes on. A curved overlap or a
+  valley of equal distance, such as concentric arcs, still runs out of
+  budget (`BudgetExhausted`). Either way the sampled search runs too: its
+  hits that do not merge into the proven ones are added, and its seeds
+  join the extrema's, one minimum kept per valley. Other pairs, two
+  straight curves included, are `Sampled`. Code that only reads the
+  results keeps compiling unless it names the `Vec` type; call
+  `into_hits()` or `into_minima()` there. See ADR 0006. Python is
+  unchanged.
 
 ### Fixed
 
