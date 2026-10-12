@@ -30,6 +30,15 @@ the Python distribution are versioned in lockstep.
   parabola and hyperbola. Parameters stay in `(-π, π]`. These
   intersections are about 60% slower (circle–cylinder from ~0.96 to
   ~1.55 µs).
+- `intersect_curve_surface`, the numeric path behind `Intersect` for
+  B-spline curves and surfaces, no longer misses a crossing at a point
+  where the surface's parametrization is singular: a sphere's pole, a
+  cone's apex, a B-spline edge collapsed to a point (#12). Newton's
+  method stalls there because the surface's partial derivatives vanish or
+  lose rank. A seed at a local minimum of the sampled distance that
+  Newton cannot converge from is now refined by a one-dimensional
+  minimization of the distance from the curve to the surface. Misses are
+  about 10% slower.
 
 ## [0.29.0] - 2026-10-12
 

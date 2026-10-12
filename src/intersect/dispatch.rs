@@ -1371,17 +1371,10 @@ mod tests {
                         "numeric {n:?} not exact for {curve:?} and {surface:?}: {hits:?}"
                     );
                 }
-                // The numeric solve misses hits where the surface
-                // parametrization is singular, such as a sphere pole.
-                let regular = |p: Point3D| {
-                    let uv = surface.project_point(p, TOL);
-                    let du = surface.eval_derivative(uv.u, uv.v, 1, 0);
-                    let dv = surface.eval_derivative(uv.u, uv.v, 0, 1);
-                    du.cross(dv).magnitude() > 1e-9
-                };
-                for h in hits.iter().filter(|h| {
-                    h.multiplicity == 1 && window(curve, h.parameter) && regular(h.point)
-                }) {
+                for h in hits
+                    .iter()
+                    .filter(|h| h.multiplicity == 1 && window(curve, h.parameter))
+                {
                     assert!(
                         numeric.iter().any(|n| near(h.point, n.point)),
                         "exact {h:?} missed numerically for {curve:?} and {surface:?}"
