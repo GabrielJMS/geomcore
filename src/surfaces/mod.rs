@@ -4,6 +4,7 @@
 
 mod bspline;
 mod cone;
+mod conversion;
 mod cylinder;
 mod plane;
 mod sphere;
