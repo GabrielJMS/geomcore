@@ -459,7 +459,9 @@ impl Frame2D {
     /// Returns [`FrameConstructionError::NullDirection`] if either
     /// direction cannot be normalized (zero length),
     /// [`FrameConstructionError::NotOrthogonal`] if the normalized
-    /// directions are not orthogonal (`|x·y| > 1e-9`), or
+    /// directions are not orthogonal (`|x·y| >` the default angular
+    /// tolerance, 1e-12: further off square, the frame would move points
+    /// across the model by more than the confusion tolerance), or
     /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN or
     /// infinite.
     ///
@@ -485,7 +487,7 @@ impl Frame2D {
         let y_dir = y_direction
             .normalized()
             .ok_or(FrameConstructionError::NullDirection)?;
-        if x_dir.dot(y_dir).abs() > tol::P_CONFUSION {
+        if x_dir.dot(y_dir).abs() > tol::ANGULAR {
             return Err(FrameConstructionError::NotOrthogonal);
         }
         Ok(Frame2D {
