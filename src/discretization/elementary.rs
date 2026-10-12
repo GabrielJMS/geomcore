@@ -9,19 +9,18 @@
 //! is below a right angle; steps turning more report an infinite chord
 //! deviation, so they never fit.
 
-use super::sealed::{DiscretizeRange3D, Run};
+use super::sealed::{DiscretizeRange, Run};
 use super::{DiscretizationCriteria, smallest_count};
-use crate::Point3D;
-use crate::curves::ParametricCurve3D;
-use crate::{Circle3D, Curve3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D};
+use crate::{Circle2D, Curve2D, Line2D, Point2D};
+use crate::{Circle3D, Curve3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point3D};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-/// One run of equal steps over `[first, last]`: the fewest steps for
-/// which `deviations(k)`, the chord and angle deviation of each of `k`
-/// steps (both falling as `k` grows), meet the criteria. `guess`
-/// estimates that count.
-fn equal_steps<C: ParametricCurve3D + ?Sized, F>(
-    curve: &C,
+/// One run of equal steps over `[first, last]` of the curve evaluated by
+/// `point_at_parameter`: the fewest steps for which `deviations(k)`, the
+/// chord and angle deviation of each of `k` steps (both falling as `k`
+/// grows), meet the criteria. `guess` estimates that count.
+fn equal_steps<P, F>(
+    point_at_parameter: impl Fn(f64) -> P,
     (first, last): (f64, f64),
     criteria: &DiscretizationCriteria,
     min_segments: usize,
@@ -29,7 +28,7 @@ fn equal_steps<C: ParametricCurve3D + ?Sized, F>(
     deviations: impl Fn(usize) -> (f64, f64),
     mut visit: F,
 ) where
-    F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+    F: FnMut(Run, &dyn Fn(f64) -> P),
 {
     let fits = |k| {
         let (chord, angle) = deviations(k);
@@ -45,12 +44,68 @@ fn equal_steps<C: ParametricCurve3D + ?Sized, F>(
         chord_deviation,
         angle_deviation,
     };
-    visit(run, &|s| curve.eval_point(first + (last - first) * s));
+    visit(run, &|s| point_at_parameter(first + (last - first) * s));
 }
 
-impl DiscretizeRange3D for Circle3D {
-    /// A segment of arc angle `θ` deviates from the circle by exactly
-    /// `r (1 − cos θ/2) = 2 r sin²(θ/4)` and `θ/2`.
+/// Equal steps of a circle of radius `r`: a segment of arc angle `θ`
+/// deviates from the circle by exactly `r (1 − cos θ/2) = 2 r sin²(θ/4)`
+/// and `θ/2`.
+fn circle_steps<P, F>(
+    r: f64,
+    point_at_parameter: impl Fn(f64) -> P,
+    (first, last): (f64, f64),
+    criteria: &DiscretizationCriteria,
+    min_segments: usize,
+    visit: F,
+) where
+    F: FnMut(Run, &dyn Fn(f64) -> P),
+{
+    let sweep = last - first;
+    let deviations = |k: usize| {
+        let theta = sweep / k as f64;
+        (2.0 * r * (0.25 * theta).sin().powi(2), 0.5 * theta)
+    };
+    // θ ≤ 4 asin(sqrt(ε / 2r)) for the chord, θ ≤ 2α for the angle.
+    let ratio = (criteria.max_chord_deviation / (2.0 * r)).min(1.0);
+    let mut guess = sweep / (4.0 * ratio.sqrt().asin());
+    if let Some(limit) = criteria.angle_limit() {
+        guess = guess.max(sweep / (2.0 * limit));
+    }
+    equal_steps(
+        point_at_parameter,
+        (first, last),
+        criteria,
+        min_segments,
+        guess,
+        deviations,
+        visit,
+    );
+}
+
+/// A line is its own chord: one step, unless more are asked for.
+fn line_steps<P, F>(
+    point_at_parameter: impl Fn(f64) -> P,
+    (first, last): (f64, f64),
+    criteria: &DiscretizationCriteria,
+    min_segments: usize,
+    visit: F,
+) where
+    F: FnMut(Run, &dyn Fn(f64) -> P),
+{
+    equal_steps(
+        point_at_parameter,
+        (first, last),
+        criteria,
+        min_segments,
+        1.0,
+        |_| (0.0, 0.0),
+        visit,
+    );
+}
+
+impl DiscretizeRange for Circle3D {
+    type Point = Point3D;
+
     fn for_each_run<F>(
         &self,
         first: f64,
@@ -59,27 +114,42 @@ impl DiscretizeRange3D for Circle3D {
         min_segments: usize,
         visit: F,
     ) where
-        F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
     {
-        let r = self.radius();
-        let sweep = last - first;
-        let deviations = |k: usize| {
-            let theta = sweep / k as f64;
-            (2.0 * r * (0.25 * theta).sin().powi(2), 0.5 * theta)
-        };
-        // θ ≤ 4 asin(sqrt(ε / 2r)) for the chord, θ ≤ 2α for the angle.
-        let ratio = (criteria.max_chord_deviation / (2.0 * r)).min(1.0);
-        let mut guess = sweep / (4.0 * ratio.sqrt().asin());
-        if let Some(limit) = criteria.angle_limit() {
-            guess = guess.max(sweep / (2.0 * limit));
-        }
-        equal_steps(
-            self,
-            (first, last),
+        let point_at_parameter = |u| self.eval_point(u);
+        let range = (first, last);
+        circle_steps(
+            self.radius(),
+            point_at_parameter,
+            range,
             criteria,
             min_segments,
-            guess,
-            deviations,
+            visit,
+        );
+    }
+}
+
+impl DiscretizeRange for Circle2D {
+    type Point = Point2D;
+
+    fn for_each_run<F>(
+        &self,
+        first: f64,
+        last: f64,
+        criteria: &DiscretizationCriteria,
+        min_segments: usize,
+        visit: F,
+    ) where
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
+    {
+        let point_at_parameter = |u| self.eval_point(u);
+        let range = (first, last);
+        circle_steps(
+            self.radius(),
+            point_at_parameter,
+            range,
+            criteria,
+            min_segments,
             visit,
         );
     }
@@ -128,7 +198,9 @@ fn conic_guess(
     guess.max(sweep * turning_rate / (2.0 * limit))
 }
 
-impl DiscretizeRange3D for Ellipse3D {
+impl DiscretizeRange for Ellipse3D {
+    type Point = Point3D;
+
     /// The image of a circle under `diag(a, b)`: a step of `h` around `m`
     /// lies `2 sin²(h/4) / sqrt(cos²m/a² + sin²m/b²)` from its chord, the
     /// largest over a range near the ends of the major axis.
@@ -140,7 +212,7 @@ impl DiscretizeRange3D for Ellipse3D {
         min_segments: usize,
         visit: F,
     ) where
-        F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
     {
         let (a, b) = (self.major_radius(), self.minor_radius());
         let sweep = last - first;
@@ -168,7 +240,7 @@ impl DiscretizeRange3D for Ellipse3D {
         let turning_rate = a * b / (a * a * (1.0 - cos2) + b * b * cos2);
         let guess = conic_guess(sweep, criteria, distance_factor(cos_double), turning_rate);
         equal_steps(
-            self,
+            |u| self.eval_point(u),
             (first, last),
             criteria,
             min_segments,
@@ -179,7 +251,9 @@ impl DiscretizeRange3D for Ellipse3D {
     }
 }
 
-impl DiscretizeRange3D for Hyperbola3D {
+impl DiscretizeRange for Hyperbola3D {
+    type Point = Point3D;
+
     /// The image of `(cosh u, sinh u)` under `diag(a, b)`: a step of `h`
     /// around `m` lies `2 sinh²(h/4) / sqrt(cosh²m/a² + sinh²m/b²)` from
     /// its chord, the largest over a range nearest the vertex.
@@ -191,7 +265,7 @@ impl DiscretizeRange3D for Hyperbola3D {
         min_segments: usize,
         visit: F,
     ) where
-        F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
     {
         let (a, b) = (self.major_radius(), self.minor_radius());
         let sweep = last - first;
@@ -213,7 +287,7 @@ impl DiscretizeRange3D for Hyperbola3D {
         let turning_rate = a * b / ((a * nearest.sinh()).powi(2) + (b * nearest.cosh()).powi(2));
         let guess = conic_guess(sweep, criteria, distance_factor(nearest), turning_rate);
         equal_steps(
-            self,
+            |u| self.eval_point(u),
             (first, last),
             criteria,
             min_segments,
@@ -224,7 +298,9 @@ impl DiscretizeRange3D for Hyperbola3D {
     }
 }
 
-impl DiscretizeRange3D for Parabola3D {
+impl DiscretizeRange for Parabola3D {
+    type Point = Point3D;
+
     /// `u²/4f` along the axis, `u` across: a step of `h` around `m` lies
     /// `h²/16f / sqrt(1 + m²/4f²)` from its chord, the largest over a
     /// range nearest the vertex.
@@ -236,7 +312,7 @@ impl DiscretizeRange3D for Parabola3D {
         min_segments: usize,
         visit: F,
     ) where
-        F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
     {
         let focal = self.focal();
         let sweep = last - first;
@@ -258,7 +334,7 @@ impl DiscretizeRange3D for Parabola3D {
         let turning_rate = distance_factor(nearest).powi(2) / (2.0 * focal);
         let guess = conic_guess(sweep, criteria, chord_rate, turning_rate);
         equal_steps(
-            self,
+            |u| self.eval_point(u),
             (first, last),
             criteria,
             min_segments,
@@ -269,8 +345,9 @@ impl DiscretizeRange3D for Parabola3D {
     }
 }
 
-impl DiscretizeRange3D for Line3D {
-    /// A line is its own chord.
+impl DiscretizeRange for Line3D {
+    type Point = Point3D;
+
     fn for_each_run<F>(
         &self,
         first: f64,
@@ -279,21 +356,21 @@ impl DiscretizeRange3D for Line3D {
         min_segments: usize,
         visit: F,
     ) where
-        F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
     {
-        equal_steps(
-            self,
+        line_steps(
+            |u| self.eval_point(u),
             (first, last),
             criteria,
             min_segments,
-            1.0,
-            |_| (0.0, 0.0),
             visit,
         );
     }
 }
 
-impl DiscretizeRange3D for Curve3D {
+impl DiscretizeRange for Line2D {
+    type Point = Point2D;
+
     fn for_each_run<F>(
         &self,
         first: f64,
@@ -302,7 +379,30 @@ impl DiscretizeRange3D for Curve3D {
         min_segments: usize,
         visit: F,
     ) where
-        F: FnMut(Run, &dyn Fn(f64) -> Point3D),
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
+    {
+        line_steps(
+            |u| self.eval_point(u),
+            (first, last),
+            criteria,
+            min_segments,
+            visit,
+        );
+    }
+}
+
+impl DiscretizeRange for Curve3D {
+    type Point = Point3D;
+
+    fn for_each_run<F>(
+        &self,
+        first: f64,
+        last: f64,
+        criteria: &DiscretizationCriteria,
+        min_segments: usize,
+        visit: F,
+    ) where
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
     {
         match self {
             Curve3D::Line(c) => c.for_each_run(first, last, criteria, min_segments, visit),
@@ -311,6 +411,26 @@ impl DiscretizeRange3D for Curve3D {
             Curve3D::Parabola(c) => c.for_each_run(first, last, criteria, min_segments, visit),
             Curve3D::Hyperbola(c) => c.for_each_run(first, last, criteria, min_segments, visit),
             Curve3D::BSpline(c) => c.for_each_run(first, last, criteria, min_segments, visit),
+        }
+    }
+}
+
+impl DiscretizeRange for Curve2D {
+    type Point = Point2D;
+
+    fn for_each_run<F>(
+        &self,
+        first: f64,
+        last: f64,
+        criteria: &DiscretizationCriteria,
+        min_segments: usize,
+        visit: F,
+    ) where
+        F: FnMut(Run, &dyn Fn(f64) -> Self::Point),
+    {
+        match self {
+            Curve2D::Line(c) => c.for_each_run(first, last, criteria, min_segments, visit),
+            Curve2D::Circle(c) => c.for_each_run(first, last, criteria, min_segments, visit),
         }
     }
 }

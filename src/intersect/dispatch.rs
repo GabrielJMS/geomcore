@@ -5,8 +5,8 @@
 //! results of the untyped path hold their pieces in an [`InlineList`], so
 //! no intersection result allocates.
 
-use crate::curves::{Curve3D, ElementaryCurve, ParametricCurve3D};
-use crate::intersect::intersect_conic_conic;
+use crate::curves::{Curve3D, ElementaryCurve};
+use crate::intersect::{Conic, intersect_conic_conic};
 use crate::surfaces::{ElementarySurface, Surface};
 use crate::{
     Circle2D, Circle3D, CircleCircle3DIntersection, CircleSurfaceIntersection,
@@ -697,17 +697,14 @@ fn line_line(result: LineLine3DIntersection) -> CurveCurveIntersection {
 /// The multiplicity of a lone line hit: the line-circle and line-conic
 /// results report one hit as tangent even where the line pierces the
 /// curve's plane or crosses a single branch, so tangency is decided by the
-/// directions. A near-tangent pair of roots merges at the closest
-/// approach, where the directions are parallel.
-fn lone_hit_multiplicity(
-    line: &Line3D,
-    curve: &impl ParametricCurve3D,
-    parameter: f64,
-    tol: Tolerance,
-) -> u32 {
+/// directions, parallel across the conic's extent. A near-tangent pair of
+/// roots merges at the closest approach, where the directions are
+/// parallel.
+fn lone_hit_multiplicity(line: &Line3D, conic: &impl Conic, parameter: f64, tol: Tolerance) -> u32 {
     let a = line.direction();
-    let b = curve.eval_derivative(parameter, 1);
-    if a.cross(b).magnitude() <= tol.angular * b.magnitude() {
+    let b = conic.eval_derivative(parameter, 1);
+    let angular = tol.angular_for_extent(conic.shape().extent());
+    if a.cross(b).magnitude() <= angular * b.magnitude() {
         2
     } else {
         1
@@ -747,7 +744,7 @@ fn line_circle(
 fn line_conic(
     result: LineConic3DIntersection,
     line: &Line3D,
-    conic: &impl ParametricCurve3D,
+    conic: &impl Conic,
     tol: Tolerance,
 ) -> CurveCurveIntersection {
     let from = |h: LineConicHit, m: u32| pair(h.line_param, h.point, h.conic_param, m);

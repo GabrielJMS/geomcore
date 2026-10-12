@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple, final
+from typing import Any, ClassVar, List, Optional, Tuple, final
 
 from geomcore.curves import BSplineCurve3D
 
@@ -86,6 +86,8 @@ class Tolerance:
     def angular(self) -> float: ...
     @property
     def parametric(self) -> float: ...
+    MODEL_SIZE: ClassVar[float]
+    def angular_for_extent(self, extent: float) -> float: ...
     def __repr__(self) -> str: ...
 
 @final
@@ -107,6 +109,18 @@ class Transform:
     def then(self, next: Transform) -> Transform: ...
     def apply_point(self, p: Point3D) -> Point3D: ...
     def apply_vector(self, v: Vector3D) -> Vector3D: ...
+
+@final
+class Discretization2D:
+    @property
+    def parameters(self) -> List[float]: ...
+    @property
+    def points(self) -> List[Point2D]: ...
+    @property
+    def chord_deviations(self) -> List[float]: ...
+    @property
+    def angle_deviations(self) -> List[float]: ...
+    def __repr__(self) -> str: ...
 
 @final
 class Discretization3D:
@@ -138,6 +152,7 @@ def intersect_curve_curve(
 
 __all__ = [
     "Axis3D",
+    "Discretization2D",
     "Discretization3D",
     "Frame3D",
     "Point2D",

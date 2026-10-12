@@ -25,6 +25,18 @@ _Avoid_: inside (reserved for polygons), containment for anything other than thi
 **B-spline**:
 A curve or surface defined by poles, knots and optional weights. Every curve or surface is either elementary or a B-spline.
 
+## Precision
+
+**Model size**:
+The side of the cube, centred on the origin, that models are assumed to fit in: 1e5 model units. It bounds the model, not its carriers: an infinite line or plane matters only inside it. Within it, `f64` coordinates are exact to far below the confusion tolerance.
+
+**Confusion tolerance**:
+The distance below which two points coincide (`tol.confusion`). Every geometric decision is a distance decision against it.
+_Avoid_: precision, resolution, epsilon
+
+**Parallel**:
+Two directions are parallel for a configuration when turning one onto the other moves the geometry by at most the confusion tolerance: an angle below the confusion tolerance over the geometry's extent, or over the model size for unbounded geometry (`tol.angular_for_extent`).
+
 ## Intersection
 
 **Exact intersection**:

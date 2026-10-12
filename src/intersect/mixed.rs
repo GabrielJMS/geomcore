@@ -15,9 +15,10 @@
 use std::borrow::Cow;
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-use super::curve_curve::{bspline_curve_curve, bspline_minima};
-use super::curve_surface::{CurveSurfaceHits, Range, bspline_curve_surface};
-use super::{Completeness, CurveCurveExtremum, CurveCurveRegion, ParamDomain};
+use super::curve_curve::ParamDomain;
+use super::curve_curve_hull::{bspline_curve_curve, bspline_minima};
+use super::curve_surface_hull::{CurveSurfaceHits, Range, bspline_curve_surface};
+use super::{Completeness, CurveCurveExtremum, CurveCurveRegion};
 use crate::curves::{BSplineCurve3D, Circle3D, ElementaryCurve, ParametricCurve3D, TrimmedCurve3D};
 use crate::math::boxtree::Aabb;
 use crate::surfaces::{BSplineSurface, ElementarySurface, ParametricSurface};
@@ -547,9 +548,11 @@ mod tests {
 
     use super::*;
     use crate::curves::{Curve3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D};
+    use crate::intersect::curve_curve::{curve_curve_minima, sampled_curve_curve};
+    use crate::intersect::curve_surface::sampled_curve_surface;
     use crate::intersect::{
-        CurveCurveHit, CurveSurfaceHit, curve_curve_extrema, curve_curve_minima,
-        intersect_curve_curve, intersect_curve_surface, sampled_curve_curve, sampled_curve_surface,
+        CurveCurveHit, CurveSurfaceHit, curve_curve_extrema, intersect_curve_curve,
+        intersect_curve_surface,
     };
     use crate::surfaces::{Cone, Cylinder, Plane, Sphere, Surface, Torus};
 
