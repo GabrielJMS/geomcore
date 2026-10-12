@@ -78,17 +78,16 @@ pub(crate) fn locate_span(flat: &[f64], degree: usize, periodic: bool, u: f64) -
         u.clamp(first, last)
     };
 
-    // Binary search for the rightmost lo <= s < hi with flat[s] <= u.
+    // Binary search for the rightmost lo <= s < hi with flat[s] <= u
+    // (flat[lo] <= u always holds), without data-dependent branches.
     let mut span = lo;
-    let (mut left, mut right) = (lo, hi);
-    while left < right {
-        let mid = left + (right - left) / 2;
-        if flat[mid] <= u {
-            span = mid;
-            left = mid + 1;
-        } else {
-            right = mid;
+    let mut length = hi - lo;
+    while length > 1 {
+        let half = length / 2;
+        if flat[span + half] <= u {
+            span += half;
         }
+        length -= half;
     }
     // The rightmost such `s` already opens a nonzero-width span, except at
     // the range end (`u == last`), which steps back to the last real span.
@@ -172,7 +171,7 @@ pub(crate) fn window<const N: usize>(
     match order {
         0 => basis_values(degree, &left, &right, &mut w.ders[0]),
         1 => basis_first(degree, &left, &right, &mut w.ders),
-        _ => basis_derivatives(degree, &left, &right, order, &mut w.ders),
+        _ => basis_second(degree, &left, &right, &mut w.ders),
     }
 }
 
@@ -309,6 +308,65 @@ fn basis_first<const N: usize>(
     firsts[p] = p as f64 * previous;
 }
 
+/// Non-zero basis functions with their first and second derivatives: the
+/// recurrence of [`basis_first`] carried one level further. The level
+/// building degree `p - 1` gives that degree's first derivatives, and the
+/// level building degree `p` divides them by the same knot spans as the
+/// values, `N''_j = p * (D_{j-1} / s_{j-1} - D_j / s_j)` with `D` the
+/// first derivatives of degree `p - 1` and `s` the level's spans.
+fn basis_second<const N: usize>(
+    degree: usize,
+    left: &[f64; N],
+    right: &[f64; N],
+    ders: &mut [[f64; N]; MAX_DERIVATIVE + 1],
+) {
+    let p = degree;
+    let [values, firsts, seconds] = ders;
+    // First derivatives of degree p - 1 (zero for degree 0).
+    let mut lower = [0.0f64; N];
+    values[0] = 1.0;
+    for j in 1..p.saturating_sub(1) {
+        let mut saved = 0.0;
+        for r in 0..j {
+            let temp = values[r] / (right[r + 1] + left[j - r]);
+            values[r] = saved + right[r + 1] * temp;
+            saved = left[j - r] * temp;
+        }
+        values[j] = saved;
+    }
+    if p >= 2 {
+        let q = p - 1;
+        let mut saved = 0.0;
+        let mut previous = 0.0;
+        for r in 0..q {
+            let temp = values[r] / (right[r + 1] + left[q - r]);
+            values[r] = saved + right[r + 1] * temp;
+            saved = left[q - r] * temp;
+            lower[r] = q as f64 * (previous - temp);
+            previous = temp;
+        }
+        values[q] = saved;
+        lower[q] = q as f64 * previous;
+    }
+    let mut saved = 0.0;
+    let mut previous = 0.0;
+    let mut previous_lower = 0.0;
+    for r in 0..p {
+        let inverse = 1.0 / (right[r + 1] + left[p - r]);
+        let temp = values[r] * inverse;
+        values[r] = saved + right[r + 1] * temp;
+        saved = left[p - r] * temp;
+        firsts[r] = p as f64 * (previous - temp);
+        previous = temp;
+        let lower_temp = lower[r] * inverse;
+        seconds[r] = p as f64 * (previous_lower - lower_temp);
+        previous_lower = lower_temp;
+    }
+    values[p] = saved;
+    firsts[p] = p as f64 * previous;
+    seconds[p] = p as f64 * previous_lower;
+}
+
 /// Non-zero basis functions and their derivatives up to `order` (The NURBS
 /// Book, A2.3), from `left[j] = u - U[span + 1 - j]` and
 /// `right[j] = U[span + j] - u` for `j` in `1..=degree`.
@@ -316,6 +374,7 @@ fn basis_first<const N: usize>(
 /// Every divisor is a difference of two knots on either side of a
 /// nonzero-width span, so none is zero. Derivatives above the degree vanish
 /// and are left at zero.
+#[cfg(test)]
 fn basis_derivatives<const N: usize>(
     degree: usize,
     left: &[f64; N],
@@ -905,6 +964,38 @@ pub(crate) fn validate_direction(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_basis_second_matches_general_derivatives() {
+        // Uneven knots, every degree, parameters across a span.
+        for p in 1..=9usize {
+            let flat: Vec<f64> = (0..2 * p + 2).map(|i| (i as f64).powf(1.3) + 0.1 * (i % 3) as f64).collect();
+            let span = p;
+            for step in 0..=10 {
+                let u = flat[span] + (flat[span + 1] - flat[span]) * step as f64 / 10.0;
+                let (mut left, mut right) = ([0.0; LARGE], [0.0; LARGE]);
+                for j in 1..=p {
+                    left[j] = u - flat[span + 1 - j];
+                    right[j] = flat[span + j] - u;
+                }
+                let mut fast = [[0.0; LARGE]; MAX_DERIVATIVE + 1];
+                let mut general = [[0.0; LARGE]; MAX_DERIVATIVE + 1];
+                basis_second(p, &left, &right, &mut fast);
+                basis_derivatives(p, &left, &right, 2, &mut general);
+                for k in 0..=2 {
+                    for j in 0..=p {
+                        let scale = general[k][..=p].iter().fold(1.0f64, |m, x| m.max(x.abs()));
+                        assert!(
+                            (fast[k][j] - general[k][j]).abs() <= 1e-13 * scale,
+                            "degree {p}, order {k}, function {j}: {} vs {}",
+                            fast[k][j],
+                            general[k][j]
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // ---- flat_knots ----
 
