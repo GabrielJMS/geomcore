@@ -23,7 +23,7 @@ use super::sealed::{DiscretizeRange, Run};
 use super::{DiscretizationCriteria, smallest_count};
 use crate::curves::ParametricCurve3D;
 use crate::{BSplineCurve3D, Point3D};
-use std::f64::consts::PI;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 /// Control points of the highest supported degree, 25.
 const CAPACITY: usize = 26;
@@ -188,18 +188,20 @@ impl Piece {
             for (i, d) in directions.iter_mut().enumerate().take(n) {
                 *d = std::array::from_fn(|c| p[i + 1][c] - p[i][c]);
             }
-            return turning(&directions[..n]);
+            return turning(&directions[..n], context);
         }
+        let products = &context.direction_products;
         for i in 0..n {
             let difference: Homogeneous = std::array::from_fn(|c| p[i + 1][c] - p[i][c]);
-            let factors = &context.product_factors[i * (n + 1)..=i * (n + 1) + n];
-            for ((d, q), &f) in directions[i..].iter_mut().zip(p).zip(factors) {
+            for (j, q) in p.iter().enumerate() {
+                let f = products.factor(i, j);
+                let d = &mut directions[i + j];
                 for c in 0..3 {
                     d[c] += f * (difference[c] * q[3] - q[c] * difference[3]);
                 }
             }
         }
-        turning(&directions[..2 * n])
+        turning(&directions[..2 * n], context)
     }
 
     /// The piece's bounds for the criteria.
@@ -289,49 +291,87 @@ struct Bounds {
     segments: Option<usize>,
 }
 
-/// What the pieces of one curve share.
+/// Entries of a row of binomial coefficients, up to `C(98, k)`: the product
+/// of two tangent directions of a rational piece of degree 25, each of
+/// degree `2 × 25 − 1`.
+const ROW: usize = 2 * DIRECTION_CAPACITY - 1;
+
+/// The products of Bernstein polynomials of degrees `p` and `q`:
+/// `B_i^p B_j^q = C(p, i) C(q, j) / C(p + q, i + j) B_{i+j}^{p+q}`.
+struct Products {
+    first: [f64; ROW],
+    second: [f64; ROW],
+    inverse_product: [f64; ROW],
+}
+
+impl Products {
+    fn new(p: usize, q: usize) -> Self {
+        let binomials = |m: usize| {
+            let mut row = [0.0; ROW];
+            row[0] = 1.0;
+            for k in 0..m {
+                row[k + 1] = row[k] * (m - k) as f64 / (k + 1) as f64;
+            }
+            row
+        };
+        let mut inverse_product = binomials(p + q);
+        for x in &mut inverse_product[..=p + q] {
+            *x = 1.0 / *x;
+        }
+        Self {
+            first: binomials(p),
+            second: binomials(q),
+            inverse_product,
+        }
+    }
+
+    /// The factor of `B_i^p B_j^q` in `B_{i+j}^{p+q}`.
+    fn factor(&self, i: usize, j: usize) -> f64 {
+        self.first[i] * self.second[j] * self.inverse_product[i + j]
+    }
+}
+
+/// What the pieces of one curve share: the criteria, and the products of
+/// Bernstein polynomials their tangents need.
 struct Context<'a> {
     criteria: &'a DiscretizationCriteria,
-    /// For a rational curve of degree `n`, the factor of the product of
-    /// the `i`-th Bernstein polynomial of degree `n − 1` and the `j`-th of
-    /// degree `n` in the `(i + j)`-th of degree `2n − 1`,
-    /// `C(n − 1, i) C(n, j) / C(2n − 1, i + j)`, at `i (n + 1) + j`.
-    product_factors: [f64; (CAPACITY - 1) * CAPACITY],
+    /// For a rational curve of degree `n`, degree `n − 1` by degree `n`:
+    /// the tangent's direction `X' W − X W'`.
+    direction_products: Products,
+    /// For a tangent's direction `D` of degree `m`, degree `m` by degree
+    /// `m − 1`: `D × D'`.
+    cross_products: Products,
+    /// Degree `m` by degree `m`: `D · D`.
+    dot_products: Products,
 }
 
 impl<'a> Context<'a> {
     fn new(criteria: &'a DiscretizationCriteria, degree: usize, rational: bool) -> Self {
-        let mut product_factors = [0.0; (CAPACITY - 1) * CAPACITY];
-        if rational && degree > 0 {
-            let n = degree;
-            let mut binomials = [[0.0; 2 * CAPACITY]; 3];
-            for (row, m) in binomials.iter_mut().zip([n - 1, n, 2 * n - 1]) {
-                row[0] = 1.0;
-                for k in 0..m {
-                    row[k + 1] = row[k] * (m - k) as f64 / (k + 1) as f64;
-                }
-            }
-            let [low, high, product] = binomials;
-            for i in 0..n {
-                for j in 0..=n {
-                    product_factors[i * (n + 1) + j] = low[i] * high[j] / product[i + j];
-                }
-            }
-        }
+        let n = degree.max(1);
+        let m = if rational { 2 * n - 1 } else { n - 1 };
         Self {
             criteria,
-            product_factors,
+            direction_products: Products::new(n - 1, if rational { n } else { 0 }),
+            cross_products: Products::new(m, m.saturating_sub(1)),
+            dot_products: Products::new(m, m),
         }
     }
 }
 
 /// The turning of a curve over `[0, 1]` whose tangent has the direction
-/// of the polynomial with Bernstein coefficients `d`, of degree `m`: the
-/// tangent's direction turns at most `|D'| / |D|` per unit of parameter,
-/// `|D'|` is at most `m max |Δd_j|`, and `|D|` at least the smallest
-/// component of the `d_j` along their mean direction, if positive and not
-/// negligible (see [`MIN_SPEED_RATIO`]).
-fn turning(d: &[[f64; 3]]) -> Option<f64> {
+/// of the polynomial `D` with Bernstein coefficients `d`, of degree `m`,
+/// the direction turning at the rate `|D × D'| / |D|²`.
+///
+/// Two bounds of it are taken, the smaller kept. First, it is at most
+/// `|D'| / |D|`, `|D'|` at most `m max |Δd_j|`, and `|D|` at least the
+/// smallest component of the `d_j` along their mean direction, if
+/// positive and not negligible (see [`MIN_SPEED_RATIO`]; otherwise there
+/// is no bound). Second, `D × D'` and `D · D` are polynomials of degree
+/// `2m − 1` and `2m`, bounded by their Bernstein coefficients: the
+/// largest norm of the first over the smallest of the second, if
+/// positive. The second leaves out the change of `D` along itself, which
+/// does not turn the tangent.
+fn turning(d: &[[f64; 3]], context: &Context) -> Option<f64> {
     let m = d.len().checked_sub(1)?;
     // The mean of the coefficients' directions, not of the coefficients:
     // a few large ones would pull it away from the others.
@@ -348,19 +388,60 @@ fn turning(d: &[[f64; 3]]) -> Option<f64> {
     if slowest.is_nan() || slowest <= MIN_SPEED_RATIO * fastest {
         return None;
     }
-    let change = (0..m)
-        .map(|j| norm(std::array::from_fn(|c| d[j + 1][c] - d[j][c])))
-        .fold(0.0, f64::max);
-    Some(m as f64 * change / slowest)
+    let mut change = 0.0f64;
+    let mut cross = [[0.0; 3]; ROW];
+    let mut dot = [0.0; ROW];
+    for j in 0..m {
+        let difference: [f64; 3] = std::array::from_fn(|c| d[j + 1][c] - d[j][c]);
+        change = change.max(norm(difference));
+        for (i, v) in d.iter().enumerate() {
+            let f = m as f64 * context.cross_products.factor(i, j);
+            let product = &mut cross[i + j];
+            product[0] += f * (v[1] * difference[2] - v[2] * difference[1]);
+            product[1] += f * (v[2] * difference[0] - v[0] * difference[2]);
+            product[2] += f * (v[0] * difference[1] - v[1] * difference[0]);
+        }
+    }
+    // Symmetric: each pair once, off the diagonal twice.
+    for (i, v) in d.iter().enumerate() {
+        for (j, w) in d.iter().enumerate().skip(i) {
+            let f = if i == j { 1.0 } else { 2.0 } * context.dot_products.factor(i, j);
+            dot[i + j] += f * (v[0] * w[0] + v[1] * w[1] + v[2] * w[2]);
+        }
+    }
+    let by_speed = m as f64 * change / slowest;
+    let slowest_squared = dot[..=2 * m].iter().copied().fold(f64::INFINITY, f64::min);
+    if slowest_squared > 0.0 {
+        let squared = |v: &[f64; 3]| v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+        let fastest_turn = cross[..2 * m]
+            .iter()
+            .map(squared)
+            .fold(0.0, f64::max)
+            .sqrt();
+        Some(by_speed.min(fastest_turn / slowest_squared))
+    } else {
+        Some(by_speed)
+    }
 }
 
 /// The angle deviation of each of `segments` equal steps of a piece whose
-/// tangent turns by at most `turning`. The directions of the tangent over
-/// a step lie within half the step's turning `Θ` of its middle direction,
-/// and so does the chord (their average) while `Θ < π`, so the tangent
-/// and the chord differ by at most `Θ`; no angle exceeds π.
+/// tangent turns by at most `turning`, `Θ` over a step.
+///
+/// While `Θ <= π / 2`, it is at most `Θ / 2`. The chord's direction is the
+/// mean of the unit tangents `T(s)` over the step (weighted by speed); at
+/// angles `α(s) <= Θ` from the tangent `T(t)`, the chord makes an angle
+/// with `T(t)` whose tangent is at most `mean sin α / mean cos α`, which
+/// grows with each `α(s)`. The angles are largest, `α(s) = Θ |s − t| / h`
+/// over a step of length `h`, for a circular arc seen from an end, where
+/// the chord is at `Θ / 2`. Beyond, the tangent and chord differ by at
+/// most `Θ`, the chord lying among the tangents; no angle exceeds π.
 fn angle_deviation(turning: f64, segments: usize) -> f64 {
-    (turning / segments as f64).min(PI)
+    let step = turning / segments as f64;
+    if step <= FRAC_PI_2 {
+        0.5 * step
+    } else {
+        step.min(PI)
+    }
 }
 
 fn chord_deviation(constant: f64, segments: usize) -> f64 {

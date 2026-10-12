@@ -85,6 +85,13 @@ the Python distribution are versioned in lockstep.
   piece builds its tangent's direction from a table of Bernstein product
   factors shared by the whole curve. A cubic B-spline discretizes 2 to 3
   times faster, a rational one about 7 times.
+- B-spline angle deviations are tighter, still proven: a step whose
+  tangent turns by at most `Θ <= π/2` reports `Θ/2` (the chord lies
+  within half the turning of every tangent of the step), and the turning
+  rate is also bounded by `|D × D'| / |D|²` from the Bernstein
+  coefficients of the tangent's direction `D`, which leaves out its change
+  along itself. With an angle limit, cubic B-splines get about 40% fewer
+  points, and the representative fixtures less than half as many.
 
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.

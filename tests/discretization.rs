@@ -552,6 +552,33 @@ fn test_coincident_poles_report_pi_only_at_that_end() {
 }
 
 #[test]
+fn test_the_highest_degree_is_proven() {
+    let degree = 25;
+    let poles: Vec<Point3D> = (0..=degree)
+        .map(|i| {
+            let a = i as f64;
+            Point3D::new(a, (0.7 * a).sin(), 0.3 * (1.1 * a).cos())
+        })
+        .collect();
+    let weights: Vec<f64> = (0..=degree).map(|i| 1.0 + 0.5 * (i % 3) as f64).collect();
+    let (knots, multiplicities) = (vec![0.0, 1.0], vec![26, 26]);
+    let polynomial = BSplineCurve3D::new(
+        degree,
+        poles.clone(),
+        knots.clone(),
+        multiplicities.clone(),
+        false,
+    )
+    .unwrap();
+    let rational =
+        BSplineCurve3D::new_rational(degree, poles, weights, knots, multiplicities, false).unwrap();
+    let criteria = chord_and_angle(1e-2, 0.1);
+    for curve in [polynomial, rational] {
+        assert_proven(&curve, &curve.discretize(criteria), criteria, 25.0);
+    }
+}
+
+#[test]
 fn test_degree_one_segments_have_no_angle_deviation() {
     let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)];
     let line = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
