@@ -590,6 +590,10 @@ impl Plane {
     /// nappe, built in closed form in the plane's `(M, Y)` basis around
     /// the apex foot point.
     ///
+    /// Whether the plane is parallel to a generator (a tangent line through
+    /// the apex, a parabola off it) is decided on the angle between the
+    /// plane and the nearest generator, within `tol.angular`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -615,23 +619,28 @@ impl Plane {
         let sigma = (o - apex).dot(n);
         let s = n.dot(a);
         let sin_gamma = n.cross(a).magnitude();
+        // The angle between the normal and the axis (up to orientation),
+        // and the one at which the plane is parallel to a generator. The
+        // sections are told apart on their difference, which is linear in
+        // the tilt of the plane.
+        let gamma = sin_gamma.atan2(s.abs());
+        let gamma_p = std::f64::consts::FRAC_PI_2 - phi;
         if sigma.abs() <= tol.confusion {
             // Through the apex: generators satisfy
             // cos(theta) = -cos(phi)*s / (sin(phi)*sin_gamma).
-            if sin_gamma <= tol.angular {
+            if gamma < gamma_p - tol.angular {
                 return PlaneConeIntersection::ApexPoint(apex);
             }
             let e1 = (n - a * s) * (1.0 / sin_gamma);
             let e2 = a.cross(e1);
-            let raw = -phi.cos() * s / (phi.sin() * sin_gamma);
             let expect = "generator direction is unit by construction";
-            if raw.abs() > 1.0 + tol.angular {
-                PlaneConeIntersection::ApexPoint(apex)
-            } else if raw.abs() >= 1.0 - tol.angular {
-                let g = a * phi.cos() + e1 * (phi.sin() * raw.clamp(-1.0, 1.0));
+            if gamma <= gamma_p + tol.angular {
+                // The generator in the plane, at theta = 0 or PI.
+                let g = a * phi.cos() - e1 * (phi.sin() * s.signum());
                 PlaneConeIntersection::TangentLine(Line3D::new(apex, g).expect(expect))
             } else {
-                let theta = raw.acos();
+                let raw = -phi.cos() * s / (phi.sin() * sin_gamma);
+                let theta = raw.clamp(-1.0, 1.0).acos();
                 let (sin_t, cos_t) = (theta.sin(), theta.cos());
                 let g = |w: f64| a * phi.cos() + (e1 * cos_t + e2 * (w * sin_t)) * phi.sin();
                 PlaneConeIntersection::TwoLines(
@@ -640,8 +649,6 @@ impl Plane {
                 )
             }
         } else {
-            let gamma = s.abs().clamp(0.0, 1.0).acos();
-            let gamma_p = std::f64::consts::FRAC_PI_2 - phi;
             if sin_gamma <= tol.angular {
                 // Perpendicular: circle at axial distance alpha0 (s = +-1).
                 let alpha0 = sigma / s;
@@ -1213,6 +1220,76 @@ mod tests {
             }
             _ => panic!("expected two lines"),
         }
+    }
+
+    /// A plane through the origin tilted `tilt` from the z axis, about y.
+    fn tilted(origin: Point3D, tilt: f64) -> Plane {
+        Plane::new(origin, Vector3D::new(tilt.sin(), 0.0, tilt.cos())).unwrap()
+    }
+
+    #[test]
+    fn test_plane_cone_tangency_band_through_the_apex_is_linear_in_tilt() {
+        // Issue #8: the band used to be tested on the cosine of the
+        // generator angle, quadratic in the tilt, so it was a third of the
+        // angular tolerance wide.
+        let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 30f64.to_radians(), 0.0).unwrap();
+        let tangent = 60f64.to_radians();
+        let kind = |d: f64, angular: f64| {
+            let tol = Tolerance::new(1e-7, angular, 1e-9);
+            match tilted(Point3D::ORIGIN, tangent + d).intersect_cone(&cone, tol) {
+                PlaneConeIntersection::ApexPoint(_) => "apex",
+                PlaneConeIntersection::TangentLine(_) => "tangent",
+                PlaneConeIntersection::TwoLines(..) => "two",
+                other => panic!("unexpected {other:?}"),
+            }
+        };
+        for angular in [1e-12, 1e-9] {
+            assert_eq!(kind(-2.0 * angular, angular), "apex");
+            assert_eq!(kind(-0.5 * angular, angular), "tangent");
+            assert_eq!(kind(0.0, angular), "tangent");
+            assert_eq!(kind(0.5 * angular, angular), "tangent");
+            assert_eq!(kind(2.0 * angular, angular), "two");
+        }
+        // The issue's reproduction: 1e-10 rad short of tangency is beyond
+        // the default band but within a 1e-9 one.
+        assert_eq!(kind(-1e-10, 1e-12), "apex");
+        assert_eq!(kind(-1e-10, 1e-9), "tangent");
+    }
+
+    #[test]
+    fn test_plane_cone_tangent_line_is_the_generator_in_the_plane() {
+        let tol = Tolerance::DEFAULT;
+        for semi_angle in [0.4, -0.4] {
+            let cone = Cone::from_frame(Frame3D::WORLD, semi_angle, 2.0).unwrap();
+            let apex = cone.apex();
+            for tilt in [
+                std::f64::consts::FRAC_PI_2 - 0.4,
+                std::f64::consts::FRAC_PI_2 + 0.4,
+            ] {
+                let plane = tilted(apex, tilt);
+                let PlaneConeIntersection::TangentLine(line) = plane.intersect_cone(&cone, tol)
+                else {
+                    panic!("expected a tangent line at tilt {tilt}");
+                };
+                for t in [-5.0, 5.0] {
+                    assert!(plane.contains(line.eval_point(t), tol));
+                    assert!(cone.contains(line.eval_point(t), tol));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_plane_cone_parabola_band_off_the_apex_is_linear_in_tilt() {
+        let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 30f64.to_radians(), 0.0).unwrap();
+        let tangent = 60f64.to_radians();
+        let tol = Tolerance::DEFAULT;
+        let at =
+            |d: f64| tilted(Point3D::new(0.0, 0.0, 1.0), tangent + d).intersect_cone(&cone, tol);
+        assert!(matches!(at(-2e-12), PlaneConeIntersection::Ellipse(_)));
+        assert!(matches!(at(-0.5e-12), PlaneConeIntersection::Parabola(_)));
+        assert!(matches!(at(0.5e-12), PlaneConeIntersection::Parabola(_)));
+        assert!(matches!(at(2e-12), PlaneConeIntersection::Hyperbola(..)));
     }
 
     #[test]

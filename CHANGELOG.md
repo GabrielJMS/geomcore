@@ -28,6 +28,17 @@ the Python distribution are versioned in lockstep.
   distance from a point to a curve, implemented by every curve type and by
   the trimmed curves themselves.
 
+### Fixed
+
+- `Plane::intersect_cone` decides tangency on the angle between the
+  plane and the nearest generator, within `tol.angular`, for planes
+  through the apex too (#8). It used to threshold the cosine of the
+  generator angle, which is quadratic in the tilt, so the `TangentLine`
+  band was only a third of `tol.angular` wide (4e-13 rad by default), and
+  planes just short of tangency came back as `ApexPoint`. The parabola
+  band for planes off the apex already used the angle, and both now share
+  it.
+
 ## [0.27.0] - 2026-10-11
 
 ### Added
