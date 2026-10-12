@@ -125,7 +125,9 @@ impl DiscretizationCriteria {
 /// and angle deviation (the largest angle, in radians, between the
 /// curve's tangent and the segment), so the deviation lists have one
 /// entry fewer than the points. An angle deviation of π means no bound
-/// exists there (the curve's speed may reach zero).
+/// was found there: the curve's speed may reach or nearly reach zero, or,
+/// when no angle limit was asked, the segment's piece of B-spline turns
+/// too much to be bounded without the halving only that limit pays for.
 ///
 /// The bounds are proven in exact arithmetic from the curve's definition;
 /// the rounding of evaluating a point, a few units in the last place of
@@ -157,10 +159,12 @@ pub struct Discretization3D {
 /// span's Bézier control points: a piece is halved while that saves
 /// points, then split into the fewest equal steps its bounds allow.
 /// The tangent's turning is bounded from the derivative's control points;
-/// a piece where the speed may reach zero (a cusp, coincident poles) is
-/// halved a few times, and what remains reports an angle deviation of π
-/// while still meeting the chord deviation. A rational piece's tangent is
-/// bounded the same way, in homogeneous form.
+/// with an angle limit, a piece where the speed may reach or nearly reach
+/// zero (a cusp, coincident or nearly coincident poles) is halved a few
+/// times, and what remains reports an angle deviation of π while still
+/// meeting the chord deviation. Without an angle limit, pieces are halved
+/// for the chord deviation only, and one turning too much reports π. A
+/// rational piece's tangent is bounded the same way, in homogeneous form.
 ///
 /// # Examples
 ///
@@ -185,6 +189,10 @@ pub struct Discretization3D {
 /// ```
 pub trait Discretize3D {
     /// The number of points the discretization has for `criteria`.
+    ///
+    /// A chord deviation far below the curve's size asks for as many points
+    /// as it takes; the count saturates at `usize::MAX`, which no buffer
+    /// can hold.
     fn point_count(&self, criteria: DiscretizationCriteria) -> usize;
 
     /// Writes the discretization into caller-owned slices, without
@@ -261,6 +269,10 @@ pub struct Discretization2D {
 /// ```
 pub trait Discretize2D {
     /// The number of points the discretization has for `criteria`.
+    ///
+    /// A chord deviation far below the curve's size asks for as many points
+    /// as it takes; the count saturates at `usize::MAX`, which no buffer
+    /// can hold.
     fn point_count(&self, criteria: DiscretizationCriteria) -> usize;
 
     /// Writes the discretization into caller-owned slices, without
@@ -383,7 +395,8 @@ impl<P> Slices<'_, P> {
 }
 
 /// Writes the discretization of `[first, last]` into `out`, the end points
-/// from `point_at_parameter`.
+/// from `point_at_parameter`: the runs may leave out a rounding error at
+/// either end.
 fn fill<C: DiscretizeRange + ?Sized>(
     curve: &C,
     (first, last): (f64, f64),
@@ -406,6 +419,7 @@ fn fill<C: DiscretizeRange + ?Sized>(
             i += 1;
         }
     });
+    out.parameters[0] = first;
     out.parameters[n - 1] = last;
     out.points[0] = point_at_parameter(first);
     out.points[n - 1] = if closed {
@@ -416,20 +430,49 @@ fn fill<C: DiscretizeRange + ?Sized>(
 }
 
 /// The smallest count `k >= 1` with `fits(k)`, `fits` being monotone,
-/// starting from the estimate `guess` (which may be off by rounding).
+/// searched from the estimate `guess` (which may be off by rounding, or
+/// by far): `usize::MAX` if no count fits.
 fn smallest_count(guess: f64, fits: impl Fn(usize) -> bool) -> usize {
-    let mut k = if guess.is_finite() && guess > 1.0 {
-        guess.ceil().min(usize::MAX as f64) as usize
+    // `as` saturates: NaN gives 0, infinity `usize::MAX`.
+    let start = (guess.ceil() as usize).max(1);
+    // Gallop away from the guess until `low` does not fit (or is 0) and
+    // `high` fits, then bisect.
+    let (mut low, mut high) = (0, start);
+    let mut step = 1usize;
+    if fits(start) {
+        while high > 1 {
+            let below = high.saturating_sub(step).max(1);
+            if !fits(below) {
+                low = below;
+                break;
+            }
+            high = below;
+            step = step.saturating_mul(2);
+        }
     } else {
-        1
-    };
-    while !fits(k) {
-        k += 1;
+        low = start;
+        loop {
+            if low == usize::MAX {
+                return usize::MAX;
+            }
+            let above = low.saturating_add(step);
+            if fits(above) {
+                high = above;
+                break;
+            }
+            low = above;
+            step = step.saturating_mul(2);
+        }
     }
-    while k > 1 && fits(k - 1) {
-        k -= 1;
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        if fits(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
     }
-    k
+    high
 }
 
 /// Implements a discretization trait (`Discretize3D` or `Discretize2D`,

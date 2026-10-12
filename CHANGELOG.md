@@ -24,8 +24,9 @@ the Python distribution are versioned in lockstep.
   the curve's points at the range ends; closed curves end on their first
   point, with at least three segments. B-splines bound the angle
   deviation from the control points of their tangent's direction (#19,
-  #20; in homogeneous form for rational ones), reporting π only next to a
-  cusp or coincident poles. Ellipses, and trimmed lines, parabolas,
+  #20; in homogeneous form for rational ones), reporting π where no bound
+  was found: with an angle limit, only next to a cusp or (nearly)
+  coincident poles; without one, also on pieces turning too much. Ellipses, and trimmed lines, parabolas,
   hyperbolas and run-time `Curve3D`s, use exact closed-form deviations
   of equal parameter steps (#21); a trimmed line is one segment.
   In the plane (#22), `Discretize2D` gives a `Discretization2D` of a

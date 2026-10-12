@@ -825,3 +825,72 @@ fn test_2d_borrowed_and_run_time_curves_match_concrete_ones() {
     same(clockwise_circle_2d(), 1.0, 4.0);
     same(clockwise_circle_2d(), 1.0, 1.0 + TAU);
 }
+
+#[test]
+fn test_tiny_chord_deviations_count_without_searching_one_by_one() {
+    let unit = circle(1.0);
+    // 2π / 4 asin(sqrt(ε / 2)) segments, beyond what a buffer can hold.
+    let count = unit.point_count(chord(1e-30)) as f64;
+    let expected = TAU / (4.0 * (0.5e-30_f64).sqrt().asin());
+    assert!(
+        (count / expected - 1.0).abs() < 1e-9,
+        "{count} vs {expected}"
+    );
+    assert_eq!(unit.point_count(chord(1e-40)), usize::MAX);
+    assert_eq!(unit.point_count(chord(1e-300)), usize::MAX);
+    assert_eq!(wavy().point_count(chord(1e-300)), usize::MAX);
+}
+
+#[test]
+fn test_nearly_coincident_poles_cost_about_as_much_as_coincident_ones() {
+    // Poles a rounding error apart, as imported data often has: the speed
+    // nearly vanishes at u = 0, and the count must not follow 1 / gap.
+    let criteria = chord_and_angle(1e-3, 0.1);
+    let coincident = planar_cubic([(0.0, 0.0), (0.0, 0.0), (1.0, 1.0), (2.0, 0.0)]);
+    let reference = coincident.point_count(criteria);
+    for gap in [1e-3, 1e-6, 1e-9, 1e-12, 1e-15] {
+        let curve = planar_cubic([(0.0, 0.0), (gap, 0.0), (1.0, 1.0), (2.0, 0.0)]);
+        let d = curve.discretize(criteria);
+        // A gap above a millionth of the curve's size is geometry, resolved
+        // by halving next to it.
+        let limit = if gap > 1e-7 {
+            4 * reference
+        } else {
+            2 * reference
+        };
+        assert!(
+            d.points.len() <= limit,
+            "gap {gap:e}: {} points",
+            d.points.len()
+        );
+        assert_proven(&curve, &d, criteria, 2.0);
+    }
+}
+
+#[test]
+fn test_ranges_overshooting_a_knot_by_rounding_make_no_tiny_segments() {
+    let below = |u: f64| f64::from_bits(u.to_bits() - 1);
+    let above = |u: f64| f64::from_bits(u.to_bits() + 1);
+    let wavy = wavy();
+    let ring = periodic_ring();
+    let ranges = [
+        (&wavy, below(0.2), 1.5),
+        (&wavy, 0.0, above(1.0)),
+        (&wavy, 0.2 - 1e-14, 1.0 + 1e-14),
+        (&ring, 1.0, 1.0 + 6.0 * (1.0 + 5e-13)),
+        (&ring, below(2.0), 4.5),
+    ];
+    for (basis, first, last) in ranges {
+        let trimmed = TrimmedCurve3D::new(basis, first, last).unwrap();
+        for criteria in criteria_list() {
+            let d = trimmed.discretize(criteria);
+            assert_proven(&trimmed, &d, criteria, 6.0);
+            for (i, step) in d.parameters.windows(2).enumerate() {
+                assert!(
+                    step[1] - step[0] > 1e-9,
+                    "[{first}, {last}] segment {i}: {step:?}"
+                );
+            }
+        }
+    }
+}
