@@ -8,7 +8,7 @@
 //! intersection never need large dense systems, so the kernel keeps zero
 //! runtime dependencies and no linear-algebra crate in its public API.
 //!
-//! Near-multiple roots are first-class: [`real_roots`] clusters with
+//! Near-multiple roots are first-class: `real_roots` clusters with
 //! multiplicity, because tangencies (a grazing line, kissing circles)
 //! *are* near-double roots and the intersection APIs must report them,
 //! not lose them to floating-point noise.

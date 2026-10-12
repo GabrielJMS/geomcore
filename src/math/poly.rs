@@ -18,6 +18,8 @@
 //! Near-multiple roots survive as multiplicity counts instead of
 //! collapsing or vanishing — tangencies downstream depend on it.
 
+use crate::InlineList;
+
 /// Safety factor on the rounding-noise radius of a multiple root.
 const NOISE_FACTOR: f64 = 4.0;
 
@@ -45,31 +47,114 @@ pub(crate) struct RealRoot {
 /// Non-finite coefficients, the zero polynomial, and constants yield no
 /// roots; so do degrees above 4 (callers needing them do not exist yet).
 pub(crate) fn real_roots(coeffs: &[f64], tol: f64) -> Vec<RealRoot> {
-    if coeffs.iter().any(|c| !c.is_finite()) {
+    let Some((poly, cands, _)) = Scaled::solve(coeffs, tol) else {
         return Vec::new();
+    };
+    let roots = poly.finish(cands, tol.max(0.0));
+    roots.value[..roots.len]
+        .iter()
+        .zip(&roots.mult)
+        .filter_map(|(&y, &m)| poly.unscaled(y, m))
+        .collect()
+}
+
+/// [`real_roots`] with geometric tangency: `touches(x)` says whether the
+/// curve point at parameter `x` is within tolerance of the other shape.
+///
+/// A grazing contact sits at a critical point of the polynomial, and
+/// input rounding may split its double root into two real roots or a
+/// complex pair, either one wider than the band. The factorization
+/// already locates both: the critical point between two neighbouring
+/// roots, and the one near a complex pair's real part, are each one
+/// bounded Newton search on the derivative. Where `touches` holds there,
+/// a complex pair is a double root and neighbouring roots merge (a whole
+/// chain of them when several neighbours touch, at its midpoint), with
+/// their multiplicities summed.
+pub(crate) fn real_roots_touching(
+    coeffs: &[f64],
+    tol: f64,
+    touches: impl Fn(f64) -> bool,
+) -> InlineList<RealRoot, 4> {
+    let mut out = InlineList::new();
+    let Some((poly, cands, pairs)) = Scaled::solve(coeffs, tol) else {
+        return out;
+    };
+    let tol = tol.max(0.0);
+    let touches_at = |y: f64| poly.unscaled(y, 1).is_some_and(|r| touches(r.value));
+    let roots = poly.finish(cands, tol);
+    // Roots, and complex pairs as either a touching double root at their
+    // critical point or a separator (`mult == 0`), in increasing order.
+    let mut items = [(0.0, 0u32); 4];
+    let mut n = 0;
+    for k in 0..roots.len {
+        items[n] = (roots.value[k], roots.mult[k]);
+        n += 1;
     }
-    let mut n = coeffs.len();
-    while n > 0 && coeffs[n - 1] == 0.0 {
-        n -= 1;
+    // A pair's critical point is searched for within half the distance to
+    // every other item, so it is its own and not that of a neighbouring
+    // contact. The narrower pair goes first: two pairs about the same real
+    // part share its critical point, which belongs to the one nearer the
+    // real axis.
+    let mut order = [0, 1];
+    if pairs.len == 2 && pairs.half[1] < pairs.half[0] {
+        order = [1, 0];
     }
-    if n <= 1 || n > 5 {
-        return Vec::new();
+    for &k in &order[..pairs.len] {
+        let m = pairs.centre[k];
+        let reach = items[..n]
+            .iter()
+            .fold(pairs.half[k], |r, it| r.min(0.5 * (it.0 - m).abs()));
+        let Some(y) = poly.extremum(m, m - reach, m + reach, tol) else {
+            continue;
+        };
+        if items[..n]
+            .iter()
+            .all(|it| (it.0 - y).abs() > tol * (poly.unit + y.abs()))
+        {
+            items[n] = (y, if touches_at(y) { 2 } else { 0 });
+            n += 1;
+        }
     }
-    let tol = if tol > 0.0 { tol } else { 0.0 };
-    let zeros = coeffs.iter().take_while(|&&c| c == 0.0).count();
-    let poly = Scaled::new(&coeffs[zeros..n]);
-    let mut cands = Candidates::default();
-    if zeros > 0 {
-        cands.push(0.0, zeros as u32);
+    let items = &mut items[..n];
+    if pairs.len > 0 {
+        items.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
     }
-    let factors = factorize(&poly, 0);
-    for &r in &factors.lin[..factors.nlin] {
-        cands.push(r, 1);
+    // Chains of items linked by a touching critical point between them.
+    let mut k = 0;
+    while k < n {
+        let (first, mut mult) = items[k];
+        if mult == 0 {
+            k += 1;
+            continue;
+        }
+        // Touching points: the links, and the double roots (their own
+        // critical point). One alone is the contact; several, a chain
+        // reported at its midpoint.
+        let (mut touching, mut at) = (u32::from(mult >= 2), first);
+        while k + 1 < n && items[k + 1].1 > 0 {
+            let (lo, hi) = (items[k].0, items[k + 1].0);
+            let link = poly
+                .extremum(0.5 * (lo + hi), lo, hi, tol)
+                .filter(|&y| lo < y && y < hi && touches_at(y));
+            let Some(y) = link else {
+                break;
+            };
+            k += 1;
+            mult += items[k].1;
+            touching += 1 + u32::from(items[k].1 >= 2);
+            at = y;
+        }
+        let y = match touching {
+            0 => first,
+            1 => at,
+            _ => 0.5 * (first + items[k].0),
+        };
+        if let Some(r) = poly.unscaled(y, mult) {
+            out.push(r);
+        }
+        k += 1;
     }
-    for &(al, be) in &factors.quad[..factors.nquad] {
-        poly.push_quadratic(al, be, tol, &mut cands);
-    }
-    poly.finish(cands, tol)
+    out
 }
 
 /// Up to four root candidates in the scaled variable.
@@ -90,6 +175,14 @@ impl Candidates {
     }
 }
 
+/// Complex pairs `centre ± i*half` beyond the band, in the scaled variable.
+#[derive(Default)]
+struct Pairs {
+    centre: [f64; 2],
+    half: [f64; 2],
+    len: usize,
+}
+
 /// The input polynomial `a(x)` (exact zero roots removed, degree `d`) in
 /// the scaled variable `y = x / 2^e`: `f` is `a` scaled exactly by powers
 /// of two (`|f_i| <= |f_d|`, `|f_d|` in `[1, 2)`), and `g = f / f_d` is
@@ -106,6 +199,47 @@ struct Scaled {
 }
 
 impl Scaled {
+    /// The scaled polynomial of `coeffs`, its root candidates and its
+    /// complex pairs; `None` when there are no roots to find (non-finite
+    /// coefficients, the zero polynomial, a constant, degree above 4).
+    fn solve(coeffs: &[f64], tol: f64) -> Option<(Scaled, Candidates, Pairs)> {
+        if coeffs.iter().any(|c| !c.is_finite()) {
+            return None;
+        }
+        let mut n = coeffs.len();
+        while n > 0 && coeffs[n - 1] == 0.0 {
+            n -= 1;
+        }
+        if n <= 1 || n > 5 {
+            return None;
+        }
+        let tol = tol.max(0.0);
+        let zeros = coeffs.iter().take_while(|&&c| c == 0.0).count();
+        let poly = Scaled::new(&coeffs[zeros..n]);
+        let mut cands = Candidates::default();
+        let mut pairs = Pairs::default();
+        if zeros > 0 {
+            cands.push(0.0, zeros as u32);
+        }
+        let factors = factorize(&poly, 0);
+        for &r in &factors.lin[..factors.nlin] {
+            cands.push(r, 1);
+        }
+        for &(al, be) in &factors.quad[..factors.nquad] {
+            poly.push_quadratic(al, be, tol, &mut cands, &mut pairs);
+        }
+        Some((poly, cands, pairs))
+    }
+
+    /// The root `y` mapped back to `x`, if finite there.
+    fn unscaled(&self, y: f64, multiplicity: u32) -> Option<RealRoot> {
+        let value = ldexp(y, self.e);
+        value.is_finite().then_some(RealRoot {
+            value,
+            multiplicity,
+        })
+    }
+
     fn new(a: &[f64]) -> Scaled {
         let d = a.len() - 1;
         let mut lg = [f64::NEG_INFINITY; 5];
@@ -200,32 +334,36 @@ impl Scaled {
 
     /// Classify the factor `y^2 + al*y + be`: a double root when its roots
     /// (real or complex) sit within the band of their midpoint, two simple
-    /// real roots, or nothing.
-    fn push_quadratic(&self, al: f64, be: f64, tol: f64, out: &mut Candidates) {
+    /// real roots, or a complex pair.
+    fn push_quadratic(&self, al: f64, be: f64, tol: f64, out: &mut Candidates, pairs: &mut Pairs) {
         let disc = discriminant(al, be);
         let mid = -0.5 * al;
         let half = 0.5 * disc.abs().sqrt();
         if self.within_band(half, mid, tol) {
-            out.push(self.critical_point(mid, self.band(mid, tol)), 2);
+            let band = self.band(mid, tol);
+            out.push(self.critical_point(mid, mid - band, mid + band), 2);
         } else if disc > 0.0 {
             // Cancellation-free: q = -(al + sign(al)*sqrt(disc))/2.
             let q = -0.5 * (al + disc.sqrt().copysign(al));
             out.push(q, 1);
             out.push(be / q, 1);
+        } else if mid.is_finite() && pairs.len < 2 {
+            pairs.centre[pairs.len] = mid;
+            pairs.half[pairs.len] = half;
+            pairs.len += 1;
         }
     }
 
-    /// Newton on `f'` from `y` (a double root's midpoint), moving at most
-    /// `limit`: the tangency sits at the polynomial's extremum.
-    fn critical_point(&self, mut y: f64, limit: f64) -> f64 {
-        let start = y;
+    /// Newton on `f'` from `y` (a double root's midpoint), staying within
+    /// `[lo, hi]`: the tangency sits at the polynomial's extremum.
+    fn critical_point(&self, mut y: f64, lo: f64, hi: f64) -> f64 {
         let (mut d1, mut d2) = derivs12(&self.f, self.d, y);
-        for _ in 0..3 {
+        for _ in 0..4 {
             if d1 == 0.0 || d2 == 0.0 {
                 break;
             }
             let next = y - d1 / d2;
-            if (next - start).abs() > limit || next.is_nan() {
+            if !(lo <= next && next <= hi) {
                 break;
             }
             let (n1, n2) = derivs12(&self.f, self.d, next);
@@ -235,6 +373,14 @@ impl Scaled {
             (y, d1, d2) = (next, n1, n2);
         }
         y
+    }
+
+    /// [`Scaled::critical_point`] when Newton converges there, its last
+    /// step within the band; `None` when `[lo, hi]` holds no extremum.
+    fn extremum(&self, y: f64, lo: f64, hi: f64, tol: f64) -> Option<f64> {
+        let y = self.critical_point(y, lo, hi);
+        let (d1, d2) = derivs12(&self.f, self.d, y);
+        (d1.abs() <= tol * (self.unit + y.abs()) * d2.abs()).then_some(y)
     }
 
     /// Newton-polish a simple root on `f`, never stepping beyond a quarter
@@ -265,14 +411,15 @@ impl Scaled {
         y
     }
 
-    /// Polish simple roots, cluster within the band, and map back to `x`.
-    fn finish(&self, c: Candidates, tol: f64) -> Vec<RealRoot> {
+    /// Polish simple roots and cluster within the band: the roots in
+    /// increasing order, still in the scaled variable.
+    fn finish(&self, c: Candidates, tol: f64) -> Candidates {
         let n = c.len;
         let mut order = [0usize, 1, 2, 3];
         order[..n].sort_unstable_by(|&i, &j| c.value[i].total_cmp(&c.value[j]));
         let vals: [f64; 4] = std::array::from_fn(|k| c.value[order[k]]);
         let mut value = vals;
-        let mut mult: [u32; 4] = std::array::from_fn(|k| c.mult[order[k]]);
+        let mult: [u32; 4] = std::array::from_fn(|k| c.mult[order[k]]);
         for k in 0..n {
             if mult[k] == 1 {
                 let below = if k > 0 {
@@ -290,7 +437,7 @@ impl Scaled {
         }
         // Polishing never crosses a neighbour, so the order holds; merge
         // runs whose half-gap is within the band of their midpoint.
-        let mut out: Vec<RealRoot> = Vec::with_capacity(n);
+        let mut out = Candidates::default();
         let mut k = 0;
         while k < n {
             let (mut y, mut m) = (value[k], mult[k]);
@@ -302,14 +449,7 @@ impl Scaled {
                 y = (y * m as f64 + value[k] * mult[k] as f64) / total as f64;
                 m = total;
             }
-            mult[k] = m;
-            let x = ldexp(y, self.e);
-            if x.is_finite() {
-                out.push(RealRoot {
-                    value: x,
-                    multiplicity: m,
-                });
-            }
+            out.push(y, m);
             k += 1;
         }
         out
@@ -590,8 +730,15 @@ fn discriminant(al: f64, be: f64) -> f64 {
 
 /// First and second derivatives of the degree-`d` ascending polynomial.
 fn derivs12(p: &[f64; 5], d: usize, y: f64) -> (f64, f64) {
-    let t = taylor(p, d, y);
-    (t[1], 2.0 * t[2])
+    let (mut d1, mut d2) = (0.0, 0.0);
+    for i in (1..=d).rev() {
+        let k = i as f64;
+        d1 = d1 * y + k * p[i];
+        if i >= 2 {
+            d2 = d2 * y + k * (k - 1.0) * p[i];
+        }
+    }
+    (d1, d2)
 }
 
 /// Taylor coefficients of `p` about `y` (repeated synthetic division).
@@ -1044,6 +1191,80 @@ mod tests {
         assert_eq!(roots.len(), 2);
         assert!((roots[0].value - 1.0).abs() < 1e-6);
         assert!((roots[1].value - 5.0).abs() < 1e-6);
+    }
+
+    /// Ascending coefficients of the product of two polynomials.
+    fn product(a: &[f64], b: &[f64]) -> Vec<f64> {
+        let mut out = vec![0.0; a.len() + b.len() - 1];
+        for (i, &x) in a.iter().enumerate() {
+            for (j, &y) in b.iter().enumerate() {
+                out[i + j] += x * y;
+            }
+        }
+        out
+    }
+
+    fn touching(coeffs: &[f64], touches: impl Fn(f64) -> bool) -> Vec<(f64, u32)> {
+        real_roots_touching(coeffs, 1e-9, touches)
+            .iter()
+            .map(|r| (r.value, r.multiplicity))
+            .collect()
+    }
+
+    fn assert_near(got: &[(f64, u32)], expected: &[(f64, u32)]) {
+        assert_eq!(got.len(), expected.len(), "{got:?}");
+        for (&(v, m), &(ev, em)) in got.iter().zip(expected) {
+            assert!((v - ev).abs() < 1e-9, "{got:?}, expected {expected:?}");
+            assert_eq!(m, em, "{got:?}");
+        }
+    }
+
+    #[test]
+    fn test_touching_merges_split_double_root() {
+        // (x - 1 - d)(x - 1 + d)(x - 5)(x + 3): two roots 2e-5 apart, wider
+        // than the band. Touching between them, they are one double root
+        // at the critical point; otherwise they stay apart.
+        let d = 1e-5;
+        let p = product(&[-(1.0 + d), 1.0], &[-(1.0 - d), 1.0]);
+        let p = product(&p, &product(&[-5.0, 1.0], &[3.0, 1.0]));
+        let near_one = |x: f64| (x - 1.0).abs() < 1e-3;
+        let got = touching(&p, near_one);
+        assert_eq!(got.len(), 3, "{got:?}");
+        assert!((got[1].0 - 1.0).abs() < 1e-6 && got[1].1 == 2, "{got:?}");
+        assert_eq!(touching(&p, |_| false).len(), 4);
+    }
+
+    #[test]
+    fn test_touching_reports_near_real_complex_pair() {
+        // ((x - 1)^2 + d^2)(x - 5)(x + 3): a complex pair 1e-5 off the
+        // real axis, a double root at 1 only when the curve touches there.
+        let d = 1e-5;
+        let p = product(
+            &[1.0 + d * d, -2.0, 1.0],
+            &product(&[-5.0, 1.0], &[3.0, 1.0]),
+        );
+        assert_near(
+            &touching(&p, |x| (x - 1.0).abs() < 1e-3),
+            &[(-3.0, 1), (1.0, 2), (5.0, 1)],
+        );
+        assert_near(&touching(&p, |_| false), &[(-3.0, 1), (5.0, 1)]);
+    }
+
+    #[test]
+    fn test_touching_pairs_do_not_share_a_critical_point() {
+        // (x^2 + d^2)(x^2 + 1/4): both pairs about 0; the contact there is
+        // one double root, not two.
+        let p = product(&[1e-10, 0.0, 1.0], &[0.25, 0.0, 1.0]);
+        assert_near(&touching(&p, |_| true), &[(0.0, 2)]);
+        // A pair beside a split double root, with no critical point of its
+        // own (`h^2 > (c - 1)^2 / 8`), does not take the contact's: it
+        // stays double, not a chain of four.
+        let (d, c, h) = (1e-5, 1.02, 0.05);
+        let p = product(&[-(1.0 + d), 1.0], &[-(1.0 - d), 1.0]);
+        let p = product(&p, &[c * c + h * h, -2.0 * c, 1.0]);
+        let got = touching(&p, |x| (x - 1.0).abs() < 1e-3);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!((got[0].0 - 1.0).abs() < 1e-6 && got[0].1 == 2, "{got:?}");
     }
 
     #[test]

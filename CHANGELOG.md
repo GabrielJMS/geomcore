@@ -25,6 +25,14 @@ the Python distribution are versioned in lockstep.
   - a hit of a circle far from the origin is verified with the same
     coordinate-scaled tolerance as the other curves.
   Hyperbola–cone and ellipse–cone are about 5% faster; no pair is slower.
+- Tangencies found through a quartic are cheaper to detect: the critical
+  points tested for contact now come from the roots already found (one
+  bounded Newton search between neighbouring roots and near each complex
+  pair) instead of solving the derivative cubic, and the candidates no
+  longer allocate. The conic–quadric pairs that solve a quartic are 12–28%
+  faster; line–torus and a circle against a coplanar ellipse, parabola or
+  hyperbola gain too. Results are unchanged up to rounding; a hit at the
+  ellipse parameter ±π may now be reported as −π.
 
 ## [0.30.0] - 2026-10-12
 

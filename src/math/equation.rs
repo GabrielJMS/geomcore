@@ -4,8 +4,8 @@
 //! reduce to these once a curve's parametrization is substituted into
 //! the other shape's implicit equation.
 
-use super::poly::{RealRoot, real_roots};
-use crate::Tolerance;
+use super::poly::{RealRoot, real_roots_touching};
+use crate::{InlineList, Tolerance};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum QuadraticSolution {
@@ -54,75 +54,18 @@ impl QuadraticSolution {
 /// within `tol.confusion` in parameter space); then every critical point
 /// `t*` of `poly` where `touches(t*)` holds (the curve is within
 /// tolerance of the surface there) marks a grazing contact: the roots it
-/// connects — consecutive in parameter order, with no non-touching
-/// critical point between — merge into one root at `t*` whose
-/// multiplicity counts them (`1 +` the critical points' multiplicities,
-/// so a near-real complex pair also reports as a double root). This is
-/// what keeps exact tangencies tangent when input rounding splits their
-/// double root by more than the parameter band.
+/// connects merge into one root at `t*` counting them, and a complex pair
+/// beside it reports as a double root. This is what keeps exact
+/// tangencies tangent when input rounding splits their double root by
+/// more than the parameter band. See [`real_roots_touching`].
+///
+/// [`real_roots`]: super::poly::real_roots
 pub(crate) fn roots_with_tangency(
     poly: &[f64],
     tol: Tolerance,
     touches: impl Fn(f64) -> bool,
-) -> Vec<RealRoot> {
-    let roots = real_roots(poly, tol.confusion);
-    let mut deriv = [0.0; 4];
-    let n = poly.len().min(5);
-    for (i, (d, &c)) in deriv
-        .iter_mut()
-        .zip(poly.iter().take(n).skip(1))
-        .enumerate()
-    {
-        *d = (i + 1) as f64 * c;
-    }
-    let crits = real_roots(&deriv[..n.saturating_sub(1)], tol.confusion);
-    // (value, multiplicity, kind): 0 = root, 1 = touching critical point,
-    // 2 = other critical point (separates clusters).
-    let mut items: Vec<(f64, u32, u8)> = roots
-        .iter()
-        .map(|r| (r.value, r.multiplicity, 0))
-        .chain(crits.iter().map(|c| {
-            let kind = if touches(c.value) { 1 } else { 2 };
-            (c.value, c.multiplicity, kind)
-        }))
-        .collect();
-    if !items.iter().any(|it| it.2 == 1) {
-        return roots;
-    }
-    items.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out = Vec::with_capacity(roots.len() + 2);
-    let mut k = 0;
-    while k < items.len() {
-        if items[k].2 == 2 {
-            k += 1;
-            continue;
-        }
-        // A cluster: consecutive roots and touching critical points, each
-        // pair of neighbours linked through a touching critical point.
-        let start = k;
-        while k + 1 < items.len() && items[k + 1].2 != 2 && (items[k].2 == 1 || items[k + 1].2 == 1)
-        {
-            k += 1;
-        }
-        let cluster = &items[start..=k];
-        let touching: Vec<&(f64, u32, u8)> = cluster.iter().filter(|it| it.2 == 1).collect();
-        match touching.as_slice() {
-            [] => out.push(RealRoot {
-                value: cluster[0].0,
-                multiplicity: cluster[0].1,
-            }),
-            [one] => out.push(RealRoot {
-                value: one.0,
-                multiplicity: 1 + one.1,
-            }),
-            many => out.push(RealRoot {
-                value: 0.5 * (cluster[0].0 + cluster[cluster.len() - 1].0),
-                multiplicity: 1 + many.iter().map(|it| it.1).sum::<u32>(),
-            }),
-        }
-        k += 1;
-    }
-    out
+) -> InlineList<RealRoot, 4> {
+    real_roots_touching(poly, tol.confusion, touches)
 }
 
 /// Midpoint `-b / (2a)` of the roots of `a*t^2 + b*t + c`, or 0 when the
@@ -184,22 +127,22 @@ pub(crate) fn solve_trig_linear(
     e: f64,
     scale: f64,
     tol: Tolerance,
-) -> Vec<(f64, u32)> {
+) -> InlineList<(f64, u32), 4> {
+    let mut out = InlineList::new();
     let amp = c.hypot(d);
     let band = tol.confusion * scale.max(f64::MIN_POSITIVE);
-    if amp <= band {
-        return Vec::new();
-    }
-    if e.abs() > amp + band {
-        return Vec::new();
+    if amp <= band || e.abs() > amp + band {
+        return out;
     }
     let phi = d.atan2(c);
     let t0 = (-e / amp).clamp(-1.0, 1.0).acos();
     if e.abs() >= amp - band {
-        vec![(phi + t0, 2)]
+        out.push((phi + t0, 2));
     } else {
-        vec![(phi + t0, 1), (phi - t0, 1)]
+        out.push((phi + t0, 1));
+        out.push((phi - t0, 1));
     }
+    out
 }
 
 /// Solve `A*cos2t + B*sin2t + C*cos t + D*sin t + E = 0`, returning
@@ -222,7 +165,7 @@ pub(crate) fn solve_trig(
     e: f64,
     tol: Tolerance,
     touches: impl Fn(f64) -> bool,
-) -> Vec<(f64, u32)> {
+) -> InlineList<(f64, u32), 4> {
     use std::f64::consts::{FRAC_1_SQRT_2 as H, FRAC_PI_4, PI};
     // `t0` is a multiple `k` of PI/4: cos and sin of `k*PI/4`, and of
     // `t0 + PI` at index `k + 4`, come from this table.
@@ -240,9 +183,13 @@ pub(crate) fn solve_trig(
         let ((cos1, sin1), (cos2, sin2)) = (UNIT[k % 8], UNIT[2 * k % 8]);
         a2 * cos2 + b2 * sin2 + c1 * cos1 + d1 * sin1 + e
     };
-    let k = (0..8)
-        .max_by(|&x, &y| f_at(x + 4).abs().total_cmp(&f_at(y + 4).abs()))
-        .unwrap_or(0);
+    let (mut k, mut largest) = (0, f_at(4).abs());
+    for j in 1..8 {
+        let v = f_at(j + 4).abs();
+        if v.total_cmp(&largest).is_ge() {
+            (k, largest) = (j, v);
+        }
+    }
     let t0 = k as f64 * FRAC_PI_4;
     // The same equation in `s = t - t0`.
     let ((cos1, sin1), (cos2, sin2)) = (UNIT[k], UNIT[2 * k % 8]);
@@ -256,16 +203,17 @@ pub(crate) fn solve_trig(
         -4.0 * b2 + 2.0 * d1,
         a2 - c1 + e,
     ];
-    let wrap = |t: f64| {
-        let t = (t + PI).rem_euclid(2.0 * PI) - PI;
-        if t <= -PI { t + 2.0 * PI } else { t }
+    // `t0` is in `[0, 2*PI)` and `2*atan(u)` in `(-PI, PI)`: one turn
+    // back at most brings `t` into `(-PI, PI]`.
+    let to_t = |u: f64| {
+        let t = t0 + 2.0 * u.atan();
+        if t > PI { t - 2.0 * PI } else { t }
     };
-    let to_t = |u: f64| wrap(t0 + 2.0 * u.atan());
-    let mut out: Vec<(f64, u32)> = roots_with_tangency(&q, tol, |u| touches(to_t(u)))
-        .into_iter()
-        .map(|r| (to_t(r.value), r.multiplicity))
-        .collect();
-    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = InlineList::new();
+    for r in &roots_with_tangency(&q, tol, |u| touches(to_t(u))) {
+        out.push((to_t(r.value), r.multiplicity));
+    }
+    out.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
     out
 }
 

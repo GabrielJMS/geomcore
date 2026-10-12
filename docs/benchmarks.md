@@ -84,15 +84,17 @@ Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
 
 | conic | plane | sphere | cylinder | cone |
 |---|---|---|---|---|
-| circle | ~100 ns | ~313 ns | ~1.30 µs | ~1.49 µs |
-| ellipse | ~100 ns | ~1.40 µs | ~1.28 µs | ~1.41 µs |
-| parabola | ~70 ns | ~1.00 µs | ~960 ns | ~1.23 µs |
-| hyperbola | ~96 ns | ~1.17 µs | ~1.27 µs | ~1.38 µs |
+| circle | ~96 ns | ~319 ns | ~970 ns | ~1.14 µs |
+| ellipse | ~100 ns | ~1.26 µs | ~950 ns | ~1.10 µs |
+| parabola | ~68 ns | ~820 ns | ~790 ns | ~1.00 µs |
+| hyperbola | ~100 ns | ~920 ns | ~1.00 µs | ~1.07 µs |
 
 The plane pairs, and a circle against a sphere, solve a first-order
-equation in closed form. The rest solve a quartic, and nearly all of their
-time goes to its roots and to the tangency check at its critical points;
-setting up the coefficients takes under 10 ns.
+equation in closed form. The rest solve a quartic: about 570 ns goes to
+factoring it, and the tangency check costs a bounded Newton search on the
+derivative per pair of neighbouring roots or complex pair, plus one
+surface containment test there. Setting up the coefficients takes under
+10 ns.
 
 Reproduce with:
 

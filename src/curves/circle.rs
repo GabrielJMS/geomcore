@@ -451,8 +451,8 @@ impl Circle3D {
         // parameter.
         let at = |s: f64| self.center() + conic.x * (r * s.cos()) + conic.y * (r * s.sin());
         let hits: Vec<CircleConicHit> = solve_trig(a2, b2, c1, d1, e, tol, |s| contains(at(s)))
-            .into_iter()
-            .filter_map(|(s, _)| {
+            .iter()
+            .filter_map(|&(s, _)| {
                 let p = at(s);
                 if contains(p) {
                     Some(CircleConicHit {

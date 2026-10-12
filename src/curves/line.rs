@@ -989,7 +989,7 @@ impl Intersect<Torus> for Line3D {
     /// `[c1^2 - 4*R^2*qc, 2*b1*c1 - 4*R^2*qb,
     /// b1^2 + 2*c1 - 4*R^2*qa, 2*b1, 1]`, solved by `real_roots` with
     /// clustering inside `tol.confusion * (1 + |t|)` (the same band rule
-    /// as [`solve_quadratic`]). The quartic is formed about the line's
+    /// as the quadratic solver). The quartic is formed about the line's
     /// closest approach to the centre (`O` there, `t` measured from it),
     /// so neither the band nor the coefficients' accuracy depend on
     /// where the line's origin lies. A critical point of the quartic
@@ -1041,7 +1041,7 @@ impl Intersect<Torus> for Line3D {
         ];
         let touches = |s: f64| torus.contains(self.eval_point(t0 + s), tol);
         let mut hits: Vec<LineTorusHit> = roots_with_tangency(&coeffs, tol, touches)
-            .into_iter()
+            .iter()
             .filter_map(|r| {
                 let t = t0 + r.value;
                 let p = self.eval_point(t);

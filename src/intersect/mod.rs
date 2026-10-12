@@ -137,7 +137,7 @@ pub enum LineQuadricIntersection {
 ///
 /// Substituting the unit-speed parametrization into the torus implicit
 /// equation gives a quartic with leading coefficient exactly 1 (so, unlike
-/// [`solve_quadratic`], there is no linear/degenerate arm); roots cluster
+/// the quadratic solver, there is no linear/degenerate arm); roots cluster
 /// within `tol.confusion * (1 + |t|)`, `t` measured from the line's
 /// closest approach to the torus centre, and verify with
 /// [`crate::Torus::contains`].

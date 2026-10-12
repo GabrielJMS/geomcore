@@ -19,12 +19,13 @@
 use super::{ConicSurfaceHit, ConicSurfaceIntersection, ImplicitConic};
 use crate::curves::ParametricCurve3D;
 use crate::math::{
-    QuadraticSolution, roots_with_tangency, solve_quadratic, solve_trig, solve_trig_linear,
+    QuadraticSolution, RealRoot, roots_with_tangency, solve_quadratic, solve_trig,
+    solve_trig_linear,
 };
 use crate::surfaces::ParametricSurface;
 use crate::{
-    Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Parabola3D, Plane, Point3D, Sphere,
-    Tolerance, Vector3D,
+    Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, InlineList, Parabola3D, Plane,
+    Point3D, Sphere, Tolerance, Vector3D,
 };
 
 /// The shape of a conic in its own frame: what its parametrization
@@ -325,16 +326,13 @@ pub(crate) fn intersect_conic_quadric<C: Conic, S: Quadric>(
                     solve_quadratic(q[2], q[1], q[0], tol).touching_at(vertex, touches),
                 )
             } else {
-                roots_with_tangency(&q, tol, touches)
-                    .into_iter()
-                    .map(|root| (root.value, root.multiplicity))
-                    .collect()
+                root_candidates(&roots_with_tangency(&q, tol, touches))
             }
         }
         ConicShape::Hyperbola { a, b } => {
             let q = section.hyperbola_substitute(a, b);
             let touches_u = |u: f64| u > 0.0 && touches(u.ln());
-            let roots = if S::LINEAR {
+            let u_roots = if S::LINEAR {
                 // `q[0]` and `q[4]` vanish: the quadratic
                 // `(q[3]*u² + q[2]*u + q[1]) / 2`.
                 let (qa, qb, qc) = (q[3] / 2.0, q[2] / 2.0, q[1] / 2.0);
@@ -342,19 +340,16 @@ pub(crate) fn intersect_conic_quadric<C: Conic, S: Quadric>(
                     solve_quadratic(qa, qb, qc, tol).touching_at(-qb / (2.0 * qa), touches_u),
                 )
             } else {
-                roots_with_tangency(&q, tol, touches_u)
-                    .into_iter()
-                    .map(|root| (root.value, root.multiplicity))
-                    .collect()
+                root_candidates(&roots_with_tangency(&q, tol, touches_u))
             };
-            roots
-                .into_iter()
-                .filter(|&(u, _)| u > 0.0)
-                .map(|(u, multiplicity)| (u.ln(), multiplicity))
-                .collect()
+            let mut candidates = Candidates::new();
+            for &(u, multiplicity) in u_roots.iter().filter(|&&(u, _)| u > 0.0) {
+                candidates.push((u.ln(), multiplicity));
+            }
+            candidates
         }
     };
-    let hits = verify_conic_hits(conic, quadric, candidates, tol);
+    let hits = verify_conic_hits(conic, quadric, &candidates, tol);
     if hits.is_empty() {
         ConicSurfaceIntersection::Empty
     } else {
@@ -362,14 +357,31 @@ pub(crate) fn intersect_conic_quadric<C: Conic, S: Quadric>(
     }
 }
 
-/// The roots of a quadratic as `(parameter, multiplicity)` candidates.
-fn quadratic_candidates(solution: QuadraticSolution) -> Vec<(f64, u32)> {
-    match solution {
-        QuadraticSolution::Two(t1, t2) => vec![(t1, 1), (t2, 1)],
-        QuadraticSolution::One(t) => vec![(t, 2)],
-        QuadraticSolution::Linear(t) => vec![(t, 1)],
-        QuadraticSolution::Empty | QuadraticSolution::Degenerate => Vec::new(),
+/// Hit candidates: `(parameter, multiplicity)`, at most four.
+type Candidates = InlineList<(f64, u32), 4>;
+
+/// Polynomial roots as hit candidates.
+fn root_candidates(roots: &[RealRoot]) -> Candidates {
+    let mut out = Candidates::new();
+    for root in roots {
+        out.push((root.value, root.multiplicity));
     }
+    out
+}
+
+/// The roots of a quadratic as hit candidates.
+fn quadratic_candidates(solution: QuadraticSolution) -> Candidates {
+    let mut out = Candidates::new();
+    match solution {
+        QuadraticSolution::Two(t1, t2) => {
+            out.push((t1, 1));
+            out.push((t2, 1));
+        }
+        QuadraticSolution::One(t) => out.push((t, 2)),
+        QuadraticSolution::Linear(t) => out.push((t, 1)),
+        QuadraticSolution::Empty | QuadraticSolution::Degenerate => {}
+    }
+    out
 }
 
 /// Keep trig/quartic candidates verified on the surface. A point far
@@ -379,7 +391,7 @@ fn quadratic_candidates(solution: QuadraticSolution) -> Vec<(f64, u32)> {
 fn verify_conic_hits<C, S>(
     curve: &C,
     surface: &S,
-    candidates: Vec<(f64, u32)>,
+    candidates: &[(f64, u32)],
     tol: Tolerance,
 ) -> Vec<ConicSurfaceHit>
 where
@@ -387,8 +399,8 @@ where
     S: ParametricSurface,
 {
     candidates
-        .into_iter()
-        .filter_map(|(t, multiplicity)| {
+        .iter()
+        .filter_map(|&(t, multiplicity)| {
             let p = curve.eval_point(t);
             let coord = p.x.abs().max(p.y.abs()).max(p.z.abs());
             let tol = Tolerance {
