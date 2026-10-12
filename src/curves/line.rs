@@ -1215,7 +1215,6 @@ impl Intersect<Ellipse3D> for Line3D {
             x: frame.x_direction(),
             y: frame.y_direction(),
             origin: ellipse.center(),
-            normal: frame.z_direction(),
             implicit: ImplicitConic::ellipse(ellipse.major_radius(), ellipse.minor_radius()),
         };
         self.intersect_frame_conic(
@@ -1259,7 +1258,6 @@ impl Intersect<Parabola3D> for Line3D {
             x: frame.x_direction(),
             y: frame.y_direction(),
             origin: parabola.apex(),
-            normal: frame.z_direction(),
             implicit: ImplicitConic::parabola(parabola.focal()),
         };
         self.intersect_frame_conic(
@@ -1303,7 +1301,6 @@ impl Intersect<Hyperbola3D> for Line3D {
             x: frame.x_direction(),
             y: frame.y_direction(),
             origin: hyperbola.center(),
-            normal: frame.z_direction(),
             implicit: ImplicitConic::hyperbola(hyperbola.major_radius(), hyperbola.minor_radius()),
         };
         self.intersect_frame_conic(

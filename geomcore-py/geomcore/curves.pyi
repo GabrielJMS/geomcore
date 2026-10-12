@@ -186,6 +186,8 @@ class Ellipse3D:
             Line3D,
             Circle3D,
             Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
         ],
         tol: Optional[Tolerance] = ...,
     ) -> Tuple[str, Any]: ...
@@ -237,6 +239,9 @@ class Parabola3D:
             Sphere,
             Line3D,
             Circle3D,
+            Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
         ],
         tol: Optional[Tolerance] = ...,
     ) -> Tuple[str, Any]: ...
@@ -293,6 +298,9 @@ class Hyperbola3D:
             Sphere,
             Line3D,
             Circle3D,
+            Ellipse3D,
+            Parabola3D,
+            Hyperbola3D,
         ],
         tol: Optional[Tolerance] = ...,
     ) -> Tuple[str, Any]: ...

@@ -255,9 +255,12 @@ impl Parabola3D {
 
     /// Returns whether `point` lies on the parabola: within `tol.confusion`
     /// of it, exactly when [`Parabola3D::project_point`] reports distance `0.0`.
-    /// The inverse parameter of [`Parabola3D::parameter_of`] (exact on the
-    /// curve, cheap) accepts most contained points; the projection settles
-    /// the rest, since off the curve that parameter is not the closest.
+    /// Its implicit equation decides most points at once: off the plane,
+    /// clearly far from the curve or clearly on it, with rigorous bounds
+    /// for a quadratic equation. Of the points left, within a few
+    /// tolerances of the curve, the inverse parameter of
+    /// [`Parabola3D::parameter_of`] (exact on the curve, cheap) accepts most; the
+    /// projection settles the rest.
     ///
     /// # Examples
     ///
@@ -269,6 +272,15 @@ impl Parabola3D {
     /// assert!(!parabola.contains(Point3D::new(0.0, 2.0, 5.0), tol));
     /// ```
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let f = self.focal;
+        // `y² = 4fx`: on it `|∇f| ≥ 4f`.
+        let near =
+            analytic::conic_proximity(&self.frame, point, tol.confusion, 2.0, 4.0 * f, |x, y| {
+                (y * y - 4.0 * f * x, -4.0 * f, 2.0 * y)
+            });
+        if let Some(near) = near {
+            return near;
+        }
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
             || self.project_point(point, tol).distance <= tol.confusion

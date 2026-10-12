@@ -8,10 +8,9 @@ use crate::curves::Curve2D;
 use crate::curves::parametrize::{self, ParametrizeError};
 use crate::frame::frame_error;
 use crate::intersect::{
-    CircleConic3DIntersection, CircleConicHit, CircleSurfaceIntersection, ConicSurfaceIntersection,
-    ImplicitConic, PlacedConic, intersect_conic_quadric,
+    CircleSurfaceIntersection, ConicConicIntersection, ConicSurfaceIntersection,
+    intersect_conic_quadric,
 };
-use crate::math::solve_trig;
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
 use crate::tol;
@@ -417,68 +416,9 @@ impl Circle3D {
         self.intersect(other, tol)
     }
 
-    /// Shared solve for [`Circle3D::intersect_ellipse`],
-    /// [`Circle3D::intersect_parabola`], and
-    /// [`Circle3D::intersect_hyperbola`]: only coplanar pairs admit a
-    /// closed form (distinct parallel planes report
-    /// [`CircleConic3DIntersection::Empty`], anything else
-    /// [`CircleConic3DIntersection::NotAnalytic`]). The circle parametrizes
-    /// into the conic's implicit equation and the trigonometric candidates
-    /// verify against the conic, so roots on the unmodeled hyperbola
-    /// branch are dropped.
-    fn intersect_frame_conic(
-        &self,
-        conic: &PlacedConic,
-        contains: impl Fn(Point3D) -> bool,
-        conic_parameter_of: impl Fn(Point3D) -> f64,
-        tol: Tolerance,
-    ) -> CircleConic3DIntersection {
-        if self.normal().cross(conic.normal).magnitude() > tol.angular {
-            return CircleConic3DIntersection::NotAnalytic;
-        }
-        let plane = Plane::from_frame(self.frame());
-        if !plane.contains(conic.origin, tol) {
-            // Distinct parallel planes.
-            return CircleConic3DIntersection::Empty;
-        }
-        let w = self.center() - conic.origin;
-        let r = self.radius();
-        let (a2, b2, c1, d1, e) =
-            conic
-                .implicit
-                .circle_substitute(w.dot(conic.x), w.dot(conic.y), r);
-        // `s` is the angle from the conic's x axis, not the circle's own
-        // parameter.
-        let at = |s: f64| self.center() + conic.x * (r * s.cos()) + conic.y * (r * s.sin());
-        let hits: Vec<CircleConicHit> = solve_trig(a2, b2, c1, d1, e, tol, |s| contains(at(s)))
-            .iter()
-            .filter_map(|&(s, _)| {
-                let p = at(s);
-                if contains(p) {
-                    Some(CircleConicHit {
-                        circle_param: self.parameter_of(p),
-                        point: p,
-                        conic_param: conic_parameter_of(p),
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-        match hits.len() {
-            0 => CircleConic3DIntersection::Empty,
-            1 => CircleConic3DIntersection::Tangent(hits[0]),
-            _ => CircleConic3DIntersection::Points(hits),
-        }
-    }
-
     /// Intersects with an [`Ellipse3D`]; see its [`Intersect`] implementation.
     #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_ellipse(
-        &self,
-        ellipse: &Ellipse3D,
-        tol: Tolerance,
-    ) -> CircleConic3DIntersection {
+    pub fn intersect_ellipse(&self, ellipse: &Ellipse3D, tol: Tolerance) -> ConicConicIntersection {
         self.intersect(ellipse, tol)
     }
 
@@ -488,7 +428,7 @@ impl Circle3D {
         &self,
         parabola: &Parabola3D,
         tol: Tolerance,
-    ) -> CircleConic3DIntersection {
+    ) -> ConicConicIntersection {
         self.intersect(parabola, tol)
     }
 
@@ -498,7 +438,7 @@ impl Circle3D {
         &self,
         hyperbola: &Hyperbola3D,
         tol: Tolerance,
-    ) -> CircleConic3DIntersection {
+    ) -> ConicConicIntersection {
         self.intersect(hyperbola, tol)
     }
 
@@ -961,7 +901,9 @@ impl Intersect<Circle3D> for Circle3D {
     /// the 2D problem solves, and hits map back through the plane
     /// evaluation. Distinct parallel planes report
     /// [`CircleCircle3DIntersection::Empty`]; crossing planes report
-    /// [`CircleCircle3DIntersection::NotAnalytic`].
+    /// [`CircleCircle3DIntersection::NotAnalytic`], which the
+    /// [`ElementaryCurve`](crate::curves::ElementaryCurve) intersection
+    /// resolves on the line the planes share.
     ///
     /// # Examples
     ///
@@ -1009,144 +951,6 @@ impl Intersect<Circle3D> for Circle3D {
             CircleCircle2DIntersection::Empty => CircleCircle3DIntersection::Empty,
             CircleCircle2DIntersection::Coincident => CircleCircle3DIntersection::Coincident,
         }
-    }
-}
-
-impl Intersect<Ellipse3D> for Circle3D {
-    type Output = CircleConic3DIntersection;
-
-    /// Intersects this circle with a 3D ellipse.
-    ///
-    /// Only coplanar pairs admit a closed form: the circle parametrizes
-    /// into the ellipse's implicit equation (trigonometric solve, up to
-    /// four hits). A circular ellipse sharing center, radius, and plane
-    /// reports [`CircleConic3DIntersection::Coincident`]; anything
-    /// non-coplanar reports
-    /// [`CircleConic3DIntersection::NotAnalytic`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::Intersect;
-    /// use geomcore::{Circle3D, CircleConic3DIntersection, Ellipse3D, Point3D, Tolerance, Vector3D};
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match circle.intersect(&ellipse, tol) {
-    ///     CircleConic3DIntersection::Points(hits) => assert_eq!(hits.len(), 4),
-    ///     _ => panic!("expected four points"),
-    /// }
-    /// ```
-    fn intersect(&self, ellipse: &Ellipse3D, tol: Tolerance) -> CircleConic3DIntersection {
-        if self
-            .normal()
-            .cross(ellipse.frame().z_direction())
-            .magnitude()
-            <= tol.angular
-            && Plane::from_frame(self.frame()).contains(ellipse.center(), tol)
-            && self.center().distance(ellipse.center()) <= tol.confusion
-            && (self.radius() - ellipse.major_radius()).abs() <= tol.confusion
-            && (ellipse.major_radius() - ellipse.minor_radius()).abs() <= tol.confusion
-        {
-            return CircleConic3DIntersection::Coincident;
-        }
-        let frame = ellipse.frame();
-        let conic = PlacedConic {
-            plane: Plane::from_frame(frame),
-            x: frame.x_direction(),
-            y: frame.y_direction(),
-            origin: ellipse.center(),
-            normal: frame.z_direction(),
-            implicit: ImplicitConic::ellipse(ellipse.major_radius(), ellipse.minor_radius()),
-        };
-        self.intersect_frame_conic(
-            &conic,
-            |p| ellipse.contains(p, tol),
-            |p| ellipse.parameter_of(p),
-            tol,
-        )
-    }
-}
-
-impl Intersect<Parabola3D> for Circle3D {
-    type Output = CircleConic3DIntersection;
-
-    /// Intersects this circle with a 3D parabola.
-    ///
-    /// Same calling shape as [`Circle3D::intersect_ellipse`], without
-    /// coincidence (an unbounded parabola never matches a circle).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::Intersect;
-    /// use geomcore::{Circle3D, CircleConic3DIntersection, Parabola3D, Point3D, Tolerance, Vector3D};
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
-    /// let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match circle.intersect(&parabola, tol) {
-    ///     CircleConic3DIntersection::Points(hits) => assert_eq!(hits.len(), 2),
-    ///     _ => panic!("expected two points"),
-    /// }
-    /// ```
-    fn intersect(&self, parabola: &Parabola3D, tol: Tolerance) -> CircleConic3DIntersection {
-        let frame = parabola.frame();
-        let conic = PlacedConic {
-            plane: Plane::from_frame(frame),
-            x: frame.x_direction(),
-            y: frame.y_direction(),
-            origin: parabola.apex(),
-            normal: frame.z_direction(),
-            implicit: ImplicitConic::parabola(parabola.focal()),
-        };
-        self.intersect_frame_conic(
-            &conic,
-            |p| parabola.contains(p, tol),
-            |p| parabola.parameter_of(p),
-            tol,
-        )
-    }
-}
-
-impl Intersect<Hyperbola3D> for Circle3D {
-    type Output = CircleConic3DIntersection;
-
-    /// Intersects this circle with a 3D hyperbola.
-    ///
-    /// Same calling shape as [`Circle3D::intersect_ellipse`], without
-    /// coincidence. Only the modeled branch participates
-    /// ([`Hyperbola3D`] is single-branched): roots on the mirror branch
-    /// are dropped.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::Intersect;
-    /// use geomcore::{Circle3D, CircleConic3DIntersection, Hyperbola3D, Point3D, Tolerance, Vector3D};
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 3.0).unwrap();
-    /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match circle.intersect(&hyperbola, tol) {
-    ///     CircleConic3DIntersection::Points(hits) => assert_eq!(hits.len(), 2),
-    ///     _ => panic!("expected two points"),
-    /// }
-    /// ```
-    fn intersect(&self, hyperbola: &Hyperbola3D, tol: Tolerance) -> CircleConic3DIntersection {
-        let frame = hyperbola.frame();
-        let conic = PlacedConic {
-            plane: Plane::from_frame(frame),
-            x: frame.x_direction(),
-            y: frame.y_direction(),
-            origin: hyperbola.center(),
-            normal: frame.z_direction(),
-            implicit: ImplicitConic::hyperbola(hyperbola.major_radius(), hyperbola.minor_radius()),
-        };
-        self.intersect_frame_conic(
-            &conic,
-            |p| hyperbola.contains(p, tol),
-            |p| hyperbola.parameter_of(p),
-            tol,
-        )
     }
 }
 
@@ -1206,7 +1010,7 @@ mod tests {
     use crate::Intersect;
     use crate::{
         Circle2D, Circle3D, CircleCircle2DIntersection, CircleCircle3DIntersection,
-        CircleConic3DIntersection, CircleConstructionError, CircleSurfaceIntersection, Ellipse3D,
+        CircleConstructionError, CircleSurfaceIntersection, ConicConicIntersection, Ellipse3D,
         Frame2D, Frame3D, Hyperbola3D, Parabola3D, Point2D, Point3D, Tolerance, Transform,
         Vector2D, Vector3D,
     };
@@ -1606,13 +1410,13 @@ mod tests {
         let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         // Four transversal hits; each carries consistent parameters.
         match circle.intersect(&ellipse, tol) {
-            CircleConic3DIntersection::Points(hits) => {
+            ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 4);
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
                     assert!(ellipse.contains(h.point, tol));
-                    assert_eq!(h.circle_param, circle.parameter_of(h.point));
-                    assert_eq!(h.conic_param, ellipse.parameter_of(h.point));
+                    assert_eq!(h.first_param, circle.parameter_of(h.point));
+                    assert_eq!(h.second_param, ellipse.parameter_of(h.point));
                 }
             }
             _ => panic!("expected four points"),
@@ -1621,13 +1425,14 @@ mod tests {
         let round = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 2.0).unwrap();
         assert_eq!(
             circle.intersect(&round, tol),
-            CircleConic3DIntersection::Coincident
+            ConicConicIntersection::Coincident
         );
-        // Tilted partner: no closed form.
+        // Crossing planes: on the line they share, the circle is at
+        // y = ±2 and the ellipse at y = ±1.5.
         let tilted = Ellipse3D::new(Point3D::ORIGIN, Vector3D::X, Vector3D::Z, 3.0, 1.5).unwrap();
         assert_eq!(
             circle.intersect(&tilted, tol),
-            CircleConic3DIntersection::NotAnalytic
+            ConicConicIntersection::Empty
         );
         // Distant ellipse: nothing.
         let far = Ellipse3D::new(
@@ -1638,10 +1443,7 @@ mod tests {
             1.5,
         )
         .unwrap();
-        assert_eq!(
-            circle.intersect(&far, tol),
-            CircleConic3DIntersection::Empty
-        );
+        assert_eq!(circle.intersect(&far, tol), ConicConicIntersection::Empty);
         // Parallel but offset plane: nothing.
         let lifted = Ellipse3D::new(
             Point3D::new(0.0, 0.0, 1.0),
@@ -1653,7 +1455,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             circle.intersect(&lifted, tol),
-            CircleConic3DIntersection::Empty
+            ConicConicIntersection::Empty
         );
     }
 
@@ -1675,12 +1477,12 @@ mod tests {
         )
         .unwrap();
         match circle.intersect(&ellipse, tol) {
-            CircleConic3DIntersection::Points(hits) => {
+            ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 4);
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
                     assert!(ellipse.contains(h.point, tol));
-                    assert!(circle.eval_point(h.circle_param).distance(h.point) < 1e-12);
+                    assert!(circle.eval_point(h.first_param).distance(h.point) < 1e-12);
                 }
             }
             other => panic!("expected four points, got {other:?}"),
@@ -1693,7 +1495,7 @@ mod tests {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
         let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
         match circle.intersect(&parabola, tol) {
-            CircleConic3DIntersection::Points(hits) => {
+            ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 2);
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
@@ -1702,11 +1504,12 @@ mod tests {
             }
             _ => panic!("expected two points"),
         }
-        // Tilted partner: no closed form.
+        // Crossing planes: on the line they share, the circle is at
+        // y = ±1 and the parabola at its apex.
         let tilted = Parabola3D::new(Point3D::ORIGIN, Vector3D::X, Vector3D::Z, 1.0).unwrap();
         assert_eq!(
             circle.intersect(&tilted, tol),
-            CircleConic3DIntersection::NotAnalytic
+            ConicConicIntersection::Empty
         );
     }
 
@@ -1718,7 +1521,7 @@ mod tests {
             Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
         // Mirror-branch roots are dropped: two right-branch hits.
         match circle.intersect(&hyperbola, tol) {
-            CircleConic3DIntersection::Points(hits) => {
+            ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 2);
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
@@ -1728,13 +1531,16 @@ mod tests {
             }
             _ => panic!("expected two points"),
         }
-        // Circle inside the branch cup grazing the right vertex: a lone tangent.
+        // The osculating circle at the right vertex (radius b²/a): a lone
+        // four-point contact.
         let grazing = Circle3D::new(Point3D::new(2.5, 0.0, 0.0), Vector3D::Z, 0.5).unwrap();
         match grazing.intersect(&hyperbola, tol) {
-            CircleConic3DIntersection::Tangent(hit) => {
-                assert!(hit.point.distance(Point3D::new(2.0, 0.0, 0.0)) < 1e-9);
+            ConicConicIntersection::Hits(hits) => {
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0].multiplicity, 4);
+                assert!(hits[0].point.distance(Point3D::new(2.0, 0.0, 0.0)) < 1e-9);
             }
-            _ => panic!("expected a tangent"),
+            other => panic!("expected a tangent, got {other:?}"),
         }
     }
 
@@ -1929,9 +1735,14 @@ mod tests {
                     "parabola" => circle.intersect(&parabola, tol),
                     _ => circle.intersect(&hyperbola, tol),
                 };
-                let CircleConic3DIntersection::Tangent(hit) = result else {
+                let ConicConicIntersection::Hits(hits) = &result else {
                     panic!("{name} at t = {t}: expected one tangent hit, got {result:?}");
                 };
+                assert!(
+                    hits.len() == 1 && hits[0].multiplicity == 2,
+                    "{name} at t = {t}: expected one tangent hit, got {result:?}"
+                );
+                let hit = hits[0];
                 assert!(
                     hit.point.distance(contact) < 1e-6,
                     "{name} at t = {t}: {hit:?}"
@@ -1993,9 +1804,14 @@ mod tests {
             let circle =
                 Circle3D::new(contact + outward * radius, frame.z_direction(), radius).unwrap();
             let result = circle.intersect(&ellipse, tol);
-            let CircleConic3DIntersection::Tangent(hit) = result else {
+            let ConicConicIntersection::Hits(hits) = &result else {
                 panic!("case {case}: expected one tangent hit, got {result:?}");
             };
+            assert!(
+                hits.len() == 1 && hits[0].multiplicity == 2,
+                "case {case}: expected one tangent hit, got {result:?}"
+            );
+            let hit = hits[0];
             assert!(hit.point.distance(contact) < 1e-6, "case {case}: {hit:?}");
         }
     }

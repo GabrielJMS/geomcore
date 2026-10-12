@@ -372,9 +372,12 @@ impl Hyperbola3D {
 
     /// Returns whether `point` lies on the hyperbola: within `tol.confusion`
     /// of it, exactly when [`Hyperbola3D::project_point`] reports distance `0.0`.
-    /// The inverse parameter of [`Hyperbola3D::parameter_of`] (exact on the
-    /// curve, cheap) accepts most contained points; the projection settles
-    /// the rest, since off the curve that parameter is not the closest.
+    /// Its implicit equation decides most points at once: off the plane,
+    /// clearly far from the curve or clearly on it, with rigorous bounds
+    /// for a quadratic equation. Of the points left, within a few
+    /// tolerances of the curve, the inverse parameter of
+    /// [`Hyperbola3D::parameter_of`] (exact on the curve, cheap) accepts most; the
+    /// projection settles the rest.
     ///
     /// # Examples
     ///
@@ -386,6 +389,28 @@ impl Hyperbola3D {
     /// assert!(!hyperbola.contains(Point3D::new(2.0, 0.0, 5.0), tol));
     /// ```
     pub fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        let (a, b) = (self.major_radius, self.minor_radius);
+        // `(x/a)² - (y/b)² = 1`: on it `|∇f| ≥ 2/a`. Whenever the bounds
+        // apply, `a ≥ 2 tol`, so the branch (`x ≥ a`) is the only part of
+        // the curve within `2 tol` of a point with `x ≥ a - tol`, and points
+        // short of that are far from it.
+        let near = analytic::conic_proximity(
+            &self.frame,
+            point,
+            tol.confusion,
+            2.0 / (a.min(b) * a.min(b)),
+            2.0 / a,
+            |x, y| {
+                if x < a - tol.confusion {
+                    return (f64::INFINITY, 1.0, 0.0);
+                }
+                let (sx, sy) = (x / (a * a), y / (b * b));
+                (x * sx - y * sy - 1.0, 2.0 * sx, -2.0 * sy)
+            },
+        );
+        if let Some(near) = near {
+            return near;
+        }
         let u = self.parameter_of(point);
         self.eval_point(u).distance(point) <= tol.confusion
             || self.project_point(point, tol).distance <= tol.confusion

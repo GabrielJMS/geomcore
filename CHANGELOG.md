@@ -9,7 +9,42 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Exact intersections between any two of a circle, ellipse, parabola and
+  hyperbola (#14), returning the new `ConicConicIntersection`: hits with
+  the parameter on each curve and a multiplicity (2 or more marks
+  tangency), `Coincident` or `Empty`. Coplanar conics substitute one
+  curve's parametrization into the other's implicit equation and meet at
+  up to four points; ellipse–parabola, ellipse–hyperbola,
+  parabola–parabola, parabola–hyperbola and hyperbola–hyperbola were
+  `NotAnalytic` before. Conics in crossing planes meet on the line the
+  planes share, at up to two points, instead of reporting `NotAnalytic`;
+  this covers two circles in crossing planes through `ElementaryCurve`
+  and `Curve3D`. A hyperbola is one branch: hits on its mirror branch are
+  not reported.
+- Python: `intersect` between any two of `Circle3D`, `Ellipse3D`,
+  `Parabola3D` and `Hyperbola3D` (except two circles) returns
+  `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)` or
+  `("empty", None)`, with `s` on the receiver, where unsupported pairs
+  raised `TypeError`.
+
 ### Changed
+
+- **Breaking:** a circle against an ellipse, parabola or hyperbola, and
+  an ellipse against an ellipse, return `ConicConicIntersection`, which
+  replaces `CircleConic3DIntersection`, `CircleConicHit`,
+  `EllipseEllipse3DIntersection` and `EllipseEllipseHit`. Its hits carry
+  a multiplicity, where a tangency was a separate `Tangent` variant, and
+  `circle_param`/`conic_param` become `first_param`/`second_param`. In
+  Python the same pairs return `"hits"` with the multiplicity instead of
+  `"points"`/`"tangent"`, and the receiver's parameter now comes first,
+  so `ellipse.intersect(circle)` puts the ellipse parameter first.
+- `contains` on an ellipse, parabola or hyperbola decides most points from
+  the curve's implicit equation, with rigorous bounds, and only projects
+  points within a few tolerances of the curve: a point off the curve is
+  rejected 15–250 times faster (2 µs to 8 ns off an ellipse) and one on
+  it accepted 1.5–6 times faster. Results are unchanged.
 
 - The 16 exact intersections of a circle, ellipse, parabola or hyperbola
   with a plane, sphere, cylinder or cone now share one implementation.

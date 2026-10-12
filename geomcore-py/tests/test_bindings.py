@@ -764,30 +764,35 @@ def test_circle_conic_intersections():
     circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
     ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
     kind, hits = circle.intersect(ellipse)
-    assert kind == "points"
+    assert kind == "hits"
     assert len(hits) == 4
-    for s, p, u in hits:
+    for s, p, u, mult in hits:
+        assert mult == 1
         assert circle.contains(p)
         assert ellipse.contains(p)
+        _assert_same_point(circle.eval_point(s), p)
+        _assert_same_point(ellipse.eval_point(u), p)
 
     assert circle.intersect(
         Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
     ) == ("coincident", None)
+    # Crossing planes: the tilted ellipse meets the shared line at
+    # y = ±1.5, inside the circle.
     tilted = Ellipse3D(Point3D.origin(), Vector3D.x(), Vector3D.z(), 3.0, 1.5)
-    assert circle.intersect(tilted) == ("not_analytic", None)
+    assert circle.intersect(tilted) == ("empty", None)
 
     unit = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
     parabola = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0)
     kind, hits = unit.intersect(parabola)
-    assert kind == "points"
+    assert kind == "hits"
     assert len(hits) == 2
 
     big = Circle3D(Point3D.origin(), Vector3D.z(), 3.0)
     hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
     kind, hits = big.intersect(hyperbola)
-    assert kind == "points"
+    assert kind == "hits"
     assert len(hits) == 2
-    assert all(p.x > 0.0 for _, p, _ in hits)
+    assert all(p.x > 0.0 for _, p, _, _ in hits)
 
 
 def test_line_torus_intersections():
@@ -823,24 +828,63 @@ def test_ellipse_ellipse_intersections():
     e1 = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
     e2 = Ellipse3D(Point3D(0.5, 0.0, 0.0), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
     kind, hits = e1.intersect(e2)
-    assert kind == "points"
+    assert kind == "hits"
     assert len(hits) == 4
-    for s, p, t in hits:
+    for s, p, t, _ in hits:
         assert e1.contains(p)
         assert e2.contains(p)
 
     grazing = Ellipse3D(Point3D(5.0, 0.0, 0.0), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
-    kind, (s, p, t) = e1.intersect(grazing)
-    assert kind == "tangent"
+    kind, [(s, p, t, mult)] = e1.intersect(grazing)
+    assert kind == "hits"
+    assert mult == 2
     assert (p.x, p.y, p.z) == pytest.approx((3.0, 0.0, 0.0))
 
     far = Ellipse3D(Point3D(10.0, 0.0, 0.0), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
     assert e1.intersect(far) == ("empty", None)
     assert e1.intersect(e1) == ("coincident", None)
+    # Crossing planes: both pass through (0, ±1.5, 0).
     tilted = Ellipse3D(Point3D.origin(), Vector3D.x(), Vector3D.z(), 3.0, 1.5)
-    assert e1.intersect(tilted) == ("not_analytic", None)
+    kind, hits = e1.intersect(tilted)
+    assert kind == "hits"
+    assert sorted(p.y for _, p, _, _ in hits) == pytest.approx([-1.5, 1.5])
     lifted = Ellipse3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
     assert e1.intersect(lifted) == ("empty", None)
+
+
+def test_conic_conic_intersections():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Parabola3D
+
+    o, z, x = Point3D.origin(), Vector3D.z(), Vector3D.x()
+    ellipse = Ellipse3D(o, z, x, 3.0, 2.0)
+    hyperbola = Hyperbola3D(o, z, x, 1.0, 0.5)
+    parabola = Parabola3D(o, z, x, 1.0)
+    # The branch x > 0 meets the ellipse at (√153/5, ±√128/10).
+    kind, hits = ellipse.intersect(hyperbola)
+    assert kind == "hits"
+    hx, hy = math.sqrt(153) / 5, math.sqrt(128) / 10
+    assert sorted(p.y for _, p, _, _ in hits) == pytest.approx([-hy, hy])
+    assert [p.x for _, p, _, _ in hits] == pytest.approx([hx, hx])
+    pairs = [
+        (ellipse, hyperbola),
+        (ellipse, parabola),
+        (parabola, hyperbola),
+        (parabola, Parabola3D(Point3D(2.0, 0.0, 0.0), z, Vector3D(-1.0, 0.0, 0.0), 1.0)),
+        (hyperbola, Hyperbola3D(Point3D(0.0, -2.0, 0.0), z, Vector3D.y(), 1.0, 1.0)),
+    ]
+    for a, b in pairs:
+        kind, hits = a.intersect(b)
+        assert kind == "hits" and hits, (a, b)
+        for s, p, t, _ in hits:
+            _assert_same_point(a.eval_point(s), p)
+            _assert_same_point(b.eval_point(t), p)
+        # The receiver's parameter comes first.
+        kind, back = b.intersect(a)
+        assert sorted(t for _, _, t, _ in hits) == pytest.approx(sorted(t for t, _, _, _ in back))
+        assert sorted(s for s, _, _, _ in hits) == pytest.approx(sorted(s for _, _, s, _ in back))
+    assert parabola.intersect(parabola) == ("coincident", None)
+    lifted = Parabola3D(Point3D(0.0, 0.0, 1.0), z, x, 1.0)
+    assert parabola.intersect(lifted) == ("empty", None)
 
 
 def _rigid_motion():
@@ -1071,6 +1115,33 @@ def _per_pair(a, b):
     return getattr(a, "intersect_" + PAIR_NOUN[type(b).__name__], None)
 
 
+CONICS = {"Circle3D", "Ellipse3D", "Parabola3D", "Hyperbola3D"}
+
+
+def _is_conic_pair(a, b):
+    """Whether the pair returns conic-conic hits, receiver's parameter first."""
+    names = {type(a).__name__, type(b).__name__}
+    return names <= CONICS and names != {"Circle3D"}
+
+
+def _rounded(p):
+    return (round(p.x, 9), round(p.y, 9), round(p.z, 9))
+
+
+def _receiver_swapped(result, swap=True):
+    """Conic-conic hits as `(other, point, receiver, mult)`, sorted."""
+    kind, hits = result
+    if kind != "hits":
+        return result
+    return (
+        kind,
+        sorted(
+            (round(t if swap else s, 9), _rounded(p), round(s if swap else t, 9), m)
+            for s, p, t, m in hits
+        ),
+    )
+
+
 def test_intersect_matches_per_pair_methods_in_both_orders():
     shapes = _intersect_shapes()
     pairs = 0
@@ -1084,13 +1155,19 @@ def test_intersect_matches_per_pair_methods_in_both_orders():
             with pytest.warns(DeprecationWarning):
                 expected = _comparable(method(b))
             assert _comparable(a.intersect(b)) == expected, (a, b)
-            assert _comparable(b.intersect(a)) == expected, (b, a)
+            if _is_conic_pair(a, b):
+                # The receiver's parameter comes first.
+                assert _receiver_swapped(b.intersect(a)) == _receiver_swapped(
+                    a.intersect(b), swap=False
+                ), (b, a)
+            else:
+                assert _comparable(b.intersect(a)) == expected, (b, a)
             pairs += 1
     assert pairs == 49
 
 
 def test_intersect_rejects_pairs_without_exact_solver():
-    from geomcore.curves import Circle2D, Ellipse3D, Hyperbola3D, Parabola3D
+    from geomcore.curves import Circle2D, Ellipse3D
     from geomcore.surfaces import Torus
 
     o, z, x = Point3D.origin(), Vector3D.z(), Vector3D.x()
@@ -1099,7 +1176,6 @@ def test_intersect_rejects_pairs_without_exact_solver():
     for a, b in [
         (circle, torus),
         (Ellipse3D(o, z, x, 3.0, 1.5), torus),
-        (Parabola3D(o, z, x, 1.0), Hyperbola3D(o, z, x, 2.0, 1.0)),
         (circle, Circle2D(Point2D.origin(), 1.0)),
         (circle, BSplineCurve3D.interpolate([o, Point3D(1.0, 1.0, 0.0), Point3D(2.0, 0.0, 0.0)], 2)),
         (circle, 5),

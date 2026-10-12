@@ -148,6 +148,54 @@ pub(crate) fn ellipse_parameter(frame: &Frame3D, maj: f64, min: f64, p: Point3D)
     wrap_to_turn(frame.x_direction().angle_with_ref(om, frame.z_direction()))
 }
 
+/// Whether `p` is within `tol` of a conic in the frame's plane, decided
+/// from the conic's implicit equation alone when that is conclusive:
+/// `Some(false)` off the plane by more than `tol` or clearly far from the
+/// curve, `Some(true)` clearly on it, `None` in between. `implicit(x, y)`
+/// returns `(f, ∂f/∂x, ∂f/∂y)` at the in-plane coordinates, `hessian` is
+/// the norm `h` of the (constant) Hessian, and `min_gradient` a lower
+/// bound on `|∇f|` along the curve.
+///
+/// Both answers are rigorous, as the equation is quadratic and so equal
+/// to its second-order expansion. With `e = |f| / |∇f|`, the first-order
+/// distance, and `g = |∇f(p)|`:
+/// - far: about the curve point `q` nearest `(x, y)`, at distance
+///   `d ≤ tol`, `|f| ≤ |∇f(q)| d + h d²/2` and `g ≥ |∇f(q)| - h d`, so
+///   `e ≤ 2.5 d` while `h * tol ≤ min_gradient / 2`. Then `e > 2.5 tol`
+///   puts `(x, y)` farther than `tol`;
+/// - near: going downhill along `∇f`, `f` changes sign within `2e` when
+///   `2 h |f| < g²`. That curve point is then within `tol` of `p` if
+///   `2e` and the offset from the plane together are.
+///
+/// Past `h * tol ≤ min_gradient / 2` (`tol` beyond half the smallest
+/// curvature radius, for the conics here) the answer is always `None`.
+pub(crate) fn conic_proximity(
+    frame: &Frame3D,
+    p: Point3D,
+    tol: f64,
+    hessian: f64,
+    min_gradient: f64,
+    implicit: impl FnOnce(f64, f64) -> (f64, f64, f64),
+) -> Option<bool> {
+    let op = p - frame.origin();
+    let offset = op.dot(frame.z_direction());
+    if offset.abs() > tol {
+        return Some(false);
+    }
+    if 2.0 * hessian * tol > min_gradient {
+        return None;
+    }
+    let (f, fx, fy) = implicit(op.dot(frame.x_direction()), op.dot(frame.y_direction()));
+    let g2 = fx * fx + fy * fy;
+    if f * f > 6.25 * tol * tol * g2 {
+        Some(false)
+    } else if 2.0 * hessian * f.abs() < g2 && offset * offset * g2 + 4.0 * f * f <= tol * tol * g2 {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 /// Recovers the parameter of a point on (or near) the parabola: the
 /// projection `(p - origin) . y_dir`.
 pub(crate) fn parabola_parameter(frame: &Frame3D, p: Point3D) -> f64 {
@@ -645,6 +693,109 @@ mod tests {
             let p = circle2d_d0(&frame, 1.7, u);
             let recovered = circle2d_parameter(&frame, p);
             assert!((recovered - u).abs() < 1e-9);
+        }
+    }
+    /// `contains` (with its early rejection) agrees with the inverse
+    /// parameter and projection it shortcuts, for points at chosen distances around the tolerance
+    /// and random points, on round and very eccentric conics, with the
+    /// tolerance up to and past the rejection's `reach`.
+    #[test]
+    fn test_conic_contains_matches_projection() {
+        use crate::{Ellipse3D, Hyperbola3D, Parabola3D, Tolerance};
+        let frame = Frame3D::new(
+            Point3D::new(0.7, -1.2, 0.4),
+            Vector3D::new(0.3, -0.4, 1.0),
+            Vector3D::new(1.0, 0.5, 0.0),
+        )
+        .unwrap();
+        let mut state: u64 = 0x0bad_c0de_1234_5678;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as f64 / 2147483648.0
+        };
+        let factors = [
+            0.0, 0.3, 0.9, 0.99, 1.01, 1.1, 2.0, 2.4, 2.6, 3.0, 10.0, 1e3,
+        ];
+        let mut check = |curve: &dyn Fn(f64) -> (Point3D, Vector3D),
+                         contains: &dyn Fn(Point3D, Tolerance) -> bool,
+                         on_curve: &dyn Fn(Point3D, Tolerance) -> bool,
+                         reach: f64| {
+            for confusion in [1e-7, 1e-3, 0.5 * reach, 0.99 * reach, reach, 2.0 * reach] {
+                let tol = Tolerance {
+                    confusion,
+                    ..Tolerance::DEFAULT
+                };
+                for _ in 0..50 {
+                    let t = 6.0 * next() - 3.0;
+                    let (q, along) = curve(t);
+                    let side = frame.z_direction().cross(along).normalized().unwrap();
+                    let (s, h) = (2.0 * next() - 1.0, 2.0 * next() - 1.0);
+                    let off = (side * s + frame.z_direction() * h * 0.3)
+                        .normalized()
+                        .unwrap();
+                    for k in factors {
+                        let p = q + off * (k * confusion);
+                        assert_eq!(
+                            contains(p, tol),
+                            on_curve(p, tol),
+                            "{p:?} at {k} tol {tol:?}"
+                        );
+                    }
+                }
+                for _ in 0..50 {
+                    let p = frame.origin()
+                        + frame.x_direction() * (8.0 * next() - 4.0)
+                        + frame.y_direction() * (8.0 * next() - 4.0)
+                        + frame.z_direction() * (confusion * (4.0 * next() - 2.0));
+                    assert_eq!(contains(p, tol), on_curve(p, tol), "{p:?} tol {tol:?}");
+                }
+            }
+        };
+        for (a, b) in [(2.0, 2.0), (3.0, 1.5), (3.0, 0.1), (1.0, 0.01)] {
+            let e = Ellipse3D::from_frame(frame, a, b).unwrap();
+            check(
+                &|t| (e.eval_point(t), e.eval_derivative(t, 1)),
+                &|p, tol| e.contains(p, tol),
+                &|p, tol| {
+                    e.eval_point(e.parameter_of(p)).distance(p) <= tol.confusion
+                        || e.project_point(p, tol).distance == 0.0
+                },
+                b * b / (2.0 * a),
+            );
+            let h = Hyperbola3D::from_frame(frame, a, b).unwrap();
+            check(
+                &|t| (h.eval_point(t), h.eval_derivative(t, 1)),
+                &|p, tol| h.contains(p, tol),
+                &|p, tol| {
+                    h.eval_point(h.parameter_of(p)).distance(p) <= tol.confusion
+                        || h.project_point(p, tol).distance == 0.0
+                },
+                a.min(b).powi(2) / (2.0 * a),
+            );
+            let h = Hyperbola3D::from_frame(frame, b, a).unwrap();
+            check(
+                &|t| (h.eval_point(t), h.eval_derivative(t, 1)),
+                &|p, tol| h.contains(p, tol),
+                &|p, tol| {
+                    h.eval_point(h.parameter_of(p)).distance(p) <= tol.confusion
+                        || h.project_point(p, tol).distance == 0.0
+                },
+                b.min(a).powi(2) / (2.0 * b),
+            );
+        }
+        for focal in [1.0, 0.05, 0.002] {
+            let par = Parabola3D::from_frame(frame, focal).unwrap();
+            check(
+                &|t| (par.eval_point(t), par.eval_derivative(t, 1)),
+                &|p, tol| par.contains(p, tol),
+                &|p, tol| {
+                    par.eval_point(par.parameter_of(p)).distance(p) <= tol.confusion
+                        || par.project_point(p, tol).distance == 0.0
+                },
+                focal,
+            );
         }
     }
 }

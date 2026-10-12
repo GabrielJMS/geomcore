@@ -23,9 +23,9 @@ use crate::{
     Vector3D,
 };
 
-mod conic_quadric;
+mod conic;
 mod dispatch;
-pub(crate) use conic_quadric::intersect_conic_quadric;
+pub(crate) use conic::{intersect_conic_conic, intersect_conic_quadric};
 pub use dispatch::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
 };
@@ -432,39 +432,6 @@ pub enum LineCircle3DIntersection {
     Empty,
 }
 
-/// One meeting of two coplanar 3D ellipses: the parameter on the first
-/// ellipse, the meeting point, and the parameter on the second.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EllipseEllipseHit {
-    /// Parameter on the first ellipse.
-    pub first_param: f64,
-    /// The meeting point.
-    pub point: Point3D,
-    /// Parameter on the second ellipse.
-    pub second_param: f64,
-}
-
-/// Result of intersecting two 3D ellipses.
-///
-/// Only coplanar pairs admit a closed form (elimination of one frame
-/// coordinate between the two implicit quadratics gives a quartic).
-/// Distinct parallel planes are [`EllipseEllipse3DIntersection::Empty`];
-/// crossing planes report [`EllipseEllipse3DIntersection::NotAnalytic`],
-/// the same rule as [`CircleCircle3DIntersection`].
-#[derive(Debug, Clone, PartialEq)]
-pub enum EllipseEllipse3DIntersection {
-    /// Isolated meetings (up to four), ordered by first-ellipse parameter.
-    Points(Vec<EllipseEllipseHit>),
-    /// A single grazing contact.
-    Tangent(EllipseEllipseHit),
-    /// No intersection.
-    Empty,
-    /// Same center, plane, and radii within tolerance.
-    Coincident,
-    /// No closed form: the ellipse planes cross.
-    NotAnalytic,
-}
-
 /// Result of intersecting two 3D circles.
 ///
 /// Only coplanar pairs admit a closed form (via 2D images in the shared
@@ -512,39 +479,6 @@ pub enum LineConic3DIntersection {
     Tangent(LineConicHit),
     /// No intersection.
     Empty,
-}
-
-/// One hit of an analytic circle-vs-conic solve: parameter on the circle,
-/// the hit point, and parameter on the conic.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CircleConicHit {
-    /// Parameter on the circle.
-    pub circle_param: f64,
-    /// The hit point.
-    pub point: Point3D,
-    /// Parameter on the conic.
-    pub conic_param: f64,
-}
-
-/// Result of intersecting a 3D circle with an ellipse, parabola, or
-/// hyperbola.
-///
-/// Only coplanar pairs admit a closed form (the circle parametrizes into
-/// the conic's implicit equation, a trigonometric solve). Distinct
-/// parallel planes are [`CircleConic3DIntersection::Empty`]; crossing
-/// planes report [`CircleConic3DIntersection::NotAnalytic`].
-#[derive(Debug, Clone, PartialEq)]
-pub enum CircleConic3DIntersection {
-    /// Isolated hits (up to four).
-    Points(Vec<CircleConicHit>),
-    /// A single grazing contact.
-    Tangent(CircleConicHit),
-    /// The circle coincides with a circular ellipse.
-    Coincident,
-    /// No intersection.
-    Empty,
-    /// No closed form: the curve planes cross.
-    NotAnalytic,
 }
 
 /// Implicit quadratic `A*x^2 + B*y^2 + C*x*y + D*x + E*y + F = 0` of a
@@ -615,26 +549,6 @@ impl ImplicitConic {
             + self.f0;
         (qa, qb, qc)
     }
-
-    /// Coefficients `(a2, b2, c1, d1, e)` of
-    /// `a2*cos2s + b2*sin2s + c1*cos s + d1*sin s + e = 0` for the circle
-    /// `(cx + r*cos s, cy + r*sin s)` substituted into the implicit
-    /// equation (see [`crate::math::solve_trig`]).
-    pub(crate) fn circle_substitute(&self, cx: f64, cy: f64, r: f64) -> (f64, f64, f64, f64, f64) {
-        let r2 = r * r;
-        let a2 = r2 * (self.a2 - self.b2) / 2.0;
-        let b2 = r2 * self.c2 / 2.0;
-        let c1 = r * (2.0 * self.a2 * cx + self.c2 * cy + self.d1);
-        let d1 = r * (2.0 * self.b2 * cy + self.c2 * cx + self.e1);
-        let e = self.a2 * cx * cx
-            + self.b2 * cy * cy
-            + self.c2 * cx * cy
-            + self.d1 * cx
-            + self.e1 * cy
-            + self.f0
-            + r2 * (self.a2 + self.b2) / 2.0;
-        (a2, b2, c1, d1, e)
-    }
 }
 
 /// Frame placement plus implicit equation of a conic for the coplanar
@@ -651,8 +565,6 @@ pub(crate) struct PlacedConic {
     pub y: Vector3D,
     /// The frame origin (center or apex).
     pub origin: Point3D,
-    /// The frame z direction (plane normal).
-    pub normal: Vector3D,
     /// The implicit equation in frame coordinates.
     pub implicit: ImplicitConic,
 }
@@ -693,6 +605,39 @@ pub enum ConicSurfaceIntersection {
     /// section of the sphere, cylinder, or cone.
     Coincident,
     /// No intersection.
+    Empty,
+}
+
+/// Result of intersecting two conics: a circle, ellipse, parabola or
+/// hyperbola with another (two circles have
+/// [`CircleCircle3DIntersection`]).
+///
+/// Coplanar conics meet at up to four points: one conic's
+/// parametrization substitutes into the other's implicit equation. Conics
+/// in crossing planes meet at up to two, on the line where the planes
+/// cross. A hyperbola is one branch: hits on its mirror branch are not
+/// reported.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{ConicConicIntersection, Ellipse3D, Frame3D, Hyperbola3D, Intersect, Tolerance};
+/// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 2.0).unwrap();
+/// let hyperbola = Hyperbola3D::from_frame(Frame3D::WORLD, 1.0, 0.5).unwrap();
+/// match ellipse.intersect(&hyperbola, Tolerance::DEFAULT) {
+///     // The branch x > 0 meets the ellipse at (2.4739, ±1.1314).
+///     ConicConicIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
+///     other => panic!("expected two hits, got {other:?}"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConicConicIntersection {
+    /// The hits, ordered by parameter on the first conic; a multiplicity
+    /// of 2 or more marks a tangency.
+    Hits(Vec<CurveCurveHit>),
+    /// The two conics are the same curve.
+    Coincident,
+    /// The conics do not meet.
     Empty,
 }
 

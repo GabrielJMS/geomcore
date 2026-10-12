@@ -124,17 +124,16 @@ pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;
 pub use intersect::marching_intersection;
 pub use intersect::{
-    CircleCircle2DIntersection, CircleCircle3DIntersection, CircleConic3DIntersection,
-    CircleConicHit, CircleSurfaceIntersection, ConeConeIntersection, ConeCylinderIntersection,
-    ConicSurfaceHit, ConicSurfaceIntersection, CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit,
-    CylinderCylinderIntersection, EllipseEllipse3DIntersection, EllipseEllipseHit, LatitudeRing,
-    LineCircle2DIntersection, LineCircle3DIntersection, LineConic3DIntersection, LineConicHit,
-    LineLine2DIntersection, LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
-    LineTorusHit, LineTorusIntersection, PlaneConeIntersection, PlaneCylinderIntersection,
-    PlanePlaneIntersection, PlaneSphereIntersection, SphereConeIntersection,
-    SphereCylinderIntersection, SphereSphereIntersection, TorusConeIntersection,
-    TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
-    TorusTorusIntersection,
+    CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
+    ConeConeIntersection, ConeCylinderIntersection, ConicConicIntersection, ConicSurfaceHit,
+    ConicSurfaceIntersection, CurveCurveExtremum, CurveCurveHit, CurveSurfaceHit,
+    CylinderCylinderIntersection, LatitudeRing, LineCircle2DIntersection, LineCircle3DIntersection,
+    LineConic3DIntersection, LineConicHit, LineLine2DIntersection, LineLine3DIntersection,
+    LinePlaneIntersection, LineQuadricIntersection, LineTorusHit, LineTorusIntersection,
+    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
+    PlaneSphereIntersection, SphereConeIntersection, SphereCylinderIntersection,
+    SphereSphereIntersection, TorusConeIntersection, TorusCylinderIntersection,
+    TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection,
 };
 pub use intersect::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,

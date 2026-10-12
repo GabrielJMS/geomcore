@@ -22,17 +22,16 @@ use geomcore::marching_intersection;
 use geomcore::parametrize_numeric;
 use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
 use geomcore::{
-    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, CircleConic3DIntersection,
-    CircleConicHit, CircleSurfaceIntersection, ConeConeIntersection, ConeCylinderIntersection,
-    ConicSurfaceIntersection, CylinderCylinderIntersection, EllipseEllipse3DIntersection,
-    EllipseEllipseHit, Frame3D, LineCircle2DIntersection, LineCircle3DIntersection,
-    LineConic3DIntersection, LineConicHit, LineLine2DIntersection, LineLine3DIntersection,
-    LinePlaneIntersection, LineQuadricIntersection, LineTorusHit, LineTorusIntersection,
-    PlaneConeIntersection, PlaneCylinderIntersection, PlanePlaneIntersection,
-    PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
-    SphereSphereIntersection, Tolerance, TorusConeIntersection, TorusCylinderIntersection,
-    TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection, Transform, Vector2D,
-    Vector3D,
+    Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
+    ConeConeIntersection, ConeCylinderIntersection, ConicConicIntersection,
+    ConicSurfaceIntersection, CylinderCylinderIntersection, Frame3D, LineCircle2DIntersection,
+    LineCircle3DIntersection, LineConic3DIntersection, LineConicHit, LineLine2DIntersection,
+    LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection, LineTorusHit,
+    LineTorusIntersection, PlaneConeIntersection, PlaneCylinderIntersection,
+    PlanePlaneIntersection, PlaneSphereIntersection, Point2D, Point3D, SphereConeIntersection,
+    SphereCylinderIntersection, SphereSphereIntersection, Tolerance, TorusConeIntersection,
+    TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
+    TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
 use geomcore::{curve_curve_extrema, intersect_curve_curve};
 
@@ -2388,37 +2387,30 @@ fn line_conic_to_py(py: Python<'_>, hit: LineConic3DIntersection) -> PyResult<(S
     }
 }
 
-fn circle_conic_hit(py: Python<'_>, h: &CircleConicHit) -> PyResult<Py<PyAny>> {
-    (
-        h.circle_param,
-        PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
-        h.conic_param,
-    )
-        .into_pyobject(py)
-        .map(|o| o.into_any().unbind())
-}
-
-fn circle_conic_to_py(
-    py: Python<'_>,
-    hit: CircleConic3DIntersection,
-) -> PyResult<(String, Py<PyAny>)> {
+fn conic_conic_to_py(py: Python<'_>, hit: ConicConicIntersection) -> PyResult<(String, Py<PyAny>)> {
     match hit {
-        CircleConic3DIntersection::Points(hits) => {
+        ConicConicIntersection::Hits(hits) => {
             let mut out = Vec::with_capacity(hits.len());
             for h in &hits {
-                out.push(circle_conic_hit(py, h)?);
+                out.push(
+                    (
+                        h.first_param,
+                        PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
+                        h.second_param,
+                        h.multiplicity,
+                    )
+                        .into_pyobject(py)?
+                        .into_any()
+                        .unbind(),
+                );
             }
             Ok((
-                "points".to_string(),
+                "hits".to_string(),
                 out.into_pyobject(py)?.into_any().unbind(),
             ))
         }
-        CircleConic3DIntersection::Tangent(h) => {
-            Ok(("tangent".to_string(), circle_conic_hit(py, &h)?))
-        }
-        CircleConic3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-        CircleConic3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
-        CircleConic3DIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
+        ConicConicIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
+        ConicConicIntersection::Empty => Ok(("empty".to_string(), py.None())),
     }
 }
 
@@ -2446,40 +2438,6 @@ fn line_torus_to_py(py: Python<'_>, hit: LineTorusIntersection) -> PyResult<(Str
             ))
         }
         LineTorusIntersection::Empty => Ok(("empty".to_string(), py.None())),
-    }
-}
-
-fn ellipse_ellipse_hit(py: Python<'_>, h: &EllipseEllipseHit) -> PyResult<Py<PyAny>> {
-    (
-        h.first_param,
-        PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
-        h.second_param,
-    )
-        .into_pyobject(py)
-        .map(|o| o.into_any().unbind())
-}
-
-fn ellipse_ellipse_to_py(
-    py: Python<'_>,
-    hit: EllipseEllipse3DIntersection,
-) -> PyResult<(String, Py<PyAny>)> {
-    match hit {
-        EllipseEllipse3DIntersection::Points(hits) => {
-            let mut out = Vec::with_capacity(hits.len());
-            for h in &hits {
-                out.push(ellipse_ellipse_hit(py, h)?);
-            }
-            Ok((
-                "points".to_string(),
-                out.into_pyobject(py)?.into_any().unbind(),
-            ))
-        }
-        EllipseEllipse3DIntersection::Tangent(h) => {
-            Ok(("tangent".to_string(), ellipse_ellipse_hit(py, &h)?))
-        }
-        EllipseEllipse3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
-        EllipseEllipse3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-        EllipseEllipse3DIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
     }
 }
 
@@ -3157,14 +3115,15 @@ impl PyCircle3D {
     /// - `Circle3D`: Only coplanar pairs admit a closed form. Returns
     ///   `("points", (Point3D, Point3D))`, `("tangent", Point3D)`,
     ///   `("empty", None)`, `("coincident", None)` or `("not_analytic", None)`.
-    /// - `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Only coplanar pairs admit a
-    ///   closed form. Returns `("points", [(s, Point3D, u)])`,
-    ///   `("tangent", (s, Point3D, u))`, `("coincident", None)`,
-    ///   `("empty", None)` or `("not_analytic", None)`.
+    /// - `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
+    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
+    ///   or `("empty", None)`, with `s` on this circle and `t` on `other`
+    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
     ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
+    /// Apart from conic pairs, the payload is the same whichever shape is the
+    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
+    /// each `t` is still a line parameter. Raises `TypeError` for any other
+    /// type.
     #[pyo3(signature = (other, tol = None))]
     fn intersect(
         &self,
@@ -3342,7 +3301,7 @@ impl PyCircle3D {
         ellipse: &PyEllipse3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_conic_to_py(py, self.0.intersect(&ellipse.0, tol))
+        conic_conic_to_py(py, self.0.intersect(&ellipse.0, tol))
     }
 
     fn parabola_result(
@@ -3351,7 +3310,7 @@ impl PyCircle3D {
         parabola: &PyParabola3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_conic_to_py(py, self.0.intersect(&parabola.0, tol))
+        conic_conic_to_py(py, self.0.intersect(&parabola.0, tol))
     }
 
     fn hyperbola_result(
@@ -3360,7 +3319,7 @@ impl PyCircle3D {
         hyperbola: &PyHyperbola3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_conic_to_py(py, self.0.intersect(&hyperbola.0, tol))
+        conic_conic_to_py(py, self.0.intersect(&hyperbola.0, tol))
     }
 
     fn plane_result(
@@ -3546,16 +3505,15 @@ impl PyEllipse3D {
     /// - `Line3D`: Returns
     ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
     ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    /// - `Circle3D`: Only coplanar pairs admit a closed form. Returns
-    ///   `("points", [(s, Point3D, u)])`, `("tangent", (s, Point3D, u))`,
-    ///   `("coincident", None)`, `("empty", None)` or `("not_analytic", None)`.
-    /// - `Ellipse3D`: Only coplanar pairs admit a closed form. Returns
-    ///   `("points", [(s, Point3D, t)])`, `("tangent", (s, Point3D, t))`,
-    ///   `("empty", None)`, `("coincident", None)` or `("not_analytic", None)`.
+    /// - `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
+    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
+    ///   or `("empty", None)`, with `s` on this ellipse and `t` on `other`
+    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
     ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
+    /// Apart from conic pairs, the payload is the same whichever shape is the
+    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
+    /// each `t` is still a line parameter. Raises `TypeError` for any other
+    /// type.
     #[pyo3(signature = (other, tol = None))]
     fn intersect(
         &self,
@@ -3564,14 +3522,16 @@ impl PyEllipse3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        dispatch_intersect!(other, "Ellipse3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D or Ellipse3D", {
+        dispatch_intersect!(other, "Ellipse3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
             PyPlane => |o| self.plane_result(py, &o, tol),
             PyCylinder => |o| self.cylinder_result(py, &o, tol),
             PyCone => |o| self.cone_result(py, &o, tol),
             PySphere => |o| self.sphere_result(py, &o, tol),
             PyLine3D => |o| o.ellipse_result(py, self, tol),
-            PyCircle3D => |o| o.ellipse_result(py, self, tol),
-            PyEllipse3D => |o| self.ellipse_result(py, &o, tol),
+            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
         })
     }
 
@@ -3701,7 +3661,7 @@ impl PyEllipse3D {
         other: &PyEllipse3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        ellipse_ellipse_to_py(py, self.0.intersect(&other.0, tol))
+        conic_conic_to_py(py, self.0.intersect(&other.0, tol))
     }
 }
 
@@ -3819,13 +3779,15 @@ impl PyParabola3D {
     /// - `Line3D`: Returns
     ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
     ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    /// - `Circle3D`: Only coplanar pairs admit a closed form. Returns
-    ///   `("points", [(s, Point3D, u)])`, `("tangent", (s, Point3D, u))`,
-    ///   `("coincident", None)`, `("empty", None)` or `("not_analytic", None)`.
+    /// - `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
+    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
+    ///   or `("empty", None)`, with `s` on this parabola and `t` on `other`
+    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
     ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
+    /// Apart from conic pairs, the payload is the same whichever shape is the
+    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
+    /// each `t` is still a line parameter. Raises `TypeError` for any other
+    /// type.
     #[pyo3(signature = (other, tol = None))]
     fn intersect(
         &self,
@@ -3834,13 +3796,16 @@ impl PyParabola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        dispatch_intersect!(other, "Parabola3D", "Plane, Cylinder, Cone, Sphere, Line3D or Circle3D", {
+        dispatch_intersect!(other, "Parabola3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
             PyPlane => |o| self.plane_result(py, &o, tol),
             PyCylinder => |o| self.cylinder_result(py, &o, tol),
             PyCone => |o| self.cone_result(py, &o, tol),
             PySphere => |o| self.sphere_result(py, &o, tol),
             PyLine3D => |o| o.parabola_result(py, self, tol),
-            PyCircle3D => |o| o.parabola_result(py, self, tol),
+            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
         })
     }
 
@@ -4091,13 +4056,15 @@ impl PyHyperbola3D {
     /// - `Line3D`: Returns
     ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
     ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    /// - `Circle3D`: Only coplanar pairs admit a closed form. Returns
-    ///   `("points", [(s, Point3D, u)])`, `("tangent", (s, Point3D, u))`,
-    ///   `("coincident", None)`, `("empty", None)` or `("not_analytic", None)`.
+    /// - `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
+    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
+    ///   or `("empty", None)`, with `s` on this hyperbola and `t` on `other`
+    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
     ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
+    /// Apart from conic pairs, the payload is the same whichever shape is the
+    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
+    /// each `t` is still a line parameter. Raises `TypeError` for any other
+    /// type.
     #[pyo3(signature = (other, tol = None))]
     fn intersect(
         &self,
@@ -4106,13 +4073,16 @@ impl PyHyperbola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        dispatch_intersect!(other, "Hyperbola3D", "Plane, Cylinder, Cone, Sphere, Line3D or Circle3D", {
+        dispatch_intersect!(other, "Hyperbola3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
             PyPlane => |o| self.plane_result(py, &o, tol),
             PyCylinder => |o| self.cylinder_result(py, &o, tol),
             PyCone => |o| self.cone_result(py, &o, tol),
             PySphere => |o| self.sphere_result(py, &o, tol),
             PyLine3D => |o| o.hyperbola_result(py, self, tol),
-            PyCircle3D => |o| o.hyperbola_result(py, self, tol),
+            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
         })
     }
 
