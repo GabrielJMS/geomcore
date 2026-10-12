@@ -2249,7 +2249,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        match self.0.intersect_plane(&plane.0, tol) {
+        match self.0.intersect(&plane.0, tol) {
             LinePlaneIntersection::Point(t, p) => Ok((
                 "point".to_string(),
                 (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
@@ -2276,7 +2276,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        quadric_hit_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+        quadric_hit_to_py(py, self.0.intersect(&sphere.0, tol))
     }
 
     /// Intersects this line with a cylinder.
@@ -2291,7 +2291,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        quadric_hit_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+        quadric_hit_to_py(py, self.0.intersect(&cylinder.0, tol))
     }
 
     /// Intersects this line with a cone.
@@ -2308,7 +2308,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        quadric_hit_to_py(py, self.0.intersect_cone(&cone.0, tol))
+        quadric_hit_to_py(py, self.0.intersect(&cone.0, tol))
     }
 
     /// Intersects this line with another 3D line.
@@ -2429,7 +2429,7 @@ impl PyLine3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        line_torus_to_py(py, self.0.intersect_torus(&torus.0, tol))
+        line_torus_to_py(py, self.0.intersect(&torus.0, tol))
     }
 
     /// Compute this line's 2D representation in a surface's (u, v) space.
@@ -2668,7 +2668,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+        circle_surface_to_py(py, self.0.intersect(&plane.0, tol))
     }
 
     /// Intersects this circle with a sphere.
@@ -2682,7 +2682,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+        circle_surface_to_py(py, self.0.intersect(&sphere.0, tol))
     }
 
     /// Intersects this circle with a cylinder.
@@ -2696,7 +2696,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+        circle_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
     }
 
     /// Intersects this circle with a cone.
@@ -2710,7 +2710,7 @@ impl PyCircle3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        circle_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
+        circle_surface_to_py(py, self.0.intersect(&cone.0, tol))
     }
 }
 
@@ -2863,7 +2863,7 @@ impl PyEllipse3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&plane.0, tol))
     }
 
     /// Intersects this ellipse with a sphere.
@@ -2877,7 +2877,7 @@ impl PyEllipse3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&sphere.0, tol))
     }
 
     /// Intersects this ellipse with a cylinder.
@@ -2891,7 +2891,7 @@ impl PyEllipse3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
     }
 
     /// Intersects this ellipse with a cone.
@@ -2905,7 +2905,7 @@ impl PyEllipse3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&cone.0, tol))
     }
 
     /// Intersects this ellipse with another 3D ellipse.
@@ -3049,7 +3049,7 @@ impl PyParabola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&plane.0, tol))
     }
 
     /// Intersects this parabola with a sphere.
@@ -3063,7 +3063,7 @@ impl PyParabola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&sphere.0, tol))
     }
 
     /// Intersects this parabola with a cylinder.
@@ -3077,7 +3077,7 @@ impl PyParabola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
     }
 
     /// Intersects this parabola with a cone.
@@ -3091,7 +3091,7 @@ impl PyParabola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&cone.0, tol))
     }
 
     /// Not available for parabolas in this release; always raises `ValueError`.
@@ -3245,7 +3245,7 @@ impl PyHyperbola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_plane(&plane.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&plane.0, tol))
     }
 
     /// Intersects this hyperbola with a sphere.
@@ -3259,7 +3259,7 @@ impl PyHyperbola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_sphere(&sphere.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&sphere.0, tol))
     }
 
     /// Intersects this hyperbola with a cylinder.
@@ -3273,7 +3273,7 @@ impl PyHyperbola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_cylinder(&cylinder.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
     }
 
     /// Intersects this hyperbola with a cone.
@@ -3287,7 +3287,7 @@ impl PyHyperbola3D {
         tol: Option<PyTolerance>,
     ) -> PyResult<(String, Py<PyAny>)> {
         let tol = tol.map(|t| t.0).unwrap_or_default();
-        conic_surface_to_py(py, self.0.intersect_cone(&cone.0, tol))
+        conic_surface_to_py(py, self.0.intersect(&cone.0, tol))
     }
 
     /// Not available for hyperbolas in this release; always raises `ValueError`.

@@ -1181,14 +1181,14 @@ mod tests {
             panic!("expected an ellipse");
         };
         assert_eq!(
-            ellipse.intersect_cylinder(&cylinder, tol),
+            ellipse.intersect(&cylinder, tol),
             ConicSurfaceIntersection::Coincident
         );
         let PlaneConeIntersection::Ellipse(ellipse) = oblique.intersect(&cone, tol) else {
             panic!("expected an ellipse");
         };
         assert_eq!(
-            ellipse.intersect_cone(&cone, tol),
+            ellipse.intersect(&cone, tol),
             ConicSurfaceIntersection::Coincident
         );
         let tilt = std::f64::consts::FRAC_PI_2 - 0.4;
@@ -1201,7 +1201,7 @@ mod tests {
             panic!("expected a parabola");
         };
         assert_eq!(
-            parabola.intersect_cone(&cone, tol),
+            parabola.intersect(&cone, tol),
             ConicSurfaceIntersection::Coincident
         );
         let steep = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
@@ -1210,7 +1210,7 @@ mod tests {
         };
         for branch in [upper, lower] {
             assert_eq!(
-                branch.intersect_cone(&cone, tol),
+                branch.intersect(&cone, tol),
                 ConicSurfaceIntersection::Coincident
             );
         }
@@ -1221,12 +1221,12 @@ mod tests {
         let r = 3.0f64.sqrt();
         let on = Ellipse3D::new(center, Vector3D::Z, Vector3D::X, r, r).unwrap();
         assert_eq!(
-            on.intersect_sphere(&sphere, tol),
+            on.intersect(&sphere, tol),
             ConicSurfaceIntersection::Coincident
         );
         let off = Ellipse3D::new(center, Vector3D::Z, Vector3D::X, r + 1e-3, r).unwrap();
         assert!(matches!(
-            off.intersect_sphere(&sphere, tol),
+            off.intersect(&sphere, tol),
             ConicSurfaceIntersection::Hits(_)
         ));
     }

@@ -2,6 +2,7 @@
 //! center+two-points construction, a thin wrapper over
 //! [`crate::curve_math::analytic`].
 
+use crate::Intersect;
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
@@ -552,178 +553,32 @@ impl Ellipse3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
-    /// Intersects this ellipse with a plane.
-    ///
-    /// First-order trigonometric in frame coordinates, solved exactly;
-    /// a coplanar-coincident plane holds the whole ellipse.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{ConicSurfaceIntersection, Ellipse3D, Plane, Point3D, Tolerance, Vector3D};
-    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
-    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect_plane(&plane, tol) {
-    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
-    ///     _ => panic!("expected hits"),
-    /// }
-    /// ```
+    /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
-        let n = plane.normal();
-        if self.frame().z_direction().cross(n).magnitude() <= tol.angular
-            && plane.contains(self.center(), tol)
-        {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let c = a * x.dot(n);
-        let d = b * y.dot(n);
-        let e = (self.center() - plane.frame().origin()).dot(n);
-        let scale = (self.center() - plane.frame().origin()).magnitude() + a + b;
-        let hits = verify_conic_hits(self, plane, solve_trig_linear(c, d, e, scale, tol), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        self.intersect(plane, tol)
     }
 
-    /// Intersects this ellipse with a sphere.
-    ///
-    /// Double-angle trigonometric form solved as a quartic; hits verified
-    /// on the sphere.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{ConicSurfaceIntersection, Ellipse3D, Point3D, Sphere, Tolerance, Vector3D};
-    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect_sphere(&sphere, tol) {
-    ///     // Both major vertices graze the sphere (the antipodal one
-    ///     // arrives via the PI candidate, reported multiplicity 1).
-    ///     ConicSurfaceIntersection::Hits(hits) => {
-    ///         assert_eq!(hits.len(), 2);
-    ///     }
-    ///     _ => panic!("expected hits"),
-    /// }
-    /// ```
+    /// Intersects with a [`Sphere`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, sphere, ELLIPSE_SAMPLES, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let w = self.center() - sphere.center();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = sphere.radius();
-        let a2 = (a * a - b * b) / 2.0;
-        let b2 = 0.0;
-        let c1 = 2.0 * a * x.dot(w);
-        let d1 = 2.0 * b * y.dot(w);
-        let e = w.dot(w) + (a * a + b * b) / 2.0 - r * r;
-        let hits = verify_conic_hits(self, sphere, solve_trig(a2, b2, c1, d1, e, tol), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        self.intersect(sphere, tol)
     }
 
-    /// Intersects this ellipse with a cylinder; hits verified on the
-    /// cylinder. See [`Ellipse3D::intersect_plane`] for the calling shape.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{ConicSurfaceIntersection, Cylinder, Ellipse3D, Point3D, Tolerance, Vector3D};
-    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
-    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 1.5).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect_cylinder(&cylinder, tol) {
-    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
-    ///     _ => panic!("expected hits"),
-    /// }
-    /// ```
+    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_cylinder(
         &self,
         cylinder: &Cylinder,
         tol: Tolerance,
     ) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cylinder, ELLIPSE_SAMPLES, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let ax = cylinder.axis().direction();
-        let w = self.center() - cylinder.axis().origin();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let r = cylinder.radius();
-        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let a2 = (a * a - b * b) / 2.0 - (a * a * xa * xa - b * b * ya * ya) / 2.0;
-        let b2 = -a * b * xa * ya;
-        let c1 = 2.0 * a * xw - 2.0 * wa * a * xa;
-        let d1 = 2.0 * b * yw - 2.0 * wa * b * ya;
-        let e = ww + (a * a + b * b) / 2.0
-            - r * r
-            - wa * wa
-            - (a * a * xa * xa + b * b * ya * ya) / 2.0;
-        let hits = verify_conic_hits(self, cylinder, solve_trig(a2, b2, c1, d1, e, tol), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        self.intersect(cylinder, tol)
     }
 
-    /// Intersects this ellipse with a cone (both nappes); hits verified on
-    /// the cone. See [`Ellipse3D::intersect_plane`] for the
-    /// calling shape.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Cone, ConicSurfaceIntersection, Ellipse3D, Frame3D, Point3D, Tolerance, Vector3D};
-    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
-    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
-    /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect_cone(&cone, tol) {
-    ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
-    ///     _ => panic!("expected hits"),
-    /// }
-    /// ```
+    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
+    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
     pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        if conic_lies_on(self, cone, ELLIPSE_SAMPLES, tol) {
-            return ConicSurfaceIntersection::Coincident;
-        }
-        let (a, b) = (self.major_radius, self.minor_radius);
-        let ax = cone.frame().z_direction();
-        let cos_phi = cone.semi_angle().cos();
-        let c2 = cos_phi * cos_phi;
-        let w = self.center() - cone.apex();
-        let x = self.frame().x_direction();
-        let y = self.frame().y_direction();
-        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
-        let (xw, yw) = (x.dot(w), y.dot(w));
-        let ww = w.dot(w);
-        let a2 = (a * a * xa * xa - b * b * ya * ya) / 2.0 - c2 * (a * a - b * b) / 2.0;
-        let b2 = a * b * xa * ya;
-        let c1 = 2.0 * wa * a * xa - c2 * 2.0 * a * xw;
-        let d1 = 2.0 * wa * b * ya - c2 * 2.0 * b * yw;
-        let e =
-            wa * wa + (a * a * xa * xa + b * b * ya * ya) / 2.0 - c2 * (ww + (a * a + b * b) / 2.0);
-        let hits = verify_conic_hits(self, cone, solve_trig(a2, b2, c1, d1, e, tol), tol);
-        if hits.is_empty() {
-            ConicSurfaceIntersection::Empty
-        } else {
-            ConicSurfaceIntersection::Hits(hits)
-        }
+        self.intersect(cone, tol)
     }
 
     /// Intersects this ellipse with another 3D ellipse.
@@ -898,8 +753,199 @@ impl Ellipse3D {
     }
 }
 
+impl Intersect<Plane> for Ellipse3D {
+    type Output = ConicSurfaceIntersection;
+
+    /// Intersects this ellipse with a plane.
+    ///
+    /// First-order trigonometric in frame coordinates, solved exactly;
+    /// a coplanar-coincident plane holds the whole ellipse.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Intersect;
+    /// use geomcore::{ConicSurfaceIntersection, Ellipse3D, Plane, Point3D, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match ellipse.intersect(&plane, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    fn intersect(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
+        let n = plane.normal();
+        if self.frame().z_direction().cross(n).magnitude() <= tol.angular
+            && plane.contains(self.center(), tol)
+        {
+            return ConicSurfaceIntersection::Coincident;
+        }
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let c = a * x.dot(n);
+        let d = b * y.dot(n);
+        let e = (self.center() - plane.frame().origin()).dot(n);
+        let scale = (self.center() - plane.frame().origin()).magnitude() + a + b;
+        let hits = verify_conic_hits(self, plane, solve_trig_linear(c, d, e, scale, tol), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+}
+
+impl Intersect<Sphere> for Ellipse3D {
+    type Output = ConicSurfaceIntersection;
+
+    /// Intersects this ellipse with a sphere.
+    ///
+    /// Double-angle trigonometric form solved as a quartic; hits verified
+    /// on the sphere.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Intersect;
+    /// use geomcore::{ConicSurfaceIntersection, Ellipse3D, Point3D, Sphere, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match ellipse.intersect(&sphere, tol) {
+    ///     // Both major vertices graze the sphere (the antipodal one
+    ///     // arrives via the PI candidate, reported multiplicity 1).
+    ///     ConicSurfaceIntersection::Hits(hits) => {
+    ///         assert_eq!(hits.len(), 2);
+    ///     }
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, sphere, ELLIPSE_SAMPLES, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let w = self.center() - sphere.center();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = sphere.radius();
+        let a2 = (a * a - b * b) / 2.0;
+        let b2 = 0.0;
+        let c1 = 2.0 * a * x.dot(w);
+        let d1 = 2.0 * b * y.dot(w);
+        let e = w.dot(w) + (a * a + b * b) / 2.0 - r * r;
+        let hits = verify_conic_hits(self, sphere, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+}
+
+impl Intersect<Cylinder> for Ellipse3D {
+    type Output = ConicSurfaceIntersection;
+
+    /// Intersects this ellipse with a cylinder; hits verified on the
+    /// cylinder. See [`Ellipse3D::intersect_plane`] for the calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Intersect;
+    /// use geomcore::{ConicSurfaceIntersection, Cylinder, Ellipse3D, Point3D, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 1.5).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match ellipse.intersect(&cylinder, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, cylinder, ELLIPSE_SAMPLES, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let ax = cylinder.axis().direction();
+        let w = self.center() - cylinder.axis().origin();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let r = cylinder.radius();
+        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let a2 = (a * a - b * b) / 2.0 - (a * a * xa * xa - b * b * ya * ya) / 2.0;
+        let b2 = -a * b * xa * ya;
+        let c1 = 2.0 * a * xw - 2.0 * wa * a * xa;
+        let d1 = 2.0 * b * yw - 2.0 * wa * b * ya;
+        let e = ww + (a * a + b * b) / 2.0
+            - r * r
+            - wa * wa
+            - (a * a * xa * xa + b * b * ya * ya) / 2.0;
+        let hits = verify_conic_hits(self, cylinder, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+}
+
+impl Intersect<Cone> for Ellipse3D {
+    type Output = ConicSurfaceIntersection;
+
+    /// Intersects this ellipse with a cone (both nappes); hits verified on
+    /// the cone. See [`Ellipse3D::intersect_plane`] for the
+    /// calling shape.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Intersect;
+    /// use geomcore::{Cone, ConicSurfaceIntersection, Ellipse3D, Frame3D, Point3D, Tolerance, Vector3D};
+    /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
+    /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
+    /// let tol = Tolerance::DEFAULT;
+    /// match ellipse.intersect(&cone, tol) {
+    ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
+    ///     _ => panic!("expected hits"),
+    /// }
+    /// ```
+    fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+        if conic_lies_on(self, cone, ELLIPSE_SAMPLES, tol) {
+            return ConicSurfaceIntersection::Coincident;
+        }
+        let (a, b) = (self.major_radius, self.minor_radius);
+        let ax = cone.frame().z_direction();
+        let cos_phi = cone.semi_angle().cos();
+        let c2 = cos_phi * cos_phi;
+        let w = self.center() - cone.apex();
+        let x = self.frame().x_direction();
+        let y = self.frame().y_direction();
+        let (xa, ya, wa) = (x.dot(ax), y.dot(ax), w.dot(ax));
+        let (xw, yw) = (x.dot(w), y.dot(w));
+        let ww = w.dot(w);
+        let a2 = (a * a * xa * xa - b * b * ya * ya) / 2.0 - c2 * (a * a - b * b) / 2.0;
+        let b2 = a * b * xa * ya;
+        let c1 = 2.0 * wa * a * xa - c2 * 2.0 * a * xw;
+        let d1 = 2.0 * wa * b * ya - c2 * 2.0 * b * yw;
+        let e =
+            wa * wa + (a * a * xa * xa + b * b * ya * ya) / 2.0 - c2 * (ww + (a * a + b * b) / 2.0);
+        let hits = verify_conic_hits(self, cone, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        if hits.is_empty() {
+            ConicSurfaceIntersection::Empty
+        } else {
+            ConicSurfaceIntersection::Hits(hits)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::Intersect;
     use crate::{
         Axis3D, ConicSurfaceIntersection, Ellipse3D, EllipseConstructionError,
         EllipseEllipse3DIntersection, Frame3D, Point3D, Sphere, Tolerance, Transform, Vector3D,
@@ -1316,7 +1362,7 @@ mod tests {
         let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         // Tilted sphere cutting the ring twice per side.
         let sphere = Sphere::new(Point3D::new(0.0, 0.0, 1.0), 2.5).unwrap();
-        match e.intersect_sphere(&sphere, tol) {
+        match e.intersect(&sphere, tol) {
             ConicSurfaceIntersection::Hits(hits) => {
                 assert!(!hits.is_empty());
                 for h in &hits {

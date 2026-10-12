@@ -18,7 +18,7 @@ use crate::{
 };
 
 mod dispatch;
-pub use dispatch::{InlineList, Intersect, SurfaceIntersection};
+pub use dispatch::{CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection};
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -647,11 +647,11 @@ pub(crate) struct PlacedConic {
     pub implicit: ImplicitConic,
 }
 
-/// One hit of an analytic conic-vs-quadric solve: parameter, point, and
+/// A hit of a curve on a surface: the curve parameter, the point, and the
 /// root multiplicity (2+ marks grazing tangency).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ConicSurfaceHit {
-    /// Parameter on the conic.
+    /// Parameter on the curve.
     pub parameter: f64,
     /// The hit point.
     pub point: Point3D,
@@ -2250,7 +2250,7 @@ mod tests {
         assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
         assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
         // Cross-check against the analytic solver.
-        match line.intersect_sphere(&sphere, tol) {
+        match line.intersect(&sphere, tol) {
             LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
                 assert!((hits[0].curve_param - t1).abs() < 1e-9);
                 assert!((hits[1].curve_param - t2).abs() < 1e-9);
