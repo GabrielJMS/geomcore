@@ -151,3 +151,35 @@ Reproduce with:
 ```sh
 cargo bench --bench intersect_curve_surface
 ```
+
+# Marching intersection of B-splines
+
+`benches/marching_intersection.rs` times `marching_intersection` on two
+bicubic B-spline surfaces (6×6 poles over `[0, 5]^2`, knots `[0, 1, 2,
+3]` with multiplicities `[4, 1, 1, 4]`), with heights `sin(0.7 i j)` and
+`0.5 cos(1.3 i) cos(1.1 j)` at their poles `(i, j)`. They cross in six
+curves: five open across the footprint and one closed loop.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per call.
+
+| seeds | time | curves traced |
+|---|---|---|
+| grid (before) | ~24.2 ms | 4 of 6 |
+| grid, traces ending on the bounds | ~24.5 ms | 6 |
+| Bézier patch pairs (after) | ~3.4 ms | 6 |
+
+The grid seeds project 625 samples of each surface onto the other and
+converge every distance minimum; before traces ended on a parameter
+bound, two curves running into the bounds were dropped. The patch-pair
+search halves the pairs of patches whose boxes overlap until each is
+dropped or small enough to seed from, about 4000 visits of a few hundred
+nanoseconds; most leaves lie on a curve traced already and are skipped
+by a box test against the traced points, so about half the time goes to
+the search and most of the rest to tracing the six curves.
+
+Reproduce with:
+
+```sh
+cargo bench --bench marching_intersection
+```

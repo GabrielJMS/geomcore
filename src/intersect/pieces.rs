@@ -322,6 +322,91 @@ pub(crate) fn meets_at_most_once(
     c_spread + s_spread + t_spread < det
 }
 
+/// A cone of directions: its axis (unit) and its spread, a bound on the
+/// distance from the axis to any unit direction in it.
+pub(crate) type Cone = ([f64; 3], f64);
+
+/// The cones of the partial derivatives `[S_s, S_t]` of the surface piece
+/// with the Bernstein net `net` and the Euclidean control points
+/// `points`, as in [`meets_at_most_once`]; `None` when a direction of
+/// the net degenerates, or a difference of control points vanishes (a
+/// derivative may then vanish too).
+pub(crate) fn derivative_cones(
+    net: &[f64],
+    points: &[[f64; 3]],
+    (rows, cols, h): (usize, usize, usize),
+) -> Option<[Cone; 2]> {
+    let [along_s, along_t] = net_directions(points, rows, cols);
+    let (a, b) = (unit(along_s)?, unit(along_t)?);
+    if h == 4 {
+        let (_, d) = surface_math::derivative_bounds(net, points, rows, cols, h, false);
+        return Some([(a, box_spread(a, d[0])), (b, box_spread(b, d[1]))]);
+    }
+    let at = |i: usize, j: usize| points[i * cols + j];
+    let s_spread = spread_of_all(
+        a,
+        (0..rows - 1).flat_map(|i| (0..cols).map(move |j| sub(at(i + 1, j), at(i, j)))),
+    )?;
+    let t_spread = spread_of_all(
+        b,
+        (0..rows).flat_map(|i| (0..cols - 1).map(move |j| sub(at(i, j + 1), at(i, j)))),
+    )?;
+    Some([(a, s_spread), (b, t_spread)])
+}
+
+/// The largest distance from `axis` (unit) to the unit `directions`, or
+/// `None` when one of them is zero.
+fn spread_of_all(axis: [f64; 3], mut directions: impl Iterator<Item = [f64; 3]>) -> Option<f64> {
+    directions.try_fold(0.0f64, |s, d| Some(s.max(norm(sub(unit(d)?, axis)))))
+}
+
+/// Whether no tangent plane of one surface piece is parallel to a tangent
+/// plane of the other, from the cones of their partial derivatives
+/// ([`derivative_cones`]).
+///
+/// Parallel tangent planes `span(S_s, S_t)` and `span(R_s, R_t)` put
+/// `R_s` and `R_t` in the first, so `det(S_s, S_t, R_s) = 0`; the cones
+/// rule that out when the determinant of their axes exceeds the sum of
+/// their spreads, as in [`meets_at_most_once`]. Then the pieces' normals
+/// are never parallel, and their intersection has no closed loop within
+/// both (Sederberg and Meyers, "Loop detection in surface patch
+/// intersections", 1988: the discs a closed loop bounds on the two
+/// surfaces hold points with parallel normals).
+pub(crate) fn normals_never_parallel(s: [Cone; 2], r: [Cone; 2]) -> bool {
+    let independent =
+        |[(a, sa), (b, sb)]: [Cone; 2], (c, sc): Cone| dot(c, cross(a, b)).abs() > sa + sb + sc;
+    r.iter().any(|&c| independent(s, c)) || s.iter().any(|&c| independent(r, c))
+}
+
+/// Whether a net of Euclidean points, row-major `[rows][cols]`, stretches
+/// along its rows (`s`) at least as much as along its columns: the mean
+/// length of its polylines in each direction, compared.
+pub(crate) fn stretches_along_rows(points: &[[f64; 3]], rows: usize, cols: usize) -> bool {
+    let at = |i: usize, j: usize| points[i * cols + j];
+    let along_rows: f64 = (0..rows - 1)
+        .flat_map(|i| (0..cols).map(move |j| norm(sub(at(i + 1, j), at(i, j)))))
+        .sum();
+    let along_cols: f64 = (0..rows)
+        .flat_map(|i| (0..cols - 1).map(move |j| norm(sub(at(i, j + 1), at(i, j)))))
+        .sum();
+    along_rows * rows as f64 >= along_cols * cols as f64
+}
+
+/// The thickness of `points` along `axis`: the width of their projections
+/// on it, over its length (infinite on a zero axis).
+pub(crate) fn thickness(points: &[[f64; 3]], axis: [f64; 3]) -> f64 {
+    let Some(n) = unit(axis) else {
+        return f64::INFINITY;
+    };
+    let (lo, hi) = points
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), x| {
+            let y = dot(*x, n);
+            (lo.min(y), hi.max(y))
+        });
+    hi - lo
+}
+
 /// The spread about `axis` (unit) of the directions in the box `b`: the
 /// largest distance from `axis` to a unit corner direction, the angle to
 /// the axis being quasi-convex, or infinite when the box holds the
@@ -488,6 +573,71 @@ mod tests {
         assert!(!apart(0.0));
         assert!(apart_along(normal, &above, &tilted, 0.25));
         assert!(!apart_along(normal, &above, &tilted, 0.3));
+    }
+
+    fn flatten(points: &[[f64; 3]]) -> Vec<f64> {
+        points.iter().flatten().copied().collect()
+    }
+
+    fn cones(points: &[[f64; 3]]) -> Option<[Cone; 2]> {
+        derivative_cones(&flatten(points), points, (2, 2, 3))
+    }
+
+    #[test]
+    fn test_normals_never_parallel() {
+        let flat = cones(&SQUARE).unwrap();
+        let tilted = cones(&SQUARE.map(|[x, y, _]| [x, y, x])).unwrap();
+        let lifted = cones(&SQUARE.map(|[x, y, _]| [x, y, 1.0])).unwrap();
+        // Crossing planes never have parallel normals; parallel ones do.
+        assert!(normals_never_parallel(flat, tilted));
+        assert!(normals_never_parallel(tilted, flat));
+        assert!(!normals_never_parallel(flat, lifted));
+        // A slightly warped square: never parallel to the tilted plane, but
+        // parallel at one point to a shallow one.
+        let warped = cones(&[
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.1],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, -0.1],
+        ])
+        .unwrap();
+        let shallow = cones(&SQUARE.map(|[x, y, _]| [x, y, -0.05 * x])).unwrap();
+        assert!(normals_never_parallel(warped, tilted));
+        assert!(!normals_never_parallel(warped, shallow));
+        // The rational square's cones come from interval bounds.
+        let rational: Vec<f64> = SQUARE
+            .iter()
+            .zip([1.0, 1.2, 0.9, 1.1])
+            .flat_map(|([x, y, z], w)| [x * w, y * w, z * w, w])
+            .collect();
+        let weighted = derivative_cones(&rational, &SQUARE, (2, 2, 4)).unwrap();
+        assert!(normals_never_parallel(weighted, tilted));
+        assert!(!normals_never_parallel(weighted, lifted));
+    }
+
+    #[test]
+    fn test_derivative_cones_reject_coincident_points() {
+        let collapsed = [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ];
+        assert!(cones(&collapsed).is_none());
+        let line = SQUARE.map(|[x, _, _]| [x, 0.0, 0.0]);
+        assert!(cones(&line).is_none());
+    }
+
+    #[test]
+    fn test_stretch_and_thickness() {
+        let long_in_s = SQUARE.map(|[x, y, z]| [4.0 * x, y, z]);
+        assert!(stretches_along_rows(&long_in_s, 2, 2));
+        let long_in_t = SQUARE.map(|[x, y, z]| [x, 4.0 * y, z]);
+        assert!(!stretches_along_rows(&long_in_t, 2, 2));
+        let tilted = SQUARE.map(|[x, y, _]| [x, y, x + y]);
+        assert!(thickness(&tilted, net_normal(&tilted, 2, 2)) < 1e-15);
+        assert_eq!(thickness(&tilted, [0.0, 0.0, 3.0]), 2.0);
+        assert_eq!(thickness(&tilted, [0.0; 3]), f64::INFINITY);
     }
 
     #[test]

@@ -72,6 +72,18 @@ the Python distribution are versioned in lockstep.
   point exceeds the search's budget and falls back to the sampled search. The new
   `ParametricCurve3D::as_bspline` and `ParametricSurface::as_bspline`
   (default `None`) expose the B-spline behind a curve or surface.
+- Marching intersection of two B-spline surfaces seeded from overlapping
+  patch pairs (#30): `marching_intersection` on two B-spline surfaces
+  (rational or periodic too) halves the pairs of their Bézier patches
+  whose control points' boxes overlap until each is dropped, or flat with
+  normals provably never parallel (so no closed loop of the intersection
+  hides inside it), and converges one seed from each pair that no traced
+  curve crosses yet. Isolated loops smaller than the spacing of the old
+  seed grid are now found, and two bicubic 6×6 surfaces crossing in six
+  curves take 3.4 ms, from 24 ms. Other surfaces keep the grid seeds, and
+  so does a B-spline pair whose search runs out of budget (overlapping
+  surfaces). A seed counts as lying on a traced curve by its distance to
+  the traced points rather than to the fitted curve.
 
 ### Fixed
 
@@ -89,6 +101,10 @@ the Python distribution are versioned in lockstep.
   projection within `tol.confusion` of the seam (along the curve) reports
   `0` whichever side it was found from, in every intersection and
   projection of a circle or ellipse.
+- `marching_intersection` keeps the curves that run into a parameter
+  bound (#30). Their traces crept along the bound in steps too short to
+  fit, and the whole curve was dropped: on two B-spline surfaces, open
+  curves crossing the domain went missing. A trace now ends on the bound.
 
 ## [0.31.0] - 2026-10-12
 
