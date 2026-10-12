@@ -446,12 +446,13 @@ impl Circle3D {
             conic
                 .implicit
                 .circle_substitute(w.dot(conic.x), w.dot(conic.y), r);
-        let hits: Vec<CircleConicHit> = solve_trig(a2, b2, c1, d1, e, tol)
+        // `s` is the angle from the conic's x axis, not the circle's own
+        // parameter.
+        let at = |s: f64| self.center() + conic.x * (r * s.cos()) + conic.y * (r * s.sin());
+        let hits: Vec<CircleConicHit> = solve_trig(a2, b2, c1, d1, e, tol, |s| contains(at(s)))
             .into_iter()
             .filter_map(|(s, _)| {
-                // `s` is the angle from the conic's x axis, not the
-                // circle's own parameter.
-                let p = self.center() + conic.x * (r * s.cos()) + conic.y * (r * s.sin());
+                let p = at(s);
                 if contains(p) {
                     Some(CircleConicHit {
                         circle_param: self.parameter_of(p),
@@ -976,7 +977,8 @@ impl Intersect<Cylinder> for Circle3D {
         let c1 = 2.0 * r * (xw - wa * xa);
         let d1 = 2.0 * r * (yw - wa * ya);
         let e = ww + r * r - wa * wa - r * r * (xa * xa + ya * ya) / 2.0 - rho * rho;
-        let hits = self.keep_hits(cylinder, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        let touches = |t: f64| cylinder.contains(self.eval_point(t), tol);
+        let hits = self.keep_hits(cylinder, solve_trig(a2, b2, c1, d1, e, tol, touches), tol);
         if hits.is_empty() {
             CircleSurfaceIntersection::Empty
         } else {
@@ -1028,7 +1030,8 @@ impl Intersect<Cone> for Circle3D {
         let c1 = 2.0 * r * (wa * xa - c2 * xw);
         let d1 = 2.0 * r * (wa * ya - c2 * yw);
         let e = wa * wa + r * r * (xa * xa + ya * ya) / 2.0 - c2 * (ww + r * r);
-        let hits = self.keep_hits(cone, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        let touches = |t: f64| cone.contains(self.eval_point(t), tol);
+        let hits = self.keep_hits(cone, solve_trig(a2, b2, c1, d1, e, tol, touches), tol);
         if hits.is_empty() {
             CircleSurfaceIntersection::Empty
         } else {
@@ -1967,6 +1970,123 @@ mod tests {
         };
         let circle = circle_through_inscribed_triangle(&section);
         assert_three_corner_hits(&circle, &cone, circle.intersect(&cone, tol));
+    }
+
+    /// The circle of `radius` touching the planar `curve` at parameter `t`,
+    /// on the side `(T.y, -T.x)` of the tangent `T` in the XY plane: outside
+    /// an ellipse, inside a parabola or hyperbola branch.
+    fn circle_touching(curve: &impl crate::ParametricCurve3D, t: f64, radius: f64) -> Circle3D {
+        let tangent = curve.eval_derivative(t, 1);
+        let side = Vector3D::new(tangent.y, -tangent.x, 0.0)
+            .normalized()
+            .unwrap();
+        Circle3D::new(curve.eval_point(t) + side * radius, Vector3D::Z, radius).unwrap()
+    }
+
+    /// Contacts near `s = π` on the circle, where `tan(s/2)` is large.
+    #[test]
+    fn test_circle3d_conic_tangency_near_s_pi() {
+        let tol = Tolerance::DEFAULT;
+        let (o, z, x) = (Point3D::ORIGIN, Vector3D::Z, Vector3D::X);
+        let ellipse = Ellipse3D::new(o, z, x, 2.0, 1.0).unwrap();
+        let parabola = Parabola3D::new(o, z, x, 1.0).unwrap();
+        let hyperbola = Hyperbola3D::new(o, z, x, 1.0, 1.0).unwrap();
+        for i in -30..=30 {
+            let t = f64::from(i) * 0.01;
+            // Radii below the conic's smallest radius of curvature, so the
+            // circle touches it at one point only.
+            let cases = [
+                (
+                    "ellipse",
+                    circle_touching(&ellipse, t, 1.0),
+                    ellipse.eval_point(t),
+                ),
+                (
+                    "parabola",
+                    circle_touching(&parabola, t, 1.5),
+                    parabola.eval_point(t),
+                ),
+                (
+                    "hyperbola",
+                    circle_touching(&hyperbola, t, 0.4),
+                    hyperbola.eval_point(t),
+                ),
+            ];
+            for (name, circle, contact) in cases {
+                let result = match name {
+                    "ellipse" => circle.intersect(&ellipse, tol),
+                    "parabola" => circle.intersect(&parabola, tol),
+                    _ => circle.intersect(&hyperbola, tol),
+                };
+                let CircleConic3DIntersection::Tangent(hit) = result else {
+                    panic!("{name} at t = {t}: expected one tangent hit, got {result:?}");
+                };
+                assert!(
+                    hit.point.distance(contact) < 1e-6,
+                    "{name} at t = {t}: {hit:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_circle3d_cylinder_tangency_near_s_pi() {
+        use crate::Cylinder;
+        let tol = Tolerance::DEFAULT;
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        for i in -30..=30 {
+            let phi = f64::from(i) * 0.01;
+            let center = Point3D::new(1.5 * phi.cos(), 1.5 * phi.sin(), 0.0);
+            let circle = Circle3D::new(center, Vector3D::Z, 0.5).unwrap();
+            let result = circle.intersect(&cylinder, tol);
+            let CircleSurfaceIntersection::Hits(hits) = &result else {
+                panic!("at {phi}: expected one tangent hit, got {result:?}");
+            };
+            assert_eq!(hits.len(), 1, "at {phi}: {hits:?}");
+            assert_eq!(hits[0].multiplicity, 2, "at {phi}: {hits:?}");
+            let contact = Point3D::new(phi.cos(), phi.sin(), 0.0);
+            assert!(hits[0].point.distance(contact) < 1e-6, "at {phi}: {hits:?}");
+        }
+    }
+
+    /// Exact external tangencies in random poses: every one is a single
+    /// tangent hit, wherever the contact falls on the circle.
+    #[test]
+    fn test_circle3d_ellipse_random_external_tangency() {
+        let tol = Tolerance::DEFAULT;
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        for case in 0..500 {
+            let normal = Vector3D::new(next() - 0.5, next() - 0.5, next() - 0.5);
+            let hint = Vector3D::new(next() - 0.5, next() - 0.5, next() - 0.5);
+            let frame = Frame3D::new(
+                Point3D::new(4.0 * next() - 2.0, 4.0 * next() - 2.0, 4.0 * next() - 2.0),
+                normal,
+                hint,
+            )
+            .unwrap();
+            let a = 0.5 + 3.0 * next();
+            let b = a * (0.2 + 0.8 * next());
+            let ellipse = Ellipse3D::from_frame(frame, a, b).unwrap();
+            let t = std::f64::consts::TAU * next();
+            let radius = 0.1 + 3.0 * next();
+            // The outward normal in the ellipse's plane.
+            let tangent = ellipse.eval_derivative(t, 1);
+            let outward = tangent.cross(frame.z_direction()).normalized().unwrap();
+            let contact = ellipse.eval_point(t);
+            let circle =
+                Circle3D::new(contact + outward * radius, frame.z_direction(), radius).unwrap();
+            let result = circle.intersect(&ellipse, tol);
+            let CircleConic3DIntersection::Tangent(hit) = result else {
+                panic!("case {case}: expected one tangent hit, got {result:?}");
+            };
+            assert!(hit.point.distance(contact) < 1e-6, "case {case}: {hit:?}");
+        }
     }
 
     // ---- Circle3D transformed ----

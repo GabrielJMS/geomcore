@@ -17,6 +17,19 @@ the Python distribution are versioned in lockstep.
   three samples, which fixes a circle on a plane or sphere but not on a
   cylinder or cone, whose section by the circle's plane is a conic. It
   now takes five, like the ellipse.
+- Tangent contacts of a circle with an ellipse, parabola, hyperbola,
+  cylinder or cone, and of an ellipse with a sphere, cylinder or cone, are
+  no longer lost or split when they fall near half a turn from the
+  curve's angular origin (#11), and a tangent contact exactly there
+  reports multiplicity 2 instead of 1 (#9). These pairs solve a quartic in
+  `tan(t/2)`, where such a contact is a root near infinity: rounding
+  turned its double root into a complex pair, giving `Empty`, or into two
+  hits about 1e-8 apart, and the contact at exactly half a turn was
+  always added with multiplicity 1. The quartic is now set up so that no
+  root lies near infinity, and tangency is decided by distance, as for the
+  parabola and hyperbola. Parameters stay in `(-π, π]`. These
+  intersections are about 60% slower (circle–cylinder from ~0.96 to
+  ~1.55 µs).
 
 ## [0.29.0] - 2026-10-12
 

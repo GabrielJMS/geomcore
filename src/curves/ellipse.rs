@@ -689,7 +689,9 @@ impl Intersect<Sphere> for Ellipse3D {
         let c1 = 2.0 * a * x.dot(w);
         let d1 = 2.0 * b * y.dot(w);
         let e = w.dot(w) + (a * a + b * b) / 2.0 - r * r;
-        let hits = verify_conic_hits(self, sphere, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        let touches = |t: f64| sphere.contains(self.eval_point(t), tol);
+        let candidates = solve_trig(a2, b2, c1, d1, e, tol, touches);
+        let hits = verify_conic_hits(self, sphere, candidates, tol);
         if hits.is_empty() {
             ConicSurfaceIntersection::Empty
         } else {
@@ -738,7 +740,9 @@ impl Intersect<Cylinder> for Ellipse3D {
             - r * r
             - wa * wa
             - (a * a * xa * xa + b * b * ya * ya) / 2.0;
-        let hits = verify_conic_hits(self, cylinder, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        let touches = |t: f64| cylinder.contains(self.eval_point(t), tol);
+        let candidates = solve_trig(a2, b2, c1, d1, e, tol, touches);
+        let hits = verify_conic_hits(self, cylinder, candidates, tol);
         if hits.is_empty() {
             ConicSurfaceIntersection::Empty
         } else {
@@ -787,7 +791,9 @@ impl Intersect<Cone> for Ellipse3D {
         let d1 = 2.0 * wa * b * ya - c2 * 2.0 * b * yw;
         let e =
             wa * wa + (a * a * xa * xa + b * b * ya * ya) / 2.0 - c2 * (ww + (a * a + b * b) / 2.0);
-        let hits = verify_conic_hits(self, cone, solve_trig(a2, b2, c1, d1, e, tol), tol);
+        let touches = |t: f64| cone.contains(self.eval_point(t), tol);
+        let candidates = solve_trig(a2, b2, c1, d1, e, tol, touches);
+        let hits = verify_conic_hits(self, cone, candidates, tol);
         if hits.is_empty() {
             ConicSurfaceIntersection::Empty
         } else {
@@ -952,6 +958,46 @@ mod tests {
         EllipseEllipse3DIntersection, Frame3D, Point3D, Sphere, Tolerance, Transform, Vector3D,
         intersect_curve_curve, intersect_curve_surface,
     };
+
+    /// A tangent contact at `t = π` reports multiplicity 2, like its mirror
+    /// image at `t = 0`.
+    #[test]
+    fn test_ellipse3d_quadric_tangency_at_t_pi() {
+        use crate::Cylinder;
+        let tol = Tolerance::DEFAULT;
+        let (o, z, x) = (Point3D::ORIGIN, Vector3D::Z, Vector3D::X);
+        let sphere = Sphere::new(o, 2.0).unwrap();
+        let multiplicities = |result: ConicSurfaceIntersection| match result {
+            ConicSurfaceIntersection::Hits(hits) => hits
+                .iter()
+                .map(|h| (h.parameter, h.multiplicity))
+                .collect::<Vec<_>>(),
+            other => panic!("expected hits, got {other:?}"),
+        };
+        let right = Ellipse3D::new(Point3D::new(0.5, 0.0, 0.0), z, x, 1.5, 1.0).unwrap();
+        let left = Ellipse3D::new(Point3D::new(-0.5, 0.0, 0.0), z, x, 1.5, 1.0).unwrap();
+        let both = Ellipse3D::new(o, z, x, 2.0, 1.0).unwrap();
+        assert_eq!(multiplicities(right.intersect(&sphere, tol)), [(0.0, 2)]);
+        let hits = multiplicities(left.intersect(&sphere, tol));
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert!((hits[0].0.abs() - std::f64::consts::PI).abs() < 1e-9);
+        assert_eq!(hits[0].1, 2);
+        let hits = multiplicities(both.intersect(&sphere, tol));
+        assert_eq!(
+            hits.iter().map(|h| h.1).collect::<Vec<_>>(),
+            [2, 2],
+            "{hits:?}"
+        );
+
+        let cylinder = Cylinder::new(o, z, 1.0).unwrap();
+        let upright = Ellipse3D::new(o, x, Vector3D::Y, 1.0, 0.5).unwrap();
+        let hits = multiplicities(upright.intersect(&cylinder, tol));
+        assert_eq!(
+            hits.iter().map(|h| h.1).collect::<Vec<_>>(),
+            [2, 2],
+            "{hits:?}"
+        );
+    }
 
     // ---- construction ----
 

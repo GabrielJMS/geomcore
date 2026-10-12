@@ -709,11 +709,18 @@ pub(crate) fn solve_trig_linear(
     }
 }
 
-/// Solve `A*cos2t + B*sin2t + C*cos t + D*sin t + E = 0` via `u = tan(t/2)`
-/// (quartic), returning `(parameter, multiplicity)` plus the always-added
-/// `t = PI` candidate (deduped; reported with multiplicity 1 even when it
-/// is truly multiple — check tangency by root clustering instead).
-/// Callers filter by surface containment.
+/// Solve `A*cos2t + B*sin2t + C*cos t + D*sin t + E = 0`, returning
+/// `(parameter, multiplicity)` with parameters in `(-PI, PI]`. Callers
+/// filter by surface containment.
+///
+/// The substitution `t = t0 + 2*atan(u)` turns the equation into a quartic
+/// in `u`. Its leading coefficient is the equation's value at `t0 + PI`,
+/// the point `u = ∞`, so `t0` is the sample that keeps that value
+/// largest: no root then lies near `u = ∞`, where rounding would turn a
+/// double root into a complex pair or two roots far apart in `t`.
+/// Tangency is decided by distance, not by the double root surviving
+/// rounding: `touches(t)` says whether the curve point at `t` is within
+/// tolerance of the other shape (see [`roots_with_tangency`]).
 pub(crate) fn solve_trig(
     a2: f64,
     b2: f64,
@@ -721,7 +728,33 @@ pub(crate) fn solve_trig(
     d1: f64,
     e: f64,
     tol: Tolerance,
+    touches: impl Fn(f64) -> bool,
 ) -> Vec<(f64, u32)> {
+    use std::f64::consts::{FRAC_1_SQRT_2 as H, FRAC_PI_4, PI};
+    // `t0` is a multiple `k` of PI/4: cos and sin of `k*PI/4`, and of
+    // `t0 + PI` at index `k + 4`, come from this table.
+    const UNIT: [(f64, f64); 8] = [
+        (1.0, 0.0),
+        (H, H),
+        (0.0, 1.0),
+        (-H, H),
+        (-1.0, 0.0),
+        (-H, -H),
+        (0.0, -1.0),
+        (H, -H),
+    ];
+    let f_at = |k: usize| {
+        let ((cos1, sin1), (cos2, sin2)) = (UNIT[k % 8], UNIT[2 * k % 8]);
+        a2 * cos2 + b2 * sin2 + c1 * cos1 + d1 * sin1 + e
+    };
+    let k = (0..8)
+        .max_by(|&x, &y| f_at(x + 4).abs().total_cmp(&f_at(y + 4).abs()))
+        .unwrap_or(0);
+    let t0 = k as f64 * FRAC_PI_4;
+    // The same equation in `s = t - t0`.
+    let ((cos1, sin1), (cos2, sin2)) = (UNIT[k], UNIT[2 * k % 8]);
+    let (a2, b2) = (a2 * cos2 + b2 * sin2, b2 * cos2 - a2 * sin2);
+    let (c1, d1) = (c1 * cos1 + d1 * sin1, d1 * cos1 - c1 * sin1);
     // x(u^4 - 6u^2 + 1) form; ascending u^0..u^4 coefficients.
     let q = [
         a2 + c1 + e,
@@ -730,22 +763,17 @@ pub(crate) fn solve_trig(
         -4.0 * b2 + 2.0 * d1,
         a2 - c1 + e,
     ];
-    let mut out: Vec<(f64, u32)> = crate::math::real_roots(&q, tol.confusion)
+    let wrap = |t: f64| {
+        let t = (t + PI).rem_euclid(2.0 * PI) - PI;
+        if t <= -PI { t + 2.0 * PI } else { t }
+    };
+    let to_t = |u: f64| wrap(t0 + 2.0 * u.atan());
+    let mut out: Vec<(f64, u32)> = roots_with_tangency(&q, tol, |u| touches(to_t(u)))
         .into_iter()
-        .map(|r| (2.0 * r.value.atan(), r.multiplicity))
+        .map(|r| (to_t(r.value), r.multiplicity))
         .collect();
-    out.push((std::f64::consts::PI, 1));
-    out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    let mut deduped: Vec<(f64, u32)> = Vec::with_capacity(out.len());
-    for (t, m) in out {
-        match deduped.last_mut() {
-            Some((last_t, last_m)) if (t - *last_t).abs() <= tol.parametric * (1.0 + t.abs()) => {
-                *last_m = (*last_m).max(m);
-            }
-            _ => deduped.push((t, m)),
-        }
-    }
-    deduped
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out
 }
 
 /// Result of intersecting an ellipse, parabola, or hyperbola with a
