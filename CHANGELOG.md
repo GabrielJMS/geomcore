@@ -59,6 +59,22 @@ the Python distribution are versioned in lockstep.
   a non-periodic B-spline) is a `KnotInsertionError`. `BSplineSurface`
   also gains `poles`, `weights`, `u_knots`, `u_multiplicities`, `v_knots`
   and `v_multiplicities`.
+- Knot removal within a tolerance on B-spline curves and surfaces (#35):
+  `remove_knot(u, times, max_deviation)` and `remove_knots(&knots,
+  max_deviation)` on `BSplineCurve3D`, and `remove_u_knot`,
+  `remove_v_knot`, `remove_u_knots` and `remove_v_knots` on
+  `BSplineSurface`, return the simplified shape and how many copies were
+  removed. A knot is removed only if the shape stays within
+  `max_deviation` of the original at every parameter, a rigorous bound
+  that adds up over successive removals, and on a surface only if every
+  row or column does; otherwise it is kept and not counted. Removing a
+  knot just inserted gives back the original poles up to rounding. A
+  list is removed in one buffer: trying the 28 interior knots of a cubic
+  curve of 32 poles takes about 2 µs. Rational shapes are solved in
+  homogeneous coordinates with the bound carried over to the points;
+  periodic ones stay periodic, the seam keeping one copy. An invalid
+  tolerance or a knot that is non-finite, out of range or not a knot is
+  a `KnotRemovalError`.
 
 ### Changed
 

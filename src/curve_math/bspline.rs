@@ -14,16 +14,19 @@
 //! knots tiled endlessly, each copy shifted by the period, with pole indices
 //! wrapping modulo the pole count; tiled knots are computed on demand.
 
+use std::borrow::Cow;
+
 use super::analytic::in_period;
 
 /// Maximum supported B-spline degree.
 pub(crate) const MAX_DEGREE: usize = 25;
 
-/// Error types re-exported here for use by [`validate_direction`] and
-/// [`insert_knots`]; the canonical definitions (and their docs) live on
-/// [`crate::curves`], next to [`crate::curves::BSplineCurve3D`], the type
-/// that actually constructs and reports these errors.
-pub(crate) use crate::curves::{BSplineConstructionError, KnotInsertionError};
+/// Error types re-exported here for use by [`validate_direction`],
+/// [`insert_knots`] and [`remove_knots`]; the canonical definitions (and
+/// their docs) live on [`crate::curves`], next to
+/// [`crate::curves::BSplineCurve3D`], the type that actually constructs and
+/// reports these errors.
+pub(crate) use crate::curves::{BSplineConstructionError, KnotInsertionError, KnotRemovalError};
 
 /// Builds the flattened knot sequence: knot `i` repeated `mults[i]` times.
 ///
@@ -883,8 +886,9 @@ pub(crate) fn validate_direction(
     Ok(())
 }
 
-/// A B-spline direction after knot insertion (see [`insert_knots`]).
-pub(crate) struct Refined {
+/// A B-spline direction after knot insertion or removal (see
+/// [`insert_knots`] and [`remove_knots`]).
+pub(crate) struct Direction {
     pub(crate) knots: Vec<f64>,
     pub(crate) mults: Vec<u32>,
     pub(crate) flat: Vec<f64>,
@@ -913,7 +917,7 @@ pub(crate) fn insert_knots(
     lanes: usize,
     dim: usize,
     insert: &[f64],
-) -> Result<Refined, KnotInsertionError> {
+) -> Result<Direction, KnotInsertionError> {
     let (first, last) = param_range(flat, degree, periodic, flat.len());
     if insert.iter().any(|x| !x.is_finite()) {
         return Err(KnotInsertionError::NonFiniteKnot);
@@ -929,7 +933,7 @@ pub(crate) fn insert_knots(
         return Err(KnotInsertionError::KnotOutOfRange);
     }
     if insert.is_empty() {
-        return Ok(Refined {
+        return Ok(Direction {
             knots: knots.to_vec(),
             mults: mults.to_vec(),
             flat: flat.to_vec(),
@@ -996,7 +1000,7 @@ pub(crate) fn insert_knots(
         refine_poles(degree, flat, &new_flat, insert, poles, lanes, dim, &mut out);
         out
     };
-    Ok(Refined {
+    Ok(Direction {
         knots: new_knots,
         mults: new_mults,
         flat: new_flat,
@@ -1213,6 +1217,526 @@ fn refine_periodic(
         out.extend_from_slice(&refined[(l * new_count + start) * dim..][..new_n * dim]);
     }
     out
+}
+
+/// Checks the arguments of [`remove_knots`]: a finite non-negative
+/// `max_deviation`, and knots that are finite, strictly inside the bounds
+/// of a non-periodic direction (either bound naming the seam of a periodic
+/// one) and equal to one of `knots`.
+pub(crate) fn check_removal(
+    degree: usize,
+    periodic: bool,
+    knots: &[f64],
+    flat: &[f64],
+    remove: &[f64],
+    max_deviation: f64,
+) -> Result<(), KnotRemovalError> {
+    if !(max_deviation.is_finite() && max_deviation >= 0.0) {
+        return Err(KnotRemovalError::InvalidDeviation);
+    }
+    if remove.iter().any(|x| !x.is_finite()) {
+        return Err(KnotRemovalError::NonFiniteKnot);
+    }
+    let (first, last) = param_range(flat, degree, periodic, flat.len());
+    for &x in remove {
+        let inside = if periodic {
+            first <= x && x <= last
+        } else {
+            first < x && x < last
+        };
+        if !inside {
+            return Err(KnotRemovalError::KnotOutOfRange);
+        }
+        let i = knots.partition_point(|&k| k < x);
+        if i == knots.len() || knots[i] != x {
+            return Err(KnotRemovalError::KnotNotFound);
+        }
+    }
+    Ok(())
+}
+
+/// Removes the knots `remove` from a direction one copy at a time, in
+/// order, a value repeated as many times as it appears (copies beyond its
+/// multiplicity are skipped), keeping every knot whose removal would let
+/// the shape deviate from the original by more than `max_deviation` at
+/// some parameter. Returns the new direction and the number of copies
+/// removed, or `None` if none was.
+///
+/// Each removal inverts the insertion of the knot (The NURBS Book, A5.8):
+/// the new poles are solved from both ends of the affected run, and the one
+/// equation (or the one pole computed twice) left over measures the
+/// deviation, an upper bound because the basis functions are non-negative
+/// and sum to one. A pole computed twice takes the blend of its two values
+/// that minimizes that bound. A rational direction is solved in
+/// homogeneous coordinates and its bound carried over to the points (see
+/// [`rational_bound`]). Each bound adds to the bounds of the knot
+/// intervals the deviation reaches, so the deviation from the original
+/// stays within `max_deviation` however many knots are removed.
+///
+/// `poles`, `lanes` and `dim` are laid out as for [`insert_knots`]; a pole
+/// of `dim` coordinates holds `dim / 4` homogeneous points if `rational`,
+/// else `dim / 3` points, and a knot is removed only if every point of
+/// every lane stays within `max_deviation`. On a periodic direction the
+/// seam keeps at least one copy, so the bounds stay. The arguments must
+/// pass [`check_removal`].
+#[allow(clippy::too_many_arguments)] // flat-buffer direction signature
+pub(crate) fn remove_knots(
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    poles: &[f64],
+    lanes: usize,
+    dim: usize,
+    rational: bool,
+    remove: &[f64],
+    max_deviation: f64,
+) -> Option<(Direction, usize)> {
+    let h = if rational { 4 } else { 3 };
+    debug_assert_eq!(dim % h, 0);
+    let n = poles.len() / (lanes * dim);
+    let (first, last) = param_range(flat, degree, periodic, flat.len());
+    let mut removal = Removal {
+        degree,
+        lanes,
+        dim,
+        h,
+        first,
+        last,
+        seam: flat.iter().take_while(|&&k| k == flat[0]).count(),
+        n,
+        flat: Cow::Borrowed(flat),
+        poles: Cow::Borrowed(poles),
+        bounds: Vec::new(),
+        spare: Vec::new(),
+    };
+    let need = lanes * (degree + 1) * dim;
+    let mut stack = [0.0; 4 * (MAX_DEGREE + 1)];
+    let mut heap = Vec::new();
+    let scratch: &mut [f64] = if need <= stack.len() {
+        &mut stack[..need]
+    } else {
+        heap.resize(need, 0.0);
+        &mut heap
+    };
+    let removed = match (dim, periodic) {
+        (3, false) => removal.run::<3, false>(remove, scratch, max_deviation),
+        (4, false) => removal.run::<4, false>(remove, scratch, max_deviation),
+        (_, false) => removal.run::<0, false>(remove, scratch, max_deviation),
+        (3, true) => removal.run::<3, true>(remove, scratch, max_deviation),
+        (4, true) => removal.run::<4, true>(remove, scratch, max_deviation),
+        (_, true) => removal.run::<0, true>(remove, scratch, max_deviation),
+    };
+    if removed == 0 {
+        return None;
+    }
+    let flat = removal.flat.into_owned();
+    let mut knots: Vec<f64> = Vec::with_capacity(flat.len());
+    let mut mults: Vec<u32> = Vec::with_capacity(flat.len());
+    for &k in &flat {
+        match knots.last() {
+            Some(&last) if last == k => *mults.last_mut().expect("one per knot") += 1,
+            _ => {
+                knots.push(k);
+                mults.push(1);
+            }
+        }
+    }
+    let direction = Direction {
+        knots,
+        mults,
+        flat,
+        poles: removal.poles.into_owned(),
+    };
+    Some((direction, removed))
+}
+
+/// The state of [`remove_knots`]: the direction as removed so far, copied
+/// from the input on the first removal. Its methods take the pole width
+/// `D` (0 for any, `dim`) and whether the direction is `PERIODIC` as
+/// constants.
+struct Removal<'a> {
+    degree: usize,
+    lanes: usize,
+    dim: usize,
+    /// Coordinates per point: 4 (homogeneous) if rational, else 3.
+    h: usize,
+    first: f64,
+    last: f64,
+    /// Seam multiplicity of a periodic direction.
+    seam: usize,
+    /// Poles per lane.
+    n: usize,
+    flat: Cow<'a, [f64]>,
+    poles: Cow<'a, [f64]>,
+    /// Bound on the deviation from the original over each knot interval:
+    /// interval `k` runs from flat knot `k` to `k + 1` (tiled knots on a
+    /// periodic direction, one period of them). Empty, meaning zero, until
+    /// a removal is followed by another attempt.
+    bounds: Vec<f64>,
+    /// Spare pole buffer for rebuilding a periodic direction.
+    spare: Vec<f64>,
+}
+
+/// The point deviation bound of a homogeneous deviation `diff` scaled by
+/// `coefficient`, on one rational curve whose poles over the functions
+/// the deviation reaches are `poles`, or `None` if it exceeds `max`.
+///
+/// Measured about a point `c`, a homogeneous deviation `e` of the curve
+/// `(w (C - c), w)` moves its points by at most
+/// `e * sqrt(1 + |C - c|^2) / (w - e)`, unbounded if `e` reaches `w`. Where
+/// the deviation is non-zero, `C` blends `poles` and `w` their weights:
+/// with `c` the point of the pole `centre`, `|C - c|` is at most the
+/// largest distance from `c` to a pole, and `w` at least the smallest
+/// weight. The bound neither grows with the distance to the origin nor
+/// depends on poles far away.
+fn rational_bound<'p>(
+    diff: [f64; 4],
+    coefficient: f64,
+    centre: &[f64],
+    poles: impl Iterator<Item = &'p [f64]>,
+    max: f64,
+) -> Option<f64> {
+    let weight = centre[3];
+    let c = [centre[0] / weight, centre[1] / weight, centre[2] / weight];
+    let length_squared = |[x, y, z, w]: [f64; 4]| {
+        let (dx, dy, dz) = (x - c[0] * w, y - c[1] * w, z - c[2] * w);
+        dx * dx + dy * dy + dz * dz
+    };
+    let e = coefficient * (length_squared(diff) + diff[3] * diff[3]).sqrt();
+    // The weight of `centre` is at least the smallest, so this bounds the
+    // bound from below.
+    if !(e < weight && e <= max * (weight - e)) {
+        return None;
+    }
+    let (mut min_weight, mut radius_squared) = (weight, 0.0_f64);
+    for pole in poles {
+        let w = pole[3];
+        min_weight = min_weight.min(w);
+        radius_squared =
+            radius_squared.max(length_squared([pole[0], pole[1], pole[2], w]) / (w * w));
+    }
+    let bound = if e < min_weight {
+        e * (1.0 + radius_squared).sqrt() / (min_weight - e)
+    } else {
+        f64::INFINITY
+    };
+    (bound <= max).then_some(bound)
+}
+
+/// Flat knot `k` of `n` poles' worth, tiled endlessly with `period` on a
+/// periodic direction.
+#[inline(always)]
+fn tiled_knot<const PERIODIC: bool>(flat: &[f64], n: usize, period: f64, k: isize) -> f64 {
+    if PERIODIC {
+        let n = n as isize;
+        flat[k.rem_euclid(n) as usize] + period * k.div_euclid(n) as f64
+    } else {
+        flat[k as usize]
+    }
+}
+
+/// Slot of the pole weighting the basis function that starts at (tiled)
+/// flat knot `f`, among `n` poles whose seam multiplicity leaves `shift`
+/// (`degree + 1 - seam`) on a periodic direction.
+#[inline(always)]
+fn pole_slot<const PERIODIC: bool>(f: isize, shift: isize, n: usize) -> usize {
+    if PERIODIC {
+        (f + shift).rem_euclid(n as isize) as usize
+    } else {
+        f as usize
+    }
+}
+
+/// Pole `j` of a run of poles of `dim` coordinates, and the one after it.
+#[inline(always)]
+fn pole_pair(run: &mut [f64], j: usize, dim: usize) -> (&mut [f64], &mut [f64]) {
+    let (head, tail) = run.split_at_mut((j + 1) * dim);
+    (&mut head[j * dim..][..dim], &mut tail[..dim])
+}
+
+/// A removal [`Removal::solve`] found within bounds, ready to commit.
+struct Solved {
+    /// Last copy of the knot, its first copy and its multiplicity, in
+    /// (tiled) flat knot indices.
+    r: isize,
+    c: usize,
+    s: usize,
+    /// Point deviation bound.
+    bound: f64,
+    /// First knot interval the deviation reaches, and how many it reaches.
+    start: isize,
+    count: usize,
+}
+
+impl Removal<'_> {
+    /// Tries every knot of `remove` in turn; returns how many copies were
+    /// removed.
+    fn run<const D: usize, const PERIODIC: bool>(
+        &mut self,
+        remove: &[f64],
+        scratch: &mut [f64],
+        max: f64,
+    ) -> usize {
+        let mut removed = 0;
+        let mut failed = f64::NAN;
+        for (i, &u) in remove.iter().enumerate() {
+            // A failed knot fails again until something else changes.
+            if u == failed {
+                continue;
+            }
+            match self.solve::<D, PERIODIC>(u, scratch, max) {
+                Some(solved) => {
+                    self.commit::<PERIODIC>(&solved, scratch, i + 1 < remove.len());
+                    removed += 1;
+                    failed = f64::NAN;
+                }
+                None => failed = u,
+            }
+        }
+        removed
+    }
+
+    /// Solves one removal of the knot `u` into `scratch`, or `None` if `u`
+    /// has no copy left to remove, or its removal would move the shape
+    /// further than `max` from the original or make a weight non-positive.
+    ///
+    /// The removal of the copy `r` of multiplicity `s` replaces the poles
+    /// of the functions `r - degree ..= r - s` by `degree - s` new ones,
+    /// written to `scratch` per lane after the unchanged pole before them
+    /// and followed by the unchanged one after them.
+    fn solve<const D: usize, const PERIODIC: bool>(
+        &self,
+        u: f64,
+        scratch: &mut [f64],
+        max: f64,
+    ) -> Option<Solved> {
+        let dim = if D == 0 { self.dim } else { D };
+        let h = if D == 0 { self.h } else { D };
+        let (p, n, lanes) = (self.degree, self.n, self.lanes);
+        let (flat, poles): (&[f64], &[f64]) = (&self.flat, &self.poles);
+        // The seam, as its copies at the start of the period, keeps one copy.
+        let (u, c, s, kept) = if PERIODIC && (u == self.first || u == self.last) {
+            (self.first, 0, self.seam, 1)
+        } else {
+            let c = flat.partition_point(|&k| k < u);
+            (u, c, flat[c..].iter().take_while(|&&k| k == u).count(), 0)
+        };
+        // Removing one copy of a periodic knot removes it from every
+        // period, independently only if each period has room for the
+        // affected poles and the unchanged one after them.
+        if s <= kept || (PERIODIC && n < p - s + 2) {
+            return None;
+        }
+        let period = self.last - self.first;
+        let knot = |k: isize| tiled_knot::<PERIODIC>(flat, n, period, k);
+        let shift = p as isize + 1 - self.seam as isize;
+        let pole = |l: usize, f: isize| {
+            &poles[(l * n + pole_slot::<PERIODIC>(f, shift, n)) * dim..][..dim]
+        };
+        let w = p - s;
+        let r = (c + s - 1) as isize;
+        let (a, b) = (r - p as isize, r - s as isize);
+        let mut alpha = [0.0; MAX_DEGREE];
+        for (k, i) in (a..=b).enumerate() {
+            let left = knot(i);
+            alpha[k] = (u - left) / (knot(i + p as isize + 1) - left);
+        }
+        // Pole `j` of a lane's run is the new pole of the function `a - 1 + j`.
+        let width = (w + 2) * dim;
+        let steps = w / 2;
+        let lo = steps;
+        let odd = w % 2 == 1;
+        // The deviation blends the basis functions of the equations left
+        // over: one, or two when a pole is solved twice.
+        let start = a + lo as isize;
+        let count = p + 1 + usize::from(odd);
+        let (from, to) = (start - p as isize, start + count as isize - 1);
+        let reach = if PERIODIC {
+            from..=to
+        } else {
+            from.max(0)..=to.min(n as isize - 1)
+        };
+        let (al, ah) = (alpha[lo], alpha[lo + 1]);
+        let lambda = al / (al + 1.0 - ah);
+        let coefficient = if odd {
+            al * (1.0 - ah) / (al + 1.0 - ah)
+        } else {
+            1.0
+        };
+        let (left_coefficient, right_coefficient) = (1.0 / al, 1.0 / (1.0 - ah));
+        let (mut deviation, mut bound): (f64, f64) = (0.0, 0.0);
+        for l in 0..lanes {
+            let run = &mut scratch[l * width..][..width];
+            run[..dim].copy_from_slice(pole(l, a - 1));
+            run[(w + 1) * dim..].copy_from_slice(pole(l, b + 1));
+            for k in 0..steps {
+                let (i, j) = (k, w - k);
+                let (x, from) = (alpha[i], pole(l, a + i as isize));
+                let (y, inverse) = (1.0 - x, 1.0 / x);
+                let (prev, out) = pole_pair(run, i, dim);
+                for d in 0..dim {
+                    out[d] = (from[d] - y * prev[d]) * inverse;
+                }
+                let (x, from) = (alpha[j], pole(l, a + j as isize));
+                let inverse = 1.0 / (1.0 - x);
+                let (out, next) = pole_pair(run, j, dim);
+                for d in 0..dim {
+                    out[d] = (from[d] - x * next[d]) * inverse;
+                }
+            }
+            let p_lo = pole(l, start);
+            let p_hi = pole(l, start + 1);
+            let (prev, rest) = run[lo * dim..].split_at_mut(dim);
+            let (mid, rest) = rest.split_at_mut(dim);
+            let next = &rest[..if odd { dim } else { 0 }];
+            for q in 0..dim / h {
+                let mut diff = [0.0; 4];
+                for (e, slot) in diff.iter_mut().enumerate().take(h) {
+                    let d = q * h + e;
+                    *slot = if odd {
+                        let left = (p_lo[d] - (1.0 - al) * prev[d]) * left_coefficient;
+                        let right = (p_hi[d] - ah * next[d]) * right_coefficient;
+                        mid[d] = lambda * left + (1.0 - lambda) * right;
+                        left - right
+                    } else {
+                        p_lo[d] - (al * mid[d] + (1.0 - al) * prev[d])
+                    };
+                }
+                if h == 4 {
+                    let poles = reach.clone().map(|f| &pole(l, f)[q * 4..][..4]);
+                    let centre = &p_lo[q * 4..][..4];
+                    bound = bound.max(rational_bound(diff, coefficient, centre, poles, max)?);
+                } else {
+                    let squared = diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2];
+                    if !squared.is_finite() {
+                        return None;
+                    }
+                    deviation = deviation.max(squared);
+                }
+            }
+            if h == 4 && (1..=w).any(|j| (0..dim).step_by(4).any(|q| run[j * dim + q + 3] <= 0.0)) {
+                return None;
+            }
+        }
+        if h != 4 {
+            bound = coefficient * deviation.sqrt();
+        }
+        let fits = if self.bounds.is_empty() {
+            bound <= max
+        } else {
+            self.intervals::<PERIODIC>(start, count)
+                .all(|k| self.bounds[k] + bound <= max)
+        };
+        fits.then_some(Solved {
+            r,
+            c,
+            s,
+            bound,
+            start,
+            count,
+        })
+    }
+
+    /// The `count` knot intervals from `start` on, wrapped on a periodic
+    /// direction.
+    fn intervals<const PERIODIC: bool>(
+        &self,
+        start: isize,
+        count: usize,
+    ) -> impl Iterator<Item = usize> + use<PERIODIC> {
+        let (modulus, start, count) = if PERIODIC {
+            let n = self.n;
+            (n, start.rem_euclid(n as isize) as usize, count.min(n))
+        } else {
+            (usize::MAX, start as usize, count)
+        };
+        (start..start + count).map(move |k| k % modulus)
+    }
+
+    /// Applies a removal [`Removal::solve`] wrote to `scratch`; `more` if
+    /// another attempt follows, which needs the deviation bounds.
+    fn commit<const PERIODIC: bool>(&mut self, solved: &Solved, scratch: &[f64], more: bool) {
+        let Solved {
+            r,
+            c,
+            s,
+            bound,
+            start,
+            count,
+        } = *solved;
+        let (p, dim, lanes, n) = (self.degree, self.dim, self.lanes, self.n);
+        let w = p - s;
+        let width = (w + 2) * dim;
+        if more && self.bounds.is_empty() {
+            let intervals = if PERIODIC { n } else { self.flat.len() - 1 };
+            self.bounds = vec![0.0; intervals];
+        }
+        if !self.bounds.is_empty() {
+            for k in self.intervals::<PERIODIC>(start, count) {
+                self.bounds[k] += bound;
+            }
+            let before = if PERIODIC { (c + n - 1) % n } else { c - 1 };
+            self.bounds[before] = self.bounds[before].max(self.bounds[c]);
+            self.bounds.remove(c);
+        }
+        if PERIODIC {
+            self.rebuild_periodic(r, c, s, scratch);
+        } else {
+            let a = (r - p as isize) as usize;
+            let poles = self.poles.to_mut();
+            for l in 0..lanes {
+                let (from, to) = (l * n * dim, l * (n - 1) * dim);
+                if from != to {
+                    poles.copy_within(from..from + a * dim, to);
+                }
+                poles[to + a * dim..][..w * dim]
+                    .copy_from_slice(&scratch[l * width + dim..][..w * dim]);
+                poles.copy_within(from + (a + w + 1) * dim..from + n * dim, to + (a + w) * dim);
+            }
+            poles.truncate(lanes * (n - 1) * dim);
+        }
+        let flat = self.flat.to_mut();
+        if PERIODIC && c == 0 {
+            flat.pop();
+            flat.remove(0);
+            self.seam -= 1;
+        } else {
+            flat.remove(c);
+        }
+        self.n -= 1;
+    }
+
+    /// Rebuilds the poles of a periodic direction after a removal: in one
+    /// period of new functions, from the unchanged one before the new ones,
+    /// a new function before the first old function `r - s + 1` keeps its
+    /// index and the others lose one.
+    fn rebuild_periodic(&mut self, r: isize, c: usize, s: usize, scratch: &[f64]) {
+        let (p, dim, lanes, n) = (self.degree as isize, self.dim, self.lanes, self.n);
+        let (new_n, new_seam) = (n - 1, self.seam - usize::from(c == 0));
+        let width = (p as usize - s + 2) * dim;
+        let (a, b) = (r - p, r - s as isize);
+        let shift = p + 1 - self.seam as isize;
+        let mut next = std::mem::take(&mut self.spare);
+        next.clear();
+        next.resize(lanes * new_n * dim, 0.0);
+        let base = a - 1;
+        for slot in 0..new_n {
+            let f = base
+                + (slot as isize + new_seam as isize - p - 1 - base).rem_euclid(new_n as isize);
+            for l in 0..lanes {
+                let to = &mut next[(l * new_n + slot) * dim..][..dim];
+                if a <= f && f < b {
+                    to.copy_from_slice(&scratch[l * width + (f - base) as usize * dim..][..dim]);
+                } else {
+                    let old = pole_slot::<true>(if f < a { f } else { f + 1 }, shift, n);
+                    to.copy_from_slice(&self.poles[(l * n + old) * dim..][..dim]);
+                }
+            }
+        }
+        if let Cow::Owned(old) = std::mem::replace(&mut self.poles, Cow::Owned(next)) {
+            self.spare = old;
+        }
+    }
 }
 
 #[cfg(test)]

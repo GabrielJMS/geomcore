@@ -153,3 +153,39 @@ Reproduce with:
 ```sh
 cargo bench --bench knot_insertion
 ```
+
+# Knot removal
+
+`benches/knot_removal.rs` times two workloads on clamped cubic curves,
+polynomial and rational, at a tolerance of 1e-6 relative to the curve's
+size: removing 8 knots just inserted into a curve of 32 poles (40 with
+them), all removed, and trying every one of the 28 interior knots of a
+curve of 32 poles, all needed and kept. Each is timed as one
+`remove_knot` call per knot on the result of the previous call, and as
+one `remove_knots` call for the whole list. On a bicubic 6×6 surface,
+8 knots just inserted are removed with `remove_u_knots` or
+`remove_v_knots`.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12), with heavy other jobs running (load
+about 24 on 16 threads): on an idle machine the polynomial rows ran about
+1.5× faster.
+
+| shape | 8 inserted, one by one | 8 inserted, batch | 28 needed, one by one | 28 needed, batch |
+|---|---|---|---|---|
+| cubic curve, 32 poles | ~4.3 µs | ~1.58 µs | ~9.1 µs | ~2.33 µs |
+| rational cubic curve, 32 poles | ~6.0 µs | ~2.19 µs | ~9.7 µs | ~2.40 µs |
+| bicubic 6×6 surface, in `u` | | ~2.47 µs | | |
+| bicubic 6×6 surface, in `v` | | ~3.09 µs | | |
+
+A batch works in one copy of the poles, made on the first removal, so
+an attempt that keeps its knot costs a few dozen nanoseconds, while one
+call per knot pays for a new curve each time. A rational attempt first
+rejects on the deviation alone, so a knot it keeps costs about as much as
+a polynomial one.
+
+Reproduce with:
+
+```sh
+cargo bench --bench knot_removal
+```

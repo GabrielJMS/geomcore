@@ -30,6 +30,10 @@ harness = false
 name = "knot_insertion"
 harness = false
 
+[[bench]]
+name = "knot_removal"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 
