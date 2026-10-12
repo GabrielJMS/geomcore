@@ -19,7 +19,7 @@
 //! clearly fewer steps than it does, so a span whose second derivative
 //! varies gets fewer points.
 
-use super::sealed::{DiscretizeRange3D, Run};
+use super::sealed::{DiscretizeRange, Run};
 use super::{DiscretizationCriteria, smallest_count};
 use crate::curves::ParametricCurve3D;
 use crate::math::bernstein;
@@ -325,7 +325,9 @@ fn chord_segments(constant: f64, max: f64) -> usize {
     })
 }
 
-impl DiscretizeRange3D for BSplineCurve3D {
+impl DiscretizeRange for BSplineCurve3D {
+    type Point = Point3D;
+
     fn for_each_run<F>(
         &self,
         first: f64,

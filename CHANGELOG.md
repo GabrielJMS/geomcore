@@ -28,9 +28,13 @@ the Python distribution are versioned in lockstep.
   cusp or coincident poles. Ellipses, and trimmed lines, parabolas,
   hyperbolas and run-time `Curve3D`s, use exact closed-form deviations
   of equal parameter steps (#21); a trimmed line is one segment.
+  In the plane (#22), `Discretize2D` gives a `Discretization2D` of a
+  `Circle2D` or a trimmed 2D curve (lines, circles, run-time `Curve2D`s,
+  borrowed curves), its chord deviations being distances in the plane.
   Python: `discretize(max_chord_deviation, max_angle_deviation=None)` on
   `Circle3D`, `Ellipse3D`, `BSplineCurve3D` and `TrimmedCurve3D`,
-  returning a `Discretization3D`.
+  returning a `Discretization3D`, and on `Circle2D` and `TrimmedCurve2D`,
+  returning a `Discretization2D`.
 - A trimmed curve can borrow its basis (#18): the curve traits
   (`ParametricCurve3D`, `ParametricCurve2D`, `PointExtrema3D`,
   `PointExtrema2D`) are implemented for references to curves, so

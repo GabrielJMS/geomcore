@@ -1,13 +1,14 @@
 //! Discretization through its public interface: every reported deviation
 //! is checked against an independent measurement of the true one.
 
-use geomcore::curves::ParametricCurve3D;
+use geomcore::curves::{ParametricCurve2D, ParametricCurve3D};
 use geomcore::discretization::{
-    Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError, Discretize3D,
+    Discretization2D, Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError,
+    Discretize2D, Discretize3D,
 };
 use geomcore::{
-    BSplineCurve3D, Circle3D, Curve3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Point3D,
-    TrimmedCurve3D, Vector3D,
+    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Frame2D, Hyperbola3D, Line2D,
+    Line3D, Parabola3D, Point2D, Point3D, TrimmedCurve2D, TrimmedCurve3D, Vector2D, Vector3D,
 };
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -681,4 +682,146 @@ fn test_coarse_tolerances_keep_points_over_their_chords() {
         let arc = TrimmedCurve3D::new(hyperbola(0.2, 3.0), -0.5, 3.0).unwrap();
         assert_proven(&arc, &arc.discretize(criteria), criteria, 100.0);
     }
+}
+
+// ---------------------------------------------------------------- 2D
+
+fn distance_to_segment_2d(p: Point2D, a: Point2D, b: Point2D) -> f64 {
+    let ab = b - a;
+    let length2 = ab.dot(ab);
+    let t = if length2 > 0.0 {
+        ((p - a).dot(ab) / length2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    p.distance(a + ab * t)
+}
+
+fn angle_to_segment_2d<C: ParametricCurve2D>(curve: &C, u: f64, a: Point2D, b: Point2D) -> f64 {
+    let tangent = curve.eval_derivative(u, 1);
+    let chord = b - a;
+    tangent.cross(chord).abs().atan2(tangent.dot(chord))
+}
+
+/// [`assert_proven`] for a 2D curve.
+fn assert_proven_2d<C: ParametricCurve2D>(
+    curve: &C,
+    d: &Discretization2D,
+    criteria: DiscretizationCriteria,
+    scale: f64,
+) {
+    let n = d.points.len();
+    assert!(n >= 2);
+    assert_eq!(d.parameters.len(), n);
+    assert_eq!(d.chord_deviations.len(), n - 1);
+    assert_eq!(d.angle_deviations.len(), n - 1);
+    let (first, last) = curve.bounds();
+    assert_eq!(d.parameters[0], first);
+    assert_eq!(d.parameters[n - 1], last);
+    assert!(d.parameters.windows(2).all(|w| w[0] < w[1]));
+    for (u, p) in d.parameters.iter().zip(&d.points) {
+        assert!(curve.eval_point(*u).distance(*p) <= 1e-12 * scale);
+    }
+    let max_angle = criteria.max_angle_deviation().unwrap_or(PI);
+    for i in 0..n - 1 {
+        let (u0, u1) = (d.parameters[i], d.parameters[i + 1]);
+        let (a, b) = (d.points[i], d.points[i + 1]);
+        let chord = maximum(u0, u1, |u| {
+            distance_to_segment_2d(curve.eval_point(u), a, b)
+        });
+        let angle = maximum(u0, u1, |u| angle_to_segment_2d(curve, u, a, b));
+        let (reported_chord, reported_angle) = (d.chord_deviations[i], d.angle_deviations[i]);
+        assert!(
+            reported_chord >= chord - 1e-12 * scale,
+            "segment {i}: chord deviation {reported_chord} below the true {chord}"
+        );
+        assert!(reported_chord <= criteria.max_chord_deviation());
+        assert!(
+            reported_angle >= angle - 1e-9,
+            "segment {i}: angle deviation {reported_angle} below the true {angle}"
+        );
+        assert!(reported_angle <= max_angle);
+    }
+}
+
+/// A circle of radius 2 turning clockwise in the plane.
+fn clockwise_circle_2d() -> Circle2D {
+    let frame = Frame2D::new(
+        Point2D::new(1.0, -3.0),
+        Vector2D::new(1.0, 1.0),
+        Vector2D::new(1.0, -1.0),
+    );
+    Circle2D::from_frame(frame.unwrap(), 2.0).unwrap()
+}
+
+#[test]
+fn test_2d_circle_closed_forms() {
+    let circle = Circle2D::new(Point2D::new(0.5, 0.25), 2.0).unwrap();
+    // 2r sin²(θ/4) = 4 sin²(π/16) = 0.152...: eight segments meet 0.16.
+    let d = circle.discretize(chord(0.16));
+    assert_eq!(d.points.len(), 9);
+    assert_eq!(d.points[0], d.points[8]);
+    for (&chord_deviation, &angle) in d.chord_deviations.iter().zip(&d.angle_deviations) {
+        assert!((chord_deviation - 4.0 * (PI / 16.0).sin().powi(2)).abs() < 1e-15);
+        assert!((angle - PI / 8.0).abs() < 1e-15);
+    }
+    // At most π/10 between the tangent and a segment: ten segments.
+    assert_eq!(circle.point_count(chord_and_angle(1.0, PI / 10.0)), 11);
+    // A full circle has at least three segments, however coarse.
+    assert_eq!(circle.point_count(chord(100.0)), 4);
+    // So does an arc spanning a whole turn, ending on its first point.
+    let turn = TrimmedCurve2D::new(circle, 1.0, 1.0 + TAU).unwrap();
+    let d = turn.discretize(chord(100.0));
+    assert_eq!(d.points.len(), 4);
+    assert_eq!(d.points[0], d.points[3]);
+}
+
+#[test]
+fn test_2d_circles_and_arcs_hold_their_deviations() {
+    for circle in [
+        Circle2D::new(Point2D::ORIGIN, 0.5).unwrap(),
+        clockwise_circle_2d(),
+    ] {
+        for criteria in criteria_list() {
+            assert_proven_2d(&circle, &circle.discretize(criteria), criteria, 2.0);
+            for (first, last) in [(0.3, 1.2), (2.0, 7.0), (-1.0, 0.5)] {
+                let arc = TrimmedCurve2D::new(circle, first, last).unwrap();
+                assert_proven_2d(&arc, &arc.discretize(criteria), criteria, 2.0);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_2d_trimmed_line_is_one_segment() {
+    let line = Line2D::new(Point2D::new(1.0, 2.0), Vector2D::new(3.0, 4.0)).unwrap();
+    let segment = TrimmedCurve2D::new(line, -1.0, 2.0).unwrap();
+    let d = segment.discretize(chord_and_angle(1e-9, 1e-9));
+    assert_eq!(d.parameters, vec![-1.0, 2.0]);
+    assert_eq!(d.points, vec![line.eval_point(-1.0), line.eval_point(2.0)]);
+    assert_eq!(d.chord_deviations, vec![0.0]);
+    assert_eq!(d.angle_deviations, vec![0.0]);
+}
+
+#[test]
+fn test_2d_borrowed_and_run_time_curves_match_concrete_ones() {
+    fn same<C>(basis: C, first: f64, last: f64)
+    where
+        C: Clone + Into<Curve2D> + ParametricCurve2D,
+        TrimmedCurve2D<C>: Discretize2D,
+        for<'a> TrimmedCurve2D<&'a C>: Discretize2D,
+    {
+        let concrete = TrimmedCurve2D::new(basis.clone(), first, last).unwrap();
+        let borrowed = TrimmedCurve2D::new(&basis, first, last).unwrap();
+        let run_time = TrimmedCurve2D::new(basis.clone().into(), first, last).unwrap();
+        for criteria in criteria_list() {
+            let d = concrete.discretize(criteria);
+            assert_eq!(borrowed.discretize(criteria), d);
+            assert_eq!(run_time.discretize(criteria), d);
+        }
+    }
+    let line = Line2D::new(Point2D::ORIGIN, Vector2D::new(1.0, 1.0)).unwrap();
+    same(line, 0.0, 2.0);
+    same(clockwise_circle_2d(), 1.0, 4.0);
+    same(clockwise_circle_2d(), 1.0, 1.0 + TAU);
 }

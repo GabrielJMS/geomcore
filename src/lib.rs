@@ -124,7 +124,8 @@ pub use curves::{
     parametrize_numeric,
 };
 pub use discretization::{
-    Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError, Discretize3D,
+    Discretization2D, Discretization3D, DiscretizationCriteria, DiscretizationCriteriaError,
+    Discretize2D, Discretize3D,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::intersect_curve_surface;

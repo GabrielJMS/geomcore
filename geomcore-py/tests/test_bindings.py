@@ -1261,3 +1261,26 @@ def test_discretize_ellipse_and_trimmed_curves():
     d = arc.discretize(1e-3)
     assert d.parameters[0] == -2.0 and d.parameters[-1] == 3.0
     assert all(dev <= 1e-3 for dev in d.chord_deviations)
+
+
+def test_discretize_2d_curves():
+    from geomcore.curves import Circle2D, TrimmedCurve2D
+
+    circle = Circle2D(Point2D(0.5, 0.25), 2.0)
+    # 4 sin^2(pi/16) = 0.152...: eight segments meet 0.16.
+    d = circle.discretize(0.16)
+    assert isinstance(d, geomcore.Discretization2D)
+    assert len(d.points) == 9 and len(d.chord_deviations) == 8
+    assert (d.points[0].x, d.points[0].y) == (d.points[-1].x, d.points[-1].y)
+    assert all(angle == pytest.approx(math.pi / 8) for angle in d.angle_deviations)
+    arc = TrimmedCurve2D(circle, 0.5, 2.0)
+    d = arc.discretize(1e-3, max_angle_deviation=0.05)
+    assert d.parameters[0] == 0.5 and d.parameters[-1] == 2.0
+    assert all(dev <= 1e-3 for dev in d.chord_deviations)
+    assert all(angle <= 0.05 for angle in d.angle_deviations)
+    segment = TrimmedCurve2D.segment(Point2D(0.0, 0.0), Point2D(3.0, 4.0))
+    d = segment.discretize(1e-9)
+    assert [(p.x, p.y) for p in d.points] == [(0.0, 0.0), (3.0, 4.0)]
+    assert d.chord_deviations == [0.0] and d.angle_deviations == [0.0]
+    with pytest.raises(ValueError):
+        segment.discretize(0.0)

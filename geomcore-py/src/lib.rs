@@ -34,8 +34,8 @@ use geomcore::{
     TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
 use geomcore::{
-    Discretization3D, DiscretizationCriteria, Discretize3D, curve_curve_extrema,
-    intersect_curve_curve,
+    Discretization2D, Discretization3D, DiscretizationCriteria, Discretize2D, Discretize3D,
+    curve_curve_extrema, intersect_curve_curve,
 };
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
@@ -2565,6 +2565,43 @@ impl PyDiscretization3D {
     }
 }
 
+/// A discretized 2D curve, such as a curve in a surface's parameter
+/// plane: the 2D counterpart of `Discretization3D`, its chord deviations
+/// being distances in the plane.
+#[pyclass(name = "Discretization2D", module = "geomcore", frozen)]
+struct PyDiscretization2D(Discretization2D);
+
+#[pymethods]
+impl PyDiscretization2D {
+    /// The parameter of each point, increasing.
+    #[getter]
+    fn parameters(&self) -> Vec<f64> {
+        self.0.parameters.clone()
+    }
+
+    /// The points on the curve.
+    #[getter]
+    fn points(&self) -> Vec<PyPoint2D> {
+        self.0.points.iter().copied().map(PyPoint2D).collect()
+    }
+
+    /// The chord deviation of each segment.
+    #[getter]
+    fn chord_deviations(&self) -> Vec<f64> {
+        self.0.chord_deviations.clone()
+    }
+
+    /// The angle deviation of each segment, in radians.
+    #[getter]
+    fn angle_deviations(&self) -> Vec<f64> {
+        self.0.angle_deviations.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Discretization2D({} points)", self.0.points.len())
+    }
+}
+
 /// The criteria from the keyword arguments of `discretize`.
 fn discretization_criteria(
     max_chord_deviation: f64,
@@ -2584,6 +2621,15 @@ fn discretize_3d(
 ) -> PyResult<PyDiscretization3D> {
     let criteria = discretization_criteria(max_chord_deviation, max_angle_deviation)?;
     Ok(PyDiscretization3D(curve.discretize(criteria)))
+}
+
+fn discretize_2d(
+    curve: &impl Discretize2D,
+    max_chord_deviation: f64,
+    max_angle_deviation: Option<f64>,
+) -> PyResult<PyDiscretization2D> {
+    let criteria = discretization_criteria(max_chord_deviation, max_angle_deviation)?;
+    Ok(PyDiscretization2D(curve.discretize(criteria)))
 }
 
 // ---------------------------------------------------------------------------
@@ -4722,6 +4768,19 @@ impl PyCircle2D {
         self.0.eval_points(&us).into_iter().map(PyPoint2D).collect()
     }
 
+    /// Discretize the circle into points joined by straight segments,
+    /// each segment's chord deviation at most `max_chord_deviation` and,
+    /// if given, its angle deviation at most `max_angle_deviation`
+    /// (radians).
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn discretize(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<PyDiscretization2D> {
+        discretize_2d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// Evaluate the derivative of the given order (>= 1) at `u`.
     fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector2D> {
         check_curve_order(order, u32::MAX)?;
@@ -5076,6 +5135,19 @@ impl PyTrimmedCurve2D {
         self.0.eval_points(&us).into_iter().map(PyPoint2D).collect()
     }
 
+    /// Discretize the trimmed curve into points joined by straight segments,
+    /// each segment's chord deviation at most `max_chord_deviation` and,
+    /// if given, its angle deviation at most `max_angle_deviation`
+    /// (radians).
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn discretize(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<PyDiscretization2D> {
+        discretize_2d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// Evaluate the derivative of the given order (>= 1) at `u`.
     fn eval_derivative(&self, u: f64, order: u32) -> PyResult<PyVector2D> {
         check_curve_order(order, u32::MAX)?;
@@ -5156,6 +5228,7 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFrame3D>()?;
     m.add_class::<PyTolerance>()?;
     m.add_class::<PyTransform>()?;
+    m.add_class::<PyDiscretization2D>()?;
     m.add_class::<PyDiscretization3D>()?;
 
     let curves = PyModule::new(py, "curves")?;

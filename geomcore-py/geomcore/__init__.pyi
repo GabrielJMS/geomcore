@@ -109,6 +109,17 @@ class Transform:
     def apply_vector(self, v: Vector3D) -> Vector3D: ...
 
 @final
+class Discretization2D:
+    @property
+    def parameters(self) -> List[float]: ...
+    @property
+    def points(self) -> List[Point2D]: ...
+    @property
+    def chord_deviations(self) -> List[float]: ...
+    @property
+    def angle_deviations(self) -> List[float]: ...
+    def __repr__(self) -> str: ...
+
 class Discretization3D:
     @property
     def parameters(self) -> List[float]: ...
@@ -138,6 +149,7 @@ def intersect_curve_curve(
 
 __all__ = [
     "Axis3D",
+    "Discretization2D",
     "Discretization3D",
     "Frame3D",
     "Point2D",
