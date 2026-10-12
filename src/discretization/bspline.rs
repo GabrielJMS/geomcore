@@ -21,7 +21,6 @@
 
 use super::sealed::{DiscretizeRange3D, Run};
 use super::{DiscretizationCriteria, smallest_count};
-use crate::curves::ParametricCurve3D;
 use crate::math::bernstein;
 use crate::{BSplineCurve3D, Point3D};
 use std::f64::consts::PI;
@@ -336,21 +335,6 @@ impl DiscretizeRange3D for BSplineCurve3D {
     ) where
         F: FnMut(Run, &dyn Fn(f64) -> Point3D),
     {
-        let (start, end) = self.bounds();
-        let interior = self
-            .knots()
-            .iter()
-            .copied()
-            .filter(|&k| k > start && k < end);
-        // A periodic curve repeats its spans every period, so a range
-        // across the seam takes them from consecutive periods.
-        let (shifts, period) = match self.period() {
-            Some(period) => {
-                let shift = |u: f64| ((u - start) / period).floor() as i64;
-                (shift(first)..=shift(last), period)
-            }
-            None => (0..=0, 0.0),
-        };
         let mut piece = Piece {
             first: 0.0,
             last: 0.0,
@@ -358,22 +342,13 @@ impl DiscretizeRange3D for BSplineCurve3D {
             rational: self.is_rational(),
             points: [[0.0; 4]; CAPACITY],
         };
-        let mut span_start = start + *shifts.start() as f64 * period;
-        for shift in shifts {
-            let offset = shift as f64 * period;
-            for knot in interior.clone().chain([end]) {
-                let span_end = knot + offset;
-                let (a, b) = (span_start.max(first), span_end.min(last));
-                if a < b {
-                    self.span_bezier_points(0.5 * (span_start + span_end), &mut piece.points);
-                    piece.first = span_start;
-                    piece.last = span_end;
-                    piece
-                        .restricted(a, b)
-                        .visit_leaves(criteria, 0, min_segments, &mut visit);
-                }
-                span_start = span_end;
-            }
-        }
+        self.for_each_span_in(first, last, |(span_start, span_end), (a, b)| {
+            self.span_bezier_points(0.5 * (span_start + span_end), &mut piece.points);
+            piece.first = span_start;
+            piece.last = span_end;
+            piece
+                .restricted(a, b)
+                .visit_leaves(criteria, 0, min_segments, &mut visit);
+        });
     }
 }

@@ -417,6 +417,11 @@ impl BSplineSurface {
         self.weights.is_some()
     }
 
+    /// The control poles, row after row.
+    pub(crate) fn pole_points(&self) -> impl Iterator<Item = Point3D> + '_ {
+        self.poles.iter().flatten().copied()
+    }
+
     /// Returns the image of this surface under `transform`: every control
     /// pole maps point-wise while degrees, knots, multiplicities,
     /// periodicity, and weights are unchanged.

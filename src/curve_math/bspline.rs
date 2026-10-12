@@ -236,6 +236,20 @@ fn span_knots<const N: usize>(
     }
 }
 
+/// Index of the first of the `degree + 1` poles weighting the span
+/// containing `u` (indices wrap modulo `n_poles` in a periodic direction;
+/// see [`window`]).
+pub(crate) fn span_first_pole(
+    u: f64,
+    degree: usize,
+    periodic: bool,
+    flat: &[f64],
+    n_poles: usize,
+) -> usize {
+    let (mut left, mut right) = ([0.0; LARGE], [0.0; LARGE]);
+    span_knots(u, degree, periodic, flat, n_poles, &mut left, &mut right)
+}
+
 /// Non-zero basis functions alone (The NURBS Book, A2.2): the value-only
 /// fast path of [`basis_derivatives`], without its triangular table.
 fn basis_values<const N: usize>(

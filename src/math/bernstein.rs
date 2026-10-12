@@ -125,6 +125,30 @@ fn polygon_crossing(c: &[f64], tiny: f64) -> f64 {
     0.5
 }
 
+/// Restricts the Bernstein control points `c` of a polynomial piece over
+/// `[0, 1]` to `[s0, s1]` (`0 <= s0 < s1 <= 1`), in place, rescaled to
+/// `[0, 1]`: de Casteljau keeps the part right of `s0`, then the part of
+/// that left of `s1`.
+pub(crate) fn restrict<const D: usize>(c: &mut [[f64; D]], s0: f64, s1: f64) {
+    let n = c.len() - 1;
+    let lerp = |a: [f64; D], b: [f64; D], s: f64| std::array::from_fn(|k| a[k] + (b[k] - a[k]) * s);
+    if s0 > 0.0 {
+        for r in 1..=n {
+            for i in 0..=n - r {
+                c[i] = lerp(c[i], c[i + 1], s0);
+            }
+        }
+    }
+    if s1 < 1.0 {
+        let s = (s1 - s0) / (1.0 - s0);
+        for r in 1..=n {
+            for i in (r..=n).rev() {
+                c[i] = lerp(c[i - 1], c[i], s);
+            }
+        }
+    }
+}
+
 /// De Casteljau subdivision at `1/2`: the coefficients of `c` over
 /// `[0, 1/2]` and `[1/2, 1]`, each rescaled to `[0, 1]`.
 fn halve(c: &[f64], left: &mut [f64], right: &mut [f64]) {
@@ -182,6 +206,20 @@ mod tests {
         for s in [0.0, 0.3, 0.7, 1.0] {
             assert!((eval(&left, s) - eval(&c, 0.5 * s)).abs() < 1e-12);
             assert!((eval(&right, s) - eval(&c, 0.5 + 0.5 * s)).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_restrict_preserves_the_polynomial() {
+        let c = [2.0, -1.0, 0.25, 4.0, -3.0];
+        for (s0, s1) in [(0.2, 0.7), (0.0, 0.4), (0.35, 1.0), (0.0, 1.0)] {
+            let mut piece = c.map(|x| [x]);
+            restrict(&mut piece, s0, s1);
+            let piece = piece.map(|[x]| x);
+            for s in [0.0, 0.3, 0.7, 1.0] {
+                let expected = eval(&c, s0 + (s1 - s0) * s);
+                assert!((eval(&piece, s) - expected).abs() < 1e-12);
+            }
         }
     }
 
