@@ -14,7 +14,7 @@ mod parametrize;
 mod trimmed;
 pub use bspline::{BSplineConstructionError, BSplineCurve3D, InterpParametrization};
 pub use circle::{Circle2D, Circle3D, CircleConstructionError};
-pub use curve::{Curve3D, ParametricCurve3D, PointExtrema3D};
+pub use curve::{Curve3D, ElementaryCurve, ParametricCurve3D, PointExtrema3D};
 pub use curve2d::{Curve2D, ParametricCurve2D, PointExtrema2D};
 pub use ellipse::{Ellipse3D, EllipseConstructionError};
 pub use hyperbola::{Hyperbola3D, HyperbolaConstructionError};

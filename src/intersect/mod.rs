@@ -17,6 +17,9 @@ use crate::{
     Vector3D,
 };
 
+mod dispatch;
+pub use dispatch::{InlineList, Intersect};
+
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlanePlaneIntersection {

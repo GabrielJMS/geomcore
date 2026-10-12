@@ -504,6 +504,189 @@ impl From<&BSplineSurface> for Surface {
     }
 }
 
+/// An elementary surface: a plane, cylinder, cone, sphere or torus, the
+/// surfaces with a closed-form definition.
+///
+/// Unlike [`Surface`] it is `Copy` and owns no heap memory.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::surfaces::{ElementarySurface, Surface};
+/// use geomcore::{Plane, Point3D, Vector3D};
+///
+/// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+/// let surface = Surface::from(plane);
+/// assert_eq!(surface.as_elementary(), Some(ElementarySurface::Plane(plane)));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ElementarySurface {
+    /// A [`Plane`] surface.
+    Plane(Plane),
+    /// A [`Cylinder`] surface.
+    Cylinder(Cylinder),
+    /// A [`Cone`] surface.
+    Cone(Cone),
+    /// A [`Sphere`] surface.
+    Sphere(Sphere),
+    /// A [`Torus`] surface.
+    Torus(Torus),
+}
+
+impl Surface {
+    /// The surface as an [`ElementarySurface`], or `None` for a B-spline.
+    pub fn as_elementary(&self) -> Option<ElementarySurface> {
+        match self {
+            Surface::Plane(s) => Some(ElementarySurface::Plane(*s)),
+            Surface::Cylinder(s) => Some(ElementarySurface::Cylinder(*s)),
+            Surface::Cone(s) => Some(ElementarySurface::Cone(*s)),
+            Surface::Sphere(s) => Some(ElementarySurface::Sphere(*s)),
+            Surface::Torus(s) => Some(ElementarySurface::Torus(*s)),
+            Surface::BSpline(_) => None,
+        }
+    }
+}
+
+impl ParametricSurface for ElementarySurface {
+    fn eval_point(&self, u: f64, v: f64) -> Point3D {
+        match self {
+            ElementarySurface::Plane(s) => s.eval_point(u, v),
+            ElementarySurface::Cylinder(s) => s.eval_point(u, v),
+            ElementarySurface::Cone(s) => s.eval_point(u, v),
+            ElementarySurface::Sphere(s) => s.eval_point(u, v),
+            ElementarySurface::Torus(s) => s.eval_point(u, v),
+        }
+    }
+
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
+        match self {
+            ElementarySurface::Plane(s) => s.eval_derivative(u, v, du, dv),
+            ElementarySurface::Cylinder(s) => s.eval_derivative(u, v, du, dv),
+            ElementarySurface::Cone(s) => s.eval_derivative(u, v, du, dv),
+            ElementarySurface::Sphere(s) => s.eval_derivative(u, v, du, dv),
+            ElementarySurface::Torus(s) => s.eval_derivative(u, v, du, dv),
+        }
+    }
+
+    fn u_bounds(&self) -> (f64, f64) {
+        match self {
+            ElementarySurface::Plane(s) => s.u_bounds(),
+            ElementarySurface::Cylinder(s) => s.u_bounds(),
+            ElementarySurface::Cone(s) => s.u_bounds(),
+            ElementarySurface::Sphere(s) => s.u_bounds(),
+            ElementarySurface::Torus(s) => s.u_bounds(),
+        }
+    }
+
+    fn v_bounds(&self) -> (f64, f64) {
+        match self {
+            ElementarySurface::Plane(s) => s.v_bounds(),
+            ElementarySurface::Cylinder(s) => s.v_bounds(),
+            ElementarySurface::Cone(s) => s.v_bounds(),
+            ElementarySurface::Sphere(s) => s.v_bounds(),
+            ElementarySurface::Torus(s) => s.v_bounds(),
+        }
+    }
+
+    fn u_period(&self) -> Option<f64> {
+        match self {
+            ElementarySurface::Plane(s) => s.u_period(),
+            ElementarySurface::Cylinder(s) => s.u_period(),
+            ElementarySurface::Cone(s) => s.u_period(),
+            ElementarySurface::Sphere(s) => s.u_period(),
+            ElementarySurface::Torus(s) => s.u_period(),
+        }
+    }
+
+    fn v_period(&self) -> Option<f64> {
+        match self {
+            ElementarySurface::Plane(s) => s.v_period(),
+            ElementarySurface::Cylinder(s) => s.v_period(),
+            ElementarySurface::Cone(s) => s.v_period(),
+            ElementarySurface::Sphere(s) => s.v_period(),
+            ElementarySurface::Torus(s) => s.v_period(),
+        }
+    }
+
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        match self {
+            ElementarySurface::Plane(s) => s.project_point(point, tol),
+            ElementarySurface::Cylinder(s) => s.project_point(point, tol),
+            ElementarySurface::Cone(s) => s.project_point(point, tol),
+            ElementarySurface::Sphere(s) => s.project_point(point, tol),
+            ElementarySurface::Torus(s) => s.project_point(point, tol),
+        }
+    }
+
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        match self {
+            ElementarySurface::Plane(s) => s.contains(point, tol),
+            ElementarySurface::Cylinder(s) => s.contains(point, tol),
+            ElementarySurface::Cone(s) => s.contains(point, tol),
+            ElementarySurface::Sphere(s) => s.contains(point, tol),
+            ElementarySurface::Torus(s) => s.contains(point, tol),
+        }
+    }
+
+    fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
+        match self {
+            ElementarySurface::Plane(s) => s.eval_points(uvs),
+            ElementarySurface::Cylinder(s) => s.eval_points(uvs),
+            ElementarySurface::Cone(s) => s.eval_points(uvs),
+            ElementarySurface::Sphere(s) => s.eval_points(uvs),
+            ElementarySurface::Torus(s) => s.eval_points(uvs),
+        }
+    }
+}
+
+impl From<ElementarySurface> for Surface {
+    /// Wraps an [`ElementarySurface`] as the matching [`Surface`] variant.
+    fn from(surface: ElementarySurface) -> Surface {
+        match surface {
+            ElementarySurface::Plane(s) => Surface::Plane(s),
+            ElementarySurface::Cylinder(s) => Surface::Cylinder(s),
+            ElementarySurface::Cone(s) => Surface::Cone(s),
+            ElementarySurface::Sphere(s) => Surface::Sphere(s),
+            ElementarySurface::Torus(s) => Surface::Torus(s),
+        }
+    }
+}
+
+impl From<Plane> for ElementarySurface {
+    /// Wraps a [`Plane`] as an [`ElementarySurface::Plane`].
+    fn from(surface: Plane) -> ElementarySurface {
+        ElementarySurface::Plane(surface)
+    }
+}
+
+impl From<Cylinder> for ElementarySurface {
+    /// Wraps a [`Cylinder`] as an [`ElementarySurface::Cylinder`].
+    fn from(surface: Cylinder) -> ElementarySurface {
+        ElementarySurface::Cylinder(surface)
+    }
+}
+
+impl From<Cone> for ElementarySurface {
+    /// Wraps a [`Cone`] as an [`ElementarySurface::Cone`].
+    fn from(surface: Cone) -> ElementarySurface {
+        ElementarySurface::Cone(surface)
+    }
+}
+
+impl From<Sphere> for ElementarySurface {
+    /// Wraps a [`Sphere`] as an [`ElementarySurface::Sphere`].
+    fn from(surface: Sphere) -> ElementarySurface {
+        ElementarySurface::Sphere(surface)
+    }
+}
+
+impl From<Torus> for ElementarySurface {
+    /// Wraps a [`Torus`] as an [`ElementarySurface::Torus`].
+    fn from(surface: Torus) -> ElementarySurface {
+        ElementarySurface::Torus(surface)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -928,5 +1111,43 @@ mod tests {
             wrapped.eval_derivative(0.3, 0.4, 0, 1),
             torus().eval_derivative(0.3, 0.4, 0, 1)
         );
+    }
+
+    // ---- elementary surfaces ----
+
+    #[test]
+    fn test_elementary_surface_agrees_with_surface() {
+        let tol = Tolerance::DEFAULT;
+        let surfaces: [ElementarySurface; 5] = [
+            plane().into(),
+            cylinder().into(),
+            cone().into(),
+            sphere().into(),
+            torus().into(),
+        ];
+        let query = Point3D::new(0.7, -1.2, 2.5);
+        for surface in surfaces {
+            let wrapped = Surface::from(surface);
+            assert_eq!(wrapped.as_elementary(), Some(surface));
+            assert_eq!(surface.eval_point(0.3, 0.4), wrapped.eval_point(0.3, 0.4));
+            assert_eq!(
+                surface.eval_derivative(0.3, 0.4, 1, 1),
+                wrapped.eval_derivative(0.3, 0.4, 1, 1)
+            );
+            assert_eq!(surface.u_bounds(), wrapped.u_bounds());
+            assert_eq!(surface.v_bounds(), wrapped.v_bounds());
+            assert_eq!(surface.u_period(), wrapped.u_period());
+            assert_eq!(surface.v_period(), wrapped.v_period());
+            assert_eq!(
+                surface.project_point(query, tol),
+                wrapped.project_point(query, tol)
+            );
+            assert_eq!(surface.contains(query, tol), wrapped.contains(query, tol));
+        }
+    }
+
+    #[test]
+    fn test_bspline_surface_is_not_elementary() {
+        assert_eq!(Surface::from(bspline()).as_elementary(), None);
     }
 }

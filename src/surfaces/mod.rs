@@ -15,5 +15,5 @@ pub use cone::{Cone, ConeConstructionError};
 pub use cylinder::{Cylinder, CylinderConstructionError};
 pub use plane::{Plane, PlaneConstructionError};
 pub use sphere::{Sphere, SphereConstructionError};
-pub use surface::{ParametricSurface, Surface};
+pub use surface::{ElementarySurface, ParametricSurface, Surface};
 pub use torus::{Torus, TorusConstructionError};

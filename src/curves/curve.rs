@@ -434,6 +434,150 @@ impl From<BSplineCurve3D> for Curve3D {
     }
 }
 
+/// An elementary curve: a line, circle, ellipse, parabola or hyperbola,
+/// the curves with a closed-form definition.
+///
+/// Unlike [`Curve3D`] it is `Copy` and owns no heap memory, so it can be
+/// stored inline in intersection results.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::curves::{Curve3D, ElementaryCurve};
+/// use geomcore::{Line3D, Point3D, Vector3D};
+///
+/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+/// let curve = Curve3D::from(line);
+/// assert_eq!(curve.as_elementary(), Some(ElementaryCurve::Line(line)));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ElementaryCurve {
+    /// A [`Line3D`] curve.
+    Line(Line3D),
+    /// A [`Circle3D`] curve.
+    Circle(Circle3D),
+    /// An [`Ellipse3D`] curve.
+    Ellipse(Ellipse3D),
+    /// A [`Parabola3D`] curve.
+    Parabola(Parabola3D),
+    /// A [`Hyperbola3D`] curve.
+    Hyperbola(Hyperbola3D),
+}
+
+impl Curve3D {
+    /// The curve as an [`ElementaryCurve`], or `None` for a B-spline.
+    pub fn as_elementary(&self) -> Option<ElementaryCurve> {
+        match self {
+            Curve3D::Line(c) => Some(ElementaryCurve::Line(*c)),
+            Curve3D::Circle(c) => Some(ElementaryCurve::Circle(*c)),
+            Curve3D::Ellipse(c) => Some(ElementaryCurve::Ellipse(*c)),
+            Curve3D::Parabola(c) => Some(ElementaryCurve::Parabola(*c)),
+            Curve3D::Hyperbola(c) => Some(ElementaryCurve::Hyperbola(*c)),
+            Curve3D::BSpline(_) => None,
+        }
+    }
+}
+
+impl ParametricCurve3D for ElementaryCurve {
+    fn eval_point(&self, u: f64) -> Point3D {
+        match self {
+            ElementaryCurve::Line(c) => c.eval_point(u),
+            ElementaryCurve::Circle(c) => c.eval_point(u),
+            ElementaryCurve::Ellipse(c) => c.eval_point(u),
+            ElementaryCurve::Parabola(c) => c.eval_point(u),
+            ElementaryCurve::Hyperbola(c) => c.eval_point(u),
+        }
+    }
+
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
+        match self {
+            ElementaryCurve::Line(c) => c.eval_derivative(u, order),
+            ElementaryCurve::Circle(c) => c.eval_derivative(u, order),
+            ElementaryCurve::Ellipse(c) => c.eval_derivative(u, order),
+            ElementaryCurve::Parabola(c) => c.eval_derivative(u, order),
+            ElementaryCurve::Hyperbola(c) => c.eval_derivative(u, order),
+        }
+    }
+
+    fn bounds(&self) -> (f64, f64) {
+        match self {
+            ElementaryCurve::Line(c) => c.bounds(),
+            ElementaryCurve::Circle(c) => c.bounds(),
+            ElementaryCurve::Ellipse(c) => c.bounds(),
+            ElementaryCurve::Parabola(c) => c.bounds(),
+            ElementaryCurve::Hyperbola(c) => c.bounds(),
+        }
+    }
+
+    fn period(&self) -> Option<f64> {
+        match self {
+            ElementaryCurve::Line(c) => c.period(),
+            ElementaryCurve::Circle(c) => c.period(),
+            ElementaryCurve::Ellipse(c) => c.period(),
+            ElementaryCurve::Parabola(c) => c.period(),
+            ElementaryCurve::Hyperbola(c) => c.period(),
+        }
+    }
+
+    fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
+        match self {
+            ElementaryCurve::Line(c) => c.eval_points(us),
+            ElementaryCurve::Circle(c) => c.eval_points(us),
+            ElementaryCurve::Ellipse(c) => c.eval_points(us),
+            ElementaryCurve::Parabola(c) => c.eval_points(us),
+            ElementaryCurve::Hyperbola(c) => c.eval_points(us),
+        }
+    }
+}
+
+impl From<ElementaryCurve> for Curve3D {
+    /// Wraps an [`ElementaryCurve`] as the matching [`Curve3D`] variant.
+    fn from(curve: ElementaryCurve) -> Curve3D {
+        match curve {
+            ElementaryCurve::Line(c) => Curve3D::Line(c),
+            ElementaryCurve::Circle(c) => Curve3D::Circle(c),
+            ElementaryCurve::Ellipse(c) => Curve3D::Ellipse(c),
+            ElementaryCurve::Parabola(c) => Curve3D::Parabola(c),
+            ElementaryCurve::Hyperbola(c) => Curve3D::Hyperbola(c),
+        }
+    }
+}
+
+impl From<Line3D> for ElementaryCurve {
+    /// Wraps a [`Line3D`] as an [`ElementaryCurve::Line`].
+    fn from(curve: Line3D) -> ElementaryCurve {
+        ElementaryCurve::Line(curve)
+    }
+}
+
+impl From<Circle3D> for ElementaryCurve {
+    /// Wraps a [`Circle3D`] as an [`ElementaryCurve::Circle`].
+    fn from(curve: Circle3D) -> ElementaryCurve {
+        ElementaryCurve::Circle(curve)
+    }
+}
+
+impl From<Ellipse3D> for ElementaryCurve {
+    /// Wraps an [`Ellipse3D`] as an [`ElementaryCurve::Ellipse`].
+    fn from(curve: Ellipse3D) -> ElementaryCurve {
+        ElementaryCurve::Ellipse(curve)
+    }
+}
+
+impl From<Parabola3D> for ElementaryCurve {
+    /// Wraps a [`Parabola3D`] as an [`ElementaryCurve::Parabola`].
+    fn from(curve: Parabola3D) -> ElementaryCurve {
+        ElementaryCurve::Parabola(curve)
+    }
+}
+
+impl From<Hyperbola3D> for ElementaryCurve {
+    /// Wraps a [`Hyperbola3D`] as an [`ElementaryCurve::Hyperbola`].
+    fn from(curve: Hyperbola3D) -> ElementaryCurve {
+        ElementaryCurve::Hyperbola(curve)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -775,5 +919,38 @@ mod tests {
             ParametricCurve3D::eval_derivative(&b, 0.5, 1),
             b.eval_derivative(0.5, 1)
         );
+    }
+
+    // ---- elementary curves ----
+
+    #[test]
+    fn test_elementary_curve_agrees_with_curve3d() {
+        let curves: [ElementaryCurve; 5] = [
+            line().into(),
+            circle().into(),
+            ellipse().into(),
+            parabola().into(),
+            hyperbola().into(),
+        ];
+        for curve in curves {
+            let wrapped = Curve3D::from(curve);
+            assert_eq!(wrapped.as_elementary(), Some(curve));
+            assert_eq!(curve.eval_point(0.5), wrapped.eval_point(0.5));
+            assert_eq!(
+                curve.eval_derivative(0.5, 2),
+                wrapped.eval_derivative(0.5, 2)
+            );
+            assert_eq!(curve.bounds(), wrapped.bounds());
+            assert_eq!(curve.period(), wrapped.period());
+            assert_eq!(
+                curve.eval_points(&[0.0, 0.5]),
+                wrapped.eval_points(&[0.0, 0.5])
+            );
+        }
+    }
+
+    #[test]
+    fn test_bspline_curve_is_not_elementary() {
+        assert_eq!(Curve3D::from(bspline()).as_elementary(), None);
     }
 }

@@ -90,9 +90,9 @@ pub mod vector;
 
 pub use curves::{
     BSplineConstructionError, BSplineCurve3D, Circle2D, Circle3D, CircleConstructionError, Curve2D,
-    Curve3D, Ellipse3D, EllipseConstructionError, Hyperbola3D, HyperbolaConstructionError,
-    InterpParametrization, Line2D, Line3D, LineConstructionError, Parabola3D,
-    ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
+    Curve3D, ElementaryCurve, Ellipse3D, EllipseConstructionError, Hyperbola3D,
+    HyperbolaConstructionError, InterpParametrization, Line2D, Line3D, LineConstructionError,
+    Parabola3D, ParabolaConstructionError, ParametricCurve2D, ParametricCurve3D, ParametrizeError,
     PointExtrema2D, PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D, TrimmedCurveConstructionError,
     parametrize_numeric,
 };
@@ -112,13 +112,14 @@ pub use intersect::{
     TorusCylinderIntersection, TorusPlaneIntersection, TorusSphereIntersection,
     TorusTorusIntersection,
 };
+pub use intersect::{InlineList, Intersect};
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, SurfaceProjection};
 pub use surfaces::{
     BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
-    ParametricSurface, Plane, PlaneConstructionError, Sphere, SphereConstructionError, Surface,
-    Torus, TorusConstructionError,
+    ElementarySurface, ParametricSurface, Plane, PlaneConstructionError, Sphere,
+    SphereConstructionError, Surface, Torus, TorusConstructionError,
 };
 pub use tolerance::Tolerance;
 pub use transform::Transform;
