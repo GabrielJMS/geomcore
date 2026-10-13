@@ -3,9 +3,8 @@
 Reshape B-splines without leaving the representation (editing), build
 them from points (fitting), convert exact geometry into them, and
 measure them. Curve API first with per-direction surface equivalents;
-editing and conversion are Rust-only for now
-([geomcore#58](https://github.com/geomcore/geomcore/issues/58)) —
-each Python tab says so.
+the Python bindings mirror the Rust names 1:1, with errors as
+`ValueError`.
 
 ## Knots and degree
 
@@ -14,9 +13,17 @@ Insertion, refinement, elevation and removal keep the shape exactly
 
 === "Python"
 
-    > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
-    > The Rust tab is the reference API.
+    ```python
+    refined = curve.insert_knot(0.5, 1)
+    assert refined.eval_point(0.5).distance(curve.eval_point(0.5)) < 1e-12
+
+    dense = curve.refine_knots([0.25, 0.5, 0.75])
+
+    elevated = curve.elevate_degree(1)
+    assert elevated.degree() == 3
+
+    simplified, removed = elevated.remove_knot(0.5, 1, 1e-9)
+    ```
 
 === "Rust"
 
@@ -47,9 +54,13 @@ seam (up to one period) on periodic directions.
 
 === "Python"
 
-    > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
-    > The Rust tab is the reference API.
+    ```python
+    left, right = curve.split_at(0.5)
+    piece = curve.extract(0.0, 0.5)
+    rev = curve.reversed()
+    assert rev.eval_point(0.0).distance(curve.eval_point(1.0)) < 1e-12
+    assert len(curve.to_bezier_pieces()) == 1  # single span
+    ```
 
 === "Rust"
 
@@ -70,8 +81,7 @@ so sample them to polylines for display.
 
 Interpolation passes through the points; `approximate` fits with a
 fixed pole count; `approximate_within` adds knots where the deviation
-is largest until every point is within `max_deviation`
-(`approximate_within` is Rust-only).
+is largest until every point is within `max_deviation`.
 
 === "Python"
 
@@ -79,6 +89,7 @@ is largest until every point is within `max_deviation`
     points = curve.eval_points([0.0, 0.25, 0.5, 0.75, 1.0])
     interp = BSplineCurve3D.interpolate(points, 3)
     approx = BSplineCurve3D.approximate(points, 2, 3)
+    within = BSplineCurve3D.approximate_within(points, 2, 1e-6)
     ```
 
 === "Rust"
@@ -105,9 +116,15 @@ patches.
 
 === "Python"
 
-    > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
-    > The Rust tab is the reference API.
+    ```python
+    circle_bs = circle.to_bspline()
+    assert circle_bs.is_periodic()
+
+    ellipse_bs = ellipse.to_bspline()
+
+    patch = plane.to_bspline_patch((0.0, 1.0), (0.0, 2.0))
+    ball = sphere.to_bspline()
+    ```
 
 === "Rust"
 
@@ -129,9 +146,12 @@ gives the tight pole box (elementary shapes get closed-form boxes).
 
 === "Python"
 
-    > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
-    > The Rust tab is the reference API.
+    ```python
+    length = curve.length(1e-9)
+    bb = curve.bounding_box()
+    assert bb is not None
+    assert (bb.min().x, bb.max().x) == (0.0, 1.0)
+    ```
 
 === "Rust"
 

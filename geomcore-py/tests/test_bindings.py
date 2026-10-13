@@ -5,7 +5,17 @@ import math
 import pytest
 
 import geomcore
-from geomcore import Axis3D, Frame3D, Point2D, Point3D, Tolerance, Transform, Vector2D, Vector3D
+from geomcore import (
+    Axis3D,
+    BoundingBox3D,
+    Frame3D,
+    Point2D,
+    Point3D,
+    Tolerance,
+    Transform,
+    Vector2D,
+    Vector3D,
+)
 from geomcore.curves import BSplineCurve3D, Circle3D, Line2D
 from geomcore.surfaces import Cylinder, Sphere
 
@@ -1291,3 +1301,275 @@ def test_discretize_2d_curves():
     # Below the confusion tolerance, segments already lie on the curve.
     with pytest.raises(ValueError, match="confusion"):
         segment.discretize(1e-9)
+
+
+def _cubic_curve():
+    return BSplineCurve3D(
+        3,
+        [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 2.0, 0.0), Point3D(3.0, 2.0, 1.0), Point3D(4.0, 0.0, 1.0)],
+        [0.0, 1.0],
+        [4, 4],
+        False,
+    )
+
+
+def test_bspline_curve_getters():
+    curve = _cubic_curve()
+    assert [ (p.x, p.y, p.z) for p in curve.poles() ] == [
+        (0.0, 0.0, 0.0), (1.0, 2.0, 0.0), (3.0, 2.0, 1.0), (4.0, 0.0, 1.0)]
+    assert curve.weights() is None
+    assert curve.knots() == [0.0, 1.0]
+    assert curve.multiplicities() == [4, 4]
+    rational = BSplineCurve3D.new_rational(
+        2,
+        [Point3D(1.0, 0.0, 0.0), Point3D(1.0, 1.0, 0.0), Point3D(0.0, 1.0, 0.0)],
+        [1.0, math.sqrt(2) / 2, 1.0],
+        [0.0, 1.0],
+        [3, 3],
+        False,
+    )
+    assert rational.is_rational()
+    assert rational.weights() == pytest.approx([1.0, math.sqrt(2) / 2, 1.0])
+
+
+def test_bspline_curve_editing_round_trip():
+    curve = _cubic_curve()
+    refined = curve.refine_knots([0.25, 0.5, 0.5, 0.75])
+    assert len(refined.poles()) == 8
+    for u in (0.0, 0.3, 0.7, 1.0):
+        assert refined.eval_point(u).distance(curve.eval_point(u)) < 1e-12
+    simpler, removed = refined.remove_knots([0.25, 0.5, 0.5, 0.75], 1e-9)
+    assert removed == 4
+    assert simpler.knots() == curve.knots()
+    single = curve.insert_knot(0.5, 2)
+    assert len(single.poles()) == 6
+    back, removed = single.remove_knot(0.5, 2, 1e-9)
+    assert removed == 2
+    assert back.knots() == curve.knots()
+    raised = curve.elevate_degree(1)
+    assert raised.degree() == 4
+    assert raised.eval_point(0.4).distance(curve.eval_point(0.4)) < 1e-12
+    with pytest.raises(ValueError):
+        curve.insert_knot(2.0, 1)
+    with pytest.raises(ValueError):
+        curve.remove_knots([0.5], 0.0)
+
+
+def test_bspline_curve_split_extract_reverse():
+    curve = _cubic_curve()
+    first, second = curve.split_at(0.4)
+    assert first.bounds() == pytest.approx((0.0, 0.4))
+    assert second.bounds() == pytest.approx((0.4, 1.0))
+    assert first.eval_point(0.4).distance(curve.eval_point(0.4)) < 1e-12
+    assert second.eval_point(0.4).distance(curve.eval_point(0.4)) < 1e-12
+    piece = curve.extract(0.2, 0.8)
+    assert piece.bounds() == pytest.approx((0.2, 0.8))
+    assert piece.eval_point(0.5).distance(curve.eval_point(0.5)) < 1e-12
+    rev = curve.reversed()
+    assert rev.eval_point(0.3).distance(curve.eval_point(0.7)) < 1e-12
+    with pytest.raises(ValueError):
+        curve.split_at(0.0)
+    with pytest.raises(ValueError):
+        curve.extract(0.8, 0.2)
+
+
+def test_bspline_curve_bezier_pieces_and_length():
+    curve = BSplineCurve3D(
+        3,
+        [Point3D(float(i), float(i % 2), 0.0) for i in range(6)],
+        [0.0, 1.0, 2.0, 3.0],
+        [4, 1, 1, 4],
+        False,
+    )
+    pieces = curve.to_bezier_pieces()
+    assert len(pieces) == 3
+    assert pieces[1].bounds() == pytest.approx((1.0, 2.0))
+    assert pieces[1].eval_point(1.5).distance(curve.eval_point(1.5)) < 1e-12
+    segment = BSplineCurve3D(
+        1, [Point3D.origin(), Point3D(2.0, 0.0, 0.0)], [0.0, 1.0], [2, 2], False
+    )
+    assert segment.length(1e-9) == pytest.approx(2.0)
+    assert _cubic_curve().length(1e-9) == pytest.approx(5.39065, abs=1e-4)
+
+
+def test_bspline_curve_approximate_within():
+    points = [Point3D(float(i), 0.1 * float(i), 0.0) for i in range(6)]
+    fit = BSplineCurve3D.approximate_within(points, 2, 1e-6)
+    for p in points:
+        assert fit.contains(p, Tolerance(1e-3, 1e-9, 1e-9))
+
+
+def test_conic_to_bspline():
+    from geomcore.curves import Ellipse3D, TrimmedCurve3D
+
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    spline = circle.to_bspline()
+    assert spline.is_periodic()
+    assert spline.eval_point(math.pi / 2).distance(circle.eval_point(math.pi / 2)) < 1e-12
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.0)
+    e_spline = ellipse.to_bspline()
+    assert e_spline.eval_point(0.0).distance(ellipse.eval_point(0.0)) < 1e-12
+    arc = TrimmedCurve3D(circle, 0.0, math.pi)
+    arc_spline = arc.to_bspline()
+    assert arc_spline.bounds() == pytest.approx((0.0, math.pi))
+    # The B-spline parameter matches the angle at the knots and each
+    # piece's middle, not in between — but every point lies on the circle.
+    assert arc_spline.eval_point(math.pi / 2).distance(circle.eval_point(math.pi / 2)) < 1e-12
+    for u in (0.0, 0.3, 1.0, 2.0, math.pi):
+        assert circle.contains(arc_spline.eval_point(u))
+    segment = TrimmedCurve3D.segment(Point3D.origin(), Point3D(1.0, 0.0, 0.0))
+    seg_spline = segment.to_bspline()
+    assert seg_spline.eval_point(0.5).distance(Point3D(0.5, 0.0, 0.0)) < 1e-12
+
+
+def test_curve_bounds_and_boxes():
+    from geomcore.curves import Ellipse3D, Hyperbola3D, Line3D, Parabola3D, TrimmedCurve3D
+
+    line = Line3D(Point3D.origin(), Vector3D.x())
+    assert line.bounds() == (float("-inf"), float("inf"))
+    assert line.bounding_box() is None
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    assert circle.bounds() == pytest.approx((0.0, math.tau))
+    box = circle.bounding_box()
+    assert (box.min().x, box.max().x) == pytest.approx((-2.0, 2.0))
+    assert (box.min().y, box.max().y) == pytest.approx((-2.0, 2.0))
+    assert box.encloses(Point3D(1.0, 1.0, 0.0))
+    assert not box.encloses(Point3D(3.0, 0.0, 0.0))
+    assert Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0).bounding_box() is None
+    assert Hyperbola3D(
+        Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0, 1.0
+    ).bounding_box() is None
+    assert Ellipse3D(
+        Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0
+    ).bounding_box() is not None
+    curve = _cubic_curve()
+    cbox = curve.bounding_box()
+    assert (cbox.min().x, cbox.max().x) == pytest.approx((0.0, 4.0))
+    trimmed = TrimmedCurve3D(circle, 0.0, math.pi / 2)
+    tbox = trimmed.bounding_box()
+    assert tbox is not None and tbox.encloses(Point3D(2.0, 0.0, 0.0))
+
+
+def test_bounding_box_ops():
+    box = BoundingBox3D(Point3D(1.0, 0.0, 5.0), Point3D(0.0, 2.0, 3.0))
+    assert (box.min().x, box.min().y, box.min().z) == (0.0, 0.0, 3.0)
+    assert (box.max().x, box.max().y, box.max().z) == (1.0, 2.0, 5.0)
+    assert (box.center().x, box.center().y, box.center().z) == (0.5, 1.0, 4.0)
+    assert box.diagonal().components() == (1.0, 2.0, 2.0)
+    other = BoundingBox3D(Point3D(2.0, -1.0, 0.0), Point3D(3.0, 0.0, 0.5))
+    both = box.union(other)
+    assert (both.min().x, both.max().x) == (0.0, 3.0)
+    grown = box.enlarged(0.5)
+    assert grown.min().x == pytest.approx(-0.5)
+    assert box.overlaps(other) or not box.overlaps(other)
+    assert not box.overlaps(BoundingBox3D(Point3D(5.0, 5.0, 5.0), Point3D(6.0, 6.0, 6.0)))
+    assert BoundingBox3D.from_points([Point3D(1.0, 2.0, 3.0)]).min().x == 1.0
+    with pytest.raises(ValueError):
+        BoundingBox3D.from_points([])
+
+
+def test_surface_getters_and_uv_bounds():
+    surface = _bilinear_patch()
+    assert (surface.u_degree(), surface.v_degree()) == (1, 1)
+    assert surface.u_pole_count() == 2 and surface.v_pole_count() == 2
+    assert [(p.x, p.y) for p in surface.poles()[1]] == [(2.0, 0.0), (2.0, 2.0)]
+    assert surface.weights() is None
+    assert surface.u_knots() == [0.0, 1.0] and surface.v_knots() == [0.0, 1.0]
+    assert surface.u_multiplicities() == [2, 2]
+    assert surface.u_bounds() == (0.0, 1.0) and surface.v_bounds() == (0.0, 1.0)
+    sphere = Sphere(Point3D.origin(), 2.0)
+    assert sphere.u_bounds() == pytest.approx((0.0, math.tau))
+    assert sphere.bounding_box().max().x == pytest.approx(2.0)
+    assert sphere.bounding_box().min().x == pytest.approx(-2.0)
+    from geomcore.surfaces import Plane
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    assert plane.bounding_box() is None
+    assert plane.u_bounds() == (float("-inf"), float("inf"))
+
+
+def test_surface_editing_round_trip():
+    surface = _bilinear_patch()
+    refined = surface.refine_u_knots([0.25, 0.5])
+    assert refined.u_pole_count() == 4
+    assert refined.eval_point(0.3, 0.7).distance(surface.eval_point(0.3, 0.7)) < 1e-12
+    simpler, removed = refined.remove_u_knots([0.25, 0.5], 1e-9)
+    assert removed == 2
+    assert simpler.u_knots() == surface.u_knots()
+    one, n = surface.insert_v_knot(0.5, 1).remove_v_knot(0.5, 1, 1e-9)
+    assert n == 1 and one.v_knots() == surface.v_knots()
+    raised = surface.elevate_u_degree(1)
+    assert raised.u_degree() == 2
+    assert raised.eval_point(0.4, 0.6).distance(surface.eval_point(0.4, 0.6)) < 1e-12
+    raised_v = surface.elevate_v_degree(2)
+    assert raised_v.v_degree() == 3
+    with pytest.raises(ValueError):
+        surface.insert_u_knot(2.0, 1)
+
+
+def test_surface_split_extract_reverse_and_patches():
+    surface = _bilinear_patch()
+    left, right = surface.split_u_at(0.5)
+    assert left.u_bounds() == pytest.approx((0.0, 0.5))
+    assert right.eval_point(0.75, 0.25).distance(surface.eval_point(0.75, 0.25)) < 1e-12
+    bottom, _top = surface.split_v_at(0.5)
+    assert bottom.v_bounds() == pytest.approx((0.0, 0.5))
+    piece = surface.extract((0.25, 0.75), (0.25, 0.75))
+    assert piece.eval_point(0.5, 0.5).distance(surface.eval_point(0.5, 0.5)) < 1e-12
+    assert surface.extract_u(0.25, 0.75).u_knots() == pytest.approx([0.25, 0.75])
+    assert surface.extract_v(0.25, 0.75).v_knots() == pytest.approx([0.25, 0.75])
+    assert surface.reversed_u().eval_point(0.25, 0.5).distance(
+        surface.eval_point(0.75, 0.5)) < 1e-12
+    assert surface.reversed_v().eval_point(0.5, 0.25).distance(
+        surface.eval_point(0.5, 0.75)) < 1e-12
+    from geomcore.surfaces import BSplineSurface
+
+    net = BSplineSurface(
+        2, 2,
+        [[Point3D(float(i), float(j), float(i * j)) for j in range(3)] for i in range(4)],
+        [0.0, 1.0, 2.0], [3, 1, 3], [0.0, 1.0], [3, 3], False, False,
+    )
+    patches = net.to_bezier_patches()
+    assert (len(patches), len(patches[0])) == (2, 1)
+    assert patches[1][0].eval_point(1.5, 0.5).distance(net.eval_point(1.5, 0.5)) < 1e-12
+    with pytest.raises(ValueError):
+        surface.split_u_at(0.0)
+
+
+def test_surface_approximate():
+    from geomcore.surfaces import BSplineSurface
+
+    grid = [
+        [Point3D(x, y, math.sin(3 * x) * math.cos(2 * y)) for j in range(8) for y in [j / 7]]
+        for i in range(8) for x in [i / 7]
+    ]
+    fit = BSplineSurface.approximate(grid, 3, 3, 5, 5)
+    assert (fit.u_pole_count(), fit.v_pole_count()) == (5, 5)
+    loose = BSplineSurface.approximate_within(grid, 3, 3, 0.05)
+    assert loose.u_pole_count() <= 8 and loose.v_pole_count() <= 8
+    assert loose.eval_point(0.5, 0.5).distance(fit.eval_point(0.5, 0.5)) < 0.2
+
+
+def test_surface_to_bspline_conversions():
+    from geomcore.surfaces import BSplineSurface, Cone, Cylinder, Plane, Torus
+
+    plane = Plane(Point3D.origin(), Vector3D.z())
+    patch = plane.to_bspline_patch((0.0, 1.0), (0.0, 2.0))
+    assert isinstance(patch, BSplineSurface)
+    assert patch.eval_point(0.5, 1.0).distance(plane.eval_point(0.5, 1.0)) < 1e-12
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    tube = cylinder.to_bspline_patch((0.0, math.tau), (-1.0, 4.0))
+    assert tube.is_u_periodic() and not tube.is_v_periodic()
+    assert tube.eval_point(math.pi / 2, 3.0).distance(
+        cylinder.eval_point(math.pi / 2, 3.0)) < 1e-12
+    sphere = Sphere(Point3D.origin(), 2.0)
+    ball = sphere.to_bspline()
+    assert ball.eval_point(0.0, 0.0).distance(sphere.eval_point(0.0, 0.0)) < 1e-9
+    torus = Torus(Point3D.origin(), Vector3D.z(), 3.0, 1.0)
+    donut = torus.to_bspline()
+    assert donut.eval_point(0.0, 0.0).distance(torus.eval_point(0.0, 0.0)) < 1e-9
+    cone = Cone(Point3D.origin(), Vector3D.z(), 0.5, 1.0)
+    assert cone.to_bspline_patch((0.0, 1.0), (0.0, 2.0)).eval_point(
+        0.5, 1.0).distance(cone.eval_point(0.5, 1.0)) < 1e-9
+    with pytest.raises(ValueError):
+        plane.to_bspline_patch((0.0, 0.0), (0.0, 1.0))

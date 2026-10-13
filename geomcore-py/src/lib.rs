@@ -20,7 +20,9 @@ use geomcore::curves::{
 use geomcore::intersect_curve_surface;
 use geomcore::marching_intersection;
 use geomcore::parametrize_numeric;
-use geomcore::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Surface, Torus};
+use geomcore::surfaces::{
+    BSplineSurface, Cone, Cylinder, ParametricSurface, Plane, Sphere, Surface, Torus,
+};
 use geomcore::{
     Axis3D, CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
     ConeConeIntersection, ConeCylinderIntersection, ConicConicIntersection,
@@ -34,8 +36,8 @@ use geomcore::{
     TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
 use geomcore::{
-    Discretization2D, Discretization3D, DiscretizationCriteria, Discretize2D, Discretize3D,
-    curve_curve_extrema, intersect_curve_curve,
+    Bound3D, BoundingBox3D, Discretization2D, Discretization3D, DiscretizationCriteria,
+    Discretize2D, Discretize3D, curve_curve_extrema, intersect_curve_curve,
 };
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
@@ -505,6 +507,80 @@ impl PyTransform {
     }
 }
 
+/// The axis-aligned box around a curve or surface, holding the shape but
+/// possibly loose for B-splines (their control points' box); `None`
+/// wherever `bounding_box` reports no box for an unbounded shape.
+#[pyclass(name = "BoundingBox3D", module = "geomcore")]
+#[derive(Clone, Copy)]
+struct PyBoundingBox3D(BoundingBox3D);
+
+#[pymethods]
+impl PyBoundingBox3D {
+    #[new]
+    /// The box with opposite corners `a` and `b`, in any order.
+    fn py_new(a: PyPoint3D, b: PyPoint3D) -> Self {
+        PyBoundingBox3D(BoundingBox3D::new(a.0, b.0))
+    }
+
+    /// The smallest box holding every point of `points` (`ValueError`
+    /// when there are none).
+    #[staticmethod]
+    fn from_points(points: Vec<PyPoint3D>) -> PyResult<Self> {
+        let points = points.into_iter().map(|p| p.0);
+        BoundingBox3D::from_points(points)
+            .map(PyBoundingBox3D)
+            .ok_or_else(|| PyValueError::new_err("from_points needs at least one point"))
+    }
+
+    /// The corner with the smallest coordinates.
+    fn min(&self) -> PyPoint3D {
+        PyPoint3D(self.0.min())
+    }
+
+    /// The corner with the largest coordinates.
+    fn max(&self) -> PyPoint3D {
+        PyPoint3D(self.0.max())
+    }
+
+    /// The middle of the box.
+    fn center(&self) -> PyPoint3D {
+        PyPoint3D(self.0.center())
+    }
+
+    /// The vector from the `min` corner to the `max` corner.
+    fn diagonal(&self) -> PyVector3D {
+        PyVector3D(self.0.diagonal())
+    }
+
+    /// The smallest box holding both boxes.
+    fn union(&self, other: &PyBoundingBox3D) -> Self {
+        PyBoundingBox3D(self.0.union(other.0))
+    }
+
+    /// The box grown by `distance` on every side (negative shrinks it).
+    fn enlarged(&self, distance: f64) -> Self {
+        PyBoundingBox3D(self.0.enlarged(distance))
+    }
+
+    /// Whether the box holds `point` on every axis.
+    fn encloses(&self, point: PyPoint3D) -> bool {
+        self.0.encloses(point.0)
+    }
+
+    /// Whether the boxes touch or overlap on every axis.
+    fn overlaps(&self, other: &PyBoundingBox3D) -> bool {
+        self.0.overlaps(other.0)
+    }
+
+    fn __repr__(&self) -> String {
+        let (lo, hi) = (self.0.min(), self.0.max());
+        format!(
+            "BoundingBox3D(min=({}, {}, {}), max=({}, {}, {}))",
+            lo.x, lo.y, lo.z, hi.x, hi.y, hi.z
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Surfaces
 // ---------------------------------------------------------------------------
@@ -579,6 +655,33 @@ impl PyPlane {
     /// Recover the (u, v) parameters of a point lying on the plane.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// The (first, last) `u` parameter bounds (unbounded here).
+    fn u_bounds(&self) -> (f64, f64) {
+        ParametricSurface::u_bounds(&self.0)
+    }
+
+    /// The (first, last) `v` parameter bounds (unbounded here).
+    fn v_bounds(&self) -> (f64, f64) {
+        ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The patch `u_range × v_range` as an exact bilinear B-spline
+    /// surface (raises `ValueError` for a bad range).
+    fn to_bspline_patch(
+        &self,
+        u_range: (f64, f64),
+        v_range: (f64, f64),
+    ) -> PyResult<PyBSplineSurface> {
+        Ok(PyBSplineSurface(
+            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+        ))
     }
 
     /// Returns whether `point` lies on the surface within `tol`
@@ -926,6 +1029,33 @@ impl PyCylinder {
         self.0.parameters_of(point.0)
     }
 
+    /// The (first, last) `u` parameter bounds (a whole turn).
+    fn u_bounds(&self) -> (f64, f64) {
+        ParametricSurface::u_bounds(&self.0)
+    }
+
+    /// The (first, last) `v` parameter bounds (unbounded here).
+    fn v_bounds(&self) -> (f64, f64) {
+        ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The patch `u_range × v_range` as an exact rational B-spline
+    /// surface (raises `ValueError` for a bad range).
+    fn to_bspline_patch(
+        &self,
+        u_range: (f64, f64),
+        v_range: (f64, f64),
+    ) -> PyResult<PyBSplineSurface> {
+        Ok(PyBSplineSurface(
+            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+        ))
+    }
+
     /// Returns whether `point` lies on the surface within `tol`
     /// (`Tolerance.default()` when omitted).
     #[pyo3(signature = (point, tol = None))]
@@ -1147,6 +1277,33 @@ impl PyCone {
     /// Recover the (u, v) parameters of a point lying on the cone.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// The (first, last) `u` parameter bounds (a whole turn).
+    fn u_bounds(&self) -> (f64, f64) {
+        ParametricSurface::u_bounds(&self.0)
+    }
+
+    /// The (first, last) `v` parameter bounds (unbounded here).
+    fn v_bounds(&self) -> (f64, f64) {
+        ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The patch `u_range × v_range` as an exact rational B-spline
+    /// surface (raises `ValueError` for a bad range).
+    fn to_bspline_patch(
+        &self,
+        u_range: (f64, f64),
+        v_range: (f64, f64),
+    ) -> PyResult<PyBSplineSurface> {
+        Ok(PyBSplineSurface(
+            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+        ))
     }
 
     /// Returns whether `point` lies on the surface within `tol`
@@ -1388,6 +1545,38 @@ impl PySphere {
     /// Recover the (u, v) parameters of a point lying on the sphere.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// The (first, last) `u` parameter bounds (a whole turn).
+    fn u_bounds(&self) -> (f64, f64) {
+        ParametricSurface::u_bounds(&self.0)
+    }
+
+    /// The (first, last) `v` parameter bounds.
+    fn v_bounds(&self) -> (f64, f64) {
+        ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The whole sphere as an exact rational B-spline surface.
+    fn to_bspline(&self) -> PyBSplineSurface {
+        PyBSplineSurface(self.0.to_bspline())
+    }
+
+    /// The patch `u_range × v_range` as an exact rational B-spline
+    /// surface (raises `ValueError` for a bad range).
+    fn to_bspline_patch(
+        &self,
+        u_range: (f64, f64),
+        v_range: (f64, f64),
+    ) -> PyResult<PyBSplineSurface> {
+        Ok(PyBSplineSurface(
+            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+        ))
     }
 
     /// Returns whether `point` lies on the surface within `tol`
@@ -1662,6 +1851,38 @@ impl PyTorus {
     /// Recover the (u, v) parameters of a point lying on the torus.
     fn parameters_of(&self, point: PyPoint3D) -> (f64, f64) {
         self.0.parameters_of(point.0)
+    }
+
+    /// The (first, last) `u` parameter bounds (a whole turn).
+    fn u_bounds(&self) -> (f64, f64) {
+        ParametricSurface::u_bounds(&self.0)
+    }
+
+    /// The (first, last) `v` parameter bounds (a whole turn).
+    fn v_bounds(&self) -> (f64, f64) {
+        ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The whole torus as an exact rational B-spline surface.
+    fn to_bspline(&self) -> PyBSplineSurface {
+        PyBSplineSurface(self.0.to_bspline())
+    }
+
+    /// The patch `u_range × v_range` as an exact rational B-spline
+    /// surface (raises `ValueError` for a bad range).
+    fn to_bspline_patch(
+        &self,
+        u_range: (f64, f64),
+        v_range: (f64, f64),
+    ) -> PyResult<PyBSplineSurface> {
+        Ok(PyBSplineSurface(
+            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+        ))
     }
 
     /// Returns whether `point` lies on the surface within `tol`
@@ -2034,6 +2255,276 @@ impl PyBSplineSurface {
     /// Whether the surface carries rational weights.
     fn is_rational(&self) -> bool {
         self.0.is_rational()
+    }
+
+    /// The number of poles in the `u` direction (rows of the net).
+    fn u_pole_count(&self) -> usize {
+        self.0.u_pole_count()
+    }
+
+    /// The number of poles in the `v` direction (columns of the net).
+    fn v_pole_count(&self) -> usize {
+        self.0.v_pole_count()
+    }
+
+    /// The control poles as `poles[i_u][i_v]`.
+    fn poles(&self) -> Vec<Vec<PyPoint3D>> {
+        let nv = self.0.v_pole_count();
+        self.0
+            .poles()
+            .chunks(nv)
+            .map(|row| row.iter().map(|p| PyPoint3D(*p)).collect())
+            .collect()
+    }
+
+    /// The per-pole weights laid out as `poles`, or `None` when the
+    /// surface is not rational.
+    fn weights(&self) -> Option<Vec<Vec<f64>>> {
+        let nv = self.0.v_pole_count();
+        self.0
+            .weights()
+            .map(|flat| flat.chunks(nv).map(|row| row.to_vec()).collect::<Vec<_>>())
+    }
+
+    /// The distinct knots in the `u` direction.
+    fn u_knots(&self) -> Vec<f64> {
+        self.0.u_knots().to_vec()
+    }
+
+    /// The multiplicity of each `u` knot.
+    fn u_multiplicities(&self) -> Vec<u32> {
+        self.0.u_multiplicities().to_vec()
+    }
+
+    /// The distinct knots in the `v` direction.
+    fn v_knots(&self) -> Vec<f64> {
+        self.0.v_knots().to_vec()
+    }
+
+    /// The multiplicity of each `v` knot.
+    fn v_multiplicities(&self) -> Vec<u32> {
+        self.0.v_multiplicities().to_vec()
+    }
+
+    /// The (first, last) `u` parameter bounds.
+    fn u_bounds(&self) -> (f64, f64) {
+        ParametricSurface::u_bounds(&self.0)
+    }
+
+    /// The (first, last) `v` parameter bounds.
+    fn v_bounds(&self) -> (f64, f64) {
+        ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// Least-squares B-spline fit through the grid `points[i][j]`.
+    ///
+    /// `parametrization` is `"centripetal"` (default) or `"chordal"`.
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (points, u_degree, v_degree, u_pole_count, v_pole_count, parametrization = "centripetal"))]
+    fn approximate(
+        points: Vec<Vec<PyPoint3D>>,
+        u_degree: usize,
+        v_degree: usize,
+        u_pole_count: usize,
+        v_pole_count: usize,
+        parametrization: &str,
+    ) -> PyResult<Self> {
+        let param = parse_parametrization(parametrization)?;
+        let points = points
+            .into_iter()
+            .map(|row| row.into_iter().map(|p| p.0).collect())
+            .collect::<Vec<Vec<_>>>();
+        Ok(PyBSplineSurface(
+            BSplineSurface::approximate(
+                &points,
+                u_degree,
+                v_degree,
+                u_pole_count,
+                v_pole_count,
+                param,
+            )
+            .map_err(val_err)?,
+        ))
+    }
+
+    /// Least-squares B-spline fit through the grid `points[i][j]` with as
+    /// few poles as keep every point within `max_deviation` of the
+    /// surface.
+    ///
+    /// `parametrization` is `"centripetal"` (default) or `"chordal"`.
+    #[staticmethod]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (points, u_degree, v_degree, max_deviation, parametrization = "centripetal"))]
+    fn approximate_within(
+        points: Vec<Vec<PyPoint3D>>,
+        u_degree: usize,
+        v_degree: usize,
+        max_deviation: f64,
+        parametrization: &str,
+    ) -> PyResult<Self> {
+        let param = parse_parametrization(parametrization)?;
+        let points = points
+            .into_iter()
+            .map(|row| row.into_iter().map(|p| p.0).collect())
+            .collect::<Vec<Vec<_>>>();
+        Ok(PyBSplineSurface(
+            BSplineSurface::approximate_within(&points, u_degree, v_degree, max_deviation, param)
+                .map_err(val_err)?,
+        ))
+    }
+
+    /// The surface with the knot `u` inserted `times` times in the `u`
+    /// direction (same shape, more poles).
+    fn insert_u_knot(&self, u: f64, times: u32) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.insert_u_knot(u, times).map_err(val_err)?,
+        ))
+    }
+
+    /// The surface with the knot `v` inserted `times` times in the `v`
+    /// direction (same shape, more poles).
+    fn insert_v_knot(&self, v: f64, times: u32) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.insert_v_knot(v, times).map_err(val_err)?,
+        ))
+    }
+
+    /// The surface with each of `knots` inserted once in the `u`
+    /// direction (same shape, more poles).
+    fn refine_u_knots(&self, knots: Vec<f64>) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.refine_u_knots(&knots).map_err(val_err)?,
+        ))
+    }
+
+    /// The surface with each of `knots` inserted once in the `v`
+    /// direction (same shape, more poles).
+    fn refine_v_knots(&self, knots: Vec<f64>) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.refine_v_knots(&knots).map_err(val_err)?,
+        ))
+    }
+
+    /// The surface of `u` degree raised by `amount` (same shape).
+    fn elevate_u_degree(&self, amount: usize) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.elevate_u_degree(amount).map_err(val_err)?,
+        ))
+    }
+
+    /// The surface of `v` degree raised by `amount` (same shape).
+    fn elevate_v_degree(&self, amount: usize) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.elevate_v_degree(amount).map_err(val_err)?,
+        ))
+    }
+
+    /// The surface with the knot `u` removed up to `times` times in the
+    /// `u` direction, and how many copies were removed: a removal is kept
+    /// only while every point stays within `max_deviation` of this one.
+    fn remove_u_knot(&self, u: f64, times: u32, max_deviation: f64) -> PyResult<(Self, u32)> {
+        let (surface, removed) = self
+            .0
+            .remove_u_knot(u, times, max_deviation)
+            .map_err(val_err)?;
+        Ok((PyBSplineSurface(surface), removed))
+    }
+
+    /// The surface with the knot `v` removed up to `times` times in the
+    /// `v` direction, and how many copies were removed: a removal is kept
+    /// only while every point stays within `max_deviation` of this one.
+    fn remove_v_knot(&self, v: f64, times: u32, max_deviation: f64) -> PyResult<(Self, u32)> {
+        let (surface, removed) = self
+            .0
+            .remove_v_knot(v, times, max_deviation)
+            .map_err(val_err)?;
+        Ok((PyBSplineSurface(surface), removed))
+    }
+
+    /// The surface with each of `knots` removed once in the `u`
+    /// direction, and how many copies were removed in all.
+    fn remove_u_knots(&self, knots: Vec<f64>, max_deviation: f64) -> PyResult<(Self, usize)> {
+        let (surface, removed) = self
+            .0
+            .remove_u_knots(&knots, max_deviation)
+            .map_err(val_err)?;
+        Ok((PyBSplineSurface(surface), removed))
+    }
+
+    /// The surface with each of `knots` removed once in the `v`
+    /// direction, and how many copies were removed in all.
+    fn remove_v_knots(&self, knots: Vec<f64>, max_deviation: f64) -> PyResult<(Self, usize)> {
+        let (surface, removed) = self
+            .0
+            .remove_v_knots(&knots, max_deviation)
+            .map_err(val_err)?;
+        Ok((PyBSplineSurface(surface), removed))
+    }
+
+    /// The polynomial patch of each pair of knot spans as a Bézier
+    /// B-spline surface: `patches[i][j]` covers the `i`-th `u` span and
+    /// the `j`-th `v` span.
+    fn to_bezier_patches(&self) -> Vec<Vec<Self>> {
+        self.0
+            .to_bezier_patches()
+            .into_iter()
+            .map(|row| row.into_iter().map(PyBSplineSurface).collect())
+            .collect()
+    }
+
+    /// The piece over `u_range × v_range` as a clamped, non-periodic
+    /// B-spline (a range may cross the seam of a periodic direction, up
+    /// to one period).
+    fn extract(&self, u_range: (f64, f64), v_range: (f64, f64)) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.extract(u_range, v_range).map_err(val_err)?,
+        ))
+    }
+
+    /// The piece over `[first, last]` in `u`, the `v` direction
+    /// unchanged.
+    fn extract_u(&self, first: f64, last: f64) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.extract_u(first, last).map_err(val_err)?,
+        ))
+    }
+
+    /// The piece over `[first, last]` in `v`, the `u` direction
+    /// unchanged.
+    fn extract_v(&self, first: f64, last: f64) -> PyResult<Self> {
+        Ok(PyBSplineSurface(
+            self.0.extract_v(first, last).map_err(val_err)?,
+        ))
+    }
+
+    /// The two halves split at `u`, each a clamped, non-periodic B-spline.
+    fn split_u_at(&self, u: f64) -> PyResult<(Self, Self)> {
+        let (a, b) = self.0.split_u_at(u).map_err(val_err)?;
+        Ok((PyBSplineSurface(a), PyBSplineSurface(b)))
+    }
+
+    /// The two halves split at `v`, each a clamped, non-periodic B-spline.
+    fn split_v_at(&self, v: f64) -> PyResult<(Self, Self)> {
+        let (a, b) = self.0.split_v_at(v).map_err(val_err)?;
+        Ok((PyBSplineSurface(a), PyBSplineSurface(b)))
+    }
+
+    /// The surface with the `u` parameter mirrored, keeping a periodic
+    /// `u` direction periodic.
+    fn reversed_u(&self) -> Self {
+        PyBSplineSurface(self.0.reversed_u())
+    }
+
+    /// The surface with the `v` parameter mirrored, keeping a periodic
+    /// `v` direction periodic.
+    fn reversed_v(&self) -> Self {
+        PyBSplineSurface(self.0.reversed_v())
     }
 
     /// Image of this surface under `transform` (maps every control pole).
@@ -2719,6 +3210,16 @@ impl PyLine3D {
         self.0.parameter_of(point.0)
     }
 
+    /// The (first, last) parameter bounds (unbounded here).
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve3D::bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
     /// Returns whether `point` lies on the curve within `tol`
     /// (`Tolerance.default()` when omitted).
     #[pyo3(signature = (point, tol = None))]
@@ -3166,6 +3667,22 @@ impl PyCircle3D {
         self.0.disk_area()
     }
 
+    /// The (first, last) parameter bounds (`[0, 2π)`).
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve3D::bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The circle as an exact periodic rational quadratic B-spline over
+    /// `[0, 2π]`.
+    fn to_bspline(&self) -> PyBSplineCurve3D {
+        PyBSplineCurve3D(self.0.to_bspline())
+    }
+
     /// The unit normal of the circle's plane.
     fn normal(&self) -> PyVector3D {
         PyVector3D(self.0.normal())
@@ -3565,6 +4082,22 @@ impl PyEllipse3D {
         PyPoint3D(self.0.center())
     }
 
+    /// The (first, last) parameter bounds (`[0, 2π)`).
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve3D::bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The ellipse as an exact periodic rational quadratic B-spline over
+    /// `[0, 2π]`.
+    fn to_bspline(&self) -> PyBSplineCurve3D {
+        PyBSplineCurve3D(self.0.to_bspline())
+    }
+
     /// The semi-major radius.
     fn major_radius(&self) -> f64 {
         self.0.major_radius()
@@ -3874,6 +4407,16 @@ impl PyParabola3D {
         self.0.focal()
     }
 
+    /// The (first, last) parameter bounds (unbounded here).
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve3D::bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
     /// Image of this parabola under `transform` (raises ValueError for a
     /// collapsing transform).
     #[pyo3(signature = (transform,))]
@@ -4146,6 +4689,16 @@ impl PyHyperbola3D {
     /// The hyperbola center.
     fn center(&self) -> PyPoint3D {
         PyPoint3D(self.0.center())
+    }
+
+    /// The (first, last) parameter bounds (unbounded here).
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve3D::bounds(&self.0)
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
     }
 
     /// The semi-major (transverse) radius.
@@ -4466,6 +5019,132 @@ impl PyBSplineCurve3D {
     /// Whether the curve carries rational weights.
     fn is_rational(&self) -> bool {
         self.0.is_rational()
+    }
+
+    /// The control poles.
+    fn poles(&self) -> Vec<PyPoint3D> {
+        self.0.poles().iter().map(|p| PyPoint3D(*p)).collect()
+    }
+
+    /// The per-pole weights, or `None` when the curve is not rational.
+    fn weights(&self) -> Option<Vec<f64>> {
+        self.0.weights().map(|w| w.to_vec())
+    }
+
+    /// The distinct knots.
+    fn knots(&self) -> Vec<f64> {
+        self.0.knots().to_vec()
+    }
+
+    /// The multiplicity of each knot.
+    fn multiplicities(&self) -> Vec<u32> {
+        self.0.multiplicities().to_vec()
+    }
+
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// Least-squares B-spline fit through `points` with as few poles as
+    /// keep every point within `max_deviation` of the curve at its
+    /// parameter.
+    ///
+    /// `parametrization` is `"centripetal"` (default) or `"chordal"`.
+    #[staticmethod]
+    #[pyo3(signature = (points, degree, max_deviation, parametrization = "centripetal"))]
+    fn approximate_within(
+        points: Vec<PyPoint3D>,
+        degree: usize,
+        max_deviation: f64,
+        parametrization: &str,
+    ) -> PyResult<Self> {
+        let param = parse_parametrization(parametrization)?;
+        let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
+        Ok(PyBSplineCurve3D(
+            BSplineCurve3D::approximate_within(&points, degree, max_deviation, param)
+                .map_err(val_err)?,
+        ))
+    }
+
+    /// The curve with the knot `u` inserted `times` times (same shape,
+    /// more poles).
+    fn insert_knot(&self, u: f64, times: u32) -> PyResult<Self> {
+        Ok(PyBSplineCurve3D(
+            self.0.insert_knot(u, times).map_err(val_err)?,
+        ))
+    }
+
+    /// The curve with each of `knots` inserted once (same shape, more
+    /// poles).
+    fn refine_knots(&self, knots: Vec<f64>) -> PyResult<Self> {
+        Ok(PyBSplineCurve3D(
+            self.0.refine_knots(&knots).map_err(val_err)?,
+        ))
+    }
+
+    /// The curve of degree raised by `amount` (same shape).
+    fn elevate_degree(&self, amount: usize) -> PyResult<Self> {
+        Ok(PyBSplineCurve3D(
+            self.0.elevate_degree(amount).map_err(val_err)?,
+        ))
+    }
+
+    /// The curve with the knot `u` removed up to `times` times, and how
+    /// many copies were removed: a removal is kept only while every
+    /// point stays within `max_deviation` of this one.
+    fn remove_knot(&self, u: f64, times: u32, max_deviation: f64) -> PyResult<(Self, u32)> {
+        let (curve, removed) = self
+            .0
+            .remove_knot(u, times, max_deviation)
+            .map_err(val_err)?;
+        Ok((PyBSplineCurve3D(curve), removed))
+    }
+
+    /// The curve with each of `knots` removed once, in order, and how
+    /// many copies were removed in all.
+    fn remove_knots(&self, knots: Vec<f64>, max_deviation: f64) -> PyResult<(Self, usize)> {
+        let (curve, removed) = self
+            .0
+            .remove_knots(&knots, max_deviation)
+            .map_err(val_err)?;
+        Ok((PyBSplineCurve3D(curve), removed))
+    }
+
+    /// The polynomial piece of each knot span as a Bézier B-spline, in
+    /// order.
+    fn to_bezier_pieces(&self) -> Vec<Self> {
+        self.0
+            .to_bezier_pieces()
+            .into_iter()
+            .map(PyBSplineCurve3D)
+            .collect()
+    }
+
+    /// The piece over `[first, last]` as a clamped, non-periodic B-spline
+    /// (the range may cross the seam of a periodic curve, up to one
+    /// period).
+    fn extract(&self, first: f64, last: f64) -> PyResult<Self> {
+        Ok(PyBSplineCurve3D(
+            self.0.extract(first, last).map_err(val_err)?,
+        ))
+    }
+
+    /// The two halves split at `u`, each a clamped, non-periodic B-spline.
+    fn split_at(&self, u: f64) -> PyResult<(Self, Self)> {
+        let (a, b) = self.0.split_at(u).map_err(val_err)?;
+        Ok((PyBSplineCurve3D(a), PyBSplineCurve3D(b)))
+    }
+
+    /// The curve with its parameter mirrored, keeping a periodic curve
+    /// periodic.
+    fn reversed(&self) -> Self {
+        PyBSplineCurve3D(self.0.reversed())
+    }
+
+    /// The arc length, integrating the speed to within `max_error`.
+    fn length(&self, max_error: f64) -> f64 {
+        self.0.length(max_error)
     }
 
     /// The (first, last) parameter bounds.
@@ -4982,6 +5661,32 @@ impl PyTrimmedCurve3D {
         ParametricCurve3D::bounds(&self.0)
     }
 
+    /// The axis-aligned box around the shape (`None` when unbounded).
+    fn bounding_box(&self) -> Option<PyBoundingBox3D> {
+        self.0.bounding_box().map(PyBoundingBox3D)
+    }
+
+    /// The trimmed piece as an exact B-spline over the same range: a
+    /// clamped B-spline for an elementary basis, the extracted piece for
+    /// a B-spline one (raises `ValueError` when the poles would overflow
+    /// `f64`).
+    fn to_bspline(&self) -> PyResult<PyBSplineCurve3D> {
+        let (first, last) = (self.0.first(), self.0.last());
+        let basis = self.0.basis().clone();
+        if let Some(b) = basis.as_bspline() {
+            return Ok(PyBSplineCurve3D(b.extract(first, last).map_err(val_err)?));
+        }
+        let elementary = basis
+            .as_elementary()
+            .expect("every non-B-spline curve is elementary");
+        Ok(PyBSplineCurve3D(
+            TrimmedCurve3D::new(elementary, first, last)
+                .map_err(val_err)?
+                .to_bspline()
+                .map_err(val_err)?,
+        ))
+    }
+
     /// The point at the start of the range.
     fn start_point(&self) -> PyPoint3D {
         PyPoint3D(self.0.start_point())
@@ -5244,6 +5949,7 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFrame3D>()?;
     m.add_class::<PyTolerance>()?;
     m.add_class::<PyTransform>()?;
+    m.add_class::<PyBoundingBox3D>()?;
     m.add_class::<PyDiscretization2D>()?;
     m.add_class::<PyDiscretization3D>()?;
 

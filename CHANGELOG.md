@@ -9,6 +9,31 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-10-13
+
+### Added
+
+- Python bindings for the 0.32 B-spline editing and conversion APIs
+  (#58), mirroring the Rust names 1:1 with errors as `ValueError`:
+  - `BSplineCurve3D`: `poles`, `weights`, `knots`, `multiplicities`,
+    `insert_knot`, `refine_knots`, `elevate_degree`, `remove_knot`,
+    `remove_knots`, `to_bezier_pieces`, `split_at`, `extract`,
+    `reversed`, `length` and `approximate_within`.
+  - `BSplineSurface`: `u_pole_count`, `v_pole_count`, `poles`,
+    `weights`, `u_knots`, `u_multiplicities`, `v_knots`,
+    `v_multiplicities`, `u_bounds`, `v_bounds`, per-direction
+    `insert/refine/elevate/remove`, `to_bezier_patches`, `split_u_at`,
+    `split_v_at`, `extract`, `extract_u`, `extract_v`, `reversed_u`,
+    `reversed_v`, `approximate` and `approximate_within`.
+  - Exact conversions: `to_bspline` on `Circle3D`, `Ellipse3D`,
+    `TrimmedCurve3D`, `Sphere` and `Torus`, and `to_bspline_patch` on
+    `Plane`, `Cylinder`, `Cone`, `Sphere` and `Torus`.
+  - `bounds()` on every 3D elementary curve, `u_bounds()`/`v_bounds()`
+    on every surface, the new `BoundingBox3D` (`min`, `max`, `center`,
+    `diagonal`, `union`, `enlarged`, `encloses`, `overlaps`,
+    `from_points`) and `bounding_box()` on every 3D curve and surface
+    type (`None` when unbounded).
+
 ## [0.32.1] - 2026-10-13
 
 ### Changed
@@ -1126,7 +1151,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.32.1...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.32.2...HEAD
+[0.32.2]: https://github.com/geomcore/geomcore/releases/tag/v0.32.2
 [0.32.1]: https://github.com/geomcore/geomcore/releases/tag/v0.32.1
 [0.32.0]: https://github.com/geomcore/geomcore/releases/tag/v0.32.0
 [0.31.0]: https://github.com/geomcore/geomcore/releases/tag/v0.31.0
