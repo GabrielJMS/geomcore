@@ -13,7 +13,9 @@ mod line;
 mod parabola;
 mod parametrize;
 mod trimmed;
-pub use bspline::{BSplineConstructionError, BSplineCurve3D};
+pub use bspline::{
+    BSplineConstructionError, BSplineCurve3D, DegreeElevationError, KnotInsertionError,
+};
 pub use circle::{Circle2D, Circle3D, CircleConstructionError};
 pub use curve::{Curve3D, ElementaryCurve, ParametricCurve3D, PointExtrema3D};
 pub use curve2d::{Curve2D, ParametricCurve2D, PointExtrema2D};

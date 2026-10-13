@@ -11,6 +11,16 @@ the Python distribution are versioned in lockstep.
 
 ### Added
 
+- B-spline editing: knot insertion (`insert_knot`, `refine_knots`),
+  degree elevation (`elevate_degree`) and splitting into Bézier pieces
+  (`to_bezier_pieces`) on `BSplineCurve3D`, and the same per direction on
+  `BSplineSurface` (`insert_u_knot`, `insert_v_knot`, `refine_u_knots`,
+  `refine_v_knots`, `elevate_u_degree`, `elevate_v_degree`,
+  `to_bezier_patches`). Every edit keeps the shape, works on clamped,
+  unclamped and periodic directions, and keeps the poles it does not
+  touch bit for bit, rational ones included. Rational poles are edited
+  in homogeneous form; errors are `KnotInsertionError` and
+  `DegreeElevationError`.
 - Discretization of curves with proven deviations (#17): circles,
   B-splines and trimmed circles and B-splines become points on the curve
   joined by straight segments, each segment reporting a proven upper

@@ -35,9 +35,7 @@ pub(crate) use crate::curves::BSplineConstructionError;
 pub(crate) fn flat_knots(knots: &[f64], mults: &[u32]) -> Vec<f64> {
     let mut out = Vec::with_capacity(mults.iter().map(|&m| m as usize).sum());
     for (&k, &m) in knots.iter().zip(mults.iter()) {
-        for _ in 0..m {
-            out.push(k);
-        }
+        out.extend(std::iter::repeat_n(k, m as usize));
     }
     out
 }
@@ -110,6 +108,15 @@ impl KnotVector {
         }
     }
 
+    /// The single span `[first, last]` of a Bézier piece of `degree`, both
+    /// end knots of multiplicity `degree + 1`.
+    pub(crate) fn bezier(degree: usize, first: f64, last: f64) -> KnotVector {
+        let ends = degree as u32 + 1;
+        let mut flat = vec![first; 2 * degree + 2];
+        flat[degree + 1..].fill(last);
+        KnotVector::from_validated(degree, vec![first, last], vec![ends, ends], flat, false)
+    }
+
     /// The degree.
     pub(crate) fn degree(&self) -> usize {
         self.degree
@@ -128,6 +135,11 @@ impl KnotVector {
     /// The multiplicity of each distinct knot.
     pub(crate) fn multiplicities(&self) -> &[u32] {
         &self.multiplicities
+    }
+
+    /// The flat knots: each knot repeated by its multiplicity.
+    pub(crate) fn flat(&self) -> &[f64] {
+        &self.flat
     }
 
     /// The number of poles along the direction.
