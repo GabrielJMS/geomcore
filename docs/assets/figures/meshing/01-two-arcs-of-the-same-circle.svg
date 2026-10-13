@@ -1,4 +1,4 @@
-<svg viewBox="0 0 560 286" role="img" aria-label="two arcs of the same circle with their chords, the distance between chord and arc marked by an arrow on each; the right-hand arc spans half the angle of the left and its arrow is visibly a quarter as long">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 286" role="img" aria-label="two arcs of the same circle with their chords, the distance between chord and arc marked by an arrow on each; the right-hand arc spans half the angle of the left and its arrow is visibly a quarter as long"><style>:root{--surface:#FFFFFF;--ink:#14181D;--ink-2:#4A535F;--ink-3:#606A77;--rule:#D8DCE3;--rule-2:#C2C8D1;--a:#4568DC;--a-fill:rgba(69,104,220,.12);--b:#A0651B;--sec:#874A91;--sec-fill:rgba(135,74,145,.13);--warn:#9A3B2E;--ax-x:#C0392B;--ax-y:#2C7A3F;--ax-z:#2059B0}@media (prefers-color-scheme:dark){:root{--surface:#161A21;--ink:#E2E7EE;--ink-2:#9AA5B3;--ink-3:#808A99;--rule:#242A34;--rule-2:#333A46;--a:#7F9BF0;--a-fill:rgba(127,155,240,.15);--b:#D9A055;--sec:#D29FD8;--sec-fill:rgba(210,159,216,.15);--warn:#E08172;--ax-x:#F0887A;--ax-y:#6FCB86;--ax-z:#7CB0F2}}</style>
   <path d="M 150 262 L 62.84 139.92" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
   <path d="M 150 262 L 237.16 139.92" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
   <path d="M 150 262 L 150 112" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -29,7 +29,7 @@
   <text class="sv-m" x="421" y="106.57" fill="var(--warn)">&#948;/4</text>
   <text class="sv-m" x="410" y="86" fill="var(--ink-2)" text-anchor="middle">half the step</text>
   <text class="sv-l" x="410" y="100" fill="var(--ink-3)" text-anchor="middle">a quarter of the error</text>
-  <text class="sv-m" x="280" y="40" fill="var(--ink-2)" text-anchor="middle">&#948; = R (1 &minus; cos &#916;&#952;/2)</text>
+  <text class="sv-m" x="280" y="40" fill="var(--ink-2)" text-anchor="middle">&#948; = R (1 &#8722; cos &#916;&#952;/2)</text>
   <text class="sv-l" x="280" y="58" fill="var(--ink-3)" text-anchor="middle">halve the angle and the sagitta falls by four: the error goes as the square of the step</text>
   <text class="sv-l" x="280" y="278" fill="var(--ink-3)" text-anchor="middle">drawn wide to be visible. At R = 10 and a deflection of 0.2 the relation returns 0.4007 rad</text>
 </svg>

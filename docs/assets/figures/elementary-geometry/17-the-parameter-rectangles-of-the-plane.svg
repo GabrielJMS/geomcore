@@ -1,12 +1,12 @@
-<svg viewBox="0 0 560 332" role="img" aria-label="the parameter rectangles of the plane, cylinder, cone, sphere and torus, with their seams and degenerate edges marked">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 332" role="img" aria-label="the parameter rectangles of the plane, cylinder, cone, sphere and torus, with their seams and degenerate edges marked"><style>:root{--surface:#FFFFFF;--ink:#14181D;--ink-2:#4A535F;--ink-3:#606A77;--rule:#D8DCE3;--rule-2:#C2C8D1;--a:#4568DC;--a-fill:rgba(69,104,220,.12);--b:#A0651B;--sec:#874A91;--sec-fill:rgba(135,74,145,.13);--warn:#9A3B2E;--ax-x:#C0392B;--ax-y:#2C7A3F;--ax-z:#2059B0}@media (prefers-color-scheme:dark){:root{--surface:#161A21;--ink:#E2E7EE;--ink-2:#9AA5B3;--ink-3:#808A99;--rule:#242A34;--rule-2:#333A46;--a:#7F9BF0;--a-fill:rgba(127,155,240,.15);--b:#D9A055;--sec:#D29FD8;--sec-fill:rgba(210,159,216,.15);--warn:#E08172;--ax-x:#F0887A;--ax-y:#6FCB86;--ax-z:#7CB0F2}}</style>
   <defs><marker id="fivem" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker></defs>
   <text class="sv-l" x="40" y="39" fill="var(--ink)">Plane</text>
   <rect x="40" y="52" width="112" height="78" rx="2" fill="var(--a-fill)" stroke="var(--rule-2)" stroke-width="1.2" stroke-dasharray="4 3"></rect>
   <text class="sv-l" x="96" y="144" fill="var(--ink-2)" text-anchor="middle">u</text>
   <text class="sv-l" x="31" y="95" fill="var(--ink-2)" text-anchor="end">v</text>
-  <text class="sv-m" x="40" y="144" fill="var(--ink-3)" text-anchor="middle">&minus;&#8734;</text>
+  <text class="sv-m" x="40" y="144" fill="var(--ink-3)" text-anchor="middle">&#8722;&#8734;</text>
   <text class="sv-m" x="152" y="144" fill="var(--ink-3)" text-anchor="middle">&#8734;</text>
-  <text class="sv-m" x="31" y="130" fill="var(--ink-3)" text-anchor="end">&minus;&#8734;</text>
+  <text class="sv-m" x="31" y="130" fill="var(--ink-3)" text-anchor="end">&#8722;&#8734;</text>
   <text class="sv-m" x="31" y="61" fill="var(--ink-3)" text-anchor="end">&#8734;</text>
   <text class="sv-l" x="96" y="160" fill="var(--ink-3)" text-anchor="middle">no seam, no collapse</text>
   <text class="sv-l" x="228" y="39" fill="var(--ink)">Cylinder</text>
@@ -17,7 +17,7 @@
   <text class="sv-l" x="219" y="95" fill="var(--ink-2)" text-anchor="end">v</text>
   <text class="sv-m" x="228" y="144" fill="var(--ink-3)" text-anchor="middle">0</text>
   <text class="sv-m" x="340" y="144" fill="var(--ink-3)" text-anchor="middle">2&#960;</text>
-  <text class="sv-m" x="219" y="130" fill="var(--ink-3)" text-anchor="end">&minus;&#8734;</text>
+  <text class="sv-m" x="219" y="130" fill="var(--ink-3)" text-anchor="end">&#8722;&#8734;</text>
   <text class="sv-m" x="219" y="61" fill="var(--ink-3)" text-anchor="end">&#8734;</text>
   <text class="sv-l" x="284" y="160" fill="var(--ink-3)" text-anchor="middle">u periodic, v a length</text>
   <text class="sv-l" x="416" y="39" fill="var(--ink)">Cone</text>
@@ -28,7 +28,7 @@
   <text class="sv-l" x="407" y="95" fill="var(--ink-2)" text-anchor="end">v</text>
   <text class="sv-m" x="416" y="144" fill="var(--ink-3)" text-anchor="middle">0</text>
   <text class="sv-m" x="528" y="144" fill="var(--ink-3)" text-anchor="middle">2&#960;</text>
-  <text class="sv-m" x="407" y="130" fill="var(--ink-3)" text-anchor="end">&minus;&#8734;</text>
+  <text class="sv-m" x="407" y="130" fill="var(--ink-3)" text-anchor="end">&#8722;&#8734;</text>
   <text class="sv-m" x="407" y="61" fill="var(--ink-3)" text-anchor="end">&#8734;</text>
   <text class="sv-l" x="472" y="160" fill="var(--ink-3)" text-anchor="middle">the apex is inside the domain</text>
   <path d="M 416 108.16 L 528 108.16" fill="none" stroke="var(--warn)" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="round"></path>
@@ -43,7 +43,7 @@
   <text class="sv-l" x="125" y="265" fill="var(--ink-2)" text-anchor="end">v</text>
   <text class="sv-m" x="134" y="314" fill="var(--ink-3)" text-anchor="middle">0</text>
   <text class="sv-m" x="246" y="314" fill="var(--ink-3)" text-anchor="middle">2&#960;</text>
-  <text class="sv-m" x="125" y="300" fill="var(--ink-3)" text-anchor="end">&minus;&#960;/2</text>
+  <text class="sv-m" x="125" y="300" fill="var(--ink-3)" text-anchor="end">&#8722;&#960;/2</text>
   <text class="sv-m" x="125" y="231" fill="var(--ink-3)" text-anchor="end">&#960;/2</text>
   <text class="sv-l" x="190" y="330" fill="var(--ink-3)" text-anchor="middle">both v ends collapse</text>
   <text class="sv-l" x="322" y="209" fill="var(--ink)">Torus</text>

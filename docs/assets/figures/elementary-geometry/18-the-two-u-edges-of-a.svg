@@ -1,4 +1,4 @@
-<svg viewBox="0 0 560 258" role="img" aria-label="the two u edges of a parameter rectangle, and the single seam line they share">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 258" role="img" aria-label="the two u edges of a parameter rectangle, and the single seam line they share"><style>:root{--surface:#FFFFFF;--ink:#14181D;--ink-2:#4A535F;--ink-3:#606A77;--rule:#D8DCE3;--rule-2:#C2C8D1;--a:#4568DC;--a-fill:rgba(69,104,220,.12);--b:#A0651B;--sec:#874A91;--sec-fill:rgba(135,74,145,.13);--warn:#9A3B2E;--ax-x:#C0392B;--ax-y:#2C7A3F;--ax-z:#2059B0}@media (prefers-color-scheme:dark){:root{--surface:#161A21;--ink:#E2E7EE;--ink-2:#9AA5B3;--ink-3:#808A99;--rule:#242A34;--rule-2:#333A46;--a:#7F9BF0;--a-fill:rgba(127,155,240,.15);--b:#D9A055;--sec:#D29FD8;--sec-fill:rgba(210,159,216,.15);--warn:#E08172;--ax-x:#F0887A;--ax-y:#6FCB86;--ax-z:#7CB0F2}}</style>
   <defs><marker id="seam" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker></defs>
   <rect x="50" y="52" width="200" height="168" rx="2" fill="var(--a-fill)" stroke="var(--rule-2)" stroke-width="1.2"></rect>
   <path d="M 50 52 L 50 220" fill="none" stroke="var(--sec)" stroke-width="2.8" stroke-linecap="butt" stroke-linejoin="round"></path>
@@ -7,7 +7,7 @@
   <text class="sv-l" x="41" y="140" fill="var(--ink-2)" text-anchor="end">v</text>
   <text class="sv-m" x="50" y="234" fill="var(--ink-3)" text-anchor="middle">0</text>
   <text class="sv-m" x="250" y="234" fill="var(--ink-3)" text-anchor="middle">2&#960;</text>
-  <text class="sv-m" x="41" y="220" fill="var(--ink-3)" text-anchor="end">&minus;h</text>
+  <text class="sv-m" x="41" y="220" fill="var(--ink-3)" text-anchor="end">&#8722;h</text>
   <text class="sv-m" x="41" y="61" fill="var(--ink-3)" text-anchor="end">h</text>
   <text class="sv-m" x="50" y="44" fill="var(--sec)" text-anchor="middle">u = 0</text>
   <text class="sv-m" x="250" y="44" fill="var(--sec)" text-anchor="middle">u = 2&#960;</text>
