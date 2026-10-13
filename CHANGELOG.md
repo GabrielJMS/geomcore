@@ -9,6 +9,24 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-13
+
+### Added
+
+- Isoparametric curves (#63): `u_iso(u)` fixes `u` and returns the 3D
+  curve running along `v`, `v_iso(v)` the one running along `u`, each
+  parametrized like the surface so the curve at `t` is the surface point
+  at `(u, t)` or `(t, v)`. A `Line3D` on a plane and for cylinder and
+  cone generators, a `Circle3D` for cylinder and cone sections, sphere
+  and torus meridians and parallels, a `BSplineCurve3D` on a
+  `BSplineSurface` (the other direction's degree, knots and periodicity,
+  rational unless its weights all come out equal), and a `Curve3D` from
+  `Surface`. At a cone apex, a sphere pole or a torus pinch the circle
+  has radius zero; on a collapsed B-spline edge every pole coincides.
+  Errors are the new `SurfaceIsoError`: `NonFinite` for a NaN or
+  infinite parameter, `OutOfRange` outside a non-periodic B-spline
+  direction (a periodic one wraps the parameter into its period).
+
 ## [0.32.2] - 2026-10-13
 
 ### Added
@@ -1151,7 +1169,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.32.2...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/geomcore/geomcore/releases/tag/v0.33.0
 [0.32.2]: https://github.com/geomcore/geomcore/releases/tag/v0.32.2
 [0.32.1]: https://github.com/geomcore/geomcore/releases/tag/v0.32.1
 [0.32.0]: https://github.com/geomcore/geomcore/releases/tag/v0.32.0

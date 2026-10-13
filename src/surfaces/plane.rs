@@ -6,6 +6,7 @@ use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
+use crate::surfaces::iso::{SurfaceIsoError, check_iso_param, iso_line};
 use crate::tol;
 use crate::{
     Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D,
@@ -237,6 +238,46 @@ impl Plane {
     /// ```
     pub fn normal(&self) -> Vector3D {
         self.frame.z_direction()
+    }
+
+    /// The `u` isoparametric line at `u`: `u` fixed, running along `v`.
+    /// A line through `origin + u * x_direction` in the `y` direction,
+    /// so `u_iso(u).eval_point(t)` is `eval_point(u, t)` for every `t`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `u`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let iso = plane.u_iso(2.0).unwrap();
+    /// assert_eq!(iso.eval_point(3.0), plane.eval_point(2.0, 3.0));
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<Line3D, SurfaceIsoError> {
+        let u = check_iso_param(u, None)?;
+        iso_line(self.eval_point(u, 0.0), self.frame.y_direction())
+    }
+
+    /// The `v` isoparametric line at `v`: `v` fixed, running along `u`.
+    /// A line through `origin + v * y_direction` in the `x` direction,
+    /// so `v_iso(v).eval_point(t)` is `eval_point(t, v)` for every `t`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `v`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let iso = plane.v_iso(2.0).unwrap();
+    /// assert_eq!(iso.eval_point(3.0), plane.eval_point(3.0, 2.0));
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<Line3D, SurfaceIsoError> {
+        let v = check_iso_param(v, None)?;
+        iso_line(self.eval_point(0.0, v), self.frame.x_direction())
     }
 
     /// Returns the image of this plane under `transform`: the frame origin

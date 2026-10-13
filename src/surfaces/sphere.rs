@@ -5,6 +5,7 @@ use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
+use crate::surfaces::iso::{SurfaceIsoError, check_iso_param, iso_circle};
 use crate::{
     Circle3D, Cone, Cylinder, Frame3D, Point3D, SphereConeIntersection, SphereCylinderIntersection,
     SphereSphereIntersection, Tolerance, Transform, Vector3D,
@@ -141,6 +142,63 @@ impl Sphere {
     /// ```
     pub fn radius(&self) -> f64 {
         self.radius
+    }
+
+    /// The `u` isoparametric circle at `u`: the meridian through both
+    /// poles in the half-plane at angle `u`, so `u_iso(u).eval_point(t)`
+    /// is `eval_point(u, t)` for every `t`. The sphere's own range
+    /// `-PI/2 <= v <= PI/2` covers the half from pole to pole; the other
+    /// half is the meridian at `u + PI`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `u`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let iso = sphere.u_iso(0.0).unwrap();
+    /// assert!(iso.eval_point(1.0).distance(sphere.eval_point(0.0, 1.0)) < 1e-12);
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<Circle3D, SurfaceIsoError> {
+        let u = check_iso_param(u, None)?;
+        let frame = self.frame;
+        let radial = frame.x_direction() * u.cos() + frame.y_direction() * u.sin();
+        iso_circle(
+            frame.origin(),
+            radial.cross(frame.z_direction()),
+            radial,
+            self.radius,
+        )
+    }
+
+    /// The `v` isoparametric circle at `v`: the parallel of radius
+    /// `|r * cos(v)|` at height `r * sin(v)` along the axis, so
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` for every `t`. At a
+    /// pole it is the circle of radius zero.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `v`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let iso = sphere.v_iso(std::f64::consts::FRAC_PI_6).unwrap();
+    /// assert!((iso.radius() - 3f64.sqrt()).abs() < 1e-12);
+    /// assert!((iso.center().z - 1.0).abs() < 1e-12);
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<Circle3D, SurfaceIsoError> {
+        let v = check_iso_param(v, None)?;
+        let frame = self.frame;
+        iso_circle(
+            frame.point_at(0.0, 0.0, self.radius * v.sin()),
+            frame.z_direction(),
+            frame.x_direction(),
+            self.radius * v.cos(),
+        )
     }
 
     /// Returns the image of this sphere under `transform`: the center and

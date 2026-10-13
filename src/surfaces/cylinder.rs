@@ -6,6 +6,7 @@ use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
+use crate::surfaces::iso::{SurfaceIsoError, check_iso_param, iso_circle, iso_line};
 use crate::{
     Axis3D, Circle3D, CylinderCylinderIntersection, Frame3D, Line3D, Point3D, Tolerance, Transform,
     Vector3D,
@@ -189,6 +190,53 @@ impl Cylinder {
     /// ```
     pub fn axis(&self) -> Axis3D {
         self.frame.axis()
+    }
+
+    /// The `u` isoparametric line at `u`: the generator through the point
+    /// at `(u, 0)`, parallel to the axis, so `u_iso(u).eval_point(t)` is
+    /// `eval_point(u, t)` for every `t`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `u`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let iso = cylinder.u_iso(0.0).unwrap();
+    /// assert_eq!(iso.eval_point(3.0), Point3D::new(2.0, 0.0, 3.0));
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<Line3D, SurfaceIsoError> {
+        let u = check_iso_param(u, None)?;
+        iso_line(self.eval_point(u, 0.0), self.frame.z_direction())
+    }
+
+    /// The `v` isoparametric circle at `v`: the ring of the cylinder's
+    /// radius at height `v` along the axis, so `v_iso(v).eval_point(t)` is
+    /// `eval_point(t, v)` for every `t`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `v`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let iso = cylinder.v_iso(3.0).unwrap();
+    /// assert_eq!(iso.center(), Point3D::new(0.0, 0.0, 3.0));
+    /// assert_eq!(iso.radius(), 2.0);
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<Circle3D, SurfaceIsoError> {
+        let v = check_iso_param(v, None)?;
+        let frame = self.frame;
+        iso_circle(
+            frame.point_at(0.0, 0.0, v),
+            frame.z_direction(),
+            frame.x_direction(),
+            self.radius,
+        )
     }
 
     /// Returns the image of this cylinder under `transform`: the frame

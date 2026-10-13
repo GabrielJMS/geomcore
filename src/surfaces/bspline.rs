@@ -16,7 +16,8 @@ use crate::math::newton_min_2d;
 use crate::projection::SurfaceProjection;
 use crate::surface_math::bspline as math;
 use crate::surfaces::ParametricSurface;
-use crate::{Point3D, Tolerance, Transform, Vector3D};
+use crate::surfaces::iso::{SurfaceIsoError, check_iso_param};
+use crate::{BSplineCurve3D, Point3D, Tolerance, Transform, Vector3D};
 
 pub use crate::curves::BSplineConstructionError;
 use crate::curves::{
@@ -1265,6 +1266,129 @@ impl BSplineSurface {
             weights: self.weights.as_ref().map(|w| gathered(w, &order)),
             patches: Lazy::default(),
         }
+    }
+
+    /// The `u` isoparametric curve at `u`: `u` fixed, running along `v`
+    /// with the `v` degree, knots and periodicity, so
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` for every `t`.
+    ///
+    /// Each pole is a column of the net blended by the `u` basis functions
+    /// at `u`, in homogeneous coordinates if rational. The curve is
+    /// rational unless its weights all come out equal, as for a surface
+    /// rational in `u` alone. On a collapsed edge (a pole of a surface of
+    /// revolution) every pole coincides and the curve is that point.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SurfaceIsoError::NonFinite`] for a NaN or infinite `u`
+    /// and [`SurfaceIsoError::OutOfRange`] for a `u` outside the bounds of
+    /// a non-periodic `u` direction; a periodic one wraps it into the
+    /// period.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let iso = surface.u_iso(0.25).unwrap();
+    /// assert_eq!(iso.degree(), 1);
+    /// assert!(iso.eval_point(0.5).distance(surface.eval_point(0.25, 0.5)) < 1e-12);
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<BSplineCurve3D, SurfaceIsoError> {
+        let u = check_iso_param(u, Some(&self.u_knots))?;
+        Ok(self.iso(Direction::U, u))
+    }
+
+    /// The `v` isoparametric curve at `v`: `v` fixed, running along `u`
+    /// with the `u` degree, knots and periodicity, so
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` for every `t`. See
+    /// [`BSplineSurface::u_iso`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SurfaceIsoError::NonFinite`] for a NaN or infinite `v`
+    /// and [`SurfaceIsoError::OutOfRange`] for a `v` outside the bounds of
+    /// a non-periodic `v` direction; a periodic one wraps it into the
+    /// period.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![0.0, 1.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let iso = surface.v_iso(0.5).unwrap();
+    /// assert_eq!(iso.degree(), 2);
+    /// assert!(iso.eval_point(0.25).distance(surface.eval_point(0.25, 0.5)) < 1e-12);
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<BSplineCurve3D, SurfaceIsoError> {
+        let v = check_iso_param(v, Some(&self.v_knots))?;
+        Ok(self.iso(Direction::V, v))
+    }
+
+    /// The isoparametric curve with `direction` fixed at `t`, a checked
+    /// parameter: every lane of the net across `direction` blended by its
+    /// basis functions at `t`.
+    fn iso(&self, direction: Direction, t: f64) -> BSplineCurve3D {
+        let (fixed, along) = match direction {
+            Direction::U => (&self.u_knots, &self.v_knots),
+            Direction::V => (&self.v_knots, &self.u_knots),
+        };
+        let n_v = self.v_knots.pole_count();
+        let index = |i: usize, j: usize| match direction {
+            Direction::U => i * n_v + j,
+            Direction::V => j * n_v + i,
+        };
+        let mut basis = [0.0f64; curve::LARGE];
+        let first = fixed.basis(t, &mut basis);
+        let basis = &basis[..=fixed.degree()];
+        let net = self.pole_view();
+
+        let mut poles = Vec::with_capacity(along.pole_count());
+        let mut weights = Vec::with_capacity(along.pole_count());
+        for j in 0..along.pole_count() {
+            let mut sum = [0.0f64; 4];
+            for (k, &b) in basis.iter().enumerate() {
+                let h = net.homogeneous(index(fixed.pole_index(first, k), j));
+                for c in 0..4 {
+                    sum[c] += b * h[c];
+                }
+            }
+            if self.weights.is_some() {
+                let inverse = 1.0 / sum[3];
+                poles.push(Point3D::new(
+                    sum[0] * inverse,
+                    sum[1] * inverse,
+                    sum[2] * inverse,
+                ));
+                weights.push(sum[3]);
+            } else {
+                poles.push(Point3D::new(sum[0], sum[1], sum[2]));
+            }
+        }
+        let rational = weights.windows(2).any(|w| w[0] != w[1]);
+        BSplineCurve3D::from_validated_parts(
+            along.degree(),
+            poles,
+            rational.then_some(weights),
+            along.knots().to_vec(),
+            along.multiplicities().to_vec(),
+            along.flat().to_vec(),
+            along.is_periodic(),
+        )
     }
 
     /// The piece over `u_range` and `v_range`, either left whole if

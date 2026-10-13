@@ -6,9 +6,10 @@ use crate::Intersect;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
+use crate::surfaces::iso::{SurfaceIsoError, check_iso_param, iso_circle, iso_line};
 use crate::tol;
 use crate::{
-    Circle3D, ConeConeIntersection, ConeCylinderIntersection, Cylinder, Frame3D, Point3D,
+    Circle3D, ConeConeIntersection, ConeCylinderIntersection, Cylinder, Frame3D, Line3D, Point3D,
     Tolerance, Transform, Vector3D,
 };
 use std::fmt;
@@ -263,6 +264,57 @@ impl Cone {
     pub fn apex(&self) -> Point3D {
         let v = -self.ref_radius / self.semi_angle.tan();
         self.frame.point_at(0.0, 0.0, v)
+    }
+
+    /// The `u` isoparametric line at `u`: the generator through the point
+    /// at `(u, 0)` and the apex, running on through it onto the opposite
+    /// nappe, so `u_iso(u).eval_point(t)` is `eval_point(u, t)` for every
+    /// `t`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `u`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+    /// let iso = cone.u_iso(1.0).unwrap();
+    /// assert!(iso.eval_point(-2.0).distance(cone.eval_point(1.0, -2.0)) < 1e-12);
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<Line3D, SurfaceIsoError> {
+        let u = check_iso_param(u, None)?;
+        iso_line(self.eval_point(u, 0.0), self.eval_derivative(u, 0.0, 0, 1))
+    }
+
+    /// The `v` isoparametric circle at `v`: the section of radius
+    /// `|ref_radius + v * sin(semi_angle)|` at height
+    /// `v * cos(semi_angle)` along the axis, so `v_iso(v).eval_point(t)`
+    /// is `eval_point(t, v)` for every `t`, on either nappe. At the apex
+    /// it is the circle of radius zero.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `v`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, std::f64::consts::FRAC_PI_4, 1.0).unwrap();
+    /// let at_apex = -std::f64::consts::SQRT_2;
+    /// let iso = cone.v_iso(at_apex).unwrap();
+    /// assert!(iso.radius() < 1e-12);
+    /// assert!(iso.center().distance(cone.apex()) < 1e-12);
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<Circle3D, SurfaceIsoError> {
+        let v = check_iso_param(v, None)?;
+        let frame = self.frame;
+        iso_circle(
+            frame.point_at(0.0, 0.0, v * self.semi_angle.cos()),
+            frame.z_direction(),
+            frame.x_direction(),
+            self.ref_radius + v * self.semi_angle.sin(),
+        )
     }
 
     /// Returns the image of this cone under `transform`: the frame origin

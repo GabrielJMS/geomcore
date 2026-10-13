@@ -162,7 +162,7 @@ pub use projection::{CurveProjection, SurfaceProjection};
 pub use surfaces::{
     BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
     ElementarySurface, ParametricSurface, Plane, PlaneConstructionError, Sphere,
-    SphereConstructionError, Surface, Torus, TorusConstructionError,
+    SphereConstructionError, Surface, SurfaceIsoError, Torus, TorusConstructionError,
 };
 pub use tolerance::Tolerance;
 pub use transform::Transform;
