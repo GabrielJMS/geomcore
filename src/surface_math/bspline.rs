@@ -378,9 +378,14 @@ pub(crate) fn net_distance_bound(
         for &x in points {
             let d = sub(x, point);
             for a in 0..3 {
+                // Comparisons, cheaper than `f64::min`.
                 let y = dot(d, axes[a]);
-                lo[a] = lo[a].min(y);
-                hi[a] = hi[a].max(y);
+                if y < lo[a] {
+                    lo[a] = y;
+                }
+                if y > hi[a] {
+                    hi[a] = y;
+                }
             }
         }
         (0..3)
@@ -594,7 +599,12 @@ pub(crate) fn derivative_bounds(
     let mut value = [Interval::EMPTY; 3];
     for x in points {
         for c in 0..3 {
-            value[c] = value[c].hull(x[c]);
+            if x[c] < value[c].lo {
+                value[c].lo = x[c];
+            }
+            if x[c] > value[c].hi {
+                value[c].hi = x[c];
+            }
         }
     }
     // A rational patch is taken about its centre: `S - centre` has the
@@ -604,46 +614,11 @@ pub(crate) fn derivative_bounds(
     } else {
         [0.0; 3]
     };
-    let at = |i: usize, j: usize, c: usize| {
-        let k = (i * cols + j) * h;
-        if c < 3 && h == 4 {
-            net[k + c] - centre[c] * net[k + 3]
-        } else {
-            net[k + c]
-        }
+    let (mut hulls, weight) = if h == 4 {
+        difference_hulls::<4>(net, rows, cols, centre, second)
+    } else {
+        difference_hulls::<3>(net, rows, cols, centre, second)
     };
-    // Hulls of each homogeneous coordinate's difference nets, in the
-    // order `[s, t, ss, st, tt]`, before the degree factors.
-    let mut hulls = [[Interval::EMPTY; 4]; 5];
-    let mut weight = Interval::EMPTY;
-    for i in 0..=p {
-        for j in 0..=q {
-            #[allow(clippy::needless_range_loop)] // `c` indexes the net too
-            for c in 0..h {
-                let x = at(i, j, c);
-                if i < p {
-                    let ds = at(i + 1, j, c) - x;
-                    hulls[0][c] = hulls[0][c].hull(ds);
-                    if second && i + 1 < p {
-                        hulls[2][c] = hulls[2][c].hull(at(i + 2, j, c) - at(i + 1, j, c) - ds);
-                    }
-                    if second && j < q {
-                        hulls[3][c] = hulls[3][c].hull(at(i + 1, j + 1, c) - at(i, j + 1, c) - ds);
-                    }
-                }
-                if j < q {
-                    let dt = at(i, j + 1, c) - x;
-                    hulls[1][c] = hulls[1][c].hull(dt);
-                    if second && j + 1 < q {
-                        hulls[4][c] = hulls[4][c].hull(at(i, j + 2, c) - at(i, j + 1, c) - dt);
-                    }
-                }
-            }
-            if h == 4 {
-                weight = weight.hull(at(i, j, 3));
-            }
-        }
-    }
     let (pf, qf) = (p as f64, q as f64);
     let factors = [pf, qf, pf * (pf - 1.0), pf * qf, qf * (qf - 1.0)];
     for (hull, k) in hulls.iter_mut().zip(factors) {
@@ -690,6 +665,86 @@ pub(crate) fn derivative_bounds(
         }
     }
     (value, d)
+}
+
+/// Hulls of each homogeneous coordinate's difference nets for
+/// [`derivative_bounds`], in the order `[s, t, ss, st, tt]` (the second
+/// ones only if `second`), before the degree factors, and the hull of the
+/// weights (empty unless `H == 4`). A rational net, of `H == 4` values a
+/// point, is taken about `centre`.
+fn difference_hulls<const H: usize>(
+    net: &[f64],
+    rows: usize,
+    cols: usize,
+    centre: [f64; 3],
+    second: bool,
+) -> ([[Interval; 4]; 5], Interval) {
+    let width = cols * H;
+    let row = |i: usize| &net[i * width..(i + 1) * width];
+    // A point of the net, about `centre` if rational.
+    let shifted = |x: &[f64]| -> [f64; H] {
+        std::array::from_fn(|c| {
+            if c < 3 && H == 4 {
+                x[c] - centre[c] * x[3]
+            } else {
+                x[c]
+            }
+        })
+    };
+    let points = |i: usize| row(i).chunks_exact(H).map(shifted);
+    let mut hulls = [[Interval::EMPTY; 4]; 5];
+    // Each difference net over exactly its own indices, the hull widened
+    // by comparisons (cheaper than `f64::min`, and as blind to NaN).
+    let mut widen = |k: usize, d: [f64; H]| {
+        for (hull, x) in hulls[k].iter_mut().zip(d) {
+            if x < hull.lo {
+                hull.lo = x;
+            }
+            if x > hull.hi {
+                hull.hi = x;
+            }
+        }
+    };
+    let difference =
+        |a: [f64; H], b: [f64; H]| -> [f64; H] { std::array::from_fn(|c| b[c] - a[c]) };
+    for i in 0..rows {
+        // Along `t`, within the row.
+        for (a, b) in points(i).zip(points(i).skip(1)) {
+            widen(1, difference(a, b));
+        }
+        if second {
+            for ((a, b), c) in points(i).zip(points(i).skip(1)).zip(points(i).skip(2)) {
+                widen(4, difference(difference(a, b), difference(b, c)));
+            }
+        }
+        if i + 1 == rows {
+            break;
+        }
+        // Along `s`, to the next row.
+        for (a, b) in points(i).zip(points(i + 1)) {
+            widen(0, difference(a, b));
+        }
+        if second {
+            for ((a, b), (c, d)) in points(i)
+                .zip(points(i + 1))
+                .zip(points(i).skip(1).zip(points(i + 1).skip(1)))
+            {
+                widen(3, difference(difference(a, b), difference(c, d)));
+            }
+            if i + 2 < rows {
+                for ((a, b), c) in points(i).zip(points(i + 1)).zip(points(i + 2)) {
+                    widen(2, difference(difference(a, b), difference(b, c)));
+                }
+            }
+        }
+    }
+    let mut weight = Interval::EMPTY;
+    if H == 4 {
+        for x in net.chunks_exact(H) {
+            weight = weight.hull(x[3]);
+        }
+    }
+    (hulls, weight)
 }
 
 /// Homogeneous `[H, Hu, Hv, Huu, Huv, Hvv]` at `(u, v)` (`w = 1` if
