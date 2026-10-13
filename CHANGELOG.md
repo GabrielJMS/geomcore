@@ -9,6 +9,26 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-13
+
+### Added
+
+- Point coincidence (#65): `Point2D::coincides` and `Point3D::coincides`
+  return whether another point is within `tol.confusion`, the test every
+  geometric decision already made by hand; in Python `p.coincides(q)`,
+  with `Tolerance.default()` when no tolerance is given.
+
+### Changed
+
+- Python value equality (#65): `==` on every Python class compares values
+  exactly, field by field, as in Rust, so
+  `Point3D(1, 2, 3) == Point3D(1, 2, 3)` is now `True` instead of an
+  identity check. Comparing with a value of another class is `False`. As
+  `f64` is not `Eq`, the classes are no longer hashable: code that put
+  points in a set or used them as dict keys, where they were matched by
+  identity, now raises `TypeError`. ADR 0009 records why equality never
+  takes a tolerance.
+
 ## [0.33.0] - 2026-10-13
 
 ### Added
@@ -1169,7 +1189,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/geomcore/geomcore/releases/tag/v0.34.0
 [0.33.0]: https://github.com/geomcore/geomcore/releases/tag/v0.33.0
 [0.32.2]: https://github.com/geomcore/geomcore/releases/tag/v0.32.2
 [0.32.1]: https://github.com/geomcore/geomcore/releases/tag/v0.32.1

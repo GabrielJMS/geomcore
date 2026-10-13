@@ -185,6 +185,107 @@ def test_tolerance_defaults():
     assert tol.angular_for_extent(1e9) == tol.angular
 
 
+def test_points_coincide_within_confusion():
+    p = Point3D(1.0, 2.0, 3.0)
+    assert p.coincides(Point3D(1.0, 2.0, 3.0 + 5e-8))
+    assert not p.coincides(Point3D(1.0, 2.0, 3.0 + 5e-7))
+    near = Point3D(1.0, 2.0005, 3.0)
+    assert not p.coincides(near)
+    assert p.coincides(near, Tolerance(confusion=1e-3))
+    assert p.coincides(near, tol=Tolerance(confusion=1e-3))
+    q = Point2D(1.0, 2.0)
+    assert q.coincides(Point2D(1.0 + 5e-8, 2.0))
+    assert not q.coincides(Point2D(1.0 + 5e-7, 2.0))
+
+
+def _bspline_curve(end):
+    return BSplineCurve3D(1, [Point3D.origin(), end], [0.0, 1.0], [2, 2], False)
+
+
+def _bspline_surface(corner_z):
+    poles = [
+        [Point3D(0.0, 0.0, 0.0), Point3D(0.0, 1.0, 0.0)],
+        [Point3D(1.0, 0.0, 0.0), Point3D(1.0, 1.0, corner_z)],
+    ]
+    return geomcore.surfaces.BSplineSurface(
+        1, 1, poles, [0.0, 1.0], [2, 2], [0.0, 1.0], [2, 2], False, False
+    )
+
+
+_O, _X, _Z = Point3D.origin(), Vector3D.x(), Vector3D.z()
+
+# For each class: a factory building one value, and a value that differs from it.
+VALUE_TYPES = [
+    (lambda: Point3D(1.0, 2.0, 3.0), Point3D(1.0, 2.0, 3.0 + 1e-12)),
+    (lambda: Point2D(1.0, 2.0), Point2D(1.0, 2.5)),
+    (lambda: Vector3D(1.0, 0.0, 0.0), Vector3D(0.0, 1.0, 0.0)),
+    (lambda: Vector2D(1.0, 0.0), Vector2D(0.0, 1.0)),
+    (lambda: Axis3D(_O, _Z), Axis3D(_O, _X)),
+    (lambda: Frame3D(_O, _Z, _X), Frame3D(Point3D(0.0, 0.0, 1.0), _Z, _X)),
+    (lambda: Tolerance(), Tolerance(confusion=1e-3)),
+    (lambda: Transform.translation(_X), Transform.identity()),
+    (lambda: BoundingBox3D(_O, Point3D(1.0, 1.0, 1.0)), BoundingBox3D(_O, Point3D(2.0, 1.0, 1.0))),
+    (lambda: geomcore.surfaces.Plane(_O, _Z), geomcore.surfaces.Plane(_O, _X)),
+    (lambda: Cylinder(_O, _Z, 1.0), Cylinder(_O, _Z, 2.0)),
+    (lambda: geomcore.surfaces.Cone(_O, _Z, 0.3, 1.0), geomcore.surfaces.Cone(_O, _Z, 0.4, 1.0)),
+    (lambda: Sphere(_O, 1.0), Sphere(_O, 2.0)),
+    (lambda: geomcore.surfaces.Torus(_O, _Z, 3.0, 1.0), geomcore.surfaces.Torus(_O, _Z, 3.0, 0.5)),
+    (lambda: _bspline_surface(0.0), _bspline_surface(1.0)),
+    (lambda: geomcore.curves.Line3D(_O, _X), geomcore.curves.Line3D(_O, _Z)),
+    (lambda: Circle3D(_O, _Z, 2.0), Circle3D(_O, _Z, 2.5)),
+    (
+        lambda: geomcore.curves.Ellipse3D(_O, _Z, _X, 3.0, 1.0),
+        geomcore.curves.Ellipse3D(_O, _Z, _X, 3.0, 2.0),
+    ),
+    (lambda: geomcore.curves.Parabola3D(_O, _Z, _X, 1.0), geomcore.curves.Parabola3D(_O, _Z, _X, 2.0)),
+    (
+        lambda: geomcore.curves.Hyperbola3D(_O, _Z, _X, 3.0, 1.0),
+        geomcore.curves.Hyperbola3D(_O, _Z, _X, 3.0, 2.0),
+    ),
+    (lambda: _bspline_curve(Point3D(1.0, 0.0, 0.0)), _bspline_curve(Point3D(2.0, 0.0, 0.0))),
+    (lambda: Line2D(Point2D.origin(), Vector2D(1.0, 0.0)), Line2D(Point2D.origin(), Vector2D(0.0, 1.0))),
+    (lambda: geomcore.curves.Circle2D(Point2D.origin(), 1.0), geomcore.curves.Circle2D(Point2D.origin(), 2.0)),
+    (
+        lambda: geomcore.curves.TrimmedCurve3D.segment(_O, Point3D(1.0, 0.0, 0.0)),
+        geomcore.curves.TrimmedCurve3D.segment(_O, Point3D(2.0, 0.0, 0.0)),
+    ),
+    (
+        lambda: geomcore.curves.TrimmedCurve2D.segment(Point2D.origin(), Point2D(1.0, 0.0)),
+        geomcore.curves.TrimmedCurve2D.segment(Point2D.origin(), Point2D(2.0, 0.0)),
+    ),
+    (lambda: Circle3D(_O, _Z, 2.0).discretize(0.1), Circle3D(_O, _Z, 2.0).discretize(0.01)),
+    (
+        lambda: geomcore.curves.Circle2D(Point2D.origin(), 1.0).discretize(0.1),
+        geomcore.curves.Circle2D(Point2D.origin(), 1.0).discretize(0.01),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "make, different", VALUE_TYPES, ids=[type(d).__name__ for _, d in VALUE_TYPES]
+)
+def test_equality_compares_values_exactly(make, different):
+    value = make()
+    assert value == make()
+    assert not value != make()
+    assert value != different
+    assert value != "not a geometry value"
+
+
+@pytest.mark.parametrize(
+    "make, different", VALUE_TYPES, ids=[type(d).__name__ for _, d in VALUE_TYPES]
+)
+def test_value_types_are_unhashable(make, different):
+    with pytest.raises(TypeError, match="unhashable"):
+        hash(make())
+
+
+def test_equal_points_from_different_computations():
+    curve = _bspline_curve(Point3D(2.0, 0.0, 0.0))
+    assert curve.eval_point(0.5) == Point3D(1.0, 0.0, 0.0)
+    assert curve.eval_point(0.0) == Point3D.origin()
+
+
 def test_contains_curve():
     circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
     assert circle.contains(Point3D(2.0, 0.0, 0.0))

@@ -1,3 +1,4 @@
+use crate::tolerance::Tolerance;
 use crate::vector::{Vector2D, Vector3D};
 
 /// Two-dimensional point.
@@ -46,6 +47,22 @@ impl Point2D {
         let dx = other.x - self.x;
         let dy = other.y - self.y;
         (dx * dx + dy * dy).sqrt()
+    }
+
+    /// Whether `other` is within `tol.confusion` of this point. Unlike `==`,
+    /// which compares coordinates exactly, this is not transitive.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point2D, Tolerance};
+    /// let p = Point2D::new(1.0, 2.0);
+    /// let q = Point2D::new(1.0 + 1e-9, 2.0);
+    /// assert!(p.coincides(q, Tolerance::DEFAULT));
+    /// assert_ne!(p, q);
+    /// ```
+    pub fn coincides(self, other: Point2D, tol: Tolerance) -> bool {
+        self.distance(other) <= tol.confusion
     }
 
     /// Whether every coordinate is finite (neither NaN nor infinite).
@@ -116,6 +133,22 @@ impl Point3D {
         let dy = other.y - self.y;
         let dz = other.z - self.z;
         (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+
+    /// Whether `other` is within `tol.confusion` of this point. Unlike `==`,
+    /// which compares coordinates exactly, this is not transitive.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Tolerance};
+    /// let p = Point3D::new(1.0, 2.0, 3.0);
+    /// let q = Point3D::new(1.0, 2.0, 3.0 + 1e-9);
+    /// assert!(p.coincides(q, Tolerance::DEFAULT));
+    /// assert_ne!(p, q);
+    /// ```
+    pub fn coincides(self, other: Point3D, tol: Tolerance) -> bool {
+        self.distance(other) <= tol.confusion
     }
 
     /// Whether every coordinate is finite (neither NaN nor infinite).
@@ -232,6 +265,17 @@ mod tests {
     }
 
     #[test]
+    fn test_point3_coincides_within_confusion() {
+        let p = Point3D::new(1.0, 2.0, 3.0);
+        let tol = Tolerance::DEFAULT;
+        assert!(p.coincides(Point3D::new(1.0, 2.0, 3.0 + 5e-8), tol));
+        assert!(!p.coincides(Point3D::new(1.0, 2.0, 3.0 + 5e-7), tol));
+        let loose = Tolerance::new(1e-3, tol.angular, tol.parametric);
+        assert!(p.coincides(Point3D::new(1.0, 2.0005, 3.0), loose));
+        assert!(!p.coincides(Point3D::new(f64::NAN, 2.0, 3.0), loose));
+    }
+
+    #[test]
     fn test_point3_add_vector() {
         let p = Point3D::new(1.0, 2.0, 3.0);
         let v = Vector3D::new(4.0, 5.0, 6.0);
@@ -277,6 +321,15 @@ mod tests {
         let p1 = Point2D::new(0.0, 0.0);
         let p2 = Point2D::new(3.0, 4.0);
         assert_eq!(p1.distance(p2), 5.0);
+    }
+
+    #[test]
+    fn test_point2_coincides_within_confusion() {
+        let p = Point2D::new(1.0, 2.0);
+        let tol = Tolerance::DEFAULT;
+        assert!(p.coincides(Point2D::new(1.0 + 5e-8, 2.0), tol));
+        assert!(!p.coincides(Point2D::new(1.0 + 5e-7, 2.0), tol));
+        assert!(!p.coincides(Point2D::new(1.0, f64::INFINITY), tol));
     }
 
     #[test]

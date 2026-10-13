@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple, Union, final
+from typing import Any, ClassVar, List, Optional, Tuple, Union, final
 
 from typing_extensions import deprecated
 
@@ -7,6 +7,7 @@ from geomcore.curves import Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D
 
 @final
 class Plane:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, point: Point3D, normal: Vector3D) -> Plane: ...
     @staticmethod
     def from_frame(frame: Frame3D) -> Plane: ...
@@ -62,6 +63,7 @@ class Plane:
 
 @final
 class Cylinder:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point3D, axis_direction: Vector3D, radius: float) -> Cylinder: ...
     @staticmethod
     def from_frame(frame: Frame3D, radius: float) -> Cylinder: ...
@@ -111,6 +113,7 @@ class Cylinder:
 
 @final
 class Cone:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, center: Point3D, axis_direction: Vector3D, semi_angle: float, ref_radius: float
     ) -> Cone: ...
@@ -166,6 +169,7 @@ class Cone:
 
 @final
 class Sphere:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point3D, radius: float) -> Sphere: ...
     @staticmethod
     def from_frame(frame: Frame3D, radius: float) -> Sphere: ...
@@ -219,6 +223,7 @@ class Sphere:
 
 @final
 class Torus:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, center: Point3D, normal: Vector3D, major_radius: float, minor_radius: float
     ) -> Torus: ...
@@ -272,6 +277,7 @@ class Torus:
 
 @final
 class BSplineSurface:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,
         u_degree: int,
