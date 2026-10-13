@@ -68,6 +68,8 @@ Two more landmarks, as figures:
 <figcaption>Plane against sphere: a circle, a tangent point, or empty — classified, not sampled.</figcaption>
 </figure>
 
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/plane-sphere.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="A plane against a sphere at three distances: a circle, a tangent point, nothing"></iframe>
+
 ## Numeric: curves
 
 `intersect_curve_curve` and `intersect_curve_surface` work over the
@@ -151,5 +153,5 @@ tunable sampling density is
 
 <iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/intersect-marching.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="B-spline patch and sphere with their marching intersection loop"></iframe>
 
-All three scenes on this page were computed by the kernel itself —
+All the scenes on this page were computed by the kernel itself —
 see `docs/assets/scenes/gen_scenes.py` — not drawn by hand.
