@@ -1,0 +1,12 @@
+<svg viewBox="0 0 196 150" role="img" aria-label="a vector, rotated but not translated">
+  <defs><marker id="vp" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--a)"></path></marker><marker id="vq" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--rule-2)"></path></marker><marker id="vt" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 70 96 L 114 66" fill="none" stroke="var(--rule-2)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#vq)"></path>
+  <text class="sv-m" x="94" y="95" fill="var(--ink-2)"></text>
+  <text class="sv-m" x="106" y="93" fill="var(--ink-3)" text-anchor="middle">v</text>
+  <path d="M 103.15 82.8 L 108.55 82.8" fill="none" stroke="var(--ink-3)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 106.15 80.9 L 108.75 82.8 L 106.15 84.7" fill="none" stroke="var(--ink-3)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 72 38 L 125.21 35.88" fill="none" stroke="var(--a)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#vp)"></path>
+  <text class="sv-m" x="102.61" y="17.94" fill="var(--a)" text-anchor="middle">T(v)</text>
+  <path d="M 90.31 7.74 L 114.61 7.74" fill="none" stroke="var(--a)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 112.21 5.84 L 114.81 7.74 L 112.21 9.64" fill="none" stroke="var(--a)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>

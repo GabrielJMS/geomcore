@@ -14,11 +14,31 @@ markdown_extensions:
   - pymdownx.highlight
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
   - tables
+
+extra_css:
+  - stylesheets/figures.css
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js
+  - javascripts/mathjax.js
 
 nav:
   - Home: index.md
-  - NURBS: nurbs.md
+  - Geometry:
+    - Elementary curves & surfaces: geometry/elementary.md
+  - NURBS:
+    - Overview: nurbs/index.md
+    - Curves: nurbs/curves.md
+    - Surfaces: nurbs/surfaces.md
+    - Editing & fitting: nurbs/editing-fitting.md
+  - Guides:
+    - Projection & containment: guides/projection.md
+    - Intersection: guides/intersection.md
+    - Discretization: guides/discretization.md
+    - Curve on surface: guides/parametrization.md
   - Viewer: viewer.md
   - Python: python.md
   - Roadmap: roadmap.md

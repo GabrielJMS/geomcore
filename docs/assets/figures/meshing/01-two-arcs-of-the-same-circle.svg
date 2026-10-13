@@ -1,0 +1,35 @@
+<svg viewBox="0 0 560 286" role="img" aria-label="two arcs of the same circle with their chords, the distance between chord and arc marked by an arrow on each; the right-hand arc spans half the angle of the left and its arrow is visibly a quarter as long">
+  <path d="M 150 262 L 62.84 139.92" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 150 262 L 237.16 139.92" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 150 262 L 150 112" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 62.84 139.92 L 65.23 138.25 L 67.64 136.63 L 70.08 135.06 L 72.56 133.54 L 75.06 132.06 L 77.59 130.63 L 80.15 129.26 L 82.74 127.93 L 85.35 126.65 L 87.98 125.42 L 90.64 124.25 L 93.32 123.12 L 96.02 122.05 L 98.74 121.03 L 101.48 120.06 L 104.24 119.15 L 107.02 118.29 L 109.81 117.48 L 112.62 116.73 L 115.44 116.04 L 118.27 115.39 L 121.12 114.81 L 123.98 114.27 L 126.84 113.8 L 129.72 113.38 L 132.6 113.01 L 135.49 112.7 L 138.39 112.45 L 141.29 112.25 L 144.19 112.11 L 147.09 112.03 L 150 112 L 152.91 112.03 L 155.81 112.11 L 158.71 112.25 L 161.61 112.45 L 164.51 112.7 L 167.4 113.01 L 170.28 113.38 L 173.16 113.8 L 176.02 114.27 L 178.88 114.81 L 181.73 115.39 L 184.56 116.04 L 187.38 116.73 L 190.19 117.48 L 192.98 118.29 L 195.76 119.15 L 198.52 120.06 L 201.26 121.03 L 203.98 122.05 L 206.68 123.12 L 209.36 124.25 L 212.02 125.42 L 214.65 126.65 L 217.26 127.93 L 219.85 129.26 L 222.41 130.63 L 224.94 132.06 L 227.44 133.54 L 229.92 135.06 L 232.36 136.63 L 234.77 138.25 L 237.16 139.92" fill="none" stroke="var(--a)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 62.84 139.92 L 237.16 139.92" fill="none" stroke="var(--sec)" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 150 139.92 L 150 112" fill="none" stroke="var(--warn)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="62.84" cy="139.92" r="3.0" fill="var(--sec)"></circle>
+  <circle cx="237.16" cy="139.92" r="3.0" fill="var(--sec)"></circle>
+  <circle cx="150" cy="262" r="2.6" fill="var(--ink-3)"></circle>
+  <path d="M 150 228 L 151.32 228.03 L 152.63 228.1 L 153.94 228.23 L 155.25 228.41 L 156.55 228.64 L 157.83 228.91 L 159.11 229.24 L 160.37 229.62 L 161.62 230.05 L 162.85 230.52 L 164.06 231.04 L 165.25 231.61 L 166.41 232.22 L 167.55 232.88 L 168.67 233.58 L 169.76 234.33" fill="none" stroke="var(--ink-3)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="166" y="218" fill="var(--ink-3)">&#916;&#952;/2</text>
+  <text class="sv-m" x="203.32" y="192.52" fill="var(--ink-3)">R</text>
+  <text class="sv-m" x="161" y="129.96" fill="var(--warn)">&#948;</text>
+  <text class="sv-m" x="150" y="86" fill="var(--ink-2)" text-anchor="middle">one step</text>
+  <text class="sv-l" x="150" y="100" fill="var(--ink-3)" text-anchor="middle">the arrow is the error</text>
+  <path d="M 410 262 L 364.24 119.15" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 410 262 L 455.76 119.15" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 410 262 L 410 112" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 364.24 119.15 L 365.63 118.71 L 367.02 118.29 L 368.41 117.88 L 369.81 117.48 L 371.21 117.1 L 372.62 116.73 L 374.03 116.38 L 375.44 116.04 L 376.85 115.71 L 378.27 115.39 L 379.69 115.09 L 381.12 114.81 L 382.55 114.53 L 383.98 114.27 L 385.41 114.03 L 386.84 113.8 L 388.28 113.58 L 389.72 113.38 L 391.16 113.19 L 392.6 113.01 L 394.05 112.85 L 395.49 112.7 L 396.94 112.57 L 398.39 112.45 L 399.84 112.34 L 401.29 112.25 L 402.74 112.18 L 404.19 112.11 L 405.64 112.06 L 407.09 112.03 L 408.55 112.01 L 410 112 L 411.45 112.01 L 412.91 112.03 L 414.36 112.06 L 415.81 112.11 L 417.26 112.18 L 418.71 112.25 L 420.16 112.34 L 421.61 112.45 L 423.06 112.57 L 424.51 112.7 L 425.95 112.85 L 427.4 113.01 L 428.84 113.19 L 430.28 113.38 L 431.72 113.58 L 433.16 113.8 L 434.59 114.03 L 436.02 114.27 L 437.45 114.53 L 438.88 114.81 L 440.31 115.09 L 441.73 115.39 L 443.15 115.71 L 444.56 116.04 L 445.97 116.38 L 447.38 116.73 L 448.79 117.1 L 450.19 117.48 L 451.59 117.88 L 452.98 118.29 L 454.37 118.71 L 455.76 119.15" fill="none" stroke="var(--a)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 364.24 119.15 L 455.76 119.15" fill="none" stroke="var(--sec)" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 410 119.15 L 410 112" fill="none" stroke="var(--warn)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="364.24" cy="119.15" r="3.0" fill="var(--sec)"></circle>
+  <circle cx="455.76" cy="119.15" r="3.0" fill="var(--sec)"></circle>
+  <circle cx="410" cy="262" r="2.6" fill="var(--ink-3)"></circle>
+  <path d="M 410 228 L 410.66 228.01 L 411.32 228.03 L 411.98 228.06 L 412.63 228.1 L 413.29 228.16 L 413.94 228.23 L 414.6 228.31 L 415.25 228.41 L 415.9 228.52 L 416.55 228.64 L 417.19 228.77 L 417.83 228.91 L 418.47 229.07 L 419.11 229.24 L 419.74 229.43 L 420.37 229.62" fill="none" stroke="var(--ink-3)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="426" y="218" fill="var(--ink-3)">&#916;&#952;/2</text>
+  <text class="sv-m" x="441.79" y="181.72" fill="var(--ink-3)">R</text>
+  <text class="sv-m" x="421" y="106.57" fill="var(--warn)">&#948;/4</text>
+  <text class="sv-m" x="410" y="86" fill="var(--ink-2)" text-anchor="middle">half the step</text>
+  <text class="sv-l" x="410" y="100" fill="var(--ink-3)" text-anchor="middle">a quarter of the error</text>
+  <text class="sv-m" x="280" y="40" fill="var(--ink-2)" text-anchor="middle">&#948; = R (1 &minus; cos &#916;&#952;/2)</text>
+  <text class="sv-l" x="280" y="58" fill="var(--ink-3)" text-anchor="middle">halve the angle and the sagitta falls by four: the error goes as the square of the step</text>
+  <text class="sv-l" x="280" y="278" fill="var(--ink-3)" text-anchor="middle">drawn wide to be visible. At R = 10 and a deflection of 0.2 the relation returns 0.4007 rad</text>
+</svg>

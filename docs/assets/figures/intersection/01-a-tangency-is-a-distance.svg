@@ -1,0 +1,40 @@
+<svg viewBox="0 0 560 262" role="img" aria-label="a unit circle with three horizontal lines: one cutting it at two points, one touching it at the top, one missing it; beside it, a logarithmic plot of how far apart the two roots are against how far inside the circle the line lies, with the tolerance drawn once on the gap and once on the distance, showing that a line one tolerance inside the circle has roots almost a thousandth apart">
+  <text class="sv-l" x="16" y="18" fill="var(--ink-3)">CUT, TOUCH, MISS</text>
+  <circle cx="89.77" cy="154.19" r="56.74" fill="none" stroke="var(--ink-3)" stroke-width="1.8"></circle>
+  <path d="M 18.84 120.14 L 257.16 120.14" fill="none" stroke="var(--a)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="44.37" cy="120.14" r="3.2" fill="var(--a)"></circle>
+  <circle cx="135.16" cy="120.14" r="3.2" fill="var(--a)"></circle>
+  <text class="sv-m" x="257.16" y="114.14" fill="var(--a)" text-anchor="end">two points</text>
+  <path d="M 18.84 97.44 L 257.16 97.44" fill="none" stroke="var(--warn)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="89.77" cy="97.44" r="3.4" fill="var(--warn)"></circle>
+  <text class="sv-m" x="257.16" y="91.44" fill="var(--warn)" text-anchor="end">one, tangent</text>
+  <path d="M 18.84 74.74 L 257.16 74.74" fill="none" stroke="var(--ink-3)" stroke-width="1.6" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="257.16" y="68.74" fill="var(--ink-3)" text-anchor="end">none</text>
+  <text class="sv-l" x="276" y="18" fill="var(--ink-3)">TWO ROOTS, HOW FAR APART</text>
+  <path d="M 318 204 L 532 204" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 318 204 L 318 36" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 318 204 L 318 208" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="318" y="220" fill="var(--ink-3)" text-anchor="middle">1e-16</text>
+  <path d="M 379.14 204 L 379.14 208" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="379.14" y="220" fill="var(--ink-3)" text-anchor="middle">1e-12</text>
+  <path d="M 440.29 204 L 440.29 208" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="440.29" y="220" fill="var(--ink-3)" text-anchor="middle">1e-8</text>
+  <path d="M 501.43 204 L 501.43 208" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="501.43" y="220" fill="var(--ink-3)" text-anchor="middle">1e-4</text>
+  <path d="M 318 194.12 L 314 194.12" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="311" y="197.62" fill="var(--ink-3)" text-anchor="end">1e-8</text>
+  <path d="M 318 115.06 L 314 115.06" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="311" y="118.56" fill="var(--ink-3)" text-anchor="end">1e-4</text>
+  <path d="M 318 36 L 314 36" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="311" y="39.5" fill="var(--ink-3)" text-anchor="end">1e0</text>
+  <path d="M 318 185.19 L 319.07 184.5 L 320.14 183.81 L 321.21 183.12 L 322.28 182.43 L 323.35 181.73 L 324.42 181.04 L 325.49 180.35 L 326.56 179.66 L 327.63 178.97 L 328.7 178.28 L 329.77 177.58 L 330.84 176.89 L 331.91 176.2 L 332.98 175.51 L 334.05 174.82 L 335.12 174.12 L 336.19 173.43 L 337.26 172.74 L 338.33 172.05 L 339.4 171.36 L 340.47 170.67 L 341.54 169.97 L 342.61 169.28 L 343.68 168.59 L 344.75 167.9 L 345.82 167.21 L 346.89 166.52 L 347.96 165.82 L 349.03 165.13 L 350.1 164.44 L 351.17 163.75 L 352.24 163.06 L 353.31 162.36 L 354.38 161.67 L 355.45 160.98 L 356.52 160.29 L 357.59 159.6 L 358.66 158.91 L 359.73 158.21 L 360.8 157.52 L 361.87 156.83 L 362.94 156.14 L 364.01 155.45 L 365.08 154.76 L 366.15 154.06 L 367.22 153.37 L 368.29 152.68 L 369.36 151.99 L 370.43 151.3 L 371.5 150.6 L 372.57 149.91 L 373.64 149.22 L 374.71 148.53 L 375.78 147.84 L 376.85 147.15 L 377.92 146.45 L 378.99 145.76 L 380.06 145.07 L 381.13 144.38 L 382.2 143.69 L 383.27 143 L 384.34 142.3 L 385.41 141.61 L 386.48 140.92 L 387.55 140.23 L 388.62 139.54 L 389.69 138.84 L 390.76 138.15 L 391.83 137.46 L 392.9 136.77 L 393.97 136.08 L 395.04 135.39 L 396.11 134.69 L 397.18 134 L 398.25 133.31 L 399.32 132.62 L 400.39 131.93 L 401.46 131.24 L 402.53 130.54 L 403.6 129.85 L 404.67 129.16 L 405.74 128.47 L 406.81 127.78 L 407.88 127.08 L 408.95 126.39 L 410.02 125.7 L 411.09 125.01 L 412.16 124.32 L 413.23 123.63 L 414.3 122.93 L 415.37 122.24 L 416.44 121.55 L 417.51 120.86 L 418.58 120.17 L 419.65 119.48 L 420.72 118.78 L 421.79 118.09 L 422.86 117.4 L 423.93 116.71 L 425 116.02 L 426.07 115.32 L 427.14 114.63 L 428.21 113.94 L 429.28 113.25 L 430.35 112.56 L 431.42 111.87 L 432.49 111.17 L 433.56 110.48 L 434.63 109.79 L 435.7 109.1 L 436.77 108.41 L 437.84 107.72 L 438.91 107.02 L 439.98 106.33 L 441.05 105.64 L 442.12 104.95 L 443.19 104.26 L 444.26 103.56 L 445.33 102.87 L 446.4 102.18 L 447.47 101.49 L 448.54 100.8 L 449.61 100.11 L 450.68 99.41 L 451.75 98.72 L 452.82 98.03 L 453.89 97.34 L 454.96 96.65 L 456.03 95.96 L 457.1 95.26 L 458.17 94.57 L 459.24 93.88 L 460.31 93.19 L 461.38 92.5 L 462.45 91.8 L 463.52 91.11 L 464.59 90.42 L 465.66 89.73 L 466.73 89.04 L 467.8 88.35 L 468.87 87.65 L 469.94 86.96 L 471.01 86.27 L 472.08 85.58 L 473.15 84.89 L 474.22 84.2 L 475.29 83.5 L 476.36 82.81 L 477.43 82.12 L 478.5 81.43 L 479.57 80.74 L 480.64 80.04 L 481.71 79.35 L 482.78 78.66 L 483.85 77.97 L 484.92 77.28 L 485.99 76.59 L 487.06 75.89 L 488.13 75.2 L 489.2 74.51 L 490.27 73.82 L 491.34 73.13 L 492.41 72.44 L 493.48 71.74 L 494.55 71.05 L 495.62 70.36 L 496.69 69.67 L 497.76 68.98 L 498.83 68.28 L 499.9 67.59 L 500.97 66.9 L 502.04 66.21 L 503.11 65.52 L 504.18 64.83 L 505.25 64.13 L 506.32 63.44 L 507.39 62.75 L 508.46 62.06 L 509.53 61.37 L 510.6 60.68 L 511.67 59.98 L 512.74 59.29 L 513.81 58.6 L 514.88 57.91 L 515.95 57.22 L 517.02 56.53 L 518.09 55.84 L 519.16 55.14 L 520.23 54.45 L 521.3 53.76 L 522.37 53.07 L 523.44 52.38 L 524.51 51.69 L 525.58 51 L 526.65 50.31 L 527.72 49.62 L 528.79 48.93 L 529.86 48.24 L 530.93 47.55 L 532 46.86" fill="none" stroke="var(--ink-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 318 174.35 L 532 174.35" fill="none" stroke="var(--warn)" stroke-width="1.2" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 455.57 204 L 455.57 36" fill="none" stroke="var(--a)" stroke-width="1.2" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="455.57" cy="96.25" r="3.4" fill="var(--a)"></circle>
+  <text class="sv-m" x="463.57" y="110.25" fill="var(--a)">8.9e-4</text>
+  <circle cx="334.77" cy="174.35" r="3.4" fill="var(--warn)"></circle>
+  <text class="sv-m" x="354.69" y="189.35" fill="var(--warn)">on the roots</text>
+  <text class="sv-m" x="449.57" y="63.67" fill="var(--a)" text-anchor="end">on the distance</text>
+  <text class="sv-m" x="276" y="236" fill="var(--ink-2)">how far inside the circle the line is</text>
+  <text class="sv-m" x="276" y="252" fill="var(--ink-3)">against the gap between its two roots</text>
+</svg>

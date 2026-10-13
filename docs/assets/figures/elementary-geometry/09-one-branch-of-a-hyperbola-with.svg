@@ -1,0 +1,44 @@
+<svg viewBox="0 0 560 272" role="img" aria-label="one branch of a hyperbola with its asymptotes and a resolved point">
+  <defs><marker id="hyperbolan" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker><marker id="hyperbolas" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 82 142 L 304 142" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hyperbolan)"></path>
+  <path d="M 118 240 L 118 28" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hyperbolan)"></path>
+  <text class="sv-m" x="316" y="146" fill="var(--ax-x)" text-anchor="middle">X</text>
+  <path d="M 313.15 135.8 L 318.55 135.8" fill="none" stroke="var(--ax-x)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 316.15 133.9 L 318.75 135.8 L 316.15 137.7" fill="none" stroke="var(--ax-x)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="119" y="20" fill="var(--ax-y)" text-anchor="middle">Y</text>
+  <path d="M 116.15 9.8 L 121.55 9.8" fill="none" stroke="var(--ax-y)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 119.15 7.9 L 121.75 9.8 L 119.15 11.7" fill="none" stroke="var(--ax-y)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="118" cy="142" r="2.4" fill="var(--ink-3)"></circle>
+  <path d="M 118 142 L 236.87 46.91" fill="none" stroke="var(--rule-2)" stroke-width="1.2" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 118 142 L 236.87 237.09" fill="none" stroke="var(--rule-2)" stroke-width="1.2" stroke-dasharray="4 4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 214.87 208.37 L 212.96 206.59 L 211.11 204.84 L 209.31 203.12 L 207.55 201.44 L 205.85 199.78 L 204.19 198.16 L 202.58 196.57 L 201.01 195.01 L 199.49 193.48 L 198.02 191.98 L 196.59 190.5 L 195.2 189.05 L 193.85 187.63 L 192.54 186.23 L 191.28 184.85 L 190.05 183.5 L 188.86 182.17 L 187.71 180.86 L 186.6 179.57 L 185.52 178.31 L 184.49 177.06 L 183.48 175.83 L 182.52 174.62 L 181.59 173.43 L 180.69 172.25 L 179.83 171.09 L 179 169.95 L 178.2 168.82 L 177.44 167.71 L 176.7 166.61 L 176 165.52 L 175.34 164.45 L 174.7 163.39 L 174.09 162.34 L 173.51 161.3 L 172.97 160.27 L 172.45 159.25 L 171.96 158.24 L 171.51 157.24 L 171.08 156.25 L 170.68 155.26 L 170.31 154.29 L 169.96 153.32 L 169.65 152.35 L 169.36 151.39 L 169.1 150.44 L 168.87 149.49 L 168.66 148.55 L 168.49 147.6 L 168.34 146.67 L 168.22 145.73 L 168.12 144.79 L 168.05 143.86 L 168.01 142.93 L 168 142 L 168.01 141.07 L 168.05 140.14 L 168.12 139.21 L 168.22 138.27 L 168.34 137.33 L 168.49 136.4 L 168.66 135.45 L 168.87 134.51 L 169.1 133.56 L 169.36 132.61 L 169.65 131.65 L 169.96 130.68 L 170.31 129.71 L 170.68 128.74 L 171.08 127.75 L 171.51 126.76 L 171.96 125.76 L 172.45 124.75 L 172.97 123.73 L 173.51 122.7 L 174.09 121.66 L 174.7 120.61 L 175.34 119.55 L 176 118.48 L 176.7 117.39 L 177.44 116.29 L 178.2 115.18 L 179 114.05 L 179.83 112.91 L 180.69 111.75 L 181.59 110.57 L 182.52 109.38 L 183.48 108.17 L 184.49 106.94 L 185.52 105.69 L 186.6 104.43 L 187.71 103.14 L 188.86 101.83 L 190.05 100.5 L 191.28 99.15 L 192.54 97.77 L 193.85 96.37 L 195.2 94.95 L 196.59 93.5 L 198.02 92.02 L 199.49 90.52 L 201.01 88.99 L 202.58 87.43 L 204.19 85.84 L 205.85 84.22 L 207.55 82.56 L 209.31 80.88 L 211.11 79.16 L 212.96 77.41 L 214.87 75.63" fill="none" stroke="var(--a)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="195.15" cy="189.01" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="174.38" cy="162.84" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="168" cy="142" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="174.38" cy="121.16" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="195.15" cy="94.99" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="168" cy="142" r="4.0" fill="var(--a)"></circle>
+  <path d="M 118 142 L 168 142" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="143" y="134" fill="var(--ink-3)" text-anchor="middle">a</text>
+  <text class="sv-m" x="276" y="30" fill="var(--ink-3)" text-anchor="middle">asymptote</text>
+  <path d="M 185.77 142 L 185.77 105.4" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 118 105.4 L 185.77 105.4" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 118 142 L 185.77 142" fill="none" stroke="var(--ax-x)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 118 142 L 118 105.4" fill="none" stroke="var(--ax-y)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="185.77" cy="142" r="2.6" fill="var(--ax-x)"></circle>
+  <circle cx="118" cy="105.4" r="2.6" fill="var(--ax-y)"></circle>
+  <circle cx="185.77" cy="105.4" r="4.0" fill="var(--ink)"></circle>
+  <text class="sv-m" x="151.89" y="160" fill="var(--ax-x)" text-anchor="middle">a cosh u</text>
+  <text class="sv-m" x="108" y="127.7" fill="var(--ax-y)" text-anchor="end">b sinh u</text>
+  <text class="sv-m" x="195.77" y="96.4" fill="var(--ink)">C(u)</text>
+  <text class="sv-l" x="350" y="88" fill="var(--ink-3)">COORDINATE BY COORDINATE</text>
+  <rect x="350" y="99.6" width="11" height="3.4" rx="1.7" fill="var(--ax-x)"></rect>
+  <text class="sv-m" x="369" y="104" fill="var(--ink-2)">x = a cosh u</text>
+  <rect x="350" y="124.6" width="11" height="3.4" rx="1.7" fill="var(--ax-y)"></rect>
+  <text class="sv-m" x="369" y="129" fill="var(--ink-2)">y = b sinh u</text>
+  <rect x="350" y="149.6" width="11" height="3.4" rx="1.7" fill="var(--ink-3)"></rect>
+  <text class="sv-m" x="369" y="154" fill="var(--ink-2)">x&#178;/a&#178; &minus; y&#178;/b&#178; = 1</text>
+  <text class="sv-l" x="369" y="166" fill="var(--ink-3)">one branch; the other is not</text>
+  <text class="sv-m" x="369" y="179" fill="var(--ink-2)"></text>
+  <text class="sv-l" x="369" y="191" fill="var(--ink-3)">reachable from any real u</text>
+</svg>

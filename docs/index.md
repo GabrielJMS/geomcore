@@ -5,8 +5,10 @@ parametric evaluation, rigid transformations, and analytic curve-on-surface
 parametrization, built as small, independently useful Rust libraries with a
 clean API and idiomatic Python bindings.
 
+- [Elementary curves & surfaces](geometry/elementary.md) — the ten closed forms: formulas, domains, seams.
+- [NURBS](nurbs/index.md) — B-spline curves, surfaces, editing and fitting, in Rust and Python.
+- [Projection & containment](guides/projection.md), [Intersection](guides/intersection.md), [Discretization](guides/discretization.md), [Curve on surface](guides/parametrization.md) — the query guides.
 - [Live viewer](viewer.md) — inspect curves and surfaces in your browser.
-- [NURBS](nurbs.md) — B-spline curves and surfaces, in Rust and Python.
 - [Python quick start](python.md) — `pip install geomcore`.
 - [Roadmap](roadmap.md) — where the kernel is heading.
 

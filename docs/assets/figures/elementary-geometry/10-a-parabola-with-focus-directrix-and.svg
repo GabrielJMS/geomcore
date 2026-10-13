@@ -1,0 +1,43 @@
+<svg viewBox="0 0 560 260" role="img" aria-label="a parabola with focus, directrix and a resolved point">
+  <defs><marker id="parabolan" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker><marker id="parabolas" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 78 132 L 300 132" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#parabolan)"></path>
+  <path d="M 122 240 L 122 24" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#parabolan)"></path>
+  <text class="sv-m" x="312" y="136" fill="var(--ax-x)" text-anchor="middle">X</text>
+  <path d="M 309.15 125.8 L 314.55 125.8" fill="none" stroke="var(--ax-x)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 312.15 123.9 L 314.75 125.8 L 312.15 127.7" fill="none" stroke="var(--ax-x)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="123" y="16" fill="var(--ax-y)" text-anchor="middle">Y</text>
+  <path d="M 120.15 5.8 L 125.55 5.8" fill="none" stroke="var(--ax-y)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 123.15 3.9 L 125.75 5.8 L 123.15 7.7" fill="none" stroke="var(--ax-y)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="122" cy="132" r="2.4" fill="var(--ink-3)"></circle>
+  <path d="M 210.62 228 L 207.69 226.4 L 204.81 224.8 L 201.98 223.2 L 199.19 221.6 L 196.46 220 L 193.78 218.4 L 191.14 216.8 L 188.56 215.2 L 186.02 213.6 L 183.54 212 L 181.1 210.4 L 178.71 208.8 L 176.38 207.2 L 174.09 205.6 L 171.85 204 L 169.66 202.4 L 167.51 200.8 L 165.42 199.2 L 163.38 197.6 L 161.38 196 L 159.44 194.4 L 157.54 192.8 L 155.7 191.2 L 153.9 189.6 L 152.15 188 L 150.46 186.4 L 148.81 184.8 L 147.21 183.2 L 145.66 181.6 L 144.15 180 L 142.7 178.4 L 141.3 176.8 L 139.94 175.2 L 138.64 173.6 L 137.38 172 L 136.18 170.4 L 135.02 168.8 L 133.91 167.2 L 132.86 165.6 L 131.85 164 L 130.89 162.4 L 129.98 160.8 L 129.11 159.2 L 128.3 157.6 L 127.54 156 L 126.82 154.4 L 126.16 152.8 L 125.54 151.2 L 124.98 149.6 L 124.46 148 L 123.99 146.4 L 123.58 144.8 L 123.21 143.2 L 122.89 141.6 L 122.62 140 L 122.39 138.4 L 122.22 136.8 L 122.1 135.2 L 122.02 133.6 L 122 132 L 122.02 130.4 L 122.1 128.8 L 122.22 127.2 L 122.39 125.6 L 122.62 124 L 122.89 122.4 L 123.21 120.8 L 123.58 119.2 L 123.99 117.6 L 124.46 116 L 124.98 114.4 L 125.54 112.8 L 126.16 111.2 L 126.82 109.6 L 127.54 108 L 128.3 106.4 L 129.11 104.8 L 129.98 103.2 L 130.89 101.6 L 131.85 100 L 132.86 98.4 L 133.91 96.8 L 135.02 95.2 L 136.18 93.6 L 137.38 92 L 138.64 90.4 L 139.94 88.8 L 141.3 87.2 L 142.7 85.6 L 144.15 84 L 145.66 82.4 L 147.21 80.8 L 148.81 79.2 L 150.46 77.6 L 152.15 76 L 153.9 74.4 L 155.7 72.8 L 157.54 71.2 L 159.44 69.6 L 161.38 68 L 163.38 66.4 L 165.42 64.8 L 167.51 63.2 L 169.66 61.6 L 171.85 60 L 174.09 58.4 L 176.38 56.8 L 178.71 55.2 L 181.1 53.6 L 183.54 52 L 186.02 50.4 L 188.56 48.8 L 191.14 47.2 L 193.78 45.6 L 196.46 44 L 199.19 42.4 L 201.98 40.8 L 204.81 39.2 L 207.69 37.6 L 210.62 36" fill="none" stroke="var(--a)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="171.85" cy="204" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="134.46" cy="168" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="122" cy="132" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="134.46" cy="96" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="171.85" cy="60" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <path d="M 96 28 L 96 236" fill="none" stroke="var(--b)" stroke-width="1.8" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="96" y="252" fill="var(--b)" text-anchor="middle">x = &minus;f</text>
+  <circle cx="148" cy="132" r="4.4" fill="var(--sec)"></circle>
+  <text class="sv-m" x="156" y="124" fill="var(--sec)">focus</text>
+  <path d="M 122 132 L 148 132" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 154.35 132 L 154.35 74" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 122 74 L 154.35 74" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 122 132 L 154.35 132" fill="none" stroke="var(--ax-x)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 122 132 L 122 74" fill="none" stroke="var(--ax-y)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="154.35" cy="132" r="2.6" fill="var(--ax-x)"></circle>
+  <circle cx="122" cy="74" r="2.6" fill="var(--ax-y)"></circle>
+  <circle cx="154.35" cy="74" r="4.0" fill="var(--ink)"></circle>
+  <text class="sv-m" x="138.17" y="149" fill="var(--ax-x)" text-anchor="middle">u&#178;/4f</text>
+  <text class="sv-m" x="113" y="107" fill="var(--ax-y)" text-anchor="end">u</text>
+  <text class="sv-m" x="163.35" y="66" fill="var(--ink)">C(u)</text>
+  <text class="sv-l" x="350" y="70" fill="var(--ink-3)">COORDINATE BY COORDINATE</text>
+  <rect x="350" y="81.6" width="11" height="3.4" rx="1.7" fill="var(--ax-x)"></rect>
+  <text class="sv-m" x="369" y="86" fill="var(--ink-2)">x = u&#178;/4f</text>
+  <rect x="350" y="106.6" width="11" height="3.4" rx="1.7" fill="var(--ax-y)"></rect>
+  <text class="sv-m" x="369" y="111" fill="var(--ink-2)">y = u</text>
+  <text class="sv-l" x="369" y="123" fill="var(--ink-3)">the parameter IS the y coordinate</text>
+  <rect x="350" y="131.6" width="11" height="3.4" rx="1.7" fill="var(--sec)"></rect>
+  <text class="sv-m" x="369" y="136" fill="var(--ink-2)">focus at (f, 0)</text>
+  <text class="sv-l" x="369" y="148" fill="var(--ink-3)">directrix the line x = &minus;f</text>
+  <text class="sv-m" x="369" y="161" fill="var(--ink-2)">the axis is X, not Y</text>
+</svg>

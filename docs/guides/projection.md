@@ -1,0 +1,123 @@
+# Projection & containment
+
+Three questions, one distance: *is the point on the shape*
+(`contains`), *where is the nearest point* (`project_point`), and
+*where are all the local minima* (`extrema`). Every query takes a
+`Tolerance` and decides by distance against `tol.confusion`. Adapted
+from [Inversion and projection](https://avenirgeometry.com/articles/projection/).
+
+## The foot-point condition
+
+A foot point is where the curve meets its own tangent at a right angle
+— the distance is stationary exactly where $(C(u) - P) \cdot C'(u) =
+0$. On the ten [elementary](../geometry/elementary.md) geometries this
+stationarity equation has a closed form (quartic/cubic on the conics,
+an `atan2` on the rest), so projection is exact. On B-splines there is
+no closed form: the kernel subdivides Bézier pieces with a bounding-box
+hierarchy and solves each convex piece with bounded Newton — every
+minimum found, however close two basins sit.
+
+<figure class="geom-fig">
+<img src="../assets/figures/projection/01-four-feet-on-an-ellipse.svg" alt="Four foot points on an ellipse">
+<figcaption>Four feet on an ellipse: one query point, four stationary points, one nearest.</figcaption>
+</figure>
+
+An ellipse already shows why `extrema` (all minima) and
+`project_point` (the nearest) are different calls: a single point can
+have four feet, and the nearest is only one of them.
+
+<figure class="geom-fig">
+<img src="../assets/figures/projection/02-three-candidates-on-a-b-spline.svg" alt="Candidate feet on a B-spline">
+<figcaption>On a B-spline the candidates come from every span — the search must cover all of them to never miss the nearest.</figcaption>
+</figure>
+
+## contains
+
+A point *lies on* a curve or surface when it is within `tol.confusion`
+of it, tested by re-evaluating the inverse parameter — never by
+pointer or topology.
+
+=== "Python"
+
+    ```python
+    circle.contains(Point3D(2, 0, 0))          # True, on the radius-2 circle
+    sphere.contains(Point3D(0, 0, 2.01))       # False, off the surface
+    ```
+
+=== "Rust"
+
+    ```rust
+    use geomcore::Tolerance;
+
+    let tol = Tolerance::DEFAULT;
+    assert!(circle.contains(Point3D::new(2.0, 0.0, 0.0), tol));
+    assert!(!sphere.contains(Point3D::new(0.0, 0.0, 2.01), tol));
+    ```
+
+## project_point
+
+Returns the parameter(s) and the distance; sub-tolerance distances
+snap to `0.0`, so projection agrees with `contains`. Batch variants
+(`project_points`) share the setup.
+
+=== "Python"
+
+    ```python
+    t, dist = circle.project_point(Point3D(3, 0, 0))
+    u, v, dist = sphere.project_point(Point3D(0, 0, 5))
+    ```
+
+=== "Rust"
+
+    ```rust
+    let foot = circle.project_point(Point3D::new(3.0, 0.0, 0.0), tol);
+    assert_eq!((foot.parameter, foot.distance), (0.0, 1.0));
+
+    let sfoot = sphere.project_point(Point3D::new(0.0, 0.0, 5.0), tol);
+    ```
+
+## extrema
+
+All local minima of the distance, nearest first — plus the open ends
+of bounded curves. What `project_point` returns first, `extrema`
+returns whole.
+
+=== "Python"
+
+    ```python
+    minima = ellipse.extrema(Point3D(4, 1, 0))   # [(t, dist), ...] nearest first
+    ```
+
+=== "Rust"
+
+    ```rust
+    let minima = ellipse.extrema(Point3D::new(4.0, 1.0, 0.0), tol);
+    ```
+
+On seams the parameters are normalised into `bounds()`; a hit within
+confusion of the seam reports 0 whichever side it was found from, so
+callers can test results against `bounds()` and trimmed ranges without
+losing hits.
+
+## Curves against curves
+
+`curve_curve_extrema` reports the local minima of the distance between
+two curves over their domains — the primitive behind closest-approach
+queries and trimmed-arc handling.
+
+=== "Python"
+
+    ```python
+    from geomcore import curve_curve_extrema
+
+    minima = curve_curve_extrema(line, circle)   # [(s, t, dist), ...]
+    ```
+
+=== "Rust"
+
+    ```rust
+    use geomcore::curve_curve_extrema;
+
+    let minima = curve_curve_extrema(&line, &circle, tol);
+    let closest = minima.minima().iter().map(|m| m.distance);
+    ```

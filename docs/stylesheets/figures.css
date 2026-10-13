@@ -1,0 +1,62 @@
+/* Palette bridge for the generated geometry figures.
+   The SVGs under assets/figures resolve their colours through these
+   variables (same tokens as the articles they are adapted from). */
+
+:root {
+  --surface: #ffffff;
+  --ink: #14181d;
+  --ink-2: #4a535f;
+  --ink-3: #606a77;
+  --rule: #d8dce3;
+  --rule-2: #c2c8d1;
+  --a: #4568dc;
+  --a-fill: rgba(69, 104, 220, 0.12);
+  --b: #a0651b;
+  --sec: #874a91;
+  --sec-fill: rgba(135, 74, 145, 0.13);
+  --warn: #9a3b2e;
+  --ax-x: #c0392b;
+  --ax-y: #2c7a3f;
+  --ax-z: #2059b0;
+}
+
+[data-md-color-scheme="slate"] {
+  --surface: #161a21;
+  --ink: #e2e7ee;
+  --ink-2: #9aa5b3;
+  --ink-3: #808a99;
+  --rule: #242a34;
+  --rule-2: #333a46;
+  --a: #7f9bf0;
+  --a-fill: rgba(127, 155, 240, 0.15);
+  --b: #d9a055;
+  --sec: #d29fd8;
+  --sec-fill: rgba(210, 159, 216, 0.15);
+  --warn: #e08172;
+  --ax-x: #f0887a;
+  --ax-y: #6fcb86;
+  --ax-z: #7cb0f2;
+}
+
+/* Article-style figures: bordered panel, captioned. */
+.md-typeset figure.geom-fig {
+  margin: 1.2em 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 12px 12px 4px;
+}
+
+.md-typeset figure.geom-fig img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.md-typeset figure.geom-fig figcaption {
+  font-size: 0.82em;
+  color: var(--ink-3);
+  padding: 8px 4px 10px;
+  max-width: 68ch;
+}

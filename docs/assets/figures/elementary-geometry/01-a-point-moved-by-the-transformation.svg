@@ -1,0 +1,8 @@
+<svg viewBox="0 0 196 150" role="img" aria-label="a point, moved by the transformation">
+  <defs><marker id="bp" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--a)"></path></marker><marker id="bq" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--rule-2)"></path></marker><marker id="bt" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <circle cx="92" cy="74" r="4.6" fill="var(--rule-2)"></circle>
+  <text class="sv-m" x="86" y="62" fill="var(--ink-3)" text-anchor="end">P</text>
+  <circle cx="128.73" cy="112.58" r="5.2" fill="var(--a)"></circle>
+  <text class="sv-m" x="134.73" y="104.58" fill="var(--a)">T(P)</text>
+  <path d="M 92 74 L 128.73 112.58" fill="none" stroke="var(--sec)" stroke-width="1.4" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#bt)"></path>
+</svg>

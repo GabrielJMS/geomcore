@@ -1,0 +1,30 @@
+<svg viewBox="0 0 560 260" role="img" aria-label="a straight line with equally spaced parameter marks">
+  <defs><marker id="linen" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker><marker id="lines" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 64.4 197.2 L 206 91" fill="none" stroke="var(--a)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="74" cy="190" r="4.0" fill="var(--surface)" stroke="var(--a)" stroke-width="2.2"></circle>
+  <circle cx="98" cy="172" r="4.0" fill="var(--surface)" stroke="var(--a)" stroke-width="2.2"></circle>
+  <circle cx="122" cy="154" r="4.0" fill="var(--surface)" stroke="var(--a)" stroke-width="2.2"></circle>
+  <circle cx="146" cy="136" r="4.0" fill="var(--surface)" stroke="var(--a)" stroke-width="2.2"></circle>
+  <circle cx="170" cy="118" r="4.0" fill="var(--surface)" stroke="var(--a)" stroke-width="2.2"></circle>
+  <circle cx="194" cy="100" r="4.0" fill="var(--surface)" stroke="var(--a)" stroke-width="2.2"></circle>
+  <defs><marker id="lind" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 74 190 L 105.2 166.6" fill="none" stroke="var(--sec)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#lind)"></path>
+  <text class="sv-m" x="82" y="156" fill="var(--sec)">D</text>
+  <path d="M 82.3 145.8 L 87.7 145.8" fill="none" stroke="var(--sec)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 85.3 143.9 L 87.9 145.8 L 85.3 147.7" fill="none" stroke="var(--sec)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="59" y="197" fill="var(--ink-3)">O</text>
+  <text class="sv-m" x="54" y="214" fill="var(--ink-3)">u = 0</text>
+  <text class="sv-m" x="205" y="92" fill="var(--ink-3)">u = 5</text>
+  <circle cx="74" cy="190" r="3.2" fill="var(--ink-3)"></circle>
+  <text class="sv-l" x="350" y="70" fill="var(--ink-3)">COORDINATE BY COORDINATE</text>
+  <rect x="350" y="81.6" width="11" height="3.4" rx="1.7" fill="var(--a)"></rect>
+  <text class="sv-m" x="369" y="86" fill="var(--ink-2)">C(u) = O + u D</text>
+  <text class="sv-l" x="369" y="98" fill="var(--ink-3)">O a point, D a unit direction</text>
+  <rect x="350" y="106.6" width="11" height="3.4" rx="1.7" fill="var(--sec)"></rect>
+  <text class="sv-m" x="369" y="111" fill="var(--ink-2)">u is signed distance</text>
+  <text class="sv-l" x="369" y="123" fill="var(--ink-3)">from O, along D</text>
+  <text class="sv-m" x="369" y="136" fill="var(--ink-2)">no X / Y frame here</text>
+  <text class="sv-l" x="369" y="148" fill="var(--ink-3)">an origin and one direction is</text>
+  <text class="sv-m" x="369" y="161" fill="var(--ink-2)"></text>
+  <text class="sv-l" x="369" y="173" fill="var(--ink-3)">the whole of a line</text>
+</svg>

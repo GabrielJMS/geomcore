@@ -1,0 +1,64 @@
+<svg viewBox="0 0 660 400" role="img" aria-label="two meridian sections of the same cone, one measuring v along the ruling and one measuring v up the axis, with the right triangle that relates them">
+  <defs><marker id="ca1" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker><marker id="cas1" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 158 255.32 L 48.83 50" fill="none" stroke="var(--rule-2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 158 255.32 L 267.17 50" fill="none" stroke="var(--rule-2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 158 36 L 158 267.32" fill="none" stroke="var(--ink-3)" stroke-width="1.0" stroke-dasharray="2 4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 76 150 L 272 150" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 158 221.32 L 158.92 221.33 L 159.85 221.37 L 160.77 221.43 L 161.69 221.52 L 162.6 221.63 L 163.51 221.77 L 164.42 221.93 L 165.33 222.12 L 166.23 222.33 L 167.12 222.57 L 168 222.83 L 168.88 223.11 L 169.75 223.42 L 170.61 223.75 L 171.47 224.1 L 172.31 224.48 L 173.14 224.88 L 173.96 225.3" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="180" y="215.32" fill="var(--ink-3)">&#945;</text>
+  <circle cx="158" cy="255.32" r="3.6" fill="var(--warn)"></circle>
+  <text class="sv-m" x="150" y="270.32" fill="var(--warn)" text-anchor="end">apex</text>
+  <path d="M 158 150 L 214 150" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="186" y="165" fill="var(--ink-3)" text-anchor="middle">R</text>
+  <circle cx="214" cy="150" r="3.0" fill="var(--ink-3)"></circle>
+  <path d="M 214 150 L 257.19 68.77" fill="none" stroke="var(--sec)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 214 150 L 214 68.77" fill="none" stroke="var(--rule-2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 214 68.77 L 257.19 68.77" fill="none" stroke="var(--ink-3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="254.14" y="123.24" fill="var(--sec)">v</text>
+  <text class="sv-m" x="207" y="113.38" fill="var(--ax-z)" text-anchor="end">v cos&#8201;&#945;</text>
+  <text class="sv-m" x="235.6" y="59.77" fill="var(--ink-3)" text-anchor="middle">v sin&#8201;&#945;</text>
+  <path d="M 267.07 60.41 L 268.37 59.59" fill="none" stroke="var(--ink-3)" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="257.19" cy="68.77" r="4.2" fill="var(--ink)"></circle>
+  <text class="sv-m" x="270.19" y="57.77" fill="var(--ink)">P(u,&#8201;v)</text>
+  <text class="sv-l" x="42.83" y="34" fill="var(--ink-2)">v ALONG THE RULING</text>
+  <defs><marker id="ca0" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker><marker id="cas0" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 488 255.32 L 378.83 50" fill="none" stroke="var(--rule-2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 488 255.32 L 597.17 50" fill="none" stroke="var(--rule-2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 488 36 L 488 267.32" fill="none" stroke="var(--ink-3)" stroke-width="1.0" stroke-dasharray="2 4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 406 150 L 602 150" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 488 221.32 L 488.92 221.33 L 489.85 221.37 L 490.77 221.43 L 491.69 221.52 L 492.6 221.63 L 493.51 221.77 L 494.42 221.93 L 495.33 222.12 L 496.23 222.33 L 497.12 222.57 L 498 222.83 L 498.88 223.11 L 499.75 223.42 L 500.61 223.75 L 501.47 224.1 L 502.31 224.48 L 503.14 224.88 L 503.96 225.3" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="510" y="215.32" fill="var(--ink-3)">&#945;</text>
+  <circle cx="488" cy="255.32" r="3.6" fill="var(--warn)"></circle>
+  <text class="sv-m" x="480" y="270.32" fill="var(--warn)" text-anchor="end">apex</text>
+  <path d="M 488 150 L 544 150" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="516" y="165" fill="var(--ink-3)" text-anchor="middle">R</text>
+  <circle cx="544" cy="150" r="3.0" fill="var(--ink-3)"></circle>
+  <path d="M 544 150 L 587.19 68.77" fill="none" stroke="var(--rule-2)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 544 150 L 544 68.77" fill="none" stroke="var(--sec)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 544 68.77 L 587.19 68.77" fill="none" stroke="var(--ink-3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="584.14" y="123.24" fill="var(--ink-3)">v&#8202;/&#8202;cos&#8201;&#945;</text>
+  <text class="sv-m" x="537" y="113.38" fill="var(--sec)" text-anchor="end">v = z</text>
+  <text class="sv-m" x="565.6" y="59.77" fill="var(--ink-3)" text-anchor="middle">v tan&#8201;&#945;</text>
+  <path d="M 597.07 60.41 L 598.37 59.59" fill="none" stroke="var(--ink-3)" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="587.19" cy="68.77" r="4.2" fill="var(--ink)"></circle>
+  <text class="sv-m" x="600.19" y="57.77" fill="var(--ink)">P(u,&#8201;v)</text>
+  <text class="sv-l" x="372.83" y="34" fill="var(--ink-2)">v IS THE HEIGHT</text>
+  <text class="sv-l" x="58" y="290" fill="var(--ink-3)">FORWARD, AND BACK</text>
+  <rect x="58" y="301.6" width="11" height="3.4" rx="1.7" fill="var(--sec)"></rect>
+  <text class="sv-m" x="77" y="306" fill="var(--ink-2)">v  a distance on the surface</text>
+  <text class="sv-l" x="77" y="318" fill="var(--ink-3)">&#8214;&#8706;S/&#8706;v&#8214; = 1, for every &#945;</text>
+  <rect x="58" y="333.6" width="11" height="3.4" rx="1.7" fill="var(--ink-3)"></rect>
+  <text class="sv-m" x="77" y="338" fill="var(--ink-2)">&#961; = R + v sin&#8201;&#945;</text>
+  <text class="sv-l" x="77" y="350" fill="var(--ink-3)">z = v cos&#8201;&#945;</text>
+  <text class="sv-m" x="77" y="370" fill="var(--ink-2)">u = atan2(y,&#8201;x)</text>
+  <text class="sv-l" x="77" y="382" fill="var(--ink-3)">v = sin&#8201;&#945;&#8201;(&#961; &minus; R) + cos&#8201;&#945;&#8201;z</text>
+  <text class="sv-l" x="388" y="290" fill="var(--ink-3)">FORWARD, AND BACK</text>
+  <rect x="388" y="301.6" width="11" height="3.4" rx="1.7" fill="var(--sec)"></rect>
+  <text class="sv-m" x="407" y="306" fill="var(--ink-2)">v  the height, as on a cylinder</text>
+  <text class="sv-l" x="407" y="318" fill="var(--ink-3)">&#8214;&#8706;S/&#8706;v&#8214; = sec&#8201;&#945;</text>
+  <rect x="388" y="333.6" width="11" height="3.4" rx="1.7" fill="var(--ink-3)"></rect>
+  <text class="sv-m" x="407" y="338" fill="var(--ink-2)">&#961; = R + v tan&#8201;&#945;</text>
+  <text class="sv-l" x="407" y="350" fill="var(--ink-3)">z = v</text>
+  <text class="sv-m" x="407" y="370" fill="var(--ink-2)">u = atan2(y,&#8201;x)</text>
+  <text class="sv-l" x="407" y="382" fill="var(--ink-3)">v = z</text>
+</svg>

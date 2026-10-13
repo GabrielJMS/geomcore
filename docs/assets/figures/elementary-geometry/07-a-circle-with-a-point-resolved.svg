@@ -1,0 +1,50 @@
+<svg viewBox="0 0 560 260" role="img" aria-label="a circle with a point resolved into its two coordinates">
+  <defs><marker id="circlen" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-3)"></path></marker><marker id="circles" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.4" markerHeight="5.4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="var(--sec)"></path></marker></defs>
+  <path d="M 166 132 L 310 132" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#circlen)"></path>
+  <path d="M 188 154 L 188 28" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#circlen)"></path>
+  <text class="sv-m" x="322" y="136" fill="var(--ax-x)" text-anchor="middle">X</text>
+  <path d="M 319.15 125.8 L 324.55 125.8" fill="none" stroke="var(--ax-x)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 322.15 123.9 L 324.75 125.8 L 322.15 127.7" fill="none" stroke="var(--ax-x)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="189" y="20" fill="var(--ax-y)" text-anchor="middle">Y</text>
+  <path d="M 186.15 9.8 L 191.55 9.8" fill="none" stroke="var(--ax-y)" stroke-width="0.95" stroke-linecap="butt" stroke-linejoin="round"></path>
+  <path d="M 189.15 7.9 L 191.75 9.8 L 189.15 11.7" fill="none" stroke="var(--ax-y)" stroke-width="0.95" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="188" cy="132" r="2.4" fill="var(--ink-3)"></circle>
+  <path d="M 274 132 L 273.82 126.38 L 273.26 120.77 L 272.35 115.22 L 271.07 109.74 L 269.44 104.36 L 267.45 99.09 L 265.13 93.96 L 262.48 89 L 259.51 84.22 L 256.23 79.65 L 252.66 75.3 L 248.81 71.19 L 244.7 67.34 L 240.35 63.77 L 235.78 60.49 L 231 57.52 L 226.04 54.87 L 220.91 52.55 L 215.64 50.56 L 210.26 48.93 L 204.78 47.65 L 199.23 46.74 L 193.62 46.18 L 188 46 L 182.38 46.18 L 176.77 46.74 L 171.22 47.65 L 165.74 48.93 L 160.36 50.56 L 155.09 52.55 L 149.96 54.87 L 145 57.52 L 140.22 60.49 L 135.65 63.77 L 131.3 67.34 L 127.19 71.19 L 123.34 75.3 L 119.77 79.65 L 116.49 84.22 L 113.52 89 L 110.87 93.96 L 108.55 99.09 L 106.56 104.36 L 104.93 109.74 L 103.65 115.22 L 102.74 120.77 L 102.18 126.38 L 102 132 L 102.18 137.62 L 102.74 143.23 L 103.65 148.78 L 104.93 154.26 L 106.56 159.64 L 108.55 164.91 L 110.87 170.04 L 113.52 175 L 116.49 179.78 L 119.77 184.35 L 123.34 188.7 L 127.19 192.81 L 131.3 196.66 L 135.65 200.23 L 140.22 203.51 L 145 206.48 L 149.96 209.13 L 155.09 211.45 L 160.36 213.44 L 165.74 215.07 L 171.22 216.35 L 176.77 217.26 L 182.38 217.82 L 188 218 L 193.62 217.82 L 199.23 217.26 L 204.78 216.35 L 210.26 215.07 L 215.64 213.44 L 220.91 211.45 L 226.04 209.13 L 231 206.48 L 235.78 203.51 L 240.35 200.23 L 244.7 196.66 L 248.81 192.81 L 252.66 188.7 L 256.23 184.35 L 259.51 179.78 L 262.48 175 L 265.13 170.04 L 267.45 164.91 L 269.44 159.64 L 271.07 154.26 L 272.35 148.78 L 273.26 143.23 L 273.82 137.62 L 274 132 Z" fill="none" stroke="var(--a)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="274" cy="132" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="262.48" cy="89" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="231" cy="57.52" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="188" cy="46" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="145" cy="57.52" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="113.52" cy="89" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="102" cy="132" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="113.52" cy="175" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="145" cy="206.48" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="188" cy="218" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="231" cy="206.48" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <circle cx="262.48" cy="175" r="3.4" fill="var(--surface)" stroke="var(--a)" stroke-width="2.0"></circle>
+  <path d="M 222 132 L 221.94 129.98 L 221.76 127.97 L 221.46 125.98 L 221.05 124 L 220.51 122.05 L 219.87 120.14 L 219.11 118.27 L 218.24 116.45 L 217.26 114.68 L 216.18 112.98 L 215 111.34 L 213.73 109.77 L 212.36 108.29 L 210.91 106.88 L 209.38 105.57 L 207.78 104.34" fill="none" stroke="var(--sec)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#circles)"></path>
+  <text class="sv-m" x="223.57" y="113.71" fill="var(--sec)" text-anchor="middle">u</text>
+  <path d="M 188 132 L 238.02 62.05" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <text class="sv-m" x="205.02" y="88.63" fill="var(--ink-3)" text-anchor="end">R</text>
+  <text class="sv-m" x="274" y="162" fill="var(--ink-3)" text-anchor="middle">u = 0</text>
+  <path d="M 238.02 132 L 238.02 62.05" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 188 62.05 L 238.02 62.05" fill="none" stroke="var(--rule-2)" stroke-width="1.0" stroke-dasharray="3 3" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 188 132 L 238.02 132" fill="none" stroke="var(--ax-x)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M 188 132 L 188 62.05" fill="none" stroke="var(--ax-y)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="238.02" cy="132" r="2.6" fill="var(--ax-x)"></circle>
+  <circle cx="188" cy="62.05" r="2.6" fill="var(--ax-y)"></circle>
+  <circle cx="238.02" cy="62.05" r="4.0" fill="var(--ink)"></circle>
+  <text class="sv-m" x="213.01" y="149" fill="var(--ax-x)" text-anchor="middle">R cos u</text>
+  <text class="sv-m" x="179" y="101.02" fill="var(--ax-y)" text-anchor="end">R sin u</text>
+  <text class="sv-m" x="247.02" y="54.05" fill="var(--ink)">C(u)</text>
+  <text class="sv-l" x="350" y="70" fill="var(--ink-3)">COORDINATE BY COORDINATE</text>
+  <rect x="350" y="81.6" width="11" height="3.4" rx="1.7" fill="var(--ax-x)"></rect>
+  <text class="sv-m" x="369" y="86" fill="var(--ink-2)">x = R cos u</text>
+  <rect x="350" y="106.6" width="11" height="3.4" rx="1.7" fill="var(--ax-y)"></rect>
+  <text class="sv-m" x="369" y="111" fill="var(--ink-2)">y = R sin u</text>
+  <rect x="350" y="131.6" width="11" height="3.4" rx="1.7" fill="var(--sec)"></rect>
+  <text class="sv-m" x="369" y="136" fill="var(--ink-2)">u  the angle from X</text>
+  <text class="sv-l" x="369" y="148" fill="var(--ink-3)">arc length is R u, so u is</text>
+  <text class="sv-m" x="369" y="161" fill="var(--ink-2)"></text>
+  <text class="sv-l" x="369" y="173" fill="var(--ink-3)">proportional to distance travelled</text>
+</svg>
