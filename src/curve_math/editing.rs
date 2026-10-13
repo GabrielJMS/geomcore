@@ -11,7 +11,7 @@
 mod bezier;
 mod elevation;
 
-use bezier::bezier_pieces;
+use bezier::{Walker, bezier_pieces};
 pub(crate) use elevation::Elevation;
 
 use super::bspline::KnotVector;
@@ -27,6 +27,9 @@ pub(crate) trait Pole: Copy + Default {
 
     /// `a self`.
     fn scale(self, a: f64) -> Self;
+
+    /// The points of `poles` and their weights, if rational.
+    fn parts(poles: &[Self]) -> (Vec<Point3D>, Option<Vec<f64>>);
 }
 
 impl Pole for Point3D {
@@ -43,6 +46,10 @@ impl Pole for Point3D {
     fn scale(self, a: f64) -> Self {
         Point3D::new(a * self.x, a * self.y, a * self.z)
     }
+
+    fn parts(poles: &[Self]) -> (Vec<Point3D>, Option<Vec<f64>>) {
+        (poles.to_vec(), None)
+    }
 }
 
 impl Pole for [f64; 4] {
@@ -55,6 +62,17 @@ impl Pole for [f64; 4] {
     fn scale(self, a: f64) -> Self {
         self.map(|c| a * c)
     }
+
+    fn parts(poles: &[Self]) -> (Vec<Point3D>, Option<Vec<f64>>) {
+        let points = poles
+            .iter()
+            .map(|&[x, y, z, w]| {
+                let inverse = 1.0 / w;
+                Point3D::new(x * inverse, y * inverse, z * inverse)
+            })
+            .collect();
+        (points, Some(poles.iter().map(|h| h[3]).collect()))
+    }
 }
 
 /// The poles an edit reads, by index: a slice of them, or a rational
@@ -62,6 +80,10 @@ impl Pole for [f64; 4] {
 /// need no converted copy.
 pub(crate) trait Source: Copy {
     type Pole: Pole;
+
+    /// Whether reading a pole converts it, so that the poles an edit keeps
+    /// are better copied from the shape than through the edit.
+    const CONVERTS: bool;
 
     fn len(self) -> usize;
 
@@ -77,10 +99,18 @@ pub(crate) trait Source: Copy {
             *out = self.get(start + k);
         }
     }
+
+    /// Appends the poles `range` to `out`.
+    #[inline]
+    fn extend_to(self, range: std::ops::Range<usize>, out: &mut Vec<Self::Pole>) {
+        out.extend(range.map(|i| self.get(i)));
+    }
 }
 
 impl<P: Pole> Source for &[P] {
     type Pole = P;
+
+    const CONVERTS: bool = false;
 
     #[inline]
     fn len(self) -> usize {
@@ -110,6 +140,11 @@ impl<P: Pole> Source for &[P] {
             out.copy_from_slice(poles);
         }
     }
+
+    #[inline]
+    fn extend_to(self, range: std::ops::Range<usize>, out: &mut Vec<P>) {
+        out.extend_from_slice(&self[range]);
+    }
 }
 
 /// A rational shape's points and weights, read as homogeneous points
@@ -122,6 +157,8 @@ struct Weighted<'a> {
 
 impl Source for Weighted<'_> {
     type Pole = [f64; 4];
+
+    const CONVERTS: bool = true;
 
     #[inline]
     fn len(self) -> usize {
@@ -141,6 +178,21 @@ impl Source for Weighted<'_> {
             weights: &self.weights[range],
         }
     }
+
+    #[inline]
+    fn copy_to(self, start: usize, out: &mut [[f64; 4]]) {
+        let range = start..start + out.len();
+        let poles = self.points[range.clone()].iter().zip(&self.weights[range]);
+        for (out, (p, &w)) in out.iter_mut().zip(poles) {
+            *out = [w * p.x, w * p.y, w * p.z, w];
+        }
+    }
+
+    #[inline]
+    fn extend_to(self, range: std::ops::Range<usize>, out: &mut Vec<[f64; 4]>) {
+        let poles = self.points[range.clone()].iter().zip(&self.weights[range]);
+        out.extend(poles.map(|(p, &w)| [w * p.x, w * p.y, w * p.z, w]));
+    }
 }
 
 /// The points and weights of homogeneous poles.
@@ -157,19 +209,19 @@ fn from_homogeneous(
     } else {
         (1, lanes.count)
     };
-    let (old_row, new_row) = (points.len() / rows, edited.poles.len() / rows);
+    let (old_row, new_row) = (points.len() / rows, edited.knots.pole_count() * width);
     let (leading, trailing) = (edited.kept.leading * width, edited.kept.trailing * width);
-    let mut new_points = Vec::with_capacity(edited.poles.len());
-    let mut new_weights = Vec::with_capacity(edited.poles.len());
+    let changed_count = new_row - leading - trailing;
+    let stride = edited.poles.len() / rows;
+    let mut new_points = Vec::with_capacity(new_row * rows);
+    let mut new_weights = Vec::with_capacity(new_row * rows);
     for row in 0..rows {
-        let (old, new) = (
-            row * old_row..(row + 1) * old_row,
-            row * new_row..(row + 1) * new_row,
-        );
-        let (old_end, new_end) = (old.end - trailing, new.end - trailing);
+        let old = row * old_row..(row + 1) * old_row;
+        let old_end = old.end - trailing;
         new_points.extend_from_slice(&points[old.start..old.start + leading]);
         new_weights.extend_from_slice(&weights[old.start..old.start + leading]);
-        let changed = &edited.poles[new.start + leading..new_end];
+        let first = row * stride + leading - edited.start * width;
+        let changed = &edited.poles[first..first + changed_count];
         new_points.extend(changed.iter().map(|&[x, y, z, w]| {
             let inverse = 1.0 / w;
             Point3D::new(x * inverse, y * inverse, z * inverse)
@@ -187,6 +239,10 @@ pub(crate) struct Edited<P> {
     pub(crate) poles: Vec<P>,
     /// The poles at either end of each lane the edit left as they were.
     pub(crate) kept: Kept,
+    /// The pole (or slot, for interleaved lanes) each lane of `poles`
+    /// starts at, those before it being kept ones left out: every lane as
+    /// long, holding at least all its changed poles.
+    pub(crate) start: usize,
 }
 
 /// How many poles at the start and at the end of each lane an edit left
@@ -234,87 +290,70 @@ pub(crate) fn edit<E: Edit>(
     }
 }
 
-/// The Bézier pieces of a curve's direction (see [`bezier_pieces`]): the
-/// knots at which they meet, their points, `degree + 1` per piece, and
-/// their weights if there are `weights`.
-#[allow(clippy::type_complexity)] // the parts of the pieces
+/// Visits the Bézier pieces of a curve's direction over its range, a
+/// periodic direction's from its lower bound: `visit(x, y, points,
+/// weights)` for the piece over `[x, y]`, its `degree + 1` points and their
+/// weights if there are `weights`.
 pub(crate) fn curve_pieces(
     direction: &KnotVector,
     points: &[Point3D],
     weights: Option<&[f64]>,
-) -> (Vec<f64>, Vec<Point3D>, Option<Vec<f64>>) {
+    mut visit: impl FnMut(f64, f64, Vec<Point3D>, Option<Vec<f64>>),
+) {
+    fn run<S: Source>(
+        direction: &KnotVector,
+        poles: S,
+        visit: &mut impl FnMut(f64, f64, Vec<Point3D>, Option<Vec<f64>>),
+    ) {
+        Walker::new(direction, 1).for_each_piece(poles, One, |_, x, y, piece| {
+            let (points, weights) = S::Pole::parts(piece);
+            visit(x, y, points, weights);
+        });
+    }
     match weights {
-        None => {
-            let (breaks, points) = bezier_pieces(direction, points, Lanes::CURVE);
-            (breaks, points, None)
-        }
-        Some(weights) => {
-            let (breaks, poles) =
-                bezier_pieces(direction, Weighted { points, weights }, Lanes::CURVE);
-            let (points, weights) = cartesian(&poles);
-            (breaks, points, Some(weights))
-        }
+        None => run(direction, points, &mut visit),
+        Some(weights) => run(direction, Weighted { points, weights }, &mut visit),
     }
 }
 
-/// The Bézier patches of a surface over `u` and `v`, its rows of poles
-/// along `v`: the knots at which they meet in each direction, and their
-/// points and weights (if there are `weights`), patch `(i, j)` (the `i`-th
-/// `u` span, `j`-th `v` span) the `(i, j)`-th block of `(u degree + 1)
-/// (v degree + 1)` poles, row by row.
-#[allow(clippy::type_complexity)] // the parts of the patches
+/// Visits the Bézier patches of a surface over `u` and `v`, its rows of
+/// poles along `v`: `visit(i, (u0, u1), (v0, v1), points, weights)` for the
+/// patch over `[u0, u1] x [v0, v1]`, the `i`-th along `u`, its `(u degree
+/// + 1) (v degree + 1)` points row by row and their weights if there are
+/// `weights`; patches come along `u` for each span along `v`.
 pub(crate) fn surface_patches(
     u: &KnotVector,
     v: &KnotVector,
     points: &[Point3D],
     weights: Option<&[f64]>,
-) -> (Vec<f64>, Vec<f64>, Vec<Point3D>, Option<Vec<f64>>) {
+    mut visit: impl FnMut(usize, (f64, f64), (f64, f64), Vec<Point3D>, Option<Vec<f64>>),
+) {
+    #[allow(clippy::type_complexity)] // the visitor of `surface_patches`
+    fn run<S: Source>(
+        u: &KnotVector,
+        v: &KnotVector,
+        poles: S,
+        visit: &mut impl FnMut(usize, (f64, f64), (f64, f64), Vec<Point3D>, Option<Vec<f64>>),
+    ) {
+        // The strips of `v` pieces: strip `j` holds `v degree + 1` poles of
+        // every row, a grid of rows along `v` whose `u` pieces are patches.
+        let (v_breaks, strips) = bezier_pieces(v, poles, Lanes::rows(u.pole_count()));
+        let width = v.degree() + 1;
+        let mut walker = Walker::new(u, width);
+        for (strip, span) in strips
+            .chunks_exact(u.pole_count() * width)
+            .zip(v_breaks.windows(2))
+        {
+            walker.for_each_piece(strip, width, |i, x, y, patch| {
+                let (points, weights) = S::Pole::parts(patch);
+                visit(i, (x, y), (span[0], span[1]), points, weights);
+            });
+        }
+    }
     match weights {
-        None => {
-            let (u_breaks, v_breaks, points) = patches(u, v, points);
-            (u_breaks, v_breaks, points, None)
-        }
-        Some(weights) => {
-            let (u_breaks, v_breaks, poles) = patches(u, v, Weighted { points, weights });
-            let (points, weights) = cartesian(&poles);
-            (u_breaks, v_breaks, points, Some(weights))
-        }
+        None => run(u, v, points, &mut visit),
+        Some(weights) => run(u, v, Weighted { points, weights }, &mut visit),
     }
-}
-
-/// [`surface_patches`] of `poles`: the strips of `u` pieces, then each
-/// strip's `v` pieces.
-fn patches<S: Source>(
-    u: &KnotVector,
-    v: &KnotVector,
-    poles: S,
-) -> (Vec<f64>, Vec<f64>, Vec<S::Pole>) {
-    let (u_breaks, strips) = bezier_pieces(u, poles, Lanes::columns(v.pole_count()));
-    let strip_len = (u.degree() + 1) * v.pole_count();
-    let strip_count = u_breaks.len() - 1;
-    let mut v_breaks = Vec::new();
-    let mut out = Vec::new();
-    for strip in strips.chunks_exact(strip_len) {
-        let (breaks, patches) = bezier_pieces(v, strip, Lanes::rows(u.degree() + 1));
-        if out.is_empty() {
-            out.reserve_exact(strip_count * patches.len());
-        }
-        out.extend_from_slice(&patches);
-        v_breaks = breaks;
-    }
-    (u_breaks, v_breaks, out)
-}
-
-/// The points and weights of homogeneous poles.
-fn cartesian(poles: &[[f64; 4]]) -> (Vec<Point3D>, Vec<f64>) {
-    let points = poles
-        .iter()
-        .map(|&[x, y, z, w]| {
-            let inverse = 1.0 / w;
-            Point3D::new(x * inverse, y * inverse, z * inverse)
-        })
-        .collect();
-    (points, poles.iter().map(|h| h[3]).collect())
 }
 
 /// Inserting the non-decreasing knots: see [`insert_knots`].
@@ -415,6 +454,7 @@ fn insert_knots<S: Source>(
             knots: knots.clone(),
             poles,
             kept,
+            start: 0,
         });
     }
     let (degree, periodic) = (knots.degree(), knots.is_periodic());
@@ -427,6 +467,11 @@ fn insert_knots<S: Source>(
         let leading = insert.iter().take_while(|&&x| x == first).count();
         &insert[leading..leading + insert.len() - seam_count]
     };
+    // A clamped end may have one more copy than the degree, a periodic
+    // seam no more than it.
+    if seam_count > 0 && knots.multiplicities()[0] as usize + seam_count > degree {
+        return Err(KnotInsertionError::MultiplicityTooLarge);
+    }
     let old_flat = knots.flat();
     let mut new_flat = Vec::with_capacity(old_flat.len() + insert.len());
     if seam_count > 0 {
@@ -441,50 +486,18 @@ fn insert_knots<S: Source>(
         append(&mut new_flat, &old_flat[copied..at]);
         new_flat.push(x);
         copied = at;
+        // The copies of `x` so far all end the new knots.
+        let copies = new_flat.iter().rev().take_while(|&&k| k == x).count();
+        let clamped_end = !periodic && (x == old_flat[0] || x == old_flat[old_flat.len() - 1]);
+        if copies > degree + usize::from(clamped_end) {
+            return Err(KnotInsertionError::MultiplicityTooLarge);
+        }
     }
     append(&mut new_flat, &old_flat[copied..]);
     if seam_count > 0 {
         new_flat.extend(std::iter::repeat_n(last, seam_count));
     }
-    let (old_knots, old_mults) = (knots.knots(), knots.multiplicities());
-    let capacity = old_knots.len() + interior.len();
-    let (mut new_knots, mut new_mults) =
-        (Vec::with_capacity(capacity), Vec::with_capacity(capacity));
-    let mut copied = 0;
-    for run in interior.chunk_by(|a, b| a == b) {
-        let (x, count) = (run[0], run.len() as u32);
-        let mut at = copied;
-        while old_knots[at] < x {
-            at += 1;
-        }
-        append(&mut new_knots, &old_knots[copied..at]);
-        append(&mut new_mults, &old_mults[copied..at]);
-        new_knots.push(x);
-        if old_knots[at] == x {
-            new_mults.push(old_mults[at] + count);
-            at += 1;
-        } else {
-            new_mults.push(count);
-        }
-        copied = at;
-    }
-    append(&mut new_knots, &old_knots[copied..]);
-    append(&mut new_mults, &old_mults[copied..]);
-    if seam_count > 0 {
-        let end = new_mults.len() - 1;
-        new_mults[0] += seam_count as u32;
-        new_mults[end] += seam_count as u32;
-    }
-    // A clamped end may have one more than the degree.
-    let end = new_mults.len() - 1;
-    let too_large = new_mults.iter().enumerate().any(|(i, &m)| {
-        let clamped_end = !periodic && (i == 0 || i == end);
-        m > degree as u32 + u32::from(clamped_end)
-    });
-    if too_large {
-        return Err(KnotInsertionError::MultiplicityTooLarge);
-    }
-    let (poles, kept) = if periodic {
+    let (poles, kept, start) = if periodic {
         // Seam insertions first, at the seam's first copy.
         let mut tiled_insert = vec![first; seam_count];
         tiled_insert.extend_from_slice(interior);
@@ -497,27 +510,33 @@ fn insert_knots<S: Source>(
             poles,
             lanes,
         );
-        (poles, Kept::default())
+        (poles, Kept::default(), 0)
     } else {
-        let mut out = vec![S::Pole::default(); poles.len() + insert.len() * lanes.count];
-        refine(
+        // Converted poles are refined only from the first changed one on.
+        let trimmed = S::CONVERTS;
+        let (out, start) = refine(
             degree,
             knots.flat(),
             &new_flat,
             insert,
             poles,
             lanes,
-            &mut out,
+            trimmed,
         );
         let (first_span, last_span) = spans(degree, knots.flat(), insert);
         let kept = Kept {
             leading: first_span - degree + 1,
             trailing: knots.pole_count() - last_span,
         };
-        (out, kept)
+        (out, kept, start)
     };
-    let knots = KnotVector::from_validated(degree, new_knots, new_mults, new_flat, periodic);
-    Ok(Edited { knots, poles, kept })
+    let knots = KnotVector::from_flat(degree, new_flat, periodic);
+    Ok(Edited {
+        knots,
+        poles,
+        kept,
+        start,
+    })
 }
 
 /// Appends `values` to `out`: a few values, as most runs between inserted
@@ -535,11 +554,14 @@ fn append<T: Copy>(out: &mut Vec<T>, values: &[T]) {
 
 /// The poles after inserting the knots `x` into the flat knots `old` in
 /// one pass (The NURBS Book, A5.4), `new` being `old` and `x` merged, for
-/// `x` non-decreasing within `[old[degree], old[old.len() - 1 - degree]]`.
+/// `x` non-decreasing within `[old[degree], old[old.len() - 1 - degree]]`:
+/// the new poles laid out as `lanes` lays out `poles`, each lane's from
+/// the slot returned, all of them or if `trimmed` only those of
+/// [`refined_slots`].
 ///
-/// `poles` and `out` hold the lanes' poles as `lanes` lays them out, the
-/// old and the new count per lane. Interleaved lanes are refined together,
-/// consecutive ones one by one: see [`refine_slots`].
+/// Each lane's poles are its kept ones copied, then its changed ones
+/// refined in place: interleaved lanes together, consecutive ones one by
+/// one (see [`refine_slots`]).
 fn refine<S: Source>(
     degree: usize,
     old: &[f64],
@@ -547,16 +569,65 @@ fn refine<S: Source>(
     x: &[f64],
     poles: S,
     lanes: Lanes,
-    out: &mut [S::Pole],
-) {
-    if lanes.consecutive {
-        let (n, new_n) = (poles.len() / lanes.count, out.len() / lanes.count);
-        for (lane, lane_out) in out.chunks_exact_mut(new_n).enumerate() {
-            let lane_poles = poles.slice(lane * n..(lane + 1) * n);
-            refine_slots(degree, old, new, x, lane_poles, One, lane_out);
-        }
+    trimmed: bool,
+) -> (Vec<S::Pole>, usize) {
+    let (p, s) = (degree, x.len());
+    let n = old.len() - p - 1;
+    let (rows, width) = if lanes.consecutive {
+        (lanes.count, 1)
     } else {
-        refine_slots(degree, old, new, x, poles, lanes.count, out);
+        (1, lanes.count)
+    };
+    if s == 0 {
+        let mut out = Vec::with_capacity(poles.len());
+        poles.extend_to(0..poles.len(), &mut out);
+        return (out, 0);
+    }
+    let (a, last) = spans(p, old, x);
+    let b = last + 1;
+    let slots = refined_slots(p, n, s, (a, last), trimmed);
+    let mut out = Vec::with_capacity(slots.len() * lanes.count);
+    for row in 0..rows {
+        let row_start = row * n * width;
+        // The slots up to `a - p` and from `b - 1 + s` keep old poles.
+        poles.extend_to(
+            row_start + slots.start * width..row_start + (a - p + 1) * width,
+            &mut out,
+        );
+        out.resize(out.len() + (b + s - a + p - 2) * width, S::Pole::default());
+        poles.extend_to(
+            row_start + (b - 1) * width..row_start + (slots.end - s) * width,
+            &mut out,
+        );
+    }
+    let row_len = slots.len() * width;
+    for (row, row_out) in out.chunks_exact_mut(row_len).enumerate() {
+        let row_poles = poles.slice(row * n * width..(row + 1) * n * width);
+        if lanes.consecutive {
+            refine_slots(p, old, new, x, row_poles, One, slots.start, row_out);
+        } else {
+            refine_slots(p, old, new, x, row_poles, width, slots.start, row_out);
+        }
+    }
+    (out, slots.start)
+}
+
+/// The new slots [`refine`] writes, of `n + s` after inserting `s` knots
+/// whose first and last are in the old knot spans `spans`: all, or if
+/// `trimmed` those the refinement reaches, from the kept one before the
+/// first changed one (written over with itself) to `degree + 1` after the
+/// last changed one (read).
+fn refined_slots(
+    degree: usize,
+    n: usize,
+    s: usize,
+    (first_span, last_span): (usize, usize),
+    trimmed: bool,
+) -> std::ops::Range<usize> {
+    if trimmed {
+        first_span - degree..(last_span + 1 + degree + s).min(n + s)
+    } else {
+        0..n + s
     }
 }
 
@@ -592,10 +663,12 @@ impl Width for One {
     }
 }
 
-/// [`refine`] on `poles` held in slots of `width` poles, slot `i` holding
-/// pole `i` of every lane. The slots away from the inserted knots are
-/// copied; each inserted knot then blends `degree` slots, right to left,
-/// every lane with the same coefficients.
+/// [`refine`] of the changed slots of `out`, the new slots from `start`
+/// on, the kept ones already copied: `poles` are held in slots of `width`
+/// poles, slot `i` holding pole `i` of every lane. Each inserted knot
+/// blends `degree` slots, right to left, every lane with the same
+/// coefficients.
+#[allow(clippy::too_many_arguments)] // the parts of A5.4
 fn refine_slots<S: Source>(
     degree: usize,
     old: &[f64],
@@ -603,23 +676,18 @@ fn refine_slots<S: Source>(
     x: &[f64],
     poles: S,
     width: impl Width,
+    start: usize,
     out: &mut [S::Pole],
 ) {
     let width = width.get();
     let p = degree;
-    let n = old.len() - p - 1;
     let s = x.len();
     debug_assert_eq!(new.len(), old.len() + s);
-    debug_assert_eq!(poles.len(), width * n);
-    debug_assert_eq!(out.len(), width * (n + s));
-    if s == 0 {
-        poles.copy_to(0, out);
-        return;
-    }
+    debug_assert_eq!(poles.len(), width * (old.len() - p - 1));
     let (a, last) = spans(p, old, x);
     let b = last + 1;
-    poles.copy_to(0, &mut out[..(a - p + 1) * width]);
-    poles.copy_to((b - 1) * width, &mut out[(b - 1 + s) * width..]);
+    // Slot `i` of the new poles, from the first written.
+    let at = |i: usize| (i - start) * width;
     let mut i = b + p - 1;
     let mut k = b + p + s - 1;
     for &xj in x.iter().rev() {
@@ -629,14 +697,11 @@ fn refine_slots<S: Source>(
             moved -= 1;
         }
         let count = i - moved;
-        poles.copy_to(
-            (moved - p) * width,
-            &mut out[(k - p - count) * width..(k - p) * width],
-        );
+        poles.copy_to((moved - p) * width, &mut out[at(k - p - count)..at(k - p)]);
         (i, k) = (moved, k - count);
         // Slots `k - p - 1..=k`: the first takes its neighbour, then each of
         // the next `p` blends with the one after it.
-        let slots = &mut out[(k - p - 1) * width..(k + 1) * width];
+        let slots = &mut out[at(k - p - 1)..at(k + 1)];
         let (head, tail) = slots.split_at_mut(width);
         head.copy_from_slice(&tail[..width]);
         let knots = new[k + 1..k + p + 1].iter().zip(&old[i - p + 1..i + 1]);
@@ -738,15 +803,14 @@ fn refine_periodic<S: Source>(
         }
     }
     let new_count = count + inserted.len();
-    let mut refined = vec![S::Pole::default(); lanes.count * new_count];
-    refine(
+    let (refined, _) = refine(
         degree,
         &old_knots,
         &new_knots,
         &inserted,
         window_poles.as_slice(),
         window,
-        &mut refined,
+        false,
     );
     // Window pole `w` weights the new tiled function `w + shift`, aligned
     // on the last copy of the anchor knot.

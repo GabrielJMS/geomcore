@@ -2,75 +2,104 @@
 //! knot span's poles once its end knots have `degree` copies, found span
 //! after span by inserting the next knot until it has them.
 
+use std::borrow::Cow;
+
 use super::{Lanes, One, Pole, Source, Width};
 use crate::curve_math::bspline::{KnotVector, LARGE};
 
 /// The Bézier pieces of `knots` and its poles over its range, a periodic
-/// direction's from its lower bound: the knots at which pieces meet, from
-/// the range's start to its end, and the pieces in order, piece `k`
-/// holding `degree + 1` poles of every lane, the lanes of a piece laid out
-/// as those of `poles`.
+/// direction's from its lower bound: the knots at which pieces meet (see
+/// [`KnotVector::breaks`]) and the pieces in order, piece `k` holding `degree +
+/// 1` poles of every lane, the lanes of a piece laid out as those of
+/// `poles`.
 pub(crate) fn bezier_pieces<S: Source>(
     knots: &KnotVector,
     poles: S,
     lanes: Lanes,
 ) -> (Vec<f64>, Vec<S::Pole>) {
     let p = knots.degree();
-    let unrolled = knots.is_periodic().then(|| unroll(knots));
-    let flat = unrolled.as_deref().unwrap_or(knots.flat());
-    let n = flat.len() - p - 1;
-    let (lo, hi) = (flat[p], flat[n]);
-    let mut breaks = Vec::with_capacity(n - p + 1);
-    breaks.push(lo);
-    for &x in &flat[p + 1..=n] {
-        if x > breaks[breaks.len() - 1] {
-            breaks.push(x);
-        }
-    }
-    debug_assert_eq!(breaks[breaks.len() - 1], hi);
-    let pieces = breaks.len() - 1;
-    let mut out = vec![S::Pole::default(); pieces * (p + 1) * lanes.count];
-    let periodic_n = knots.pole_count();
-    // The unrolled direction's pole `i` is the periodic pole `i` wrapped.
-    let wrapped = |lane_poles: S, width: usize| -> Vec<S::Pole> {
-        let mut poles = vec![S::Pole::default(); n * width];
-        for (i, slot) in poles.chunks_exact_mut(width).enumerate() {
-            lane_poles.copy_to((i % periodic_n) * width, slot);
-        }
-        poles
-    };
+    let breaks = knots.breaks();
+    let mut out = vec![S::Pole::default(); (breaks.len() - 1) * (p + 1) * lanes.count];
     if lanes.consecutive {
         let lane_n = poles.len() / lanes.count;
         let piece_len = (p + 1) * lanes.count;
+        let mut walker = Walker::new(knots, 1);
         for lane in 0..lanes.count {
             let lane_poles = poles.slice(lane * lane_n..(lane + 1) * lane_n);
-            let mut visit = |k: usize, piece: &[S::Pole]| {
+            walker.for_each_piece(lane_poles, One, |k, _, _, piece| {
                 let at = k * piece_len + lane * (p + 1);
                 out[at..at + p + 1].copy_from_slice(piece);
-            };
-            match &unrolled {
-                None => for_each_piece(p, flat, lane_poles, One, &mut visit),
-                Some(_) => {
-                    let unrolled_poles = wrapped(lane_poles, 1);
-                    for_each_piece(p, flat, unrolled_poles.as_slice(), One, &mut visit);
-                }
-            }
+            });
         }
     } else {
         let w = lanes.count;
         let piece_len = (p + 1) * w;
-        let mut visit = |k: usize, piece: &[S::Pole]| {
+        Walker::new(knots, w).for_each_piece(poles, w, |k, _, _, piece| {
             out[k * piece_len..(k + 1) * piece_len].copy_from_slice(piece);
-        };
-        match &unrolled {
-            None => for_each_piece(p, flat, poles, w, &mut visit),
-            Some(_) => {
-                let unrolled_poles = wrapped(poles, w);
-                for_each_piece(p, flat, unrolled_poles.as_slice(), w, &mut visit);
+        });
+    }
+    (breaks, out)
+}
+
+/// Walks the Bézier pieces of one direction, again and again over poles
+/// in slots of the same width, with the same scratch space.
+pub(crate) struct Walker<'a, P> {
+    degree: usize,
+    /// The flat knots walked: a periodic direction's unrolled.
+    flat: Cow<'a, [f64]>,
+    /// The periodic direction's pole count, if periodic.
+    period: Option<usize>,
+    scratch: Vec<P>,
+    /// A periodic direction's poles, unrolled.
+    unrolled: Vec<P>,
+}
+
+impl<'a, P: Pole> Walker<'a, P> {
+    /// A walker over `knots` for poles in slots of `width`.
+    pub(crate) fn new(knots: &'a KnotVector, width: usize) -> Walker<'a, P> {
+        let p = knots.degree();
+        let periodic = knots.is_periodic();
+        Walker {
+            degree: p,
+            flat: match periodic {
+                true => Cow::Owned(unroll(knots)),
+                false => Cow::Borrowed(knots.flat()),
+            },
+            period: periodic.then(|| knots.pole_count()),
+            scratch: vec![P::default(); 2 * (p + 1) * width],
+            unrolled: Vec::new(),
+        }
+    }
+
+    /// Visits the Bézier pieces of `poles` (in slots of `width`, as given
+    /// to [`Walker::new`]): `visit(k, x, y, piece)` for piece `k` over the
+    /// span `[x, y]`, its `degree + 1` slots.
+    pub(crate) fn for_each_piece<S: Source<Pole = P>>(
+        &mut self,
+        poles: S,
+        width: impl Width,
+        mut visit: impl FnMut(usize, f64, f64, &[P]),
+    ) {
+        let (p, flat, scratch) = (self.degree, &self.flat[..], &mut self.scratch[..]);
+        match self.period {
+            None => walk(p, flat, poles, width, scratch, |k, x, y, _, piece| {
+                visit(k, x, y, piece)
+            }),
+            Some(n) => {
+                // The unrolled direction's pole `i` is the periodic pole `i`
+                // wrapped.
+                let w = width.get();
+                self.unrolled.resize((flat.len() - p - 1) * w, P::default());
+                for (i, slot) in self.unrolled.chunks_exact_mut(w).enumerate() {
+                    poles.copy_to((i % n) * w, slot);
+                }
+                let unrolled = &self.unrolled[..];
+                walk(p, flat, unrolled, width, scratch, |k, x, y, _, piece| {
+                    visit(k, x, y, piece)
+                });
             }
         }
     }
-    (breaks, out)
 }
 
 /// The flat knots of a periodic direction's period unrolled into a
@@ -100,25 +129,16 @@ fn unroll(knots: &KnotVector) -> Vec<f64> {
 
 /// Visits the Bézier pieces of the non-periodic direction of degree `p`
 /// over the flat knots `u`, its poles in slots of `width`, over its range
-/// `[u[p], u[n]]`: `visit(k, piece)` for piece `k`, its `p + 1` slots.
-pub(super) fn for_each_piece<S: Source>(
-    p: usize,
-    u: &[f64],
-    poles: S,
-    width: impl Width,
-    mut visit: impl FnMut(usize, &[S::Pole]),
-) {
-    walk(p, u, poles, width, |k, _, _, _, piece| visit(k, piece));
-}
-
-/// [`for_each_piece`], `visit(k, x, y, x_copies, piece)` also told the
-/// span `[x, y]` of piece `k` and how many copies of `x` the direction
-/// has (none for the first piece's).
+/// `[u[p], u[n]]`: `visit(k, x, y, x_copies, piece)` for piece `k` over
+/// the span `[x, y]`, its `p + 1` slots, told how many copies of `x` the
+/// direction has (none for the first piece's). `scratch` holds `2 (p + 1)`
+/// slots.
 pub(super) fn walk<S: Source>(
     p: usize,
     u: &[f64],
     poles: S,
     width: impl Width,
+    scratch: &mut [S::Pole],
     mut visit: impl FnMut(usize, f64, f64, usize, &[S::Pole]),
 ) {
     let w = width.get();
@@ -128,8 +148,7 @@ pub(super) fn walk<S: Source>(
     while u[s + 1] <= lo {
         s += 1;
     }
-    let mut scratch = vec![S::Pole::default(); 2 * (p + 1) * w];
-    let (piece, next) = scratch.split_at_mut((p + 1) * w);
+    let (piece, next) = scratch[..2 * (p + 1) * w].split_at_mut((p + 1) * w);
     // `piece[i]` is the blossom at `x^(p - i)` and the `i` knots after the
     // span start `x`: the span's poles once `x` has `p` copies.
     poles.copy_to((s - p) * w, piece);

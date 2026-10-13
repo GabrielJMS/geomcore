@@ -782,34 +782,26 @@ impl BSplineSurface {
     /// ```
     pub fn to_bezier_patches(&self) -> Vec<Vec<BSplineSurface>> {
         let (u, v) = (&self.u_knots, &self.v_knots);
-        let (u_breaks, v_breaks, poles, weights) =
-            editing::surface_patches(u, v, &self.poles, self.weights.as_deref());
-        let size = (u.degree() + 1) * (v.degree() + 1);
-        let v_knots: Vec<curve::KnotVector> = v_breaks
-            .windows(2)
-            .map(|span| curve::KnotVector::bezier(v.degree(), span[0], span[1]))
-            .collect();
-        let mut k = 0;
-        u_breaks
-            .windows(2)
-            .map(|span| {
-                let u_knots = curve::KnotVector::bezier(u.degree(), span[0], span[1]);
-                v_knots
-                    .iter()
-                    .map(|v_knots| {
-                        let range = k * size..(k + 1) * size;
-                        k += 1;
-                        BSplineSurface {
-                            u_knots: u_knots.clone(),
-                            v_knots: v_knots.clone(),
-                            poles: poles[range.clone()].to_vec(),
-                            weights: weights.as_ref().map(|w| w[range].to_vec()),
-                            patches: Lazy::default(),
-                        }
-                    })
-                    .collect()
-            })
-            .collect()
+        let mut rows: Vec<Vec<BSplineSurface>> = Vec::with_capacity(u.knots().len());
+        editing::surface_patches(
+            u,
+            v,
+            &self.poles,
+            self.weights.as_deref(),
+            |i, (u0, u1), (v0, v1), poles, weights| {
+                if i == rows.len() {
+                    rows.push(Vec::with_capacity(v.knots().len()));
+                }
+                rows[i].push(BSplineSurface {
+                    u_knots: curve::KnotVector::bezier(u.degree(), u0, u1),
+                    v_knots: curve::KnotVector::bezier(v.degree(), v0, v1),
+                    poles,
+                    weights,
+                    patches: Lazy::default(),
+                });
+            },
+        );
+        rows
     }
 
     /// The surface with one direction edited by `edit`, every column (in

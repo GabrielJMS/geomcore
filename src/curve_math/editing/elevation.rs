@@ -57,6 +57,7 @@ fn elevate<S: Source>(
             knots: knots.clone(),
             poles,
             kept,
+            start: 0,
         });
     }
     let plan = if knots.is_periodic() {
@@ -81,6 +82,7 @@ fn elevate<S: Source>(
         knots: plan.knots,
         poles: out,
         kept: plan.kept,
+        start: 0,
     })
 }
 
@@ -114,24 +116,20 @@ impl Plan {
         let q = p + by;
         let n = u.len() - p - 1;
         let (lo, hi) = (u[p], u[n]);
-        // At most every pole but the last `p` starts a new knot.
-        let mut knots = Vec::with_capacity(n - p + 1);
-        let mut multiplicities = Vec::with_capacity(n - p + 1);
-        knots.push(lo);
-        multiplicities.push(q as u32 + 1);
-        for &x in &u[p + 1..n] {
+        // Each distinct knot inside the range gains `by` copies, the ends
+        // are clamped at the raised degree.
+        let interior = &u[p + 1..n];
+        let mut flat = Vec::with_capacity(2 * (q + 1) + interior.len() * (by + 1));
+        flat.extend(std::iter::repeat_n(lo, q + 1));
+        for &x in interior {
             if x > lo && x < hi {
-                if knots.last() == Some(&x) {
-                    *multiplicities.last_mut().unwrap() += 1;
-                } else {
-                    knots.push(x);
-                    multiplicities.push(by as u32 + 1);
+                if flat.last() != Some(&x) {
+                    flat.extend(std::iter::repeat_n(x, by));
                 }
+                flat.push(x);
             }
         }
-        knots.push(hi);
-        multiplicities.push(q as u32 + 1);
-        let flat = flat_knots(&knots, &multiplicities);
+        flat.extend(std::iter::repeat_n(hi, q + 1));
         // The first and last raised points of a clamped end are its poles.
         let kept = Kept {
             leading: usize::from(u[p + 1] > lo && u[1] == lo),
@@ -139,7 +137,7 @@ impl Plan {
         };
         Plan {
             by,
-            knots: KnotVector::from_validated(q, knots, multiplicities, flat, false),
+            knots: KnotVector::from_flat(q, flat, false),
             kept,
             unrolled: None,
         }
@@ -290,11 +288,12 @@ fn sweep<S: Source>(
 ) {
     let w = width.get();
     let q = p + by;
-    let mut scratch = vec![S::Pole::default(); 2 * (p + 1) * w];
-    let (left, right) = scratch.split_at_mut((p + 1) * w);
+    let mut scratch = vec![S::Pole::default(); 4 * (p + 1) * w];
+    let (walking, joining) = scratch.split_at_mut(2 * (p + 1) * w);
+    let (left, right) = joining.split_at_mut((p + 1) * w);
     // Poles written so far.
     let mut written = 0;
-    walk(p, u, poles, width, |k, x, y, x_copies, piece| {
+    walk(p, u, poles, width, walking, |k, x, y, x_copies, piece| {
         if k == 0 {
             raise(
                 &mut out[..(q + 1) * w],

@@ -1,8 +1,9 @@
 //! Internal B-spline curve evaluation: basis functions with derivatives,
 //! rational (NURBS) support, and periodic (closed) curves.
 //!
-//! A [`KnotVector`] holds one parametric direction: its degree, knots and
-//! multiplicities, the flat knot sequence, and its pole count. Poles are
+//! A [`KnotVector`] holds one parametric direction: its degree, the flat
+//! knot sequence (its distinct knots and multiplicities derived from it on
+//! first use), and its pole count. Poles are
 //! read through a [`Poles`] view: Cartesian points and, for a rational
 //! curve, a separate weight per pole.
 //!
@@ -15,6 +16,8 @@
 //! period's flat knots tiled endlessly, each copy shifted by the period,
 //! with pole indices wrapping modulo the pole count; tiled knots are
 //! computed on demand.
+
+use std::sync::OnceLock;
 
 use super::analytic::in_period;
 use crate::{Point3D, Vector3D};
@@ -40,19 +43,36 @@ pub(crate) fn flat_knots(knots: &[f64], mults: &[u32]) -> Vec<f64> {
     out
 }
 
-/// One parametric direction of a B-spline: its degree, distinct knots with
-/// their multiplicities, the flat knot sequence (knot `i` repeated
-/// `multiplicities[i]` times), and the pole count they imply.
-#[derive(Debug, Clone, PartialEq)]
+/// The distinct knots of a flat knot sequence, increasing, and their
+/// multiplicities.
+pub(crate) fn distinct_knots(flat: &[f64]) -> (Vec<f64>, Vec<u32>) {
+    flat.chunk_by(|a, b| a == b)
+        .map(|run| (run[0], run.len() as u32))
+        .unzip()
+}
+
+/// One parametric direction of a B-spline: its degree, the flat knot
+/// sequence (each distinct knot repeated by its multiplicity), and the
+/// pole count they imply.
+#[derive(Debug, Clone)]
 pub(crate) struct KnotVector {
     degree: usize,
     periodic: bool,
-    knots: Vec<f64>,
-    multiplicities: Vec<u32>,
     flat: Vec<f64>,
+    /// The distinct knots and their multiplicities, derived from `flat`
+    /// when first asked for: editing results seldom need them.
+    distinct: OnceLock<(Vec<f64>, Vec<u32>)>,
     pole_count: usize,
     /// Multiplicity of the first knot: in a periodic direction, the seam's.
     seam_multiplicity: usize,
+}
+
+/// Directions are equal when their degrees, periodicity and flat knots
+/// are, whether or not their distinct knots were derived yet.
+impl PartialEq for KnotVector {
+    fn eq(&self, other: &KnotVector) -> bool {
+        (self.degree, self.periodic) == (other.degree, other.periodic) && self.flat == other.flat
+    }
 }
 
 impl KnotVector {
@@ -101,20 +121,51 @@ impl KnotVector {
             degree,
             periodic,
             seam_multiplicity: multiplicities[0] as usize,
-            knots,
-            multiplicities,
             flat,
+            distinct: OnceLock::from((knots, multiplicities)),
             pole_count,
         }
+    }
+
+    /// A direction from its flat knots, known to be consistent (as
+    /// [`validate_direction`] would find their distinct knots and
+    /// multiplicities): editing results skip revalidation.
+    pub(crate) fn from_flat(degree: usize, flat: Vec<f64>, periodic: bool) -> KnotVector {
+        let (first, last) = (flat[0], flat[flat.len() - 1]);
+        let seam_multiplicity = flat.iter().take_while(|&&k| k == first).count();
+        let last = flat.iter().rev().take_while(|&&k| k == last).count();
+        let pole_count = if periodic {
+            flat.len() - last
+        } else {
+            flat.len() - degree - 1
+        };
+        let direction = KnotVector {
+            degree,
+            periodic,
+            seam_multiplicity,
+            flat,
+            distinct: OnceLock::new(),
+            pole_count,
+        };
+        debug_assert!(
+            validate_direction(
+                degree,
+                pole_count,
+                direction.knots(),
+                direction.multiplicities(),
+                periodic
+            )
+            .is_ok()
+        );
+        direction
     }
 
     /// The single span `[first, last]` of a Bézier piece of `degree`, both
     /// end knots of multiplicity `degree + 1`.
     pub(crate) fn bezier(degree: usize, first: f64, last: f64) -> KnotVector {
-        let ends = degree as u32 + 1;
         let mut flat = vec![first; 2 * degree + 2];
         flat[degree + 1..].fill(last);
-        KnotVector::from_validated(degree, vec![first, last], vec![ends, ends], flat, false)
+        KnotVector::from_flat(degree, flat, false)
     }
 
     /// The degree.
@@ -129,12 +180,16 @@ impl KnotVector {
 
     /// The distinct knots, increasing.
     pub(crate) fn knots(&self) -> &[f64] {
-        &self.knots
+        &self.distinct().0
     }
 
     /// The multiplicity of each distinct knot.
     pub(crate) fn multiplicities(&self) -> &[u32] {
-        &self.multiplicities
+        &self.distinct().1
+    }
+
+    fn distinct(&self) -> &(Vec<f64>, Vec<u32>) {
+        self.distinct.get_or_init(|| distinct_knots(&self.flat))
     }
 
     /// The flat knots: each knot repeated by its multiplicity.
@@ -304,7 +359,7 @@ impl KnotVector {
     pub(crate) fn breaks(&self) -> Vec<f64> {
         let (lo, hi) = self.bounds();
         let mut breaks = vec![lo];
-        breaks.extend(self.knots.iter().copied().filter(|&k| k > lo && k < hi));
+        breaks.extend(self.knots().iter().copied().filter(|&k| k > lo && k < hi));
         breaks.push(hi);
         breaks
     }
@@ -322,12 +377,12 @@ impl KnotVector {
             .enumerate()
             .map(|(i, &x)| {
                 if i == 0 || i == last {
-                    !self.periodic || creased(self.multiplicities[0])
+                    !self.periodic || creased(self.multiplicities()[0])
                 } else {
-                    self.knots
+                    self.knots()
                         .iter()
                         .position(|&k| k == x)
-                        .is_some_and(|k| creased(self.multiplicities[k]))
+                        .is_some_and(|k| creased(self.multiplicities()[k]))
                 }
             })
             .collect()
@@ -343,9 +398,9 @@ impl KnotVector {
     pub(crate) fn smooth_regions(&self) -> Option<Vec<(f64, f64)>> {
         let (lo, hi) = self.bounds();
         let creases: Vec<f64> = self
-            .knots
+            .knots()
             .iter()
-            .zip(&self.multiplicities)
+            .zip(self.multiplicities())
             .filter(|&(&k, &m)| k > lo && k < hi && m as usize >= self.degree)
             .map(|(&k, _)| k)
             .collect();

@@ -642,21 +642,21 @@ impl BSplineCurve3D {
     /// ```
     pub fn to_bezier_pieces(&self) -> Vec<BSplineCurve3D> {
         let p = self.degree();
-        let (breaks, poles, weights) =
-            editing::curve_pieces(&self.knots, &self.poles, self.weights.as_deref());
-        breaks
-            .windows(2)
-            .enumerate()
-            .map(|(k, span)| {
-                let range = k * (p + 1)..(k + 1) * (p + 1);
-                BSplineCurve3D {
-                    knots: math::KnotVector::bezier(p, span[0], span[1]),
-                    poles: poles[range.clone()].to_vec(),
-                    weights: weights.as_ref().map(|w| w[range].to_vec()),
+        let mut pieces = Vec::with_capacity(self.knots.knots().len());
+        editing::curve_pieces(
+            &self.knots,
+            &self.poles,
+            self.weights.as_deref(),
+            |x, y, poles, weights| {
+                pieces.push(BSplineCurve3D {
+                    knots: math::KnotVector::bezier(p, x, y),
+                    poles,
+                    weights,
                     spans: Lazy::default(),
-                }
-            })
-            .collect()
+                });
+            },
+        );
+        pieces
     }
 
     /// Returns the curve's parameter bounds `(first, last)`.
