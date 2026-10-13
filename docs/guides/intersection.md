@@ -51,7 +51,12 @@ Covered pairs include plane/quadric/torus surfaces against each other
 in their symmetric configurations, lines/circles/conics against each
 other and against the elementary surfaces, and any two conics —
 coplanar (up to four hits) or in crossing planes (met on the shared
-line). A few landmarks:
+line). A sphere cut by a coaxial cylinder, computed live below —
+two exact rings in ~0.4 µs on a Linux x86-64 desktop, single thread:
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/intersect-exact.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Sphere and cylinder with their two exact intersection rings"></iframe>
+
+Two more landmarks, as figures:
 
 <figure class="geom-fig">
 <img src="../../assets/figures/intersection/15-plane-and-plane.svg" alt="Plane and plane intersection">
@@ -136,4 +141,15 @@ are found there.
 
 Marching is approximate by design — fitted curves, no tangency
 classification, no singular points. Where the surfaces touch instead
-of crossing, traces stop rather than turn onto the other branch.
+of crossing, traces stop rather than turn onto the other branch. A
+wavy B-spline patch through a sphere, marched live below — one fitted
+loop in ~8 ms on the same machine (the loop arrives in the viewer as
+a sampled polyline until native B-spline types land,
+[viewer#5](https://github.com/geomcore/geomcore-viewer/issues/5);
+tunable sampling density is
+[viewer#12](https://github.com/geomcore/geomcore-viewer/issues/12)):
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/intersect-marching.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="B-spline patch and sphere with their marching intersection loop"></iframe>
+
+All three scenes on this page were computed by the kernel itself —
+see `docs/assets/scenes/gen_scenes.py` — not drawn by hand.

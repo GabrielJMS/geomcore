@@ -24,7 +24,10 @@ minimum found, however close two basins sit.
 
 An ellipse already shows why `extrema` (all minima) and
 `project_point` (the nearest) are different calls: a single point can
-have four feet, and the nearest is only one of them.
+have four feet, and the nearest is only one of them. Computed live
+below — `extrema` on a 3×2 ellipse from a near-centre query, four feet:
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/projection-feet.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Ellipse with the four projection feet of one query point"></iframe>
 
 <figure class="geom-fig">
 <img src="../../assets/figures/projection/02-three-candidates-on-a-b-spline.svg" alt="Candidate feet on a B-spline">
