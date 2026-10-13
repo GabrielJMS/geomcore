@@ -719,7 +719,7 @@ fn difference_hulls<const H: usize>(
     let width = cols * H;
     let row = |i: usize| &net[i * width..(i + 1) * width];
     // A point of the net, about `centre` if rational.
-    let shifted = |x: &[f64]| -> [f64; H] {
+    let shifted = |x: &[f64; H]| -> [f64; H] {
         std::array::from_fn(|c| {
             if c < 3 && H == 4 {
                 x[c] - centre[c] * x[3]
@@ -728,7 +728,7 @@ fn difference_hulls<const H: usize>(
             }
         })
     };
-    let points = |i: usize| row(i).chunks_exact(H).map(shifted);
+    let points = |i: usize| row(i).as_chunks::<H>().0.iter().map(shifted);
     let mut hulls = [[Interval::EMPTY; 4]; 5];
     // Each difference net over exactly its own indices, the hull widened
     // by comparisons (cheaper than `f64::min`, and as blind to NaN).
@@ -777,7 +777,7 @@ fn difference_hulls<const H: usize>(
     }
     let mut weight = Interval::EMPTY;
     if H == 4 {
-        for x in net.chunks_exact(H) {
+        for x in net.as_chunks::<H>().0 {
             weight = weight.hull(x[3]);
         }
     }

@@ -832,8 +832,8 @@ fn bezier_d2(net: &[f64], u: f64) -> [[f64; 3]; 3] {
     let n = net.len() / 4;
     let p = (n - 1) as f64;
     let mut q = [[0.0; 4]; LARGE];
-    for (k, x) in net.chunks_exact(4).enumerate() {
-        q[k] = [x[0], x[1], x[2], x[3]];
+    for (k, x) in net.as_chunks::<4>().0.iter().enumerate() {
+        q[k] = *x;
     }
     let lerp = |a: [f64; 4], b: [f64; 4]| std::array::from_fn(|c| a[c] + u * (b[c] - a[c]));
     let kept = n.min(3);
@@ -872,7 +872,7 @@ fn bezier_d2(net: &[f64], u: f64) -> [[f64; 3]; 3] {
 /// control points, scaled differences of its own; a rational one's are
 /// those of [`derivative_bounds`].
 fn curve_bounds(net: &[f64], points: &[[f64; 3]]) -> ([Interval; 3], [[Interval; 3]; 2]) {
-    if net.chunks_exact(4).any(|x| x[3] != 1.0) {
+    if net.as_chunks::<4>().0.iter().any(|x| x[3] != 1.0) {
         let (value, d) = derivative_bounds(net, points, points.len(), 1, 4, true);
         return (value, [d[0], d[2]]);
     }
