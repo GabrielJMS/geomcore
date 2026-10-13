@@ -17,6 +17,7 @@ use crate::{
     Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Plane, Point2D, Point3D, Vector3D,
 };
 
+mod completeness;
 mod conic;
 mod curve_curve;
 mod curve_surface;
@@ -24,9 +25,11 @@ mod curve_surface_hull;
 mod dispatch;
 mod marching;
 mod pieces;
+pub use completeness::{Completeness, IncompleteReason};
 pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
 pub use curve_curve::{curve_curve_extrema, intersect_curve_curve};
 pub use curve_surface::intersect_curve_surface;
+pub use curve_surface_hull::{CurveSurfaceHits, CurveSurfaceRegion};
 pub use dispatch::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
 };

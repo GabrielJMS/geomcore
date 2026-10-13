@@ -216,6 +216,21 @@ the Python distribution are versioned in lockstep.
   point exceeds the search's budget and falls back to the sampled search. The new
   `ParametricCurve3D::as_bspline` and `ParametricSurface::as_bspline`
   (default `None`) expose the B-spline behind a curve or surface.
+- **Breaking:** numeric curve–surface intersection reports whether its
+  search was complete (#31): `intersect_curve_surface` returns
+  `CurveSurfaceHits`, which reads as the slice of its hits (`hits()`,
+  `into_hits()`, iteration) and carries a `Completeness`. A B-spline
+  curve against a B-spline surface is `Complete` when every pair of
+  pieces was proven apart or isolated to one hit. It is `Incomplete`
+  when the budget ran out (`IncompleteReason::BudgetExhausted`) or
+  pieces never separated at a tangent contact, an overlap or a singular
+  point (`Unseparated`), with the `CurveSurfaceRegion`s where hits may
+  be missing: curve and surface parameter ranges and a box in space.
+  Its hits are then the proven ones together with the sampled search's
+  that do not merge into them. Other pairs are `Sampled`. Code that
+  only reads the hits keeps compiling unless it names the `Vec` type;
+  call `into_hits()` there.
+  See ADR 0007. Python is unchanged and still returns the list of hits.
 
 ### Fixed
 
