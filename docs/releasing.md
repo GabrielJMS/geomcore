@@ -14,7 +14,7 @@ GitHub release with the artifacts attached.
 2. Add a **pending trusted publisher** at
    https://pypi.org/manage/account/publishing/ with exactly:
    - PyPI project name: `geomcore`
-   - Owner: `GabrielJMS`
+   - Owner: `geomcore`
    - Repository: `geomcore`
    - Workflow name: `release.yml`
    - Environment name: `pypi`
@@ -37,7 +37,7 @@ GitHub release with the artifacts attached.
 
 3. After the first publish, open the crate's Settings → Trusted Publishing and
    add:
-   - Repository: `GabrielJMS/geomcore`
+   - Repository: `geomcore/geomcore`
    - Workflow filename: `release.yml`
    - Environment: `crates-io`
 

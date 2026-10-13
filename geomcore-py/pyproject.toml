@@ -21,9 +21,9 @@ classifiers = [
 dynamic = ["version"]
 
 [project.urls]
-Repository = "https://github.com/GabrielJMS/geomcore"
-Changelog = "https://github.com/GabrielJMS/geomcore/blob/main/CHANGELOG.md"
-Roadmap = "https://github.com/GabrielJMS/geomcore/blob/main/ROADMAP.md"
+Repository = "https://github.com/geomcore/geomcore"
+Changelog = "https://github.com/geomcore/geomcore/blob/main/CHANGELOG.md"
+Roadmap = "https://github.com/geomcore/geomcore/blob/main/ROADMAP.md"
 
 [tool.maturin]
 module-name = "geomcore"

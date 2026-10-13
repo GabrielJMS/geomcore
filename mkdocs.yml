@@ -1,6 +1,6 @@
 site_name: geomcore
-site_url: https://gabrieljms.github.io/geomcore/
-repo_url: https://github.com/GabrielJMS/geomcore
+site_url: https://geomcore.github.io/geomcore/
+repo_url: https://github.com/geomcore/geomcore
 
 theme:
   name: material

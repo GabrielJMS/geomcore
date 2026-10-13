@@ -35,7 +35,7 @@ order); per-direction editing (`insert_u_knot`, `elevate_v_degree`,
 `split_u_at`, `extract`, `reversed_u`/`reversed_v`,
 `to_bezier_patches`) mirrors the curve API in
 [Editing & fitting](editing-fitting.md), and is Rust-only for now
-([geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58)).
+([geomcore#58](https://github.com/geomcore/geomcore/issues/58)).
 
 Surface fitting (`approximate` over a point grid,
 `approximate_within`) is covered there too.
@@ -46,10 +46,10 @@ In the viewer a B-spline surface arrives as a 48×48 mesh. Python needs
 an explicit `u=`/`v=` window because the bindings don't expose the
 surface's `u_bounds`/`v_bounds` yet (the Rust client reads them itself;
 bindings tracked in
-[geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58),
-[viewer#7](https://github.com/GabrielJMS/geomcore-viewer/issues/7)) —
+[geomcore#58](https://github.com/geomcore/geomcore/issues/58),
+[viewer#7](https://github.com/geomcore/geomcore-viewer/issues/7)) —
 and curves on B-spline surfaces have no pcurve mapping
-([viewer#9](https://github.com/GabrielJMS/geomcore-viewer/issues/9)).
+([viewer#9](https://github.com/geomcore/geomcore-viewer/issues/9)).
 
 === "Python"
 

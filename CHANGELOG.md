@@ -9,6 +9,12 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Changed
+
+- The project moved to the `geomcore` GitHub organization: the repository is
+  now <https://github.com/geomcore/geomcore> (old links redirect) and the
+  documentation <https://geomcore.github.io/geomcore/>.
+
 ## [0.32.0] - 2026-10-13
 
 ### Added
@@ -1118,36 +1124,36 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.32.0...HEAD
-[0.32.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.32.0
-[0.31.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.31.0
-[0.30.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.30.0
-[0.29.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.29.0
-[0.28.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.28.0
-[0.27.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.27.0
-[0.26.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.26.0
-[0.25.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.25.0
-[0.24.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.24.0
-[0.23.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.23.0
-[0.22.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.22.0
-[0.21.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.21.0
-[0.20.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.20.0
-[0.19.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.19.0
-[0.18.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.18.0
-[0.17.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.17.0
-[0.16.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.16.0
-[0.15.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.15.0
-[0.14.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.14.0
-[0.13.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.13.0
-[0.12.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.12.0
-[0.11.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.11.0
-[0.10.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.10.0
-[0.9.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.9.0
-[0.8.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.8.0
-[0.7.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.7.0
-[0.6.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.6.0
-[0.5.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.5.0
-[0.4.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.4.0
-[0.3.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.3.0
-[0.2.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.2.0
-[0.1.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.1.0
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/geomcore/geomcore/releases/tag/v0.32.0
+[0.31.0]: https://github.com/geomcore/geomcore/releases/tag/v0.31.0
+[0.30.0]: https://github.com/geomcore/geomcore/releases/tag/v0.30.0
+[0.29.0]: https://github.com/geomcore/geomcore/releases/tag/v0.29.0
+[0.28.0]: https://github.com/geomcore/geomcore/releases/tag/v0.28.0
+[0.27.0]: https://github.com/geomcore/geomcore/releases/tag/v0.27.0
+[0.26.0]: https://github.com/geomcore/geomcore/releases/tag/v0.26.0
+[0.25.0]: https://github.com/geomcore/geomcore/releases/tag/v0.25.0
+[0.24.0]: https://github.com/geomcore/geomcore/releases/tag/v0.24.0
+[0.23.0]: https://github.com/geomcore/geomcore/releases/tag/v0.23.0
+[0.22.0]: https://github.com/geomcore/geomcore/releases/tag/v0.22.0
+[0.21.0]: https://github.com/geomcore/geomcore/releases/tag/v0.21.0
+[0.20.0]: https://github.com/geomcore/geomcore/releases/tag/v0.20.0
+[0.19.0]: https://github.com/geomcore/geomcore/releases/tag/v0.19.0
+[0.18.0]: https://github.com/geomcore/geomcore/releases/tag/v0.18.0
+[0.17.0]: https://github.com/geomcore/geomcore/releases/tag/v0.17.0
+[0.16.0]: https://github.com/geomcore/geomcore/releases/tag/v0.16.0
+[0.15.0]: https://github.com/geomcore/geomcore/releases/tag/v0.15.0
+[0.14.0]: https://github.com/geomcore/geomcore/releases/tag/v0.14.0
+[0.13.0]: https://github.com/geomcore/geomcore/releases/tag/v0.13.0
+[0.12.0]: https://github.com/geomcore/geomcore/releases/tag/v0.12.0
+[0.11.0]: https://github.com/geomcore/geomcore/releases/tag/v0.11.0
+[0.10.0]: https://github.com/geomcore/geomcore/releases/tag/v0.10.0
+[0.9.0]: https://github.com/geomcore/geomcore/releases/tag/v0.9.0
+[0.8.0]: https://github.com/geomcore/geomcore/releases/tag/v0.8.0
+[0.7.0]: https://github.com/geomcore/geomcore/releases/tag/v0.7.0
+[0.6.0]: https://github.com/geomcore/geomcore/releases/tag/v0.6.0
+[0.5.0]: https://github.com/geomcore/geomcore/releases/tag/v0.5.0
+[0.4.0]: https://github.com/geomcore/geomcore/releases/tag/v0.4.0
+[0.3.0]: https://github.com/geomcore/geomcore/releases/tag/v0.3.0
+[0.2.0]: https://github.com/geomcore/geomcore/releases/tag/v0.2.0
+[0.1.0]: https://github.com/geomcore/geomcore/releases/tag/v0.1.0

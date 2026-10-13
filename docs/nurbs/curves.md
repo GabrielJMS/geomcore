@@ -88,7 +88,7 @@ carrying a proven chord-deviation and angle-deviation bound — see
 
 From a script or notebook, send the real objects — B-splines travel
 sampled (curve → 256-segment polyline) until native protocol types land
-([viewer#5](https://github.com/GabrielJMS/geomcore-viewer/issues/5)):
+([viewer#5](https://github.com/geomcore/geomcore-viewer/issues/5)):
 
 === "Python"
 

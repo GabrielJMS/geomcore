@@ -4,7 +4,7 @@ Reshape B-splines without leaving the representation (editing), build
 them from points (fitting), convert exact geometry into them, and
 measure them. Curve API first with per-direction surface equivalents;
 editing and conversion are Rust-only for now
-([geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58)) —
+([geomcore#58](https://github.com/geomcore/geomcore/issues/58)) —
 each Python tab says so.
 
 ## Knots and degree
@@ -15,7 +15,7 @@ Insertion, refinement, elevation and removal keep the shape exactly
 === "Python"
 
     > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
     > The Rust tab is the reference API.
 
 === "Rust"
@@ -48,7 +48,7 @@ seam (up to one period) on periodic directions.
 === "Python"
 
     > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
     > The Rust tab is the reference API.
 
 === "Rust"
@@ -63,7 +63,7 @@ seam (up to one period) on periodic directions.
 
 The pieces are what the viewer can *not* yet take directly — trimmed
 curves have no scene mapping in the Python client
-([viewer#6](https://github.com/GabrielJMS/geomcore-viewer/issues/6)) —
+([viewer#6](https://github.com/geomcore/geomcore-viewer/issues/6)) —
 so sample them to polylines for display.
 
 ## Fitting
@@ -106,7 +106,7 @@ patches.
 === "Python"
 
     > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
     > The Rust tab is the reference API.
 
 === "Rust"
@@ -130,7 +130,7 @@ gives the tight pole box (elementary shapes get closed-form boxes).
 === "Python"
 
     > Not yet bound — tracked in
-    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > [geomcore#58](https://github.com/geomcore/geomcore/issues/58).
     > The Rust tab is the reference API.
 
 === "Rust"
@@ -144,4 +144,4 @@ gives the tight pole box (elementary shapes get closed-form boxes).
     ```
 
 Boxes have no viewer mapping yet
-([viewer#8](https://github.com/GabrielJMS/geomcore-viewer/issues/8)).
+([viewer#8](https://github.com/geomcore/geomcore-viewer/issues/8)).

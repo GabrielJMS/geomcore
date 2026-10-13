@@ -79,9 +79,9 @@ shape — the operation behind refinement, splitting and extraction in
 - The running example below is the geomdl tutorial curve as a clamped
   degree-2 B-spline; the viewer draws it sampled (native B-spline
   protocol types are
-  [viewer#5](https://github.com/GabrielJMS/geomcore-viewer/issues/5)).
+  [viewer#5](https://github.com/geomcore/geomcore-viewer/issues/5)).
 
-<iframe src="https://gabrieljms.github.io/geomcore-viewer/?scene=https://gabrieljms.github.io/geomcore/assets/scenes/nurbs-curve.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Quadratic B-spline with control polygon"></iframe>
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/nurbs-curve.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Quadratic B-spline with control polygon"></iframe>
 
 ## This module
 

@@ -1,10 +1,10 @@
 # Viewer
 
-Live [geomcore-viewer](https://github.com/GabrielJMS/geomcore-viewer) instance
+Live [geomcore-viewer](https://github.com/geomcore/geomcore-viewer) instance
 below — Babylon.js 3D pane plus a PixiJS 2D pane for parameter-space curves.
 The demo scene shows an ellipse, a circle, a hyperbola and a line, with the points where they meet.
 
-<iframe src="https://gabrieljms.github.io/geomcore-viewer/" width="100%" height="640" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="geomcore-viewer live demo"></iframe>
+<iframe src="https://geomcore.github.io/geomcore-viewer/" width="100%" height="640" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="geomcore-viewer live demo"></iframe>
 
 ## From your own code
 
@@ -39,4 +39,4 @@ The embedded page above is static. From a script, a debugger or a notebook, `vie
     view.pcurve(&ring.parametrize_on(cylinder)?, &s, Opts::new().label("C in (u, v)"))?;
     ```
 
-Protocol details: [protocol/SCENE.md](https://github.com/GabrielJMS/geomcore-viewer/blob/main/protocol/SCENE.md).
+Protocol details: [protocol/SCENE.md](https://github.com/geomcore/geomcore-viewer/blob/main/protocol/SCENE.md).

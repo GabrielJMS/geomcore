@@ -1,6 +1,6 @@
 # geomcore (Python bindings)
 
-Python bindings for [geomcore](https://github.com/GabrielJMS/geomcore), a
+Python bindings for [geomcore](https://github.com/geomcore/geomcore), a
 pure, standalone geometric kernel for CAD-grade curves and surfaces —
 parametric evaluation, rigid transformations, and analytic curve-on-surface
 parametrization, implemented in Rust.
@@ -46,8 +46,8 @@ Windows, for Python 3.9+ (abi3 — one wheel covers all versions).
 
 Evaluation, transformations and curve-on-surface parametrization are
 validated against golden fixtures at CAD-kernel-grade tolerances (1e-7).
-See the [repository](https://github.com/GabrielJMS/geomcore) for full
-documentation, the [roadmap](https://github.com/GabrielJMS/geomcore/blob/main/ROADMAP.md),
+See the [repository](https://github.com/geomcore/geomcore) for full
+documentation, the [roadmap](https://github.com/geomcore/geomcore/blob/main/ROADMAP.md),
 and the Rust crate.
 
 ## License
