@@ -1,6 +1,6 @@
 # B-spline poles stay Cartesian, their weights apart
 
-A B-spline stores its poles once, as Cartesian points, with its weights in a separate list when it is rational; a surface keeps both flat, row after row. The poles a caller reads are the poles it gave, and a polynomial B-spline carries no weights at all. Editing (knot insertion and removal, degree elevation, splitting) works on homogeneous poles only inside the window of poles it changes: the untouched poles and weights are copied as they are, bit for bit, and only the changed ones are divided back. Converting just that window is cheap: rational knot insertion runs at 0.87 to 0.95 of the time of the faster C++ library benchmarked.
+A B-spline stores its poles once, as Cartesian points, with its weights in a separate list when it is rational; a surface keeps both flat, row after row. The poles a caller reads are the poles it gave, and a polynomial B-spline carries no weights at all. Editing (knot insertion and removal, degree elevation, splitting) works on homogeneous poles only inside the window of poles it changes: the untouched poles and weights are copied as they are, bit for bit, and only the changed ones are divided back. Converting just that window is cheap: rational knot insertion runs at 0.84 to 0.90 of the time of the faster C++ library benchmarked.
 
 ## Considered options
 
