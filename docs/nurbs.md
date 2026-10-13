@@ -6,8 +6,9 @@ a knot vector and optional weights. Everything else (evaluation, editing,
 fitting, exact elementary conversions, intersections) hangs off those two
 types. The structure below mirrors the
 [NURBS-Python basics](https://nurbs-python.readthedocs.io/en/5.x/basics.html);
-the difference is that every snippet runs in Rust *and* Python — pick a
-language once and the tabs follow you across pages.
+every snippet is Python first, Rust second — pick a language once and the
+tabs follow you across pages. A few 0.32 APIs are still Rust-only; those
+tabs say so.
 
 The curve below is the running example: the same quadratic Bézier the
 geomdl tutorial starts from, as a clamped degree-2 B-spline.
@@ -18,6 +19,17 @@ geomdl tutorial starts from, as a clamped degree-2 B-spline.
 
 Three components: degree, poles, knots with multiplicities. A clamped,
 single-span quadratic is a Bézier curve.
+
+=== "Python"
+
+    ```python
+    from geomcore import Point3D
+    from geomcore.curves import BSplineCurve3D
+
+    poles = [Point3D(1, 0, 0), Point3D(1, 1, 0), Point3D(0, 1, 0)]
+    curve = BSplineCurve3D(2, poles, [0.0, 1.0], [3, 3], False)
+    assert curve.degree() == 2
+    ```
 
 === "Rust"
 
@@ -33,30 +45,11 @@ single-span quadratic is a Bézier curve.
     assert_eq!(curve.degree(), 2);
     ```
 
-=== "Python"
-
-    ```python
-    from geomcore import Point3D
-    from geomcore.curves import BSplineCurve3D
-
-    poles = [Point3D(1, 0, 0), Point3D(1, 1, 0), Point3D(0, 1, 0)]
-    curve = BSplineCurve3D(2, poles, [0.0, 1.0], [3, 3], False)
-    assert curve.degree() == 2
-    ```
-
-Rational (NURBS) curves take one weight per pole via `new_rational` /
-`BSplineCurve3D.new_rational`; periodic ones pass `periodic=True` with a
-cyclic knot vector.
+Rational (NURBS) curves take one weight per pole via
+`BSplineCurve3D.new_rational` / `new_rational`; periodic ones pass
+`periodic=True` with a cyclic knot vector.
 
 ## Evaluate
-
-=== "Rust"
-
-    ```rust
-    let p = curve.eval_point(0.5);
-    assert_eq!(p, Point3D::new(0.75, 0.75, 0.0));
-    let pts = curve.eval_points(&[0.0, 0.25, 0.5, 0.75, 1.0]);
-    ```
 
 === "Python"
 
@@ -64,6 +57,14 @@ cyclic knot vector.
     p = curve.eval_point(0.5)
     assert (p.x, p.y, p.z) == (0.75, 0.75, 0.0)
     pts = curve.eval_points([0.0, 0.25, 0.5, 0.75, 1.0])
+    ```
+
+=== "Rust"
+
+    ```rust
+    let p = curve.eval_point(0.5);
+    assert_eq!(p, Point3D::new(0.75, 0.75, 0.0));
+    let pts = curve.eval_points(&[0.0, 0.25, 0.5, 0.75, 1.0]);
     ```
 
 Derivatives come from `eval_derivative` (order 1–2 on curves); `bounds()`
@@ -75,6 +76,13 @@ geomdl controls plot density with `delta`/`sample_size`. Here sampling
 with guarantees is `discretize`: points joined by segments, each carrying
 a proven chord-deviation and angle-deviation bound.
 
+=== "Python"
+
+    ```python
+    d = curve.discretize(0.01)
+    assert d.points[0] == curve.eval_point(0.0)
+    ```
+
 === "Rust"
 
     ```rust
@@ -84,46 +92,52 @@ a proven chord-deviation and angle-deviation bound.
     assert_eq!(d.points[0], curve.eval_point(0.0));
     ```
 
-=== "Python"
-
-    ```python
-    d = curve.discretize(0.01)
-    assert d.points[0] == curve.eval_point(0.0)
-    ```
-
 ## Edit: knots and degree
 
 Insertion, refinement, elevation and removal keep the shape exactly
-(rational poles are edited in homogeneous form). These are Rust-only for
-now — Python bindings are tracked in
-[geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+(rational poles are edited in homogeneous form).
 
-```rust
-let refined = curve.insert_knot(0.5, 1).unwrap();
-assert_eq!(refined.eval_point(0.5), curve.eval_point(0.5));
+=== "Python"
 
-let dense = curve.refine_knots(&[0.25, 0.5, 0.75]).unwrap();
+    > Not yet bound — tracked in
+    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > The Rust tab is the reference API.
 
-let elevated = curve.elevate_degree(1).unwrap();
-assert_eq!(elevated.degree(), 3);
+=== "Rust"
 
-let simplified = elevated.remove_knot(0.5, 1, 1e-9).unwrap();
-```
+    ```rust
+    let refined = curve.insert_knot(0.5, 1).unwrap();
+    assert_eq!(refined.eval_point(0.5), curve.eval_point(0.5));
+
+    let dense = curve.refine_knots(&[0.25, 0.5, 0.75]).unwrap();
+
+    let elevated = curve.elevate_degree(1).unwrap();
+    assert_eq!(elevated.degree(), 3);
+
+    let simplified = elevated.remove_knot(0.5, 1, 1e-9).unwrap();
+    ```
 
 ## Split, extract, reverse
 
 `split_at` cuts into two clamped pieces, `extract` keeps a sub-range,
 `reversed` mirrors the parameter, `to_bezier_pieces` decomposes into
-Bézier spans. Same Python story as above
-([geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58)).
+Bézier spans.
 
-```rust
-let (left, right) = curve.split_at(0.5).unwrap();
-let piece = curve.extract(0.0, 0.5).unwrap();
-let rev = curve.reversed();
-assert_eq!(rev.eval_point(0.0), curve.eval_point(1.0));
-assert_eq!(curve.to_bezier_pieces().len(), 1); // single span
-```
+=== "Python"
+
+    > Not yet bound — tracked in
+    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > The Rust tab is the reference API.
+
+=== "Rust"
+
+    ```rust
+    let (left, right) = curve.split_at(0.5).unwrap();
+    let piece = curve.extract(0.0, 0.5).unwrap();
+    let rev = curve.reversed();
+    assert_eq!(rev.eval_point(0.0), curve.eval_point(1.0));
+    assert_eq!(curve.to_bezier_pieces().len(), 1); // single span
+    ```
 
 Ranges that cross the seam (up to one period) work on periodic curves.
 The pieces are what the viewer can *not* yet take directly — trimmed
@@ -138,6 +152,14 @@ pole count; `approximate_within` adds knots until every point is within
 `max_deviation` (Rust-only, see
 [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58)).
 
+=== "Python"
+
+    ```python
+    points = curve.eval_points([0.0, 0.25, 0.5, 0.75, 1.0])
+    interp = BSplineCurve3D.interpolate(points, 3)
+    approx = BSplineCurve3D.approximate(points, 2, 3)
+    ```
+
 === "Rust"
 
     ```rust
@@ -149,45 +171,51 @@ pole count; `approximate_within` adds knots until every point is within
     let within = BSplineCurve3D::approximate_within(&points, 2, 1e-6, PointParametrization::Centripetal).unwrap();
     ```
 
-=== "Python"
-
-    ```python
-    points = curve.eval_points([0.0, 0.25, 0.5, 0.75, 1.0])
-    interp = BSplineCurve3D.interpolate(points, 3)
-    approx = BSplineCurve3D.approximate(points, 2, 3)
-    ```
-
 ## Exact elementary conversions
 
 Circles and ellipses convert to exact periodic rational quadratics;
 trimmed lines, arcs and conic pieces become clamped B-splines over the
 same range; planes, cylinders, cones, spheres and tori to exact patches.
-Rust-only for now
-([geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58)).
 
-```rust
-use geomcore::{Circle3D, Ellipse3D, Point3D, Vector3D};
+=== "Python"
 
-let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-let circle_bs = circle.to_bspline();
-assert!(circle_bs.is_periodic());
+    > Not yet bound — tracked in
+    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > The Rust tab is the reference API.
 
-let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.0).unwrap();
-let ellipse_bs = ellipse.to_bspline();
-```
+=== "Rust"
+
+    ```rust
+    use geomcore::{Circle3D, Ellipse3D, Point3D, Vector3D};
+
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    let circle_bs = circle.to_bspline();
+    assert!(circle_bs.is_periodic());
+
+    let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.0).unwrap();
+    let ellipse_bs = ellipse.to_bspline();
+    ```
 
 ## Measure and bound
 
 Arc length integrates the speed to a requested error; `bounding_box`
 gives the tight pole box (elementary shapes get closed-form boxes).
 
-```rust
-use geomcore::Bound3D;
+=== "Python"
 
-let len = curve.length(1e-9);
-let bb = curve.bounding_box().unwrap();
-assert_eq!((bb.min(), bb.max()), (Point3D::new(0.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)));
-```
+    > Not yet bound — tracked in
+    > [geomcore#58](https://github.com/GabrielJMS/geomcore/issues/58).
+    > The Rust tab is the reference API.
+
+=== "Rust"
+
+    ```rust
+    use geomcore::Bound3D;
+
+    let len = curve.length(1e-9);
+    let bb = curve.bounding_box().unwrap();
+    assert_eq!((bb.min(), bb.max()), (Point3D::new(0.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)));
+    ```
 
 Boxes have no viewer mapping yet
 ([viewer#8](https://github.com/GabrielJMS/geomcore-viewer/issues/8)).
@@ -196,6 +224,17 @@ Boxes have no viewer mapping yet
 
 Same three components per direction (`_u`/`_v` suffixes, as in geomdl).
 A bilinear patch over the unit square:
+
+=== "Python"
+
+    ```python
+    from geomcore.surfaces import BSplineSurface
+
+    poles = [[Point3D(0, 0, 0), Point3D(1, 0, 0)],
+             [Point3D(0, 1, 0), Point3D(1, 1, 0)]]
+    surf = BSplineSurface(1, 1, poles, [0.0, 1.0], [2, 2], [0.0, 1.0], [2, 2], False, False)
+    assert surf.eval_point(0.5, 0.5) == Point3D(0.5, 0.5, 0)
+    ```
 
 === "Rust"
 
@@ -209,17 +248,6 @@ A bilinear patch over the unit square:
     let surf = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2],
                                    vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
     assert_eq!(surf.eval_point(0.5, 0.5), Point3D::new(0.5, 0.5, 0.0));
-    ```
-
-=== "Python"
-
-    ```python
-    from geomcore.surfaces import BSplineSurface
-
-    poles = [[Point3D(0, 0, 0), Point3D(1, 0, 0)],
-             [Point3D(0, 1, 0), Point3D(1, 1, 0)]]
-    surf = BSplineSurface(1, 1, poles, [0.0, 1.0], [2, 2], [0.0, 1.0], [2, 2], False, False)
-    assert surf.eval_point(0.5, 0.5) == Point3D(0.5, 0.5, 0)
     ```
 
 Surface fitting (`approximate` over a point grid, `approximate_within`)
