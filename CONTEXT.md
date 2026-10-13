@@ -38,6 +38,10 @@ The side of the cube, centred on the origin, that models are assumed to fit in: 
 The distance below which two points coincide (`tol.confusion`). Every geometric decision is a distance decision against it.
 _Avoid_: precision, resolution, epsilon
 
+**Equal**:
+Two values are equal when they are the same value, field by field (`==`). Equality never takes a tolerance: two points that are not equal may still coincide, within the confusion tolerance.
+_Avoid_: equal for points that merely coincide, fuzzy or approximate equality
+
 **Parallel**:
 Two directions are parallel for a configuration when turning one onto the other moves the geometry by at most the confusion tolerance: an angle below the confusion tolerance over the geometry's extent, or over the model size for unbounded geometry (`tol.angular_for_extent`).
 
