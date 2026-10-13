@@ -479,18 +479,16 @@ fn insert_knots<S: Source>(
     if seam_count > 0 {
         new_flat.extend(std::iter::repeat_n(first, seam_count));
     }
+    let ends = (old_flat[0], old_flat[old_flat.len() - 1]);
     let mut copied = 0;
     for &x in interior {
-        let mut at = copied;
-        while at < old_flat.len() && old_flat[at] <= x {
-            at += 1;
-        }
+        let at = copied + old_flat[copied..].iter().take_while(|&&k| k <= x).count();
         append(&mut new_flat, &old_flat[copied..at]);
         new_flat.push(x);
         copied = at;
         // The copies of `x` so far all end the new knots.
         let copies = new_flat.iter().rev().take_while(|&&k| k == x).count();
-        let clamped_end = !periodic && (x == old_flat[0] || x == old_flat[old_flat.len() - 1]);
+        let clamped_end = !periodic && (x == ends.0 || x == ends.1);
         if copies > degree + usize::from(clamped_end) {
             return Err(KnotInsertionError::MultiplicityTooLarge);
         }
@@ -694,11 +692,8 @@ fn refine_slots<S: Source>(
     let mut k = b + p + s - 1;
     for &xj in x.iter().rev() {
         // The poles right of `xj` move along by the knots inserted since.
-        let mut moved = i;
-        while xj <= old[moved] && moved > a {
-            moved -= 1;
-        }
-        let count = i - moved;
+        let count = old[a + 1..=i].iter().rev().take_while(|&&k| xj <= k).count();
+        let moved = i - count;
         poles.copy_to((moved - p) * width, &mut out[at(k - p - count)..at(k - p)]);
         (i, k) = (moved, k - count);
         // Slots `k - p - 1..=k`: the first takes its neighbour, then each of
