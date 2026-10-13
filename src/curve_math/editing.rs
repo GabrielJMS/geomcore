@@ -510,16 +510,16 @@ fn insert_knots<S: Source>(
     } else {
         // Converted poles are refined only from the first changed one on.
         let trimmed = S::CONVERTS;
+        let (first_span, last_span) = spans(degree, knots.flat(), insert);
         let (out, start) = refine(
             degree,
             knots.flat(),
             &new_flat,
-            insert,
+            (insert, (first_span, last_span)),
             poles,
             lanes,
             trimmed,
         );
-        let (first_span, last_span) = spans(degree, knots.flat(), insert);
         let kept = Kept {
             leading: first_span - degree + 1,
             trailing: knots.pole_count() - last_span,
@@ -622,7 +622,8 @@ fn merged_knots(knots: &KnotVector, insert: &[f64]) -> Result<Merged, KnotInsert
 
 /// The poles after inserting the knots `x` into the flat knots `old` in
 /// one pass (The NURBS Book, A5.4), `new` being `old` and `x` merged, for
-/// `x` non-decreasing within `[old[degree], old[old.len() - 1 - degree]]`:
+/// `x` non-decreasing within `[old[degree], old[old.len() - 1 - degree]]`
+/// and in the old knot spans `x_spans` (see [`spans`]):
 /// the new poles laid out as `lanes` lays out `poles`, each lane's from
 /// the slot returned, all of them or if `trimmed` only those of
 /// [`refined_slots`].
@@ -634,7 +635,7 @@ fn refine<S: Source>(
     degree: usize,
     old: &[f64],
     new: &[f64],
-    x: &[f64],
+    (x, x_spans): (&[f64], (usize, usize)),
     poles: S,
     lanes: Lanes,
     trimmed: bool,
@@ -647,9 +648,9 @@ fn refine<S: Source>(
         poles.extend_to(0..poles.len(), &mut out);
         return (out, 0);
     }
-    let (a, last) = spans(p, old, x);
+    let (a, last) = x_spans;
     let b = last + 1;
-    let slots = refined_slots(p, n, s, (a, last), trimmed);
+    let slots = refined_slots(p, n, s, x_spans, trimmed);
     let mut out = Vec::with_capacity(slots.len() * lanes.count);
     for row in 0..rows {
         let row_start = row * n * width;
@@ -668,9 +669,27 @@ fn refine<S: Source>(
     for (row, row_out) in out.chunks_exact_mut(row_len).enumerate() {
         let row_poles = poles.slice(row * n * width..(row + 1) * n * width);
         if lanes.consecutive {
-            refine_slots(p, old, new, x, row_poles, One, slots.start, row_out);
+            refine_slots(
+                p,
+                old,
+                new,
+                (x, x_spans),
+                row_poles,
+                One,
+                slots.start,
+                row_out,
+            );
         } else {
-            refine_slots(p, old, new, x, row_poles, width, slots.start, row_out);
+            refine_slots(
+                p,
+                old,
+                new,
+                (x, x_spans),
+                row_poles,
+                width,
+                slots.start,
+                row_out,
+            );
         }
     }
     (out, slots.start)
@@ -774,13 +793,22 @@ fn insert_rational(
         source.copy_to(old_slot(b - 1), &mut out[at(trailing_start)..]);
         let row_poles = source.slice(old_slot(0)..old_slot(n));
         if lanes.consecutive {
-            refine_slots(p, old, &new_flat, insert, row_poles, One, slots.start, out);
+            refine_slots(
+                p,
+                old,
+                &new_flat,
+                (insert, (a, last)),
+                row_poles,
+                One,
+                slots.start,
+                out,
+            );
         } else {
             refine_slots(
                 p,
                 old,
                 &new_flat,
-                insert,
+                (insert, (a, last)),
                 row_poles,
                 width,
                 slots.start,
@@ -812,7 +840,7 @@ fn refine_slots<S: Source>(
     degree: usize,
     old: &[f64],
     new: &[f64],
-    x: &[f64],
+    (x, (a, last)): (&[f64], (usize, usize)),
     poles: S,
     width: impl Width,
     start: usize,
@@ -823,7 +851,6 @@ fn refine_slots<S: Source>(
     let s = x.len();
     debug_assert_eq!(new.len(), old.len() + s);
     debug_assert_eq!(poles.len(), width * (old.len() - p - 1));
-    let (a, last) = spans(p, old, x);
     let b = last + 1;
     // Slot `i` of the new poles, from the first written.
     let at = |i: usize| (i - start) * width;
@@ -943,11 +970,13 @@ fn refine_periodic<S: Source>(
         }
     }
     let new_count = count + inserted.len();
+    // The window holds a copy of every inserted knot that changes a pole.
+    debug_assert!(!inserted.is_empty());
     let (refined, _) = refine(
         degree,
         &old_knots,
         &new_knots,
-        &inserted,
+        (&inserted, spans(degree, &old_knots, &inserted)),
         window_poles.as_slice(),
         window,
         false,

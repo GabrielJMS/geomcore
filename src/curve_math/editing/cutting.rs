@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use super::{Lanes, Pole, Source, Weighted, refine};
+use super::{Lanes, Pole, Source, Weighted, refine, spans};
 use crate::Point3D;
 use crate::curve_math::bspline::KnotVector;
 use crate::curves::BSplineSplitError;
@@ -193,7 +193,8 @@ impl<P: Pole> Stretch<P> {
                 }
             }
             // The stretch's lanes are laid out as the direction's.
-            let (refined, _) = refine(p, &old, &new, &insert, stretch.as_slice(), lanes, false);
+            let insert = (insert.as_slice(), spans(p, &old, &insert));
+            let (refined, _) = refine(p, &old, &new, insert, stretch.as_slice(), lanes, false);
             (new, refined)
         };
         let cuts = cuts
