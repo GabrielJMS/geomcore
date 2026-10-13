@@ -9,6 +9,8 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-10-13
+
 ### Changed
 
 - The project moved to the `geomcore` GitHub organization: the repository is
@@ -1124,7 +1126,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.32.1...HEAD
+[0.32.1]: https://github.com/geomcore/geomcore/releases/tag/v0.32.1
 [0.32.0]: https://github.com/geomcore/geomcore/releases/tag/v0.32.0
 [0.31.0]: https://github.com/geomcore/geomcore/releases/tag/v0.31.0
 [0.30.0]: https://github.com/geomcore/geomcore/releases/tag/v0.30.0
