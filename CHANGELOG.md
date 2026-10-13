@@ -58,6 +58,24 @@ the Python distribution are versioned in lockstep.
   B-spline is cloned) return `BSplineConversionError::Unbounded` for a
   line, parabola or hyperbola, and a trimmed curve whose B-spline would
   overflow `f64` returns `NotRepresentable`.
+- Elementary surfaces as exact B-splines (#38): `to_bspline_patch(u_range,
+  v_range)` on `Plane`, `Cylinder`, `Cone`, `Sphere`, `Torus` and
+  `ElementarySurface` returns the patch over those ranges as a B-spline
+  surface whose domain is exactly the ranges. A plane patch is bilinear
+  and keeps the plane's parameters; the other surfaces are the circle's
+  rational quadratic pieces of at most a quarter turn in `u` times their
+  profile in `v`, a segment for cylinders and cones (keeping their `v`)
+  and circle arcs for spheres and tori. Every point lies on the surface,
+  the boundary curves are the surface's at the range ends, and along a
+  circular direction the parameter matches the angle at the range ends,
+  the knots and each piece's middle. A range spanning a whole turn gives
+  a periodic direction; a cone range ending at the apex and a sphere
+  range ending at a pole give a collapsed edge, a row of poles on that
+  point. `to_bspline` on `Sphere` and `Torus` converts the whole surface,
+  and on `ElementarySurface` and `Surface` (a B-spline is cloned) returns
+  `BSplineConversionError::Unbounded` for a plane, cylinder or cone, also
+  returned for an infinite range. A NaN, empty or out-of-bounds range, or
+  one longer than a turn, returns the new `InvalidRange`.
 - Discretization of curves with proven deviations (#17): circles,
   B-splines and trimmed circles and B-splines become points on the curve
   joined by straight segments, each segment reporting a proven upper

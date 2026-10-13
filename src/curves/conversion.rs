@@ -17,23 +17,30 @@ use crate::curves::{
 };
 use crate::{Frame3D, Point3D};
 
-/// Error returned when a curve cannot be converted to a B-spline.
+/// Error returned when a curve or surface cannot be converted to a
+/// B-spline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BSplineConversionError {
-    /// The curve is unbounded: a line, parabola or hyperbola converts only
-    /// once trimmed to a range.
+    /// The curve or surface is unbounded: a line, parabola or hyperbola
+    /// converts only once trimmed to a range, and a plane, cylinder or cone
+    /// only over finite parameter ranges.
     Unbounded,
     /// The B-spline does not fit in `f64`: a pole overflows (a hyperbola
     /// trimmed beyond `|u| ≈ 710`, a parabola beyond `|u| ≈ 1e154`), or the
     /// range ends are so large that its knots round onto each other.
     NotRepresentable,
+    /// A surface parameter range is NaN or empty (`first >= last`), longer
+    /// than the period of a periodic direction, or leaves the bounds of a
+    /// bounded one (a sphere's `v` beyond `±π/2`).
+    InvalidRange,
 }
 
 impl fmt::Display for BSplineConversionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
-            BSplineConversionError::Unbounded => "the curve is unbounded",
+            BSplineConversionError::Unbounded => "the curve or surface is unbounded",
             BSplineConversionError::NotRepresentable => "the B-spline does not fit in f64",
+            BSplineConversionError::InvalidRange => "the parameter range does not fit the surface",
         };
         f.write_str(message)
     }
@@ -683,11 +690,15 @@ mod tests {
     fn test_messages() {
         assert_eq!(
             BSplineConversionError::Unbounded.to_string(),
-            "the curve is unbounded"
+            "the curve or surface is unbounded"
         );
         assert_eq!(
             BSplineConversionError::NotRepresentable.to_string(),
             "the B-spline does not fit in f64"
+        );
+        assert_eq!(
+            BSplineConversionError::InvalidRange.to_string(),
+            "the parameter range does not fit the surface"
         );
     }
 
