@@ -17,7 +17,7 @@ The demo scene shows an ellipse, a circle, a hyperbola and a line, with the poin
     geomcore-viewer 0.2 has no dependencies and ships the built viewer
     in the wheel. It reads geomcore objects through their public
     getters rather than pinning a geomcore version, and works with
-    geomcore 0.33.
+    geomcore 0.33 and 0.34.
 
 === "Rust"
 
@@ -28,10 +28,10 @@ The demo scene shows an ellipse, a circle, a hyperbola and a line, with the poin
     ```
 
     The `geomcore` feature of geomcore-viewer 0.2 is built against
-    geomcore 0.32. Paired with geomcore 0.33, Cargo pulls in both
+    geomcore 0.32. Paired with a later geomcore, Cargo pulls in both
     versions and the viewer does not accept the newer types, so keep
     geomcore at 0.32 in code that uses the viewer until a viewer
-    release supports 0.33. The Rust client never starts the server:
+    release supports a later one. The Rust client never starts the server:
     run `geomcore-viewer serve` from the Python package once.
 
 ## From your own code

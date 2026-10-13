@@ -9,6 +9,8 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-13
+
 ### Added
 
 - Point coincidence (#65): `Point2D::coincides` and `Point3D::coincides`
@@ -1187,7 +1189,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/geomcore/geomcore/releases/tag/v0.34.0
 [0.33.0]: https://github.com/geomcore/geomcore/releases/tag/v0.33.0
 [0.32.2]: https://github.com/geomcore/geomcore/releases/tag/v0.32.2
 [0.32.1]: https://github.com/geomcore/geomcore/releases/tag/v0.32.1
