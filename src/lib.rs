@@ -149,7 +149,10 @@ pub use intersect::{
     SphereSphereIntersection, TorusConeIntersection, TorusCylinderIntersection,
     TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection,
 };
-pub use intersect::{Completeness, CurveSurfaceHits, CurveSurfaceRegion, IncompleteReason};
+pub use intersect::{
+    Completeness, CurveCurveExtrema, CurveCurveHits, CurveCurveRegion, CurveSurfaceHits,
+    CurveSurfaceRegion, IncompleteReason,
+};
 pub use intersect::{
     CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
 };

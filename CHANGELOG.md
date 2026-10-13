@@ -216,6 +216,20 @@ the Python distribution are versioned in lockstep.
   point exceeds the search's budget and falls back to the sampled search. The new
   `ParametricCurve3D::as_bspline` and `ParametricSurface::as_bspline`
   (default `None`) expose the B-spline behind a curve or surface.
+- Numeric curve–curve intersection and extrema of B-splines without a
+  sampling grid (#29): `intersect_curve_curve` and `curve_curve_extrema`
+  on two B-spline curves, or trimmed curves over them (owned or
+  borrowed), subdivide the Bézier pieces of both curves. Intersection
+  pairs pieces whose control points' boxes overlap and halves them until
+  each pair meets at most once, then solves it by Gauss–Newton steps:
+  about 17× faster on crossing cubics (9 µs per pair, from 157 µs).
+  Extrema drop the piece pairs where the distance cannot have a minimum
+  and solve those where it is convex: about 3× faster on skew cubics
+  (55 µs per pair, from 167 µs). Both handle rational and periodic
+  B-splines and return the same hits, multiplicities and minima as
+  before, plus crossings and minima the grid could miss between its
+  samples. Tangencies, overlaps and other valleys of equal distance
+  exceed the search's budget and fall back to the grid.
 - **Breaking:** numeric curve–surface intersection reports whether its
   search was complete (#31): `intersect_curve_surface` returns
   `CurveSurfaceHits`, which reads as the slice of its hits (`hits()`,
@@ -231,20 +245,26 @@ the Python distribution are versioned in lockstep.
   only reads the hits keeps compiling unless it names the `Vec` type;
   call `into_hits()` there.
   See ADR 0007. Python is unchanged and still returns the list of hits.
-- Numeric curve–curve intersection and extrema of B-splines without a
-  sampling grid (#29): `intersect_curve_curve` and `curve_curve_extrema`
-  on two B-spline curves, or trimmed curves over them (owned or
-  borrowed), subdivide the Bézier pieces of both curves. Intersection
-  pairs pieces whose control points' boxes overlap and halves them until
-  each pair meets at most once, then solves it by Gauss–Newton steps:
-  about 17× faster on crossing cubics (9 µs per pair, from 157 µs).
-  Extrema drop the piece pairs where the distance cannot have a minimum
-  and solve those where it is convex: about 3× faster on skew cubics
-  (55 µs per pair, from 167 µs). Both handle rational and periodic
-  B-splines and return the same hits, multiplicities and minima as
-  before, plus crossings and minima the grid could miss between its
-  samples. Tangencies, overlaps and other valleys of equal distance
-  exceed the search's budget and fall back to the grid.
+- **Breaking:** numeric curve–curve intersection and extrema report
+  whether their search was complete (#32), like the curve–surface case:
+  `intersect_curve_curve` returns `CurveCurveHits` (`hits()`,
+  `into_hits()`) and `curve_curve_extrema` returns `CurveCurveExtrema`
+  (`minima()`, `into_minima()`), both reading as the slice of their
+  results and carrying a `Completeness` whose regions are
+  `CurveCurveRegion`s: a parameter range on each curve and a box in
+  space. Two B-spline curves are `Complete` when every pair of pieces
+  was proven apart (for extrema, to hold no minimum) or solved. A tangent
+  contact or a straight overlap, where the pieces run along one line
+  within `tol.confusion`, no longer exhausts the budget: it is kept as a
+  region (`Unseparated`) and the search goes on. A curved overlap or a
+  valley of equal distance, such as concentric arcs, still runs out of
+  budget (`BudgetExhausted`). Either way the sampled search runs too: its
+  hits that do not merge into the proven ones are added, and its seeds
+  join the extrema's, one minimum kept per valley. Other pairs, two
+  straight curves included, are `Sampled`. Code that only reads the
+  results keeps compiling unless it names the `Vec` type; call
+  `into_hits()` or `into_minima()` there. See ADR 0007. Python is
+  unchanged.
 
 ### Fixed
 
