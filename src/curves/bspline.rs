@@ -12,7 +12,7 @@ use crate::curve_math::bspline as math;
 use crate::curve_math::editing::{self, Elevation, Insertion, Lanes};
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::math::boxtree::{BoxTree, Lazy};
-use crate::math::newton_min_1d;
+use crate::math::{newton_min_1d, quadrature};
 use crate::projection::CurveProjection;
 use crate::surfaces::Surface;
 use crate::{Point3D, Tolerance, Transform, Vector3D};
@@ -1142,6 +1142,48 @@ impl BSplineCurve3D {
         (Point3D::ORIGIN + c, d1, d2)
     }
 
+    /// The length of the curve over its bounds, within `max_error` as far
+    /// as the quadrature's own error estimate tells: the speed `|C'|` is
+    /// integrated over each knot span by adaptive Gauss–Kronrod quadrature
+    /// on the span's Bernstein form, each span getting a share of
+    /// `max_error` in proportion to its width. A `max_error` below what
+    /// rounding allows gets as close as rounding does.
+    ///
+    /// The length over `[first, last]` is that of
+    /// [`BSplineCurve3D::extract`]`(first, last)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    ///
+    /// // The parabola y = x² over [0, 1].
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(0.5, 0.0, 0.0),
+    ///     Point3D::new(1.0, 1.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap();
+    /// let exact = 0.5 * 5f64.sqrt() + 0.25 * (2.0 + 5f64.sqrt()).ln();
+    /// assert!((curve.length(1e-12) - exact).abs() <= 1e-12);
+    /// ```
+    pub fn length(&self, max_error: f64) -> f64 {
+        let (first, last) = self.bounds();
+        let breaks = self.knots.breaks();
+        let degree = self.degree();
+        let mut net = [[0.0; 4]; math::LARGE];
+        breaks
+            .windows(2)
+            .map(|span| {
+                let (a, b) = (span[0], span[1]);
+                math::span_bezier(&self.knots, self.pole_view(), 0.5 * (a + b), &mut net);
+                let net = &net[..=degree];
+                let share = max_error * (b - a) / (last - first);
+                quadrature::integrate(&|t| bezier_speed(net, t), 0.0, 1.0, share)
+            })
+            .sum()
+    }
+
     /// Computes the exact 2D representation of this B-spline curve in a
     /// surface's parameter space.
     ///
@@ -1529,6 +1571,34 @@ struct SpanEnds {
     start_rising: bool,
     /// Whether the distance does not rise moving to the span end.
     end_falling: bool,
+}
+
+/// The speed `|C'(t)|` at `t` of the Bézier piece with the homogeneous
+/// control points `net`, over `[0, 1]`: de Casteljau down to the last two
+/// points, whose difference gives the derivative.
+fn bezier_speed(net: &[[f64; 4]], t: f64) -> f64 {
+    let degree = net.len() - 1;
+    let mut points = [[0.0; 4]; math::LARGE];
+    points[..=degree].copy_from_slice(net);
+    for level in (1..degree).rev() {
+        for i in 0..=level {
+            let next = points[i + 1];
+            for (x, y) in points[i].iter_mut().zip(next) {
+                *x += t * (y - *x);
+            }
+        }
+    }
+    let ([a, b], s) = ([points[0], points[1]], degree as f64);
+    let h: [f64; 4] = std::array::from_fn(|c| a[c] + t * (b[c] - a[c]));
+    let d: [f64; 4] = std::array::from_fn(|c| s * (b[c] - a[c]));
+    // The quotient rule on `C = H / w`.
+    let w = h[3];
+    let tangent = Vector3D::new(
+        d[0] * w - h[0] * d[3],
+        d[1] * w - h[1] * d[3],
+        d[2] * w - h[2] * d[3],
+    );
+    tangent.magnitude() / (w * w)
 }
 
 #[cfg(test)]
@@ -2397,6 +2467,44 @@ mod tests {
                 .refine_knots(&[first + 0.01 * (last - first)])
                 .unwrap();
             assert_same_curve(&curve, &twice);
+        }
+    }
+
+    #[test]
+    fn test_length_of_a_segment_and_a_circle() {
+        let poles = vec![Point3D::new(1.0, 2.0, 3.0), Point3D::new(4.0, 6.0, 3.0)];
+        let segment = BSplineCurve3D::new(1, poles, vec![0.0, 2.0], vec![2, 2], false).unwrap();
+        assert!((segment.length(1e-12) - 5.0).abs() <= 1e-14);
+        let circle = crate::Circle3D::new(Point3D::new(1.0, -2.0, 0.5), Vector3D::Z, 3.0)
+            .unwrap()
+            .to_bspline();
+        let exact = 2.0 * std::f64::consts::PI * 3.0;
+        for max_error in [1e-6, 1e-9, 1e-12] {
+            let length = circle.length(max_error);
+            assert!((length - exact).abs() <= max_error, "{length} vs {exact}");
+        }
+    }
+
+    #[test]
+    fn test_length_adds_up_over_pieces() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let u = first + 0.37 * (last - first);
+            let (low, high) = curve.split_at(u).unwrap();
+            let whole = curve.length(1e-12);
+            let pieces = low.length(1e-12) + high.length(1e-12);
+            assert!((whole - pieces).abs() <= 1e-11, "{whole} vs {pieces}");
+            // A fine polyline along the curve is a little shorter.
+            let points = curve.eval_points(
+                &(0..=4000)
+                    .map(|i| first + (last - first) * i as f64 / 4000.0)
+                    .collect::<Vec<_>>(),
+            );
+            let chords: f64 = points.windows(2).map(|w| w[0].distance(w[1])).sum();
+            assert!(
+                chords <= whole && whole - chords <= 1e-5 * whole,
+                "{chords} vs {whole}"
+            );
         }
     }
 

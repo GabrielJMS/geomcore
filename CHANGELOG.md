@@ -26,6 +26,11 @@ the Python distribution are versioned in lockstep.
   `DegreeElevationError`. Inserting knots into a direction of degree 1
   to 3 blends its poles on a path fixed to the degree, whose loops
   unroll: 64 knots go in 8 to 19% faster than through the general path.
+- Arc length of B-spline curves: `BSplineCurve3D::length(max_error)`
+  integrates the speed over each knot span by adaptive Gauss–Kronrod
+  quadrature on the span's Bernstein form, each span getting a share of
+  the error in proportion to its width; a sub-range's length is that of
+  `extract(first, last)`.
 - Knot removal within a tolerance: `remove_knot` and `remove_knots` on
   `BSplineCurve3D`, `remove_u_knot`, `remove_v_knot`, `remove_u_knots` and
   `remove_v_knots` on `BSplineSurface`. Each removal is kept only if a

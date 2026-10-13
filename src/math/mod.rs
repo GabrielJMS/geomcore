@@ -17,6 +17,7 @@ pub(crate) mod bernstein;
 pub(crate) mod boxtree;
 pub(crate) mod equation;
 pub(crate) mod poly;
+pub(crate) mod quadrature;
 pub(crate) mod solve;
 
 pub(crate) use equation::{
