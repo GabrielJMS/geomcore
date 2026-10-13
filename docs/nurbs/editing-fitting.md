@@ -2,27 +2,30 @@
 
 Reshape B-splines without leaving the representation (editing), build
 them from points (fitting), convert exact geometry into them, and
-measure them. Curve API first with per-direction surface equivalents;
-the Python bindings mirror the Rust names 1:1, with errors as
+measure them. Curve API first, with per-direction surface equivalents
+inline. The Python bindings mirror the Rust names 1:1, with errors as
 `ValueError`.
 
 ## Knots and degree
 
 Insertion, refinement, elevation and removal keep the shape exactly
-(rational poles are edited in homogeneous form).
+(rational poles are edited in homogeneous form). Removal reports how
+many copies actually came out — a knot whose removal would move the
+curve past `max_deviation` is kept.
 
 === "Python"
 
     ```python
     refined = curve.insert_knot(0.5, 1)
-    assert refined.eval_point(0.5).distance(curve.eval_point(0.5)) < 1e-12
+    assert refined.eval_point(0.5) == curve.eval_point(0.5)
 
     dense = curve.refine_knots([0.25, 0.5, 0.75])
 
     elevated = curve.elevate_degree(1)
     assert elevated.degree() == 3
 
-    simplified, removed = elevated.remove_knot(0.5, 1, 1e-9)
+    simpler, removed = dense.remove_knot(0.5, 1, 1e-9)
+    assert (removed, simpler.knots()) == (1, [0.0, 0.25, 0.75, 1.0])
     ```
 
 === "Rust"
@@ -36,14 +39,27 @@ Insertion, refinement, elevation and removal keep the shape exactly
     let elevated = curve.elevate_degree(1).unwrap();
     assert_eq!(elevated.degree(), 3);
 
-    let simplified = elevated.remove_knot(0.5, 1, 1e-9).unwrap();
+    let (simpler, removed) = dense.remove_knot(0.5, 1, 1e-9).unwrap();
+    assert_eq!((removed, simpler.knots()), (1, &[0.0, 0.25, 0.75, 1.0][..]));
     ```
 
-Surfaces offer the same per direction: `insert_u_knot`,
-`insert_v_knot`, `refine_u_knots`, `refine_v_knots`,
-`elevate_u_degree`, `elevate_v_degree`, `remove_u_knot(s)`,
+Surfaces offer the same per direction: `insert_u_knot` /
+`insert_v_knot`, `refine_u_knots` / `refine_v_knots`,
+`elevate_u_degree` / `elevate_v_degree`, `remove_u_knot(s)` /
 `remove_v_knot(s)`. Each removal is kept only if a proven bound keeps
 every point within `max_deviation`, with successive bounds adding up.
+
+=== "Python"
+
+    ```python
+    grown = surf.insert_u_knot(0.5, 1).elevate_v_degree(1)
+    ```
+
+=== "Rust"
+
+    ```rust
+    let grown = surf.insert_u_knot(0.5, 1)?.elevate_v_degree(1)?;
+    ```
 
 ## Split, extract, reverse
 
@@ -58,7 +74,7 @@ seam (up to one period) on periodic directions.
     left, right = curve.split_at(0.5)
     piece = curve.extract(0.0, 0.5)
     rev = curve.reversed()
-    assert rev.eval_point(0.0).distance(curve.eval_point(1.0)) < 1e-12
+    assert rev.eval_point(0.0) == curve.eval_point(1.0)
     assert len(curve.to_bezier_pieces()) == 1  # single span
     ```
 
@@ -117,13 +133,14 @@ patches.
 === "Python"
 
     ```python
-    circle_bs = circle.to_bspline()
+    circle_bs = Circle3D(Point3D.origin(), Vector3D.z(), 2.0).to_bspline()
     assert circle_bs.is_periodic()
 
-    ellipse_bs = ellipse.to_bspline()
+    ellipse_bs = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.0).to_bspline()
 
-    patch = plane.to_bspline_patch((0.0, 1.0), (0.0, 2.0))
-    ball = sphere.to_bspline()
+    seg_bs = TrimmedCurve3D.segment(Point3D(0, 0, 0), Point3D(1, 0, 0)).to_bspline()
+
+    patch = Cylinder(Point3D.origin(), Vector3D.z(), 2.0).to_bspline_patch((0.0, 1.0), (-1.0, 1.0))
     ```
 
 === "Rust"
@@ -142,15 +159,15 @@ patches.
 ## Measure and bound
 
 Arc length integrates the speed to a requested error; `bounding_box`
-gives the tight pole box (elementary shapes get closed-form boxes).
+gives the tight pole box (elementary shapes get closed-form boxes) —
+available on every 3D curve and surface.
 
 === "Python"
 
     ```python
-    length = curve.length(1e-9)
+    assert round(curve.length(1e-9), 6) == 1.623225
     bb = curve.bounding_box()
-    assert bb is not None
-    assert (bb.min().x, bb.max().x) == (0.0, 1.0)
+    assert (bb.min(), bb.max()) == (Point3D(0, 0, 0), Point3D(1, 1, 0))
     ```
 
 === "Rust"
