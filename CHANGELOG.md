@@ -202,6 +202,20 @@ the Python distribution are versioned in lockstep.
   than the angular tolerance (`|x·y| > 1e-12`), where the parametric
   tolerance (1e-9) was used: axes 1e-9 off square move a point across
   the model by 1e-4.
+- Numeric curve–surface intersection of B-splines without sampling
+  (#28): `intersect_curve_surface` on a B-spline curve, or a trimmed
+  curve over one (owned or borrowed), against a B-spline surface
+  subdivides the Bézier pieces of both where their control points' boxes
+  overlap until each pair holds at most one hit, then solves it by
+  Newton's method. It is about 80× faster on a bicubic surface (35 µs
+  per cubic curve, from 2.8 ms), and handles rational and periodic
+  B-splines. Hits are the sampled search's, except that parameters now
+  always lie within the curve's range and the surface's bounds (Newton
+  steps could carry a trimmed curve's hit past its ends), periodic ones
+  within their period. A tangency, an overlap or a hit at a singular
+  point exceeds the search's budget and falls back to the sampled search. The new
+  `ParametricCurve3D::as_bspline` and `ParametricSurface::as_bspline`
+  (default `None`) expose the B-spline behind a curve or surface.
 
 ### Fixed
 

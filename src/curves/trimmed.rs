@@ -6,8 +6,8 @@
 //! topology (edges) of a kernel built on top of geomcore.
 
 use crate::curves::{
-    Curve2D, Curve3D, Line2D, Line3D, LineConstructionError, ParametricCurve2D, ParametricCurve3D,
-    PointExtrema2D, PointExtrema3D,
+    BSplineCurve3D, Curve2D, Curve3D, Line2D, Line3D, LineConstructionError, ParametricCurve2D,
+    ParametricCurve3D, PointExtrema2D, PointExtrema3D,
 };
 use crate::projection::CurveProjection;
 use crate::{Point2D, Point3D, Tolerance, Vector2D, Vector3D};
@@ -358,6 +358,10 @@ impl<C: ParametricCurve3D> ParametricCurve3D for TrimmedCurve3D<C> {
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         self.basis.eval_points(us)
     }
+
+    fn as_bspline(&self) -> Option<&BSplineCurve3D> {
+        self.basis.as_bspline()
+    }
 }
 
 impl<C: PointExtrema3D> PointExtrema3D for TrimmedCurve3D<C> {
@@ -578,7 +582,7 @@ impl<C: PointExtrema2D> PointExtrema2D for TrimmedCurve2D<C> {
 mod tests {
     use super::*;
     use crate::intersect::{curve_curve_extrema, intersect_curve_curve, intersect_curve_surface};
-    use crate::{BSplineCurve3D, Circle2D, Circle3D, Ellipse3D, Sphere};
+    use crate::{Circle2D, Circle3D, Ellipse3D, Sphere};
     use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
     const TOL: Tolerance = Tolerance::DEFAULT;

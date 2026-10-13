@@ -122,6 +122,33 @@ pub trait ParametricCurve3D {
     fn is_periodic(&self) -> bool {
         self.period().is_some()
     }
+
+    /// The B-spline this curve evaluates: the curve itself, or the basis
+    /// of a trimmed B-spline, of which the curve is the piece over
+    /// [`bounds`](Self::bounds). `None` for any other curve.
+    ///
+    /// Numeric algorithms such as
+    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// to work on the B-spline's polynomial pieces. Default
+    /// implementation: `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::{ParametricCurve3D, TrimmedCurve3D};
+    /// use geomcore::{BSplineCurve3D, Line3D, Point3D, Vector3D};
+    ///
+    /// let poles = vec![Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// let piece = TrimmedCurve3D::new(&curve, 0.25, 0.5).unwrap();
+    /// assert_eq!(piece.as_bspline(), Some(&curve));
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(ParametricCurve3D::as_bspline(&line), None);
+    /// ```
+    fn as_bspline(&self) -> Option<&BSplineCurve3D> {
+        None
+    }
 }
 
 /// Distance extrema from a point to a 3D curve: what a
@@ -180,6 +207,10 @@ impl<C: ParametricCurve3D + ?Sized> ParametricCurve3D for &C {
 
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         (**self).eval_points(us)
+    }
+
+    fn as_bspline(&self) -> Option<&BSplineCurve3D> {
+        (**self).as_bspline()
     }
 }
 
@@ -382,6 +413,10 @@ impl ParametricCurve3D for BSplineCurve3D {
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         BSplineCurve3D::eval_points(self, us)
     }
+
+    fn as_bspline(&self) -> Option<&BSplineCurve3D> {
+        Some(self)
+    }
 }
 
 /// Enum adaptor unifying the concrete 3D curve types behind a single value
@@ -497,6 +532,13 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Parabola(c) => c.eval_points(us),
             Curve3D::Hyperbola(c) => c.eval_points(us),
             Curve3D::BSpline(c) => c.eval_points(us),
+        }
+    }
+
+    fn as_bspline(&self) -> Option<&BSplineCurve3D> {
+        match self {
+            Curve3D::BSpline(c) => Some(c),
+            _ => None,
         }
     }
 }
