@@ -909,16 +909,35 @@ fn test_2d_borrowed_and_run_time_curves_match_concrete_ones() {
     same(clockwise_circle_2d(), 1.0, 1.0 + TAU);
 }
 
-#[test]
-fn test_chord_deviations_below_the_confusion_tolerance_are_rejected() {
-    let confusion = Tolerance::DEFAULT.confusion;
-    for below in [0.5 * confusion, 1e-30, f64::MIN_POSITIVE] {
-        assert_eq!(
-            DiscretizationCriteria::new(below).err(),
-            Some(DiscretizationCriteriaError::ChordDeviationBelowConfusion)
+/// Checks that every segment's true chord deviation meets `max`, up to 1 %.
+fn assert_true_chords_within<C: ParametricCurve3D + Discretize3D>(curve: &C, max: f64) {
+    let d = curve.discretize(chord(max));
+    assert!(d.points.len() > 100, "{} points", d.points.len());
+    for (i, (chord, _)) in true_deviations(curve, &d).into_iter().enumerate() {
+        assert!(d.chord_deviations[i] <= max);
+        assert!(
+            chord <= 1.01 * max,
+            "segment {i}: true chord deviation {chord:e}"
         );
     }
-    assert!(DiscretizationCriteria::new(confusion).is_ok());
+}
+
+#[test]
+fn test_chord_deviations_below_the_confusion_tolerance_are_met() {
+    // Small curves near the origin, whose coordinates round to about
+    // 1e-16: a deviation of 1e-12 is far above that.
+    assert_true_chords_within(&circle(1e-5), 1e-12);
+    let poles = wavy()
+        .poles()
+        .iter()
+        .map(|&p| Point3D::ORIGIN + (p - Point3D::ORIGIN) * 1e-6)
+        .collect();
+    let small_wavy =
+        BSplineCurve3D::new(3, poles, vec![0.0, 0.2, 1.0, 1.5], vec![4, 1, 1, 4], false).unwrap();
+    assert_true_chords_within(&small_wavy, 1e-12);
+    for tiny in [1e-30, f64::MIN_POSITIVE] {
+        assert!(DiscretizationCriteria::new(tiny).is_ok());
+    }
 }
 
 #[test]
