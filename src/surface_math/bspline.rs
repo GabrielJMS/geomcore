@@ -277,23 +277,30 @@ pub(crate) fn patch_bezier(
     scratch: &mut [f64],
     out: &mut [f64],
 ) {
-    match (poles.weights.is_some(), u.2.max(v.2) < curve::SMALL) {
-        (true, true) => bezier_net::<4, { curve::SMALL }>(u, v, poles, scratch, out),
-        (true, false) => bezier_net::<4, { curve::LARGE }>(u, v, poles, scratch, out),
-        (false, true) => bezier_net::<3, { curve::SMALL }>(u, v, poles, scratch, out),
-        (false, false) => bezier_net::<3, { curve::LARGE }>(u, v, poles, scratch, out),
+    // Both degrees 2 or 3 take a path fixed to them, whose loops unroll.
+    let fixed = if u.2 == v.2 { u.2 + 1 } else { 0 };
+    match (poles.weights.is_some(), fixed, u.2.max(v.2) < curve::SMALL) {
+        (true, 3, _) => bezier_net::<4, 3, true>(u, v, poles, scratch, out),
+        (true, 4, _) => bezier_net::<4, 4, true>(u, v, poles, scratch, out),
+        (true, _, true) => bezier_net::<4, { curve::SMALL }, false>(u, v, poles, scratch, out),
+        (true, _, false) => bezier_net::<4, { curve::LARGE }, false>(u, v, poles, scratch, out),
+        (false, 3, _) => bezier_net::<3, 3, true>(u, v, poles, scratch, out),
+        (false, 4, _) => bezier_net::<3, 4, true>(u, v, poles, scratch, out),
+        (false, _, true) => bezier_net::<3, { curve::SMALL }, false>(u, v, poles, scratch, out),
+        (false, _, false) => bezier_net::<3, { curve::LARGE }, false>(u, v, poles, scratch, out),
     }
 }
 
-/// [`patch_bezier`] with `H` values per point, for degrees below `N`.
-fn bezier_net<const H: usize, const N: usize>(
+/// [`patch_bezier`] with `H` values per point, for degrees below `N`, or
+/// both `N - 1` if `FIXED`.
+fn bezier_net<const H: usize, const N: usize, const FIXED: bool>(
     (mu, first_u, p, n_u): SpanMatrix,
     (mv, first_v, q, n_v): SpanMatrix,
     poles: Poles,
     scratch: &mut [f64],
     out: &mut [f64],
 ) {
-    let (m, n) = (p + 1, q + 1);
+    let (m, n) = if FIXED { (N, N) } else { (p + 1, q + 1) };
     let point = |net: &[f64], k: usize| -> [f64; H] { std::array::from_fn(|c| net[k * H + c]) };
     // Along v first: `scratch[i][l]` is Bernstein point `l` of pole row `i`.
     for i in 0..m {

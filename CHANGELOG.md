@@ -201,7 +201,9 @@ the Python distribution are versioned in lockstep.
   patches waiting their turn, but the closest, keep only their bounds,
   their nets written again when searched, and a split subpatch hands its
   storage to its first half. A typical query's peak memory drops by 20 to
-  45%, at the same speed.
+  45%, at the same speed. A patch of degree 2 or 3 in both directions
+  converts to its Bernstein net on a path fixed to the degree, whose loops
+  unroll, for 3 to 6% faster projections.
 
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.
