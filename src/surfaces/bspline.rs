@@ -973,7 +973,7 @@ impl BSplineSurface {
     /// ```
     pub fn to_bezier_patches(&self) -> Vec<Vec<BSplineSurface>> {
         let (u, v) = (&self.u_knots, &self.v_knots);
-        let mut rows: Vec<Vec<BSplineSurface>> = Vec::with_capacity(u.knots().len());
+        let mut rows: Vec<Vec<BSplineSurface>> = Vec::with_capacity(u.knots().len() - 1);
         editing::surface_patches(
             u,
             v,
@@ -981,7 +981,7 @@ impl BSplineSurface {
             self.weights.as_deref(),
             |i, (u0, u1), (v0, v1), poles, weights| {
                 if i == rows.len() {
-                    rows.push(Vec::with_capacity(v.knots().len()));
+                    rows.push(Vec::with_capacity(v.knots().len() - 1));
                 }
                 rows[i].push(BSplineSurface {
                     u_knots: curve::KnotVector::bezier(u.degree(), u0, u1),

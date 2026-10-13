@@ -60,8 +60,9 @@ pub(crate) struct KnotVector {
     periodic: bool,
     flat: Vec<f64>,
     /// The distinct knots and their multiplicities, derived from `flat`
-    /// when first asked for: editing results seldom need them.
-    distinct: OnceLock<(Vec<f64>, Vec<u32>)>,
+    /// when first asked for: editing results seldom need them. Boxed, so
+    /// a direction that never derives them stays small.
+    distinct: OnceLock<Box<(Vec<f64>, Vec<u32>)>>,
     pole_count: usize,
     /// Multiplicity of the first knot: in a periodic direction, the seam's.
     seam_multiplicity: usize,
@@ -122,7 +123,7 @@ impl KnotVector {
             periodic,
             seam_multiplicity: multiplicities[0] as usize,
             flat,
-            distinct: OnceLock::from((knots, multiplicities)),
+            distinct: OnceLock::from(Box::new((knots, multiplicities))),
             pole_count,
         }
     }
@@ -189,7 +190,8 @@ impl KnotVector {
     }
 
     fn distinct(&self) -> &(Vec<f64>, Vec<u32>) {
-        self.distinct.get_or_init(|| distinct_knots(&self.flat))
+        self.distinct
+            .get_or_init(|| Box::new(distinct_knots(&self.flat)))
     }
 
     /// The flat knots: each knot repeated by its multiplicity.

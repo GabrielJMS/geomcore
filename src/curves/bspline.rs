@@ -842,7 +842,7 @@ impl BSplineCurve3D {
     /// ```
     pub fn to_bezier_pieces(&self) -> Vec<BSplineCurve3D> {
         let p = self.degree();
-        let mut pieces = Vec::with_capacity(self.knots.knots().len());
+        let mut pieces = Vec::with_capacity(self.knots.knots().len() - 1);
         editing::curve_pieces(
             &self.knots,
             &self.poles,
