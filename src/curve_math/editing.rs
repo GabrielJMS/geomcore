@@ -491,6 +491,7 @@ fn insert_knots<S: Source>(
         flat: new_flat,
         seam_count,
         interior,
+        spans: (first_span, last_span),
     } = merged_knots(knots, insert)?;
     let interior = &insert[interior];
     let (poles, kept, start) = if periodic {
@@ -510,7 +511,6 @@ fn insert_knots<S: Source>(
     } else {
         // Converted poles are refined only from the first changed one on.
         let trimmed = S::CONVERTS;
-        let (first_span, last_span) = spans(degree, knots.flat(), insert);
         let (out, start) = refine(
             degree,
             knots.flat(),
@@ -563,6 +563,9 @@ struct Merged {
     seam_count: usize,
     /// The indices of the other inserted knots.
     interior: std::ops::Range<usize>,
+    /// On a non-periodic direction, the old knot spans of the first and
+    /// the last inserted knots (see [`spans`]).
+    spans: (usize, usize),
 }
 
 /// The flat knots of `knots` with `insert` (checked by
@@ -610,13 +613,25 @@ fn merged_knots(knots: &KnotVector, insert: &[f64]) -> Result<Merged, KnotInsert
             return Err(KnotInsertionError::MultiplicityTooLarge);
         }
     }
+    // The span of an `x` at least the first bound, from the number of old
+    // knots at most `x`: the last of them below the last pole's. Unused,
+    // and saturated, on a periodic direction.
+    let pole_count = old.len().saturating_sub(degree + 1);
+    let span = |at_most: usize| at_most.min(pole_count).saturating_sub(1);
+    let last_span = span(copied);
+    let spans = match insert[interior.clone()] {
+        [] | [_] => (last_span, last_span),
+        [x, ..] => (span(old.partition_point(|&k| k <= x)), last_span),
+    };
     let rest = old.len() - copied;
     out[written..written + rest].copy_from_slice(&old[copied..]);
     out[written + rest..].fill(last);
+    debug_assert!(periodic || insert.is_empty() || spans == self::spans(degree, old, insert));
     Ok(Merged {
         flat,
         seam_count,
         interior,
+        spans,
     })
 }
 
@@ -765,11 +780,14 @@ fn insert_rational(
     const SMALL: usize = 16;
     const STACK: usize = 64;
     check_insertion(knots, insert)?;
-    let new_flat = merged_knots(knots, insert)?.flat;
+    let Merged {
+        flat: new_flat,
+        spans: (a, last),
+        ..
+    } = merged_knots(knots, insert)?;
     let (p, old, s) = (knots.degree(), knots.flat(), insert.len());
     let n = knots.pole_count();
     let (rows, width) = lanes.rows_and_width();
-    let (a, last) = spans(p, old, insert);
     let b = last + 1;
     let slots = refined_slots(p, n, s, (a, last), true);
     // Slots up to `a - p` and from `b - 1 + s` are kept.
