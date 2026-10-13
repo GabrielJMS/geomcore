@@ -1,7 +1,7 @@
 # Roadmap
 
 The full, ordered roadmap lives in
-[ROADMAP.md](https://github.com/GabrielJMS/geomcore/blob/main/ROADMAP.md).
+[ROADMAP.md](https://github.com/geomcore/geomcore/blob/main/ROADMAP.md).
 
 Documentation-related milestones:
 
