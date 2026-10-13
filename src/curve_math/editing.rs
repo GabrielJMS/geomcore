@@ -1,5 +1,5 @@
-//! Editing one direction of a B-spline: knot insertion, degree elevation
-//! and Bézier pieces of the poles that direction weights, a curve's or
+//! Editing one direction of a B-spline: knot insertion and removal,
+//! degree elevation and Bézier pieces of the poles that direction weights, a curve's or
 //! every row of a surface's.
 //!
 //! The algorithms are generic over the [`Pole`] they combine: points for a
@@ -10,9 +10,11 @@
 
 mod bezier;
 mod elevation;
+mod removal;
 
 use bezier::{Walker, bezier_pieces};
 pub(crate) use elevation::Elevation;
+pub(crate) use removal::{check_removal, remove_knots};
 
 use super::bspline::KnotVector;
 use crate::Point3D;

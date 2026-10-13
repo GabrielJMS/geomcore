@@ -135,6 +135,39 @@ impl fmt::Display for DegreeElevationError {
 
 impl std::error::Error for DegreeElevationError {}
 
+/// Error returned when knots cannot be removed from a [`BSplineCurve3D`]
+/// or a direction of a [`crate::BSplineSurface`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnotRemovalError {
+    /// The largest deviation allowed is negative, NaN or infinite.
+    InvalidDeviation,
+    /// A knot to remove is NaN or infinite.
+    NonFiniteKnot,
+    /// A knot to remove lies outside the parameter bounds, or on one of
+    /// them for a non-periodic B-spline, whose end knots stay.
+    KnotOutOfRange,
+    /// A knot to remove is not one of the knots.
+    KnotNotFound,
+}
+
+impl fmt::Display for KnotRemovalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            KnotRemovalError::InvalidDeviation => {
+                "the largest deviation allowed is not a finite non-negative distance"
+            }
+            KnotRemovalError::NonFiniteKnot => "a knot to remove is not finite",
+            KnotRemovalError::KnotOutOfRange => {
+                "a knot to remove is not strictly inside the parameter bounds"
+            }
+            KnotRemovalError::KnotNotFound => "a knot to remove is not a knot",
+        };
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for KnotRemovalError {}
+
 /// A B-spline (optionally rational, optionally periodic) curve in 3D,
 /// evaluated by de Boor's algorithm.
 ///
@@ -613,6 +646,142 @@ impl BSplineCurve3D {
             poles,
             weights,
             spans: Lazy::default(),
+        })
+    }
+
+    /// Returns the curve with the knot `u` removed up to `times` times,
+    /// and how many times it was: each removal takes one copy of the knot
+    /// and one pole away, as long as the curve stays within
+    /// `max_deviation` of this one at every parameter. The first removal
+    /// that would move it further stops, keeping the knot's remaining
+    /// copies, so a knot that cannot be removed is kept and reported
+    /// removed zero times.
+    ///
+    /// The deviation is bounded, not sampled: every point of the result
+    /// lies within `max_deviation` of the point of this curve at the same
+    /// parameter. Removing a knot just inserted gives back the poles of
+    /// the curve before the insertion, up to rounding. `times` above the
+    /// multiplicity removes every copy it can, and removing zero times
+    /// returns the curve unchanged. A rational curve is solved in
+    /// homogeneous coordinates, its bound carried over to the points, and
+    /// keeps a knot whose removal would make a weight non-positive. On a
+    /// periodic curve the seam keeps one copy, so the bounds stay; a knot
+    /// whose neighbourhood does not fit in one period (fewer than
+    /// `degree + 2` minus its multiplicity poles) is kept.
+    ///
+    /// # Errors
+    ///
+    /// [`KnotRemovalError::InvalidDeviation`] if `max_deviation` is
+    /// negative, NaN or infinite, [`KnotRemovalError::NonFiniteKnot`] if `u`
+    /// is NaN or infinite, [`KnotRemovalError::KnotOutOfRange`] if it lies
+    /// outside [`BSplineCurve3D::bounds`] or, on a non-periodic curve, on
+    /// one of them, and [`KnotRemovalError::KnotNotFound`] if it is not one
+    /// of [`BSplineCurve3D::knots`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, KnotRemovalError, Point3D};
+    ///
+    /// // A polyline whose second vertex lies on the segment around it.
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(2.0, 0.0, 0.0),
+    ///     Point3D::new(3.0, 1.0, 0.0),
+    /// ];
+    /// let knots = vec![0.0, 1.0, 2.0, 3.0];
+    /// let curve = BSplineCurve3D::new(1, poles, knots, vec![2, 1, 1, 2], false).unwrap();
+    /// let (simpler, removed) = curve.remove_knot(1.0, 1, 1e-9).unwrap();
+    /// assert_eq!(removed, 1);
+    /// assert_eq!(simpler.knots(), &[0.0, 2.0, 3.0]);
+    /// assert_eq!(simpler.poles().len(), 3);
+    /// // The corner at the third vertex stays.
+    /// let (same, removed) = curve.remove_knot(2.0, 1, 1e-9).unwrap();
+    /// assert_eq!(removed, 0);
+    /// assert_eq!(same, curve);
+    /// assert_eq!(
+    ///     curve.remove_knot(1.5, 1, 1e-9),
+    ///     Err(KnotRemovalError::KnotNotFound)
+    /// );
+    /// ```
+    pub fn remove_knot(
+        &self,
+        u: f64,
+        times: u32,
+        max_deviation: f64,
+    ) -> Result<(BSplineCurve3D, u32), KnotRemovalError> {
+        let copies = [u; math::MAX_DEGREE + 1];
+        let copies = &copies[..(times as usize).min(copies.len())];
+        if copies.is_empty() {
+            editing::check_removal(&self.knots, &[u], max_deviation)?;
+        }
+        let (curve, removed) = self.remove_knots(copies, max_deviation)?;
+        Ok((curve, removed as u32))
+    }
+
+    /// Returns the curve with each of `knots` removed once, in order, a
+    /// value repeated as many times as it appears, and how many copies
+    /// were removed in all: every removal keeps the curve within
+    /// `max_deviation` of this one at every parameter, however many are
+    /// made, and a knot whose removal would move it further is kept.
+    ///
+    /// The whole list is removed in one buffer, much faster than removing
+    /// knot by knot; see [`BSplineCurve3D::remove_knot`] for the deviation
+    /// bound and for rational and periodic curves. Which knots go depends
+    /// on the order: each removal uses part of the deviation allowed
+    /// around the knot. Copies beyond a knot's multiplicity are skipped.
+    ///
+    /// # Errors
+    ///
+    /// As [`BSplineCurve3D::remove_knot`], for any value of `knots`; no
+    /// knot is removed then.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    ///
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 2.0, 0.0),
+    ///     Point3D::new(3.0, 2.0, 1.0),
+    ///     Point3D::new(4.0, 0.0, 1.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+    /// let refined = curve.refine_knots(&[0.25, 0.5, 0.5, 0.75]).unwrap();
+    /// let (simpler, removed) = refined.remove_knots(&[0.25, 0.5, 0.5, 0.75], 1e-9).unwrap();
+    /// assert_eq!(removed, 4);
+    /// assert_eq!(simpler.knots(), curve.knots());
+    /// for (p, q) in simpler.poles().iter().zip(curve.poles()) {
+    ///     assert!(p.distance(*q) < 1e-12);
+    /// }
+    /// ```
+    pub fn remove_knots(
+        &self,
+        knots: &[f64],
+        max_deviation: f64,
+    ) -> Result<(BSplineCurve3D, usize), KnotRemovalError> {
+        editing::check_removal(&self.knots, knots, max_deviation)?;
+        let removal = editing::remove_knots(
+            &self.knots,
+            &self.poles,
+            self.weights.as_deref(),
+            Lanes::CURVE,
+            knots,
+            max_deviation,
+        );
+        Ok(match removal {
+            Some(removed) => (
+                BSplineCurve3D {
+                    knots: removed.knots,
+                    poles: removed.points,
+                    weights: removed.weights,
+                    spans: Lazy::default(),
+                },
+                removed.count,
+            ),
+            None => (self.clone(), 0),
         })
     }
 
@@ -2127,6 +2296,510 @@ mod tests {
             KnotInsertionError::KnotOutOfRange,
             KnotInsertionError::KnotsNotSorted,
             KnotInsertionError::MultiplicityTooLarge,
+        ] {
+            assert!(!e.to_string().is_empty());
+        }
+    }
+
+    // ---- knot removal ----
+
+    /// Largest coordinate of the poles, at least one.
+    fn pole_size(curve: &BSplineCurve3D) -> f64 {
+        curve
+            .poles()
+            .iter()
+            .map(|p| p.x.abs().max(p.y.abs()).max(p.z.abs()))
+            .fold(1.0, f64::max)
+    }
+
+    /// `simpler` has the knots, multiplicities and periodicity of
+    /// `curve`, and its poles and weights within 1e-12 relative.
+    fn assert_same_poles(curve: &BSplineCurve3D, simpler: &BSplineCurve3D) {
+        assert_eq!(simpler.knots(), curve.knots());
+        assert_eq!(simpler.multiplicities(), curve.multiplicities());
+        assert_eq!(simpler.is_periodic(), curve.is_periodic());
+        let size = pole_size(curve);
+        for (p, q) in simpler.poles().iter().zip(curve.poles()) {
+            assert!(p.distance(*q) <= 1e-12 * size, "{p:?} vs {q:?}");
+        }
+        match (simpler.weights(), curve.weights()) {
+            (Some(a), Some(b)) => {
+                for (x, y) in a.iter().zip(b) {
+                    assert!((x - y).abs() <= 1e-12 * y, "{x} vs {y}");
+                }
+            }
+            (a, b) => assert_eq!(a.is_some(), b.is_some()),
+        }
+    }
+
+    /// Largest distance between the points of `a` and `b` at the same
+    /// parameter, over 2001 parameters and every knot of both; asserts
+    /// `b` is a valid curve with the bounds of `a`.
+    fn sampled_deviation(a: &BSplineCurve3D, b: &BSplineCurve3D) -> f64 {
+        let rebuilt = match b.weights() {
+            Some(w) => BSplineCurve3D::new_rational(
+                b.degree(),
+                b.poles().to_vec(),
+                w.to_vec(),
+                b.knots().to_vec(),
+                b.multiplicities().to_vec(),
+                b.is_periodic(),
+            ),
+            None => BSplineCurve3D::new(
+                b.degree(),
+                b.poles().to_vec(),
+                b.knots().to_vec(),
+                b.multiplicities().to_vec(),
+                b.is_periodic(),
+            ),
+        };
+        assert!(rebuilt.is_ok(), "invalid removal: {rebuilt:?}");
+        assert_eq!(a.bounds(), b.bounds());
+        let (first, last) = a.bounds();
+        (0..=2000)
+            .map(|i| first + (last - first) * i as f64 / 2000.0)
+            .chain(a.knots().iter().chain(b.knots()).copied())
+            .filter(|u| (first..=last).contains(u))
+            .map(|u| a.eval_point(u).distance(b.eval_point(u)))
+            .fold(0.0, f64::max)
+    }
+
+    /// The knots `remove_knot` accepts: those strictly inside the bounds
+    /// of a non-periodic curve, every knot of a periodic one but its last.
+    fn removable_knots(curve: &BSplineCurve3D) -> Vec<(f64, u32)> {
+        let (first, last) = curve.bounds();
+        curve
+            .knots()
+            .iter()
+            .zip(curve.multiplicities())
+            .filter(|&(&k, _)| {
+                if curve.is_periodic() {
+                    k < last
+                } else {
+                    first < k && k < last
+                }
+            })
+            .map(|(&k, &m)| (k, m))
+            .collect()
+    }
+
+    /// Random curves of degrees 1 to 5, clamped or periodic, polynomial or
+    /// rational, with random multiplicities.
+    fn random_curves(count: usize, seed: u64) -> Vec<BSplineCurve3D> {
+        let mut state = seed;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut curves = vec![];
+        for case in 0..count {
+            let degree = 1 + case % 5;
+            let periodic = case % 2 == 0;
+            let rational = case % 3 == 0;
+            let n_knots = 3 + (next() * 6.0) as usize;
+            let mut knots = vec![next() * 4.0 - 2.0];
+            for _ in 1..n_knots {
+                knots.push(knots[knots.len() - 1] + 0.3 + 0.7 * next());
+            }
+            let mut mults: Vec<u32> = (0..n_knots)
+                .map(|_| 1 + (next() * degree as f64) as u32)
+                .collect();
+            let last = n_knots - 1;
+            if periodic {
+                mults[last] = mults[0];
+            } else {
+                mults[0] = degree as u32 + 1;
+                mults[last] = degree as u32 + 1;
+            }
+            let sum: u32 = mults.iter().sum();
+            let n_poles = if periodic {
+                (sum - mults[last]) as usize
+            } else {
+                sum as usize - degree - 1
+            };
+            if n_poles < degree + 1 {
+                continue;
+            }
+            let poles: Vec<Point3D> = (0..n_poles)
+                .map(|_| Point3D::new(4.0 * next() - 2.0, 4.0 * next() - 2.0, 4.0 * next() - 2.0))
+                .collect();
+            curves.push(
+                if rational {
+                    let weights = (0..n_poles).map(|_| 0.3 + 2.0 * next()).collect();
+                    BSplineCurve3D::new_rational(degree, poles, weights, knots, mults, periodic)
+                } else {
+                    BSplineCurve3D::new(degree, poles, knots, mults, periodic)
+                }
+                .unwrap(),
+            );
+        }
+        curves
+    }
+
+    #[test]
+    fn test_remove_inserted_knot_gives_back_the_curve() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let tol = 1e-9 * pole_size(&curve);
+            let mut cases = vec![
+                (first + 0.37 * (last - first), 1),
+                (first + 0.81 * (last - first), curve.degree() as u32),
+            ];
+            for (k, m) in removable_knots(&curve) {
+                let room = curve.degree() as u32 - m;
+                if room > 0 && (k != first || curve.is_periodic()) {
+                    cases.push((k, room));
+                }
+            }
+            for (u, times) in cases {
+                let refined = curve.insert_knot(u, times).unwrap();
+                let (simpler, removed) = refined.remove_knot(u, times, tol).unwrap();
+                assert_eq!(removed, times, "u = {u}");
+                assert_same_poles(&curve, &simpler);
+                // Either bound names the seam.
+                if curve.is_periodic() && u == first {
+                    let (simpler, removed) = refined.remove_knot(last, times, tol).unwrap();
+                    assert_eq!(removed, times);
+                    assert_same_poles(&curve, &simpler);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_remove_knot_polynomial_round_trip_is_nearly_exact() {
+        let curve = clamped_curve(false);
+        let refined = curve.insert_knot(1.6, 2).unwrap();
+        let (simpler, removed) = refined.remove_knot(1.6, 2, 1e-13).unwrap();
+        assert_eq!(removed, 2);
+        for (p, q) in simpler.poles().iter().zip(curve.poles()) {
+            assert!(p.distance(*q) < 1e-14, "{p:?} vs {q:?}");
+        }
+    }
+
+    #[test]
+    fn test_remove_knot_keeps_untouched_rational_poles_exactly() {
+        // Removing 1.8 again solves poles 4 and 5 only.
+        let curve = clamped_curve(true);
+        let refined = curve.insert_knot(1.8, 1).unwrap();
+        let (simpler, removed) = refined.remove_knot(1.8, 1, 1e-9).unwrap();
+        assert_eq!(removed, 1);
+        let (poles, weights) = (curve.poles(), curve.weights().unwrap());
+        let (new_poles, new_weights) = (simpler.poles(), simpler.weights().unwrap());
+        assert_eq!(new_poles[..4], poles[..4]);
+        assert_eq!(new_weights[..4], weights[..4]);
+        assert_eq!(new_poles[6..], poles[6..]);
+        assert_eq!(new_weights[6..], weights[6..]);
+    }
+
+    #[test]
+    fn test_remove_knots_undoes_a_refinement() {
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let at = |t: f64| first + t * (last - first);
+            let knots = vec![at(0.05), at(0.3), at(0.3), at(0.52), at(0.9)];
+            let refined = curve.refine_knots(&knots).unwrap();
+            let tol = 1e-9 * pole_size(&curve);
+            let (simpler, removed) = refined.remove_knots(&knots, tol).unwrap();
+            assert_eq!(removed, knots.len());
+            assert_same_poles(&curve, &simpler);
+            let reversed: Vec<f64> = knots.iter().rev().copied().collect();
+            let (simpler, removed) = refined.remove_knots(&reversed, tol).unwrap();
+            assert_eq!(removed, knots.len());
+            assert_same_poles(&curve, &simpler);
+        }
+    }
+
+    #[test]
+    fn test_remove_knot_keeps_knots_the_shape_needs() {
+        // Not the unclamped curve: three of its poles are collinear.
+        let curves = all_insertion_curves()
+            .into_iter()
+            .filter(|c| c.is_periodic() || c.multiplicities()[0] > 1);
+        for curve in curves {
+            let tol = 1e-6 * pole_size(&curve);
+            for (k, m) in removable_knots(&curve) {
+                let (same, removed) = curve.remove_knot(k, m, tol).unwrap();
+                assert_eq!(removed, 0, "u = {k}");
+                assert_eq!(same, curve);
+            }
+            let all: Vec<f64> = removable_knots(&curve).iter().map(|&(k, _)| k).collect();
+            let (same, removed) = curve.remove_knots(&all, tol).unwrap();
+            assert_eq!(removed, 0);
+            assert_eq!(same, curve);
+        }
+    }
+
+    #[test]
+    fn test_remove_knot_partially() {
+        // The interior knot 0.7 is needed; two more copies of it are not.
+        let curve = clamped_curve(true);
+        let refined = curve.insert_knot(0.7, 2).unwrap();
+        assert_eq!(refined.multiplicities()[1], 3);
+        let tol = 1e-9 * pole_size(&curve);
+        let (simpler, removed) = refined.remove_knot(0.7, 3, tol).unwrap();
+        assert_eq!(removed, 2);
+        assert_same_poles(&curve, &simpler);
+        let (simpler, removed) = refined.remove_knot(0.7, u32::MAX, tol).unwrap();
+        assert_eq!(removed, 2);
+        assert_same_poles(&curve, &simpler);
+        let (simpler, removed) = refined.remove_knot(0.7, 1, tol).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(simpler.multiplicities()[1], 2);
+        assert!(sampled_deviation(&curve, &simpler) <= tol);
+    }
+
+    /// `curve` with its poles replaced by `poles`.
+    fn with_poles(curve: &BSplineCurve3D, poles: Vec<Point3D>) -> BSplineCurve3D {
+        let (knots, mults) = (curve.knots().to_vec(), curve.multiplicities().to_vec());
+        match curve.weights() {
+            Some(w) => BSplineCurve3D::new_rational(
+                curve.degree(),
+                poles,
+                w.to_vec(),
+                knots,
+                mults,
+                curve.is_periodic(),
+            ),
+            None => BSplineCurve3D::new(curve.degree(), poles, knots, mults, curve.is_periodic()),
+        }
+        .unwrap()
+    }
+
+    #[test]
+    fn test_removal_stays_within_max_deviation() {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (mut kept, mut removed_all) = (0, 0);
+        for (index, curve) in random_curves(120, 0x9e37_79b9_7f4a_7c15).iter().enumerate() {
+            // Knots inserted into a random curve, then every pole moved by
+            // up to `noise`: the knots come out at deviations around it.
+            let (first, last) = curve.bounds();
+            let insert: Vec<f64> = (0..5)
+                .map(|i| first + (last - first) * (i as f64 + 0.1 + 0.8 * next()) / 5.0)
+                .collect();
+            let refined = curve.refine_knots(&insert).unwrap();
+            let noise = 1e-3 * pole_size(&refined);
+            let poles = refined
+                .poles()
+                .iter()
+                .map(|&p| p + Vector3D::new(next() - 0.5, next() - 0.5, next() - 0.5) * noise)
+                .collect();
+            let noisy = with_poles(&refined, poles);
+            let mut all = vec![];
+            for (k, m) in removable_knots(&noisy) {
+                all.extend(std::iter::repeat_n(k, m as usize));
+            }
+            for factor in [0.3, 1.0, 3.0, 30.0] {
+                let tol = factor * noise;
+                let (simpler, removed) = noisy.remove_knots(&all, tol).unwrap();
+                let deviation = sampled_deviation(&noisy, &simpler);
+                assert!(deviation <= tol, "case {index}: {deviation} > {tol}");
+                assert_eq!(simpler.poles().len(), noisy.poles().len() - removed);
+                removed_all += removed;
+                kept += all.len() - removed;
+            }
+            for (k, m) in removable_knots(&noisy) {
+                let (simpler, removed) = noisy.remove_knot(k, m, 3.0 * noise).unwrap();
+                assert!(removed <= m);
+                let deviation = sampled_deviation(&noisy, &simpler);
+                assert!(deviation <= 3.0 * noise, "case {index}, u = {k}");
+            }
+        }
+        assert!(removed_all > 300 && kept > 300, "{removed_all} {kept}");
+    }
+
+    #[test]
+    fn test_removal_of_perturbed_insertions_meets_the_bound_and_stops_past_it() {
+        // Poles moved off an inserted knot by `shift`: removal deviates by
+        // about `shift`, within a tolerance well above it, not one well
+        // below.
+        for curve in all_insertion_curves() {
+            let (first, last) = curve.bounds();
+            let u = first + 0.43 * (last - first);
+            let refined = curve.insert_knot(u, 1).unwrap();
+            let size = pole_size(&curve);
+            let shift = 1e-4 * size;
+            let mut poles = refined.poles().to_vec();
+            let i = poles.len() / 2;
+            poles[i] = poles[i] + Vector3D::new(shift, -shift, 0.5 * shift);
+            let perturbed = with_poles(&refined, poles);
+            let (_, removed) = perturbed.remove_knot(u, 1, 1e-3 * shift).unwrap();
+            assert_eq!(removed, 0);
+            let tol = 100.0 * shift;
+            let (simpler, removed) = perturbed.remove_knot(u, 1, tol).unwrap();
+            assert_eq!(removed, 1);
+            assert!(sampled_deviation(&perturbed, &simpler) <= tol);
+        }
+    }
+
+    #[test]
+    fn test_remove_collinear_polyline_vertices() {
+        let poles: Vec<Point3D> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+            .iter()
+            .map(|&x| Point3D::new(x, if x == 3.0 { 1.0 } else { 0.0 }, 0.0))
+            .collect();
+        let knots: Vec<f64> = (0..6).map(f64::from).collect();
+        let curve = BSplineCurve3D::new(1, poles, knots, vec![2, 1, 1, 1, 1, 2], false).unwrap();
+        let (simpler, removed) = curve.remove_knots(&[1.0, 2.0, 3.0, 4.0], 1e-12).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(simpler.knots(), &[0.0, 2.0, 3.0, 4.0, 5.0]);
+        // A loose tolerance cuts the corner, within the bound.
+        let (cut, removed) = curve.remove_knots(&[1.0, 2.0, 3.0, 4.0], 0.6).unwrap();
+        assert!(removed >= 2);
+        assert!(sampled_deviation(&curve, &cut) <= 0.6);
+    }
+
+    #[test]
+    fn test_remove_every_knot_within_a_loose_tolerance_leaves_a_bezier() {
+        let curve = clamped_curve(false);
+        let all = [0.7, 1.0, 1.0, 2.5];
+        let tol = 1e3 * pole_size(&curve);
+        let (bezier, removed) = curve.remove_knots(&all, tol).unwrap();
+        assert_eq!(removed, 4);
+        assert_eq!(bezier.knots(), &[0.0, 4.0]);
+        assert_eq!(bezier.poles().len(), 4);
+        assert!(sampled_deviation(&curve, &bezier) <= tol);
+    }
+
+    #[test]
+    fn test_remove_knot_rational_far_from_origin() {
+        // The bound is measured about the poles, not the origin: a curve
+        // moved far away removes the same knots.
+        let offset = Vector3D::new(3e4, -2e4, 1e4);
+        let moved = clamped_curve(true).transformed(Transform::translation(offset));
+        let refined = moved.insert_knot(1.6, 2).unwrap();
+        let (simpler, removed) = refined.remove_knot(1.6, 2, 1e-8).unwrap();
+        assert_eq!(removed, 2);
+        assert_eq!(simpler.knots(), moved.knots());
+        assert!(sampled_deviation(&moved, &simpler) <= 1e-8);
+    }
+
+    #[test]
+    fn test_remove_seam_knot() {
+        let curve = periodic_seam_curve(true);
+        let (first, last) = curve.bounds();
+        // The double seam keeps one copy at most removed; the shape needs
+        // both here.
+        let (same, removed) = curve.remove_knot(last, 2, 1e-6).unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(same, curve);
+        // A single seam always stays, however loose the tolerance.
+        let ring = periodic_ring_curve();
+        let (same, removed) = ring.remove_knot(first, 1, 1e6).unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(same, ring);
+        // A loose tolerance takes the second seam copy away.
+        let curve = periodic_seam_curve(false);
+        let (simpler, removed) = curve.remove_knot(first, 2, 1e6).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(simpler.multiplicities()[0], 1);
+        assert_eq!(simpler.bounds(), curve.bounds());
+        assert!(sampled_deviation(&curve, &simpler) <= 1e6);
+    }
+
+    #[test]
+    fn test_remove_from_short_periodic_curve() {
+        // Three poles of a quadratic: a removal needs two poles per period.
+        let curve = short_periodic_curve();
+        let (_, removed) = curve.remove_knot(0.5, 1, 1e6).unwrap();
+        assert_eq!(removed, 1);
+        let refined = curve.insert_knot(1.2, 1).unwrap();
+        let (simpler, removed) = refined.remove_knot(1.2, 1, 1e-9).unwrap();
+        assert_eq!(removed, 1);
+        assert_same_poles(&curve, &simpler);
+    }
+
+    #[test]
+    fn test_remove_zero_times_or_no_knots_is_unchanged() {
+        let curve = clamped_curve(true);
+        assert_eq!(curve.remove_knot(0.7, 0, 1.0).unwrap(), (curve.clone(), 0));
+        assert_eq!(curve.remove_knots(&[], 1.0).unwrap(), (curve.clone(), 0));
+    }
+
+    #[test]
+    fn test_knot_removal_errors() {
+        for curve in [
+            clamped_curve(false),
+            periodic_ring_curve(),
+            unclamped_curve(),
+        ] {
+            let (first, last) = curve.bounds();
+            let knot = removable_knots(&curve)[1].0;
+            for tol in [-1e-9, f64::NAN, f64::INFINITY] {
+                assert_eq!(
+                    curve.remove_knot(knot, 1, tol),
+                    Err(KnotRemovalError::InvalidDeviation)
+                );
+                assert_eq!(
+                    curve.remove_knots(&[], tol),
+                    Err(KnotRemovalError::InvalidDeviation)
+                );
+            }
+            for u in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert_eq!(
+                    curve.remove_knot(u, 1, 1e-3),
+                    Err(KnotRemovalError::NonFiniteKnot)
+                );
+                assert_eq!(
+                    curve.remove_knots(&[knot, u], 1e-3),
+                    Err(KnotRemovalError::NonFiniteKnot)
+                );
+            }
+            for u in [first - 1.0, last + 1.0] {
+                assert_eq!(
+                    curve.remove_knot(u, 1, 1e-3),
+                    Err(KnotRemovalError::KnotOutOfRange)
+                );
+            }
+            let between =
+                0.5 * (knot + curve.knots()[curve.knots().partition_point(|&k| k <= knot)]);
+            assert_eq!(
+                curve.remove_knot(between, 1, 1e-3),
+                Err(KnotRemovalError::KnotNotFound)
+            );
+            assert_eq!(
+                curve.remove_knot(between, 0, 1e-3),
+                Err(KnotRemovalError::KnotNotFound)
+            );
+            assert_eq!(
+                curve.remove_knots(&[knot, between], 1e-3),
+                Err(KnotRemovalError::KnotNotFound)
+            );
+        }
+        // A non-periodic curve keeps its end knots, clamped or not.
+        for (curve, ends) in [
+            (clamped_curve(true), [0.0, 4.0]),
+            (unclamped_curve(), [2.0, 7.0]),
+        ] {
+            for u in ends {
+                assert_eq!(
+                    curve.remove_knot(u, 1, 1e6),
+                    Err(KnotRemovalError::KnotOutOfRange)
+                );
+            }
+        }
+        // Knots of an unclamped curve outside its bounds.
+        assert_eq!(
+            unclamped_curve().remove_knot(1.0, 1, 1e6),
+            Err(KnotRemovalError::KnotOutOfRange)
+        );
+    }
+
+    #[test]
+    fn test_knot_removal_error_display() {
+        for e in [
+            KnotRemovalError::InvalidDeviation,
+            KnotRemovalError::NonFiniteKnot,
+            KnotRemovalError::KnotOutOfRange,
+            KnotRemovalError::KnotNotFound,
         ] {
             assert!(!e.to_string().is_empty());
         }

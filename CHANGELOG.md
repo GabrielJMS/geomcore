@@ -21,6 +21,14 @@ the Python distribution are versioned in lockstep.
   touch bit for bit, rational ones included. Rational poles are edited
   in homogeneous form; errors are `KnotInsertionError` and
   `DegreeElevationError`.
+- Knot removal within a tolerance: `remove_knot` and `remove_knots` on
+  `BSplineCurve3D`, `remove_u_knot`, `remove_v_knot`, `remove_u_knots` and
+  `remove_v_knots` on `BSplineSurface`. Each removal is kept only if a
+  proven bound keeps every point within `max_deviation` of the original,
+  the bounds of successive removals adding up; the result reports how
+  many copies were removed. Rational shapes are bounded about one centre
+  for every row of a surface's net, and the seam of a periodic direction
+  keeps one copy. Errors are `KnotRemovalError`.
 - Discretization of curves with proven deviations (#17): circles,
   B-splines and trimmed circles and B-splines become points on the curve
   joined by straight segments, each segment reporting a proven upper
