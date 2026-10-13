@@ -2,4 +2,5 @@
 
 pub(crate) mod analytic;
 pub(crate) mod bspline;
+pub(crate) mod conic_bspline;
 pub(crate) mod editing;
