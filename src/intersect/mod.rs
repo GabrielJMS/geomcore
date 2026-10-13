@@ -27,6 +27,7 @@ mod dispatch;
 mod marching;
 mod pieces;
 pub use completeness::{Completeness, IncompleteReason};
+mod surface_surface;
 pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
 pub use curve_curve::{curve_curve_extrema, intersect_curve_curve};
 pub use curve_curve_hull::{CurveCurveExtrema, CurveCurveHits, CurveCurveRegion};

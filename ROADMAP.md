@@ -66,8 +66,10 @@ ones before them. If you'd like to help with any of it, see
 
 ## Next
 
-1. **Marching intersection** — find isolated loops smaller than the seed
-   grid, and trace through points where the two surfaces touch.
+1. **Marching intersection** — trace through points where the two
+   surfaces touch, and find isolated loops smaller than the seed grid on
+   surfaces other than B-splines (two B-spline surfaces already find them
+   from overlapping patch pairs, #30).
 2. **Hosted documentation** — tutorials on the docs site, and a Python
    API reference generated from docstrings.
 

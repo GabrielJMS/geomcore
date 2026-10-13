@@ -38,6 +38,10 @@ harness = false
 name = "intersect_curve_curve"
 harness = false
 
+[[bench]]
+name = "marching_intersection"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 
