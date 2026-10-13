@@ -9,6 +9,15 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-13
+
+### Added
+
+- Python bindings for the 0.33 isoparametric curves (#63): `u_iso(u)` and
+  `v_iso(v)` on `Plane`, `Cylinder`, `Cone`, `Sphere`, `Torus` and
+  `BSplineSurface`, returning `Line3D`, `Circle3D` or `BSplineCurve3D` like
+  the Rust methods, with `SurfaceIsoError` as `ValueError`.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added
@@ -1189,7 +1198,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/geomcore/geomcore/releases/tag/v0.35.0
 [0.34.0]: https://github.com/geomcore/geomcore/releases/tag/v0.34.0
 [0.33.0]: https://github.com/geomcore/geomcore/releases/tag/v0.33.0
 [0.32.2]: https://github.com/geomcore/geomcore/releases/tag/v0.32.2
