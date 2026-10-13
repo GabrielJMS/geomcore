@@ -1637,7 +1637,7 @@ mod tests {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let crossing = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         let grazing = Line3D::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::X).unwrap();
-        let multiplicities = |hits: Vec<crate::CurveCurveHit>| -> Vec<u32> {
+        let multiplicities = |hits: crate::CurveCurveHits| -> Vec<u32> {
             hits.iter().map(|h| h.multiplicity).collect()
         };
         assert_eq!(

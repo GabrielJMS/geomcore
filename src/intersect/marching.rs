@@ -1,7 +1,10 @@
 //! Numeric surface-surface intersection by marching: seeds from a
-//! parameter grid, traced along the intersection and fitted.
+//! parameter grid, or from Bézier patch pairs on B-splines, traced along
+//! the intersection and fitted.
 
-use crate::curves::{BSplineCurve3D, InterpParametrization};
+use super::{pieces, surface_surface};
+use crate::curves::{BSplineCurve3D, PointParametrization};
+use crate::math::boxtree::{Aabb, boxes_apart};
 use crate::math::{solve_2x2, solve_3x3, solve_4x4};
 use crate::surfaces::ParametricSurface;
 use crate::{Point3D, Tolerance, Vector3D};
@@ -16,18 +19,31 @@ use crate::{Point3D, Tolerance, Vector3D};
 /// on the same system plus the plane through the predicted point normal to
 /// the tangent, and the step length follows the curvature (a chord
 /// deviation of about `1000 * confusion`, at most 0.1). A trace ends when
-/// it closes a loop, reaches a parameter bound, or stalls. Traces fit
-/// [`BSplineCurve3D`] interpolants (degree 3, closed loops by repeated end
-/// points).
+/// it closes a loop, stalls, or reaches a parameter bound, its last point
+/// then lying on the bound. Traces fit [`BSplineCurve3D`] interpolants
+/// (degree 3, closed loops by repeated end points).
+///
+/// Two B-spline surfaces (see [`ParametricSurface::as_bspline`]) are
+/// seeded from pairs of their Bézier patches instead. The pairs whose
+/// control points' boxes overlap are halved until the hulls part, or
+/// until both pieces are flat and their normals provably never parallel:
+/// then no closed loop of the intersection hides within the pair, and a
+/// seed converged from its centre, unless a traced curve already crosses
+/// it, finds the curves through it. Pairs whose normals may be parallel
+/// (a tangency, or a small loop) are halved down to `1e4 * confusion`
+/// across. Loops smaller than the grid spacing are found this way; a
+/// search that exhausts its budget (overlapping surfaces) traces the grid
+/// seeds too.
 ///
 /// The fits are APPROXIMATIONS (interpolation error, typically ~1e-4 at
 /// default tolerance — assert residuals, not containment): exact
 /// classification stays with the exact intersection
 /// ([`Intersect::intersect`](crate::Intersect::intersect)). Likewise
 /// no tangency classification (grazing pairs may trace partially or not
-/// at all), no marching through singular points (poles, apexes), and a
-/// fixed seed grid (a loop that leaves no distance minimum on either grid
-/// is missed) — v1 heuristics, documented so callers can judge fit.
+/// at all), no marching through singular points (poles, apexes), and,
+/// unless both surfaces are B-splines, a fixed seed grid (a loop that
+/// leaves no distance minimum on either grid is missed) — v1 heuristics,
+/// documented so callers can judge fit.
 ///
 /// # Examples
 ///
@@ -43,36 +59,144 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
+    let mut traced = Traced::default();
+    if let (Some(sa), Some(sb)) = (a.as_bspline(), b.as_bspline()) {
+        let pairs = surface_surface::patch_pairs(sa, sb, tol);
+        for leaf in &pairs.leaves {
+            if leaf.open && traced.crosses(&leaf.overlap, tol) {
+                continue;
+            }
+            let [ra, rb] = leaf.rects;
+            let centres = [
+                0.5 * (ra[0] + ra[1]),
+                0.5 * (ra[2] + ra[3]),
+                0.5 * (rb[0] + rb[1]),
+                0.5 * (rb[2] + rb[3]),
+            ];
+            if let Some(seed) = meet(a, b, centres, None, tol) {
+                traced.follow(a, b, seed, tol);
+            }
+        }
+        if pairs.complete {
+            return traced.curves;
+        }
+    }
+    trace_grid_seeds(a, b, tol, &mut traced);
+    traced.curves
+}
+
+/// [`marching_intersection`] seeded from the parameter grids alone.
+#[cfg(test)]
+pub(super) fn grid_marching<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<BSplineCurve3D>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let mut traced = Traced::default();
+    trace_grid_seeds(a, b, tol, &mut traced);
+    traced.curves
+}
+
+/// Traces from the seeds of both parameter grids (see [`grid_seeds`]).
+fn trace_grid_seeds<A, B>(a: &A, b: &B, tol: Tolerance, traced: &mut Traced)
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
     let mut seeds = grid_seeds(a, b, tol);
     seeds.extend(
         grid_seeds(b, a, tol)
             .into_iter()
             .map(|x| [x[2], x[3], x[0], x[1]]),
     );
-    let mut curves: Vec<BSplineCurve3D> = Vec::new();
-    // Seeds on an already traced curve are suppressed by projection onto
-    // its fit (the fit error exceeds confusion, so tight containment
-    // cannot decide duplication). Near-tangent distinct curves (closer
-    // than this) are out of scope.
-    let suppress = 1000.0 * tol.confusion;
     for seed in seeds {
+        traced.follow(a, b, seed, tol);
+    }
+}
+
+/// The curves traced so far, fitted, and their traced polylines: the
+/// box around each, the boxes around its runs of `RUN` segments, and its
+/// points.
+#[derive(Default)]
+struct Traced {
+    curves: Vec<BSplineCurve3D>,
+    traces: Vec<(Aabb, Vec<Aabb>, Vec<Point3D>)>,
+}
+
+impl Traced {
+    /// Traces the curve through `seed` unless it was traced already.
+    fn follow<A, B>(&mut self, a: &A, b: &B, seed: [f64; 4], tol: Tolerance)
+    where
+        A: ParametricSurface,
+        B: ParametricSurface,
+    {
+        // Seeds near a traced polyline are on its curve (the trace's chord
+        // deviation exceeds confusion, so tight containment cannot decide
+        // duplication). Near-tangent distinct curves (closer than this)
+        // are out of scope.
         let p = a.eval_point(seed[0], seed[1]);
-        if curves
-            .iter()
-            .any(|c| c.project_point(p, tol).distance <= suppress)
-        {
-            continue;
+        if self.crosses(&[p.x, p.y, p.z, p.x, p.y, p.z], tol) {
+            return;
         }
         if let Some(points) = trace(a, b, seed, tol) {
             let degree = 3.min(points.len() - 1);
             if let Ok(fit) =
-                BSplineCurve3D::interpolate(&points, degree, InterpParametrization::Centripetal)
+                BSplineCurve3D::interpolate(&points, degree, PointParametrization::Centripetal)
             {
-                curves.push(fit);
+                let coords: Vec<[f64; 3]> = points.iter().map(|p| [p.x, p.y, p.z]).collect();
+                let runs = (1..coords.len())
+                    .step_by(RUN)
+                    .map(|k| pieces::bounding_box(&coords[k - 1..(k + RUN).min(coords.len())]))
+                    .collect();
+                self.traces
+                    .push((pieces::bounding_box(&coords), runs, points));
+                self.curves.push(fit);
             }
         }
     }
-    curves
+
+    /// Whether a traced polyline passes through the box `b`, grown by the
+    /// distance its chords may stray from the curve.
+    fn crosses(&self, b: &Aabb, tol: Tolerance) -> bool {
+        // Steps keep `chord * turn` within 32 chord deviations, so a chord
+        // strays at most a quarter of that from the curve.
+        let gap = 8.0 * CHORD_DEVIATION * tol.confusion;
+        let grown: Aabb = std::array::from_fn(|c| if c < 3 { b[c] - gap } else { b[c] + gap });
+        self.traces.iter().any(|(bounds, runs, points)| {
+            !boxes_apart(bounds, &grown, 0.0)
+                && runs.iter().enumerate().any(|(r, run)| {
+                    let first = r * RUN;
+                    !boxes_apart(run, &grown, 0.0)
+                        && points[first..(first + RUN + 1).min(points.len())]
+                            .windows(2)
+                            .any(|w| segment_meets_box(w[0], w[1], &grown))
+                })
+        })
+    }
+}
+
+/// Segments of a traced polyline per box in [`Traced`].
+const RUN: usize = 16;
+
+/// Whether the segment from `p` to `q` meets the box `b`.
+fn segment_meets_box(p: Point3D, q: Point3D, b: &Aabb) -> bool {
+    let (from, d) = ([p.x, p.y, p.z], [q.x - p.x, q.y - p.y, q.z - p.z]);
+    let (mut lo, mut hi) = (0.0f64, 1.0f64);
+    for c in 0..3 {
+        if d[c] == 0.0 {
+            if from[c] < b[c] || from[c] > b[c + 3] {
+                return false;
+            }
+            continue;
+        }
+        let (t0, t1) = ((b[c] - from[c]) / d[c], (b[c + 3] - from[c]) / d[c]);
+        lo = lo.max(t0.min(t1));
+        hi = hi.min(t0.max(t1));
+        if lo > hi {
+            return false;
+        }
+    }
+    true
 }
 
 /// Parameters `[s_u, s_v, other_u, other_v]` of intersection points
@@ -119,6 +243,10 @@ where
     seeds
 }
 
+/// Chord deviation allowed per traced step, in multiples of
+/// `tol.confusion`.
+const CHORD_DEVIATION: f64 = 1000.0;
+
 /// Trace the intersection curve through `seed` both ways. Returns its
 /// points in order (a closed loop ends on its first point), or `None`
 /// when fewer than four were traced.
@@ -128,7 +256,7 @@ where
     B: ParametricSurface,
 {
     // Chord deviation allowed per step, and the longest step.
-    let chord_deviation = 1000.0 * tol.confusion;
+    let chord_deviation = CHORD_DEVIATION * tol.confusion;
     const H_MAX: f64 = 0.1;
     // Turn always allowed in one step. Beyond it, a step may turn by at
     // most `CURVATURE_GROWTH` times the previous step's curvature times
@@ -155,9 +283,20 @@ where
             // plane normal to it; halve the step until the result stays on
             // this branch with a small chord deviation.
             let mut step = None;
+            let mut edge = None;
             while h >= tol.confusion {
                 let target = p + t * h;
-                if let Some(y) = meet(a, b, predict(a, b, x, t * h), Some((target, t)), tol)
+                let guess = predict(a, b, x, t * h);
+                if let Some((pin, bound)) = leaving(a, b, x, guess) {
+                    // The step leaves a parameter domain: end on its edge.
+                    if let Some(y) = land(a, b, guess, pin, bound, tol) {
+                        let q = a.eval_point(y[0], y[1]);
+                        if (q - p).dot(t) >= 0.0 && q.distance(p) <= 2.0 * h {
+                            edge = Some(q);
+                            break;
+                        }
+                    }
+                } else if let Some(y) = meet(a, b, guess, Some((target, t)), tol)
                     && let Some(ty) = tangent(a, b, y, tol).map(|ty| ty * dir)
                 {
                     let q = a.eval_point(y[0], y[1]);
@@ -174,6 +313,12 @@ where
                     }
                 }
                 h *= 0.5;
+            }
+            if let Some(q) = edge {
+                if q.distance(p) > tol.confusion.max(crate::tol::CONFUSION) {
+                    half.push(q);
+                }
+                break;
             }
             let Some((y, q, ty, curvature)) = step else {
                 break;
@@ -260,27 +405,7 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let clamp = |s: &dyn ParametricSurface, u: f64, v: f64| {
-        let (u0, u1) = s.u_bounds();
-        let (v0, v1) = s.v_bounds();
-        (
-            if s.u_period().is_none() {
-                u.clamp(u0, u1)
-            } else {
-                u
-            },
-            if s.v_period().is_none() {
-                v.clamp(v0, v1)
-            } else {
-                v
-            },
-        )
-    };
-    let bounded = |x: [f64; 4]| {
-        let (u1, v1) = clamp(a, x[0], x[1]);
-        let (u2, v2) = clamp(b, x[2], x[3]);
-        [u1, v1, u2, v2]
-    };
+    let bounded = |x: [f64; 4]| within_bounds(a, b, x);
     let residual = |x: [f64; 4]| {
         let pa = a.eval_point(x[0], x[1]);
         let f = pa - b.eval_point(x[2], x[3]);
@@ -332,6 +457,103 @@ where
         }
     }
     (f.magnitude() <= tol.confusion && r.abs() <= tol.confusion).then_some(x)
+}
+
+/// The bounds `(lo, hi)` of parameter `k` of `x = [u1, v1, u2, v2]`, or
+/// `None` where it is periodic.
+fn param_bounds<A, B>(a: &A, b: &B, k: usize) -> Option<(f64, f64)>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let s: &dyn ParametricSurface = if k < 2 { a } else { b };
+    if k.is_multiple_of(2) {
+        s.u_period().is_none().then(|| s.u_bounds())
+    } else {
+        s.v_period().is_none().then(|| s.v_bounds())
+    }
+}
+
+/// Parameters `x` with each non-periodic one clamped into its bounds.
+fn within_bounds<A, B>(a: &A, b: &B, x: [f64; 4]) -> [f64; 4]
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    std::array::from_fn(|k| param_bounds(a, b, k).map_or(x[k], |(lo, hi)| x[k].clamp(lo, hi)))
+}
+
+/// The parameter that the straight move from `x` to `y` takes out of its
+/// bounds first, and that bound, or `None` when `y` is within them.
+fn leaving<A, B>(a: &A, b: &B, x: [f64; 4], y: [f64; 4]) -> Option<(usize, f64)>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let mut first: Option<(usize, f64, f64)> = None;
+    for k in 0..4 {
+        let Some((lo, hi)) = param_bounds(a, b, k) else {
+            continue;
+        };
+        let bound = if y[k] > hi {
+            hi
+        } else if y[k] < lo {
+            lo
+        } else {
+            continue;
+        };
+        let fraction = (bound - x[k]) / (y[k] - x[k]);
+        if first.is_none_or(|(_, _, f)| fraction < f) {
+            first = Some((k, bound, fraction));
+        }
+    }
+    first.map(|(k, bound, _)| (k, bound))
+}
+
+/// Newton's method for a point on both surfaces with parameter `pin` of
+/// `x = [u1, v1, u2, v2]` held at `value`, from `x`: solves `S1(u1, v1) =
+/// S2(u2, v2)` in the three others, which stay in their bounds. `None`
+/// when it does not converge to `confusion`.
+fn land<A, B>(a: &A, b: &B, x: [f64; 4], pin: usize, value: f64, tol: Tolerance) -> Option<[f64; 4]>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let free: [usize; 3] = std::array::from_fn(|i| if i < pin { i } else { i + 1 });
+    let residual = |x: [f64; 4]| a.eval_point(x[0], x[1]) - b.eval_point(x[2], x[3]);
+    let mut x = within_bounds(a, b, x);
+    x[pin] = value;
+    let mut f = residual(x);
+    for _ in 0..32 {
+        if f.magnitude() <= 0.1 * tol.confusion {
+            return Some(x);
+        }
+        let (_, [au, av]) = a.eval_d1(x[0], x[1]);
+        let (_, [bu, bv]) = b.eval_d1(x[2], x[3]);
+        let cols = [au, av, -bu, -bv].map(|c| [c.x, c.y, c.z]);
+        let m = std::array::from_fn(|r| free.map(|k| cols[k][r]));
+        let delta = solve_3x3(m, [-f.x, -f.y, -f.z], 1e-12)?;
+        let mut scale = 1.0;
+        let mut improved = false;
+        for _ in 0..12 {
+            let mut trial = x;
+            for (i, &k) in free.iter().enumerate() {
+                trial[k] += scale * delta[i];
+            }
+            let trial = within_bounds(a, b, trial);
+            let tf = residual(trial);
+            if tf.square_magnitude() < f.square_magnitude() {
+                (x, f) = (trial, tf);
+                improved = true;
+                break;
+            }
+            scale *= 0.5;
+        }
+        if !improved {
+            break;
+        }
+    }
+    (f.magnitude() <= tol.confusion).then_some(x)
 }
 
 /// Clamp a parameter bound pair to a finite seed window.
@@ -555,6 +777,24 @@ mod tests {
                 assert!(gap < 1e-6, "d = {d}: open curve, end gap {gap}");
             }
         }
+    }
+
+    #[test]
+    fn test_segment_meets_box() {
+        let unit = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let meets = |p: [f64; 3], q: [f64; 3]| {
+            segment_meets_box(
+                Point3D::new(p[0], p[1], p[2]),
+                Point3D::new(q[0], q[1], q[2]),
+                &unit,
+            )
+        };
+        assert!(meets([-1.0, 0.5, 0.5], [2.0, 0.5, 0.5]));
+        assert!(meets([0.2, 0.3, 0.4], [0.2, 0.3, 0.4]));
+        assert!(meets([-1.0, -1.0, 0.5], [0.0, 0.0, 0.5]));
+        assert!(!meets([-1.0, 0.5, 0.5], [-0.1, 0.5, 0.5]));
+        assert!(!meets([-1.0, 0.0, 0.5], [0.0, -1.0, 0.5]));
+        assert!(!meets([0.5, 0.5, 2.0], [0.5, 0.6, 2.0]));
     }
 
     #[test]

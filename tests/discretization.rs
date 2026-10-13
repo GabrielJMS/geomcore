@@ -396,6 +396,61 @@ fn test_count_then_fill_into_part_of_a_larger_buffer() {
     assert_eq!(parameters[5 + n], -1.0);
 }
 
+/// The discretization by counting, then filling caller-owned slices.
+fn count_then_fill<C: Discretize3D>(
+    curve: &C,
+    criteria: DiscretizationCriteria,
+) -> Discretization3D {
+    let n = curve.point_count(criteria);
+    let (mut parameters, mut points) = (vec![0.0; n], vec![Point3D::ORIGIN; n]);
+    let (mut chords, mut angles) = (vec![0.0; n - 1], vec![0.0; n - 1]);
+    curve.discretize_into(
+        criteria,
+        &mut parameters,
+        &mut points,
+        &mut chords,
+        &mut angles,
+    );
+    let mut d = Discretization3D::default();
+    (d.parameters, d.points) = (parameters, points);
+    (d.chord_deviations, d.angle_deviations) = (chords, angles);
+    d
+}
+
+#[test]
+fn test_discretize_agrees_with_count_then_fill() {
+    let criteria_list = [chord(1e-4), chord(100.0), chord_and_angle(1e-3, 0.1)];
+    for criteria in criteria_list {
+        for curve in [wavy(), uneven_weights(), rational_circle(), periodic_ring()] {
+            assert_eq!(
+                curve.discretize(criteria),
+                count_then_fill(&curve, criteria)
+            );
+            let (first, last) = curve.bounds();
+            let piece = TrimmedCurve3D::new(&curve, first + 0.3, last - 0.1).unwrap();
+            assert_eq!(
+                piece.discretize(criteria),
+                count_then_fill(&piece, criteria)
+            );
+        }
+        let across = TrimmedCurve3D::new(periodic_ring(), -1.3, 0.4).unwrap();
+        assert_eq!(
+            across.discretize(criteria),
+            count_then_fill(&across, criteria)
+        );
+        let whole = TrimmedCurve3D::new(periodic_ring(), 2.0, 8.0).unwrap();
+        assert_eq!(
+            whole.discretize(criteria),
+            count_then_fill(&whole, criteria)
+        );
+        // A closed curve gets at least three segments.
+        let c = circle(1.0);
+        assert_eq!(c.discretize(criteria), count_then_fill(&c, criteria));
+        let arc = TrimmedCurve3D::new(c, 1.0, 1.0 + TAU).unwrap();
+        assert_eq!(arc.discretize(criteria), count_then_fill(&arc, criteria));
+    }
+}
+
 #[test]
 #[should_panic(expected = "wrong length")]
 fn test_fill_panics_on_a_wrong_length() {
@@ -494,6 +549,33 @@ fn test_coincident_poles_report_pi_only_at_that_end() {
     let unbounded = unbounded_segments(&d);
     assert!(!unbounded.is_empty());
     assert!(unbounded.iter().all(|&(_, u1)| u1 < 0.05), "{unbounded:?}");
+}
+
+#[test]
+fn test_the_highest_degree_is_proven() {
+    let degree = 25;
+    let poles: Vec<Point3D> = (0..=degree)
+        .map(|i| {
+            let a = i as f64;
+            Point3D::new(a, (0.7 * a).sin(), 0.3 * (1.1 * a).cos())
+        })
+        .collect();
+    let weights: Vec<f64> = (0..=degree).map(|i| 1.0 + 0.5 * (i % 3) as f64).collect();
+    let (knots, multiplicities) = (vec![0.0, 1.0], vec![26, 26]);
+    let polynomial = BSplineCurve3D::new(
+        degree,
+        poles.clone(),
+        knots.clone(),
+        multiplicities.clone(),
+        false,
+    )
+    .unwrap();
+    let rational =
+        BSplineCurve3D::new_rational(degree, poles, weights, knots, multiplicities, false).unwrap();
+    let criteria = chord_and_angle(1e-2, 0.1);
+    for curve in [polynomial, rational] {
+        assert_proven(&curve, &curve.discretize(criteria), criteria, 25.0);
+    }
 }
 
 #[test]

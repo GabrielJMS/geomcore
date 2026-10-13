@@ -71,10 +71,14 @@ impl BoxTree {
     /// hold anything closer.
     pub(crate) fn nearest_first(&self, point: Point3D, mut visit: impl FnMut(usize) -> f64) {
         let mut best = f64::INFINITY;
-        let mut heap = BinaryHeap::from([Pending {
+        // A frontier of the tree, so never more entries than leaves: room
+        // for them all, up to a few levels' worth.
+        let leaves = self.nodes.len().div_ceil(2);
+        let mut heap = BinaryHeap::with_capacity(leaves.min(64));
+        heap.push(Pending {
             lower: box_distance(point, &self.nodes[0].bbox),
             node: 0,
-        }]);
+        });
         while let Some(Pending { lower, node }) = heap.pop() {
             if lower >= best {
                 break;
@@ -92,6 +96,28 @@ impl BoxTree {
             }
         }
     }
+
+    /// Calls `visit` on every leaf whose box comes within `gap` of the box
+    /// `b` (along each axis), in tree order. Since every box contains its
+    /// piece of the geometry, the leaves skipped hold nothing within `gap`
+    /// of what `b` contains.
+    pub(crate) fn overlapping(&self, b: &Aabb, gap: f64, mut visit: impl FnMut(usize)) {
+        let mut stack = vec![0];
+        while let Some(node) = stack.pop() {
+            if boxes_apart(&self.nodes[node].bbox, b, gap) {
+                continue;
+            }
+            match self.nodes[node].kind {
+                Kind::Split(left, right) => stack.extend([right, left]),
+                Kind::Leaf(k) => visit(k),
+            }
+        }
+    }
+}
+
+/// Whether the boxes `a` and `b` are more than `gap` apart along some axis.
+pub(crate) fn boxes_apart(a: &Aabb, b: &Aabb, gap: f64) -> bool {
+    (0..3).any(|c| a[c] > b[c + 3] + gap || b[c] > a[c + 3] + gap)
 }
 
 /// Appends the subtree over the leaf index ranges `rows` x `cols_range` to
@@ -225,6 +251,29 @@ mod tests {
             f64::INFINITY
         });
         assert_eq!(all, vec![3, 2, 1, 0]);
+    }
+
+    #[test]
+    fn test_overlapping_visits_only_boxes_within_the_gap() {
+        // A 2 x 3 grid of unit boxes, a step of 2 apart.
+        let leaves: Vec<Aabb> = (0..6)
+            .map(|k| {
+                let (x, y) = (2.0 * (k / 3) as f64, 2.0 * (k % 3) as f64);
+                [x, y, 0.0, x + 1.0, y + 1.0, 1.0]
+            })
+            .collect();
+        let tree = BoxTree::new(&leaves, 3);
+        let query = [1.2, 1.2, 0.5, 1.8, 2.5, 0.6];
+        let mut seen = Vec::new();
+        tree.overlapping(&query, 0.0, |k| seen.push(k));
+        assert!(seen.is_empty());
+        tree.overlapping(&query, 0.25, |k| seen.push(k));
+        seen.sort();
+        assert_eq!(seen, vec![0, 1, 3, 4]);
+        let mut all = Vec::new();
+        tree.overlapping(tree.bounds(), 0.0, |k| all.push(k));
+        all.sort();
+        assert_eq!(all, (0..6).collect::<Vec<_>>());
     }
 
     #[test]

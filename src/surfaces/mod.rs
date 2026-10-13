@@ -4,7 +4,9 @@
 
 mod bspline;
 mod cone;
+mod conversion;
 mod cylinder;
+mod fitting;
 mod plane;
 mod sphere;
 mod surface;

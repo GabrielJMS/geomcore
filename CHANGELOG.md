@@ -9,8 +9,116 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-13
+
 ### Added
 
+- B-spline editing: knot insertion (`insert_knot`, `refine_knots`),
+  degree elevation (`elevate_degree`) and splitting into Bézier pieces
+  (`to_bezier_pieces`) on `BSplineCurve3D`, and the same per direction on
+  `BSplineSurface` (`insert_u_knot`, `insert_v_knot`, `refine_u_knots`,
+  `refine_v_knots`, `elevate_u_degree`, `elevate_v_degree`,
+  `to_bezier_patches`). Every edit keeps the shape, works on clamped,
+  unclamped and periodic directions, and keeps the poles it does not
+  touch bit for bit, rational ones included. Rational poles are edited
+  in homogeneous form, up to 128 of them on the stack, so that inserting
+  64 knots allocates only the result, and an edit that rewrites every
+  row in place, as degree elevation does, turns the homogeneous poles'
+  storage into the points'; errors are `KnotInsertionError` and
+  `DegreeElevationError`. Inserting knots into a direction of degree 1
+  to 3 blends its poles on a path fixed to the degree, whose loops
+  unroll: 64 knots go in 8 to 19% faster than through the general path.
+- Arc length of B-spline curves: `BSplineCurve3D::length(max_error)`
+  integrates the speed over each knot span by adaptive Gauss–Kronrod
+  quadrature on the span's Bernstein form, each span getting a share of
+  the error in proportion to its width; a sub-range's length is that of
+  `extract(first, last)`.
+- Knot removal within a tolerance: `remove_knot` and `remove_knots` on
+  `BSplineCurve3D`, `remove_u_knot`, `remove_v_knot`, `remove_u_knots` and
+  `remove_v_knots` on `BSplineSurface`. Each removal is kept only if a
+  proven bound keeps every point within `max_deviation` of the original,
+  the bounds of successive removals adding up; the result reports how
+  many copies were removed. Rational shapes are bounded about one centre
+  for every row of a surface's net, and the seam of a periodic direction
+  keeps one copy. Errors are `KnotRemovalError`.
+- Least-squares fitting within a deviation, and of surfaces:
+  `BSplineCurve3D::approximate_within(points, degree, max_deviation,
+  parametrization)` fits with few poles, every point within
+  `max_deviation` of the curve at its parameter. Starting from one Bézier
+  piece, each round splits the knot spans that deviate the most, so knots
+  gather where the points bend; when no span is left to split, the
+  fewest poles that fit on knots spread along the parameters are
+  searched instead, and when nothing fits, the points are interpolated.
+  `BSplineSurface::approximate(points, u_degree, v_degree, u_pole_count,
+  v_pole_count, parametrization)` fits a grid of points: the fit
+  separates, each row along `v` and then each column of the rows' poles
+  along `u`, one factored system per direction serving every line.
+  `BSplineSurface::approximate_within` fits a grid within a deviation the
+  same way, the rows within 0.8 of it, each direction keeping the fewer
+  poles of refined knots and of the fewest poles on spread knots.
+- Splitting, extraction and reversal of B-spline curves and surfaces:
+  `split_at(u)`, `extract(first, last)` and `reversed()` on
+  `BSplineCurve3D`, and `split_u_at`, `split_v_at`,
+  `extract(u_range, v_range)`, `extract_u`, `extract_v`, `reversed_u`
+  and `reversed_v` on `BSplineSurface`. Pieces are clamped, non-periodic
+  B-splines that evaluate as the original over their range, rational
+  ones keeping the poles no insertion touched bit for bit; on a periodic
+  direction a range may cross the seam and span up to one period. The
+  cuts are raised to full multiplicity in one refinement of the spans
+  between them. Reversal mirrors the parameter (`first + last - u`) and
+  keeps a periodic shape periodic. A non-finite parameter, one outside
+  the bounds, an empty range, a periodic range longer than one period or
+  a split at an end is a `BSplineSplitError`.
+- Elementary curves as exact B-splines (#37): `to_bspline` on `Circle3D`
+  and `Ellipse3D` returns a periodic rational quadratic B-spline over
+  `[0, 2π]` (four quarter turns, eight poles), and on a `TrimmedCurve3D`
+  of a line, circle, ellipse, parabola, hyperbola or `ElementaryCurve` a
+  clamped B-spline over the same range, with the same end points. A
+  segment becomes degree 1 and a parabola one polynomial quadratic piece,
+  both keeping the curve's parameter; a hyperbola becomes one rational
+  quadratic piece, and an arc rational quadratic pieces of at most a
+  quarter turn, closed exactly when it spans a whole turn. Every point
+  lies on the curve; the parameter matches the curve's at the range ends,
+  the knots between pieces (at the pieces' boundary angles) and each
+  piece's middle, and strays at most 0.0161 rad from a circle's angle in
+  between. `ElementaryCurve::to_bspline` and `Curve3D::to_bspline` (a
+  B-spline is cloned) return `BSplineConversionError::Unbounded` for a
+  line, parabola or hyperbola, and a trimmed curve whose B-spline would
+  overflow `f64` returns `NotRepresentable`.
+- Elementary surfaces as exact B-splines (#38): `to_bspline_patch(u_range,
+  v_range)` on `Plane`, `Cylinder`, `Cone`, `Sphere`, `Torus` and
+  `ElementarySurface` returns the patch over those ranges as a B-spline
+  surface whose domain is exactly the ranges. A plane patch is bilinear
+  and keeps the plane's parameters; the other surfaces are the circle's
+  rational quadratic pieces of at most a quarter turn in `u` times their
+  profile in `v`, a segment for cylinders and cones (keeping their `v`)
+  and circle arcs for spheres and tori. Every point lies on the surface,
+  the boundary curves are the surface's at the range ends, and along a
+  circular direction the parameter matches the angle at the range ends,
+  the knots and each piece's middle. A range spanning a whole turn gives
+  a periodic direction; a cone range ending at the apex and a sphere
+  range ending at a pole give a collapsed edge, a row of poles on that
+  point. `to_bspline` on `Sphere` and `Torus` converts the whole surface,
+  and on `ElementarySurface` and `Surface` (a B-spline is cloned) returns
+  `BSplineConversionError::Unbounded` for a plane, cylinder or cone, also
+  returned for an infinite range. A NaN, empty or out-of-bounds range, or
+  one longer than a turn, returns the new `InvalidRange`.
+- Bounding boxes of curves and surfaces (#39): the new `BoundingBox3D`
+  (`min`, `max`, `center`, `diagonal`, `union`, `enlarged`, `encloses`
+  for a point, `overlaps` for another box) and the `Bound3D` trait,
+  whose `bounding_box()` returns the axis-aligned box around a shape, or
+  `None` for an unbounded one (lines, parabolas, hyperbolas, planes,
+  cylinders, cones). Implemented for every 3D curve and surface type,
+  trimmed curves, references and the run-time `Curve3D`, `Surface`,
+  `ElementaryCurve` and `ElementarySurface`. Elementary boxes are the
+  tightest, touching the shape on every side, in closed form and
+  without allocating: a circular or elliptic arc from its ends and the
+  angles where a coordinate peaks within its range, a trimmed parabola
+  or hyperbola from its ends and the parameters where a coordinate is
+  stationary, a torus from its radii and the tilt of its axis. A
+  B-spline's box is the box of its poles; a trimmed B-spline's, of the
+  poles of the knot spans its range covers and the Bézier control points
+  of its pieces of those it cuts, so it holds the piece but may be loose.
 - Discretization of curves with proven deviations (#17): circles,
   B-splines and trimmed circles and B-splines become points on the curve
   joined by straight segments, each segment reporting a proven upper
@@ -64,6 +172,53 @@ the Python distribution are versioned in lockstep.
 
 ### Changed
 
+- `InterpParametrization` is renamed `PointParametrization`: it
+  parametrizes the points of least-squares approximation as well as of
+  interpolation. B-spline interpolation and least-squares approximation
+  are rewritten: each data point's row holds only the basis functions
+  non-zero there, and all three coordinates solve in one pass over a
+  narrow band (half-bandwidth `degree - 1` for interpolation, whose
+  averaged knots zero everything further out, and banded Cholesky of
+  half-bandwidth `degree` for the normal equations of approximation).
+  Interpolating 128 points with a cubic is about 8 times faster, and
+  approximating them with 32 poles about 3.5 times faster, with a
+  handful of allocations instead of hundreds. Approximation places its
+  interior knots along the points' parameters, so that every knot span
+  holds some, instead of evenly: unevenly spaced points no longer leave
+  poles undetermined.
+- B-spline curves and surfaces store their poles once, as points with a
+  separate weight per pole when rational, instead of keeping a second,
+  homogeneous copy. Evaluation reads them in place, folding each weight
+  into its basis function. Points evaluate on a path of their own that
+  skips the derivative tables, and the basis recurrence takes its
+  reciprocals ahead of the chain that uses them. A cubic curve point is
+  about 1.6 times faster and its second derivatives about 1.4 times; on
+  surfaces, points gain about 10% and second derivatives about 15%.
+  Non-periodic directions of degree 1 to 3 evaluate the basis of a point
+  on a path fixed to their degree, which slices the span's knots once and
+  unrolls every loop: curve points are about 1.7 times faster again, and
+  surface points with both directions so about 1.6 times.
+- `discretize` walks the curve once, growing its result, instead of
+  counting the points twice and then filling them. A B-spline piece's
+  bounds are computed once and handed to its halves, and a rational
+  piece builds its tangent's direction from a table of Bernstein product
+  factors shared by the whole curve. A cubic B-spline discretizes 2 to 3
+  times faster, a rational one about 7 times.
+- B-spline angle deviations are tighter, still proven: a step whose
+  tangent turns by at most `Θ <= π/2` reports `Θ/2` (the chord lies
+  within half the turning of every tangent of the step), and the turning
+  rate is also bounded by `|D × D'| / |D|²` from the Bernstein
+  coefficients of the tangent's direction `D`, which leaves out its change
+  along itself. With an angle limit, cubic B-splines get about 40% fewer
+  points, and the representative fixtures less than half as many.
+- `BSplineSurface::project_point` holds fewer subpatch nets at once: the
+  patches waiting their turn, but the closest, keep only their bounds,
+  their nets written again when searched, and a split subpatch hands its
+  storage to its first half. A typical query's peak memory drops by 20 to
+  45%, at the same speed. A patch of degree 2 or 3 in both directions
+  converts to its Bernstein net on a path fixed to the degree, whose loops
+  unroll, for 3 to 6% faster projections.
+
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.
   A curve lies on the surface when the 2D image evaluates within
@@ -87,6 +242,101 @@ the Python distribution are versioned in lockstep.
   than the angular tolerance (`|x·y| > 1e-12`), where the parametric
   tolerance (1e-9) was used: axes 1e-9 off square move a point across
   the model by 1e-4.
+- Numeric curve–surface intersection of B-splines without sampling
+  (#28): `intersect_curve_surface` on a B-spline curve, or a trimmed
+  curve over one (owned or borrowed), against a B-spline surface
+  subdivides the Bézier pieces of both where their control points' boxes
+  overlap until each pair holds at most one hit, then solves it by
+  Newton's method. It is about 80× faster on a bicubic surface (35 µs
+  per cubic curve, from 2.8 ms), and handles rational and periodic
+  B-splines. Hits are the sampled search's, except that parameters now
+  always lie within the curve's range and the surface's bounds (Newton
+  steps could carry a trimmed curve's hit past its ends), periodic ones
+  within their period. A tangency, an overlap or a hit at a singular
+  point exceeds the search's budget and falls back to the sampled search. The new
+  `ParametricCurve3D::as_bspline` and `ParametricSurface::as_bspline`
+  (default `None`) expose the B-spline behind a curve or surface.
+- Numeric curve–curve intersection and extrema of B-splines without a
+  sampling grid (#29): `intersect_curve_curve` and `curve_curve_extrema`
+  on two B-spline curves, or trimmed curves over them (owned or
+  borrowed), subdivide the Bézier pieces of both curves. Intersection
+  pairs pieces whose control points' boxes overlap and halves them until
+  each pair meets at most once, then solves it by Gauss–Newton steps:
+  about 17× faster on crossing cubics (9 µs per pair, from 157 µs).
+  Extrema drop the piece pairs where the distance cannot have a minimum
+  and solve those where it is convex: about 3× faster on skew cubics
+  (55 µs per pair, from 167 µs). Both handle rational and periodic
+  B-splines and return the same hits, multiplicities and minima as
+  before, plus crossings and minima the grid could miss between its
+  samples. Tangencies, overlaps and other valleys of equal distance
+  exceed the search's budget and fall back to the grid.
+- **Breaking:** numeric curve–surface intersection reports whether its
+  search was complete (#31): `intersect_curve_surface` returns
+  `CurveSurfaceHits`, which reads as the slice of its hits (`hits()`,
+  `into_hits()`, iteration) and carries a `Completeness`. A B-spline
+  curve against a B-spline surface is `Complete` when every pair of
+  pieces was proven apart or isolated to one hit. It is `Incomplete`
+  when the budget ran out (`IncompleteReason::BudgetExhausted`) or
+  pieces never separated at a tangent contact, an overlap or a singular
+  point (`Unseparated`), with the `CurveSurfaceRegion`s where hits may
+  be missing: curve and surface parameter ranges and a box in space.
+  Its hits are then the proven ones together with the sampled search's
+  that do not merge into them. Other pairs are `Sampled`. Code that
+  only reads the hits keeps compiling unless it names the `Vec` type;
+  call `into_hits()` there.
+  See ADR 0007. Python is unchanged and still returns the list of hits.
+- **Breaking:** numeric curve–curve intersection and extrema report
+  whether their search was complete (#32), like the curve–surface case:
+  `intersect_curve_curve` returns `CurveCurveHits` (`hits()`,
+  `into_hits()`) and `curve_curve_extrema` returns `CurveCurveExtrema`
+  (`minima()`, `into_minima()`), both reading as the slice of their
+  results and carrying a `Completeness` whose regions are
+  `CurveCurveRegion`s: a parameter range on each curve and a box in
+  space. Two B-spline curves are `Complete` when every pair of pieces
+  was proven apart (for extrema, to hold no minimum) or solved. A tangent
+  contact or a straight overlap, where the pieces run along one line
+  within `tol.confusion`, no longer exhausts the budget: it is kept as a
+  region (`Unseparated`) and the search goes on. A curved overlap or a
+  valley of equal distance, such as concentric arcs, still runs out of
+  budget (`BudgetExhausted`). Either way the sampled search runs too: its
+  hits that do not merge into the proven ones are added, and its seeds
+  join the extrema's, one minimum kept per valley. Other pairs, two
+  straight curves included, are `Sampled`. Code that only reads the
+  results keeps compiling unless it names the `Vec` type; call
+  `into_hits()` or `into_minima()` there. See ADR 0007. Python is
+  unchanged.
+- Marching intersection of two B-spline surfaces seeded from overlapping
+  patch pairs (#30): `marching_intersection` on two B-spline surfaces
+  (rational or periodic too) halves the pairs of their Bézier patches
+  whose control points' boxes overlap until each is dropped, or flat with
+  normals provably never parallel (so no closed loop of the intersection
+  hides inside it), and converges one seed from each pair that no traced
+  curve crosses yet. Isolated loops smaller than the spacing of the old
+  seed grid are now found, and two bicubic 6×6 surfaces crossing in six
+  curves take 3.4 ms, from 24 ms. Other surfaces keep the grid seeds, and
+  so does a B-spline pair whose search runs out of budget (overlapping
+  surfaces). A seed counts as lying on a traced curve by its distance to
+  the traced points rather than to the fitted curve.
+- Mixed elementary and B-spline pairs without sampling (#40):
+  `intersect_curve_surface` and `intersect_curve_curve` on an elementary
+  curve or surface against a B-spline curve or surface, either way
+  round, convert the elementary shape to its exact rational B-spline and
+  run the Bézier piece-pair search, so they report `Complete` or
+  `Incomplete` instead of `Sampled`. A circle, ellipse, sphere or torus
+  is converted whole and a trimmed curve over its range; a line,
+  parabola, hyperbola, plane, cylinder or cone over the part inside the
+  box of the B-spline's control points grown by a margin, which holds
+  every hit, and a cone whose apex lies in it as two patches, one per
+  nappe. Parameters are reported on the elementary shape itself. A
+  circle against a bicubic surface is about 58× faster (84 µs, from
+  4.9 ms), a circle against a cubic 4.4× (15 µs, from 66 µs), a cubic
+  against a cylinder 1.4× (62 µs, from 84 µs). `curve_curve_extrema`
+  searches a segment against a B-spline the same way, 2× faster (29 µs,
+  from 58 µs); a curved elementary curve or a full line against a
+  B-spline stays `Sampled`, as the grid is faster there. Two elementary
+  shapes stay `Sampled`. The new `ParametricCurve3D::as_elementary` and
+  `ParametricSurface::as_elementary` (default `None`) expose the
+  elementary shape behind a curve or surface. See ADR 0007.
 
 ### Fixed
 
@@ -123,6 +373,10 @@ the Python distribution are versioned in lockstep.
   projection within `tol.confusion` of the seam (along the curve) reports
   `0` whichever side it was found from, in every intersection and
   projection of a circle or ellipse.
+- `marching_intersection` keeps the curves that run into a parameter
+  bound (#30). Their traces crept along the bound in steps too short to
+  fit, and the whole curve was dropped: on two B-spline surfaces, open
+  curves crossing the domain went missing. A trace now ends on the bound.
 
 ## [0.31.0] - 2026-10-12
 
@@ -864,7 +1118,8 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/GabrielJMS/geomcore/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.32.0
 [0.31.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.31.0
 [0.30.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.30.0
 [0.29.0]: https://github.com/GabrielJMS/geomcore/releases/tag/v0.29.0

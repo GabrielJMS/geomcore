@@ -41,8 +41,9 @@ Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
 
 The numeric curve–curve extrema and intersection and the marching
 intersection evaluate through `eval_d1` and `eval_d2`, which made them
-12–17% faster on B-splines; the numeric curve–surface intersection spends
-its time projecting seeds onto the surface and is unchanged.
+12–17% faster on B-splines; the numeric curve–surface intersection spent
+its time projecting seeds onto the surface and was unchanged (see
+[below](#curvesurface-intersection-on-b-splines) for its B-spline path).
 
 # Intersection entry point
 
@@ -159,4 +160,146 @@ Reproduce with:
 
 ```sh
 cargo bench --bench discretization
+```
+
+# Curve–surface intersection on B-splines
+
+`benches/intersect_curve_surface.rs` times `intersect_curve_surface` for 64
+cubic B-spline curves against one bicubic B-spline surface (6×6 poles
+`(i, j, sin(0.7 i j))`, knots `[0, 1, 2, 3]` with multiplicities
+`[4, 1, 1, 4]`). Each curve rises from `z = -2` to `z = 2` along a wavy
+path over the surface, so most cross it once.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per curve.
+
+| search | time / curve |
+|---|---|
+| sampled (before) | ~2.78 ms |
+| Bézier piece pairs (after) | ~35 µs |
+
+The sampled search projected 128 curve samples onto the surface and
+refined the 24 closest, whatever the shapes. The piece-pair search, about
+80 times faster, only looks where the control-point boxes of a curve span
+and a surface patch overlap, and drops a pair as soon as their hulls part;
+each hit then costs a few halvings and one short Newton run. Tangencies
+and overlaps still exhaust its budget and pay for both searches.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_curve_surface
+```
+
+# Curve–curve intersection and extrema on B-splines
+
+`benches/intersect_curve_curve.rs` times `intersect_curve_curve` on 64
+pairs of cubic B-spline curves in one plane, one crossing the square
+`[0, 5]^2` from left to right and the other from bottom to top along wavy
+paths, so that every pair crosses at least once; and `curve_curve_extrema`
+on 64 pairs of skew cubic B-spline curves, wavy in all three directions,
+one above the other.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12), with the machine otherwise busy: both
+searches ran back to back under the same load, so their ratio holds
+better than their absolute times. Times are per pair.
+
+| query | grid (before) | Bézier piece pairs (after) |
+|---|---|---|
+| `intersect_curve_curve`, crossing pairs | ~157 µs | ~9.1 µs |
+| `curve_curve_extrema`, skew pairs | ~167 µs | ~55 µs |
+
+The grid search refined the local minima of a 32×32 sampling of the
+distance, whatever the shapes. For an intersection, the piece-pair search,
+about 17 times faster, only looks where the control-point boxes of two
+spans overlap and drops a pair as soon as their hulls part; each hit then
+costs a few halvings and one short Gauss–Newton run. Extrema must still
+visit every pair of spans, since every local minimum is reported, so the
+gain is about 3 times: a pair is dropped once the distance provably falls
+along one curve throughout it or bends like a saddle, and solved once it
+is provably convex. Tangencies, overlaps and other valleys of equal
+distance exhaust the search's budget and pay for both searches.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_curve_curve
+```
+
+# Marching intersection of B-splines
+
+`benches/marching_intersection.rs` times `marching_intersection` on two
+bicubic B-spline surfaces (6×6 poles over `[0, 5]^2`, knots `[0, 1, 2,
+3]` with multiplicities `[4, 1, 1, 4]`), with heights `sin(0.7 i j)` and
+`0.5 cos(1.3 i) cos(1.1 j)` at their poles `(i, j)`. They cross in six
+curves: five open across the footprint and one closed loop.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per call.
+
+| seeds | time | curves traced |
+|---|---|---|
+| grid (before) | ~24.2 ms | 4 of 6 |
+| grid, traces ending on the bounds | ~24.5 ms | 6 |
+| Bézier patch pairs (after) | ~3.4 ms | 6 |
+
+The grid seeds project 625 samples of each surface onto the other and
+converge every distance minimum; before traces ended on a parameter
+bound, two curves running into the bounds were dropped. The patch-pair
+search halves the pairs of patches whose boxes overlap until each is
+dropped or small enough to seed from, about 4000 visits of a few hundred
+nanoseconds; most leaves lie on a curve traced already and are skipped
+by a box test against the traced points, so about half the time goes to
+the search and most of the rest to tracing the six curves.
+
+Reproduce with:
+
+```sh
+cargo bench --bench marching_intersection
+```
+
+# Mixed elementary and B-spline intersections
+
+The same two benches time an elementary shape against a B-spline,
+converted to its exact rational B-spline and searched by Bézier piece
+pairs instead of sampled. `intersect_curve_surface`: the 64 cubic curves
+above against a cylinder of radius 2 about the vertical axis through the
+footprint's centre, and 64 circles of radius 0.6 to 1.2 standing across
+the bicubic surface in vertical planes of random directions.
+`intersect_curve_curve`: 64 circles of radius 1 to 2 in the plane of the
+crossing pairs against the first curve of each pair. `curve_curve_extrema`:
+64 ellipses of radii 2 and 1, tilted at random 1 to 2 above the plane,
+their halves `[0, π]`, and the lines along their major axes, whole and
+over `[-2, 2]`, against the lower curve of each skew pair.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12). Times are per curve or pair.
+
+| query | sampled (before) | after |
+|---|---|---|
+| `intersect_curve_surface`, cubic × cylinder | ~84 µs | ~62 µs |
+| `intersect_curve_surface`, circle × bicubic | ~4.9 ms | ~84 µs |
+| `intersect_curve_curve`, circle × cubic | ~66 µs | ~15 µs |
+| `curve_curve_extrema`, segment × cubic | ~58 µs | ~29 µs |
+| `curve_curve_extrema`, ellipse × cubic | ~66 µs | unchanged, sampled |
+| `curve_curve_extrema`, half ellipse × cubic | ~116 µs | unchanged, sampled |
+| `curve_curve_extrema`, line × cubic | ~33 µs | unchanged, sampled |
+
+Every search run here ends complete. A circle against a surface gains
+most, about 58 times: the sampled search projected 128 points of the
+circle onto the surface, each projection a search of its own. Against a
+cylinder the gain is smaller, as the cylinder's quarter-turn patches are
+large and rational, and their boxes overlap much of each curve. The
+extrema search beats the grid on a segment only: on a whole ellipse it
+took ~270 µs (a maximum of the distance along the closed curve for every
+point of the cubic, and loose bounds on rational pieces), on a half
+ellipse ~145 µs, and on a full line ~42 µs against the exact reduction
+to the cubic alone, so those pairs stay sampled.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_curve_surface -- "cylinder|circle_bspline_surface" --warm-up-time 1 --measurement-time 3
+cargo bench --bench intersect_curve_curve -- "_bspline$" --warm-up-time 1 --measurement-time 3
 ```

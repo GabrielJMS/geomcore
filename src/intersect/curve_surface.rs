@@ -1,7 +1,9 @@
 //! Numeric curve-surface intersection for any parametric curve and
-//! surface: sampled seeds refined by Newton iteration.
+//! surface: sampled seeds refined by Newton iteration, or Bézier piece
+//! pairs on B-splines.
 
-use super::CurveSurfaceHit;
+use super::curve_surface_hull::CurveSurfaceHits;
+use super::{CurveSurfaceHit, mixed};
 use crate::Tolerance;
 use crate::curves::ParametricCurve3D;
 use crate::math::{brent_minimum, newton_3d};
@@ -23,6 +25,35 @@ use crate::surfaces::ParametricSurface;
 /// ([`Intersect::intersect`](crate::Intersect::intersect)) when
 /// classification (tangent, coincident) matters.
 ///
+/// The hits are [`Completeness::Sampled`](crate::Completeness::Sampled):
+/// a hit between samples, or whose Newton iteration strays, can be
+/// missed.
+///
+/// A B-spline curve, or a trimmed curve over one (see
+/// [`ParametricCurve3D::as_bspline`]), against a B-spline surface is
+/// searched without sampling: the curve's knot spans over its range and
+/// the surface's knot-span patches are Bézier pieces, and the pairs of
+/// pieces whose control points' boxes overlap are halved until each is
+/// proven apart or provably holds at most one hit, which Newton iteration
+/// from the pair's centre then reaches. So is a B-spline against an
+/// elementary shape (see [`ParametricCurve3D::as_elementary`] and
+/// [`ParametricSurface::as_elementary`]), either way round, converted to
+/// its exact rational B-spline. A hit lies on the B-spline, so within
+/// the box of its control points: a circle, ellipse, sphere or torus is
+/// converted whole, a trimmed curve over its range, and a line,
+/// parabola, hyperbola, plane, cylinder or cone over the part inside
+/// that box grown by a margin. A cone whose apex lies in it becomes two
+/// patches, one per nappe, each ending on the apex. Parameters are
+/// reported on the shapes themselves, within their ranges (a periodic
+/// one within its period). When every pair settles, the hits are
+/// [`Completeness::Complete`](crate::Completeness::Complete). A pair that
+/// never separates (a tangency, an overlap, a hit at a singular point),
+/// or a search that runs out of its budget of halvings, leaves them
+/// [`Completeness::Incomplete`](crate::Completeness::Incomplete), with
+/// the reason and the regions where hits may be missing; the hits are
+/// then those found, together with the sampled search's hits that do not
+/// merge into them.
+///
 /// # Examples
 ///
 /// ```
@@ -33,8 +64,36 @@ use crate::surfaces::ParametricSurface;
 /// assert_eq!(hits.len(), 2);
 /// assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
 /// assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
+/// assert!(!hits.is_complete());
+///
+/// // A B-spline segment through the sphere: the search proves both hits.
+/// use geomcore::BSplineCurve3D;
+/// let poles = vec![Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)];
+/// let segment = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+/// let hits = intersect_curve_surface(&segment, &sphere, Tolerance::DEFAULT);
+/// assert_eq!(hits.len(), 2);
+/// assert!(hits.is_complete());
 /// ```
-pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> Vec<CurveSurfaceHit>
+pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> CurveSurfaceHits
+where
+    C: ParametricCurve3D,
+    S: ParametricSurface,
+{
+    if let Some(mut hits) = mixed::curve_surface(curve, surface, tol) {
+        if !hits.is_complete() {
+            hits.add_sampled(sampled_curve_surface(curve, surface, tol), tol);
+        }
+        return hits;
+    }
+    CurveSurfaceHits::sampled(sampled_curve_surface(curve, surface, tol))
+}
+
+/// The sampled search of [`intersect_curve_surface`].
+pub(super) fn sampled_curve_surface<C, S>(
+    curve: &C,
+    surface: &S,
+    tol: Tolerance,
+) -> Vec<CurveSurfaceHit>
 where
     C: ParametricCurve3D,
     S: ParametricSurface,

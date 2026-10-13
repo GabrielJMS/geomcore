@@ -13,9 +13,9 @@ use pyo3::types::PyModule;
 
 use geomcore::Intersect;
 use geomcore::curves::{
-    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D,
-    InterpParametrization, Line2D, Line3D, Parabola3D, ParametricCurve3D, PointExtrema2D,
-    PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D,
+    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D, Line2D, Line3D,
+    Parabola3D, ParametricCurve3D, PointExtrema2D, PointExtrema3D, PointParametrization,
+    TrimmedCurve2D, TrimmedCurve3D,
 };
 use geomcore::intersect_curve_surface;
 use geomcore::marching_intersection;
@@ -70,10 +70,10 @@ fn check_surface_order(du: u32, dv: u32) -> PyResult<()> {
     }
 }
 
-fn parse_parametrization(s: &str) -> PyResult<InterpParametrization> {
+fn parse_parametrization(s: &str) -> PyResult<PointParametrization> {
     match s {
-        "chordal" => Ok(InterpParametrization::Chordal),
-        "centripetal" => Ok(InterpParametrization::Centripetal),
+        "chordal" => Ok(PointParametrization::Chordal),
+        "centripetal" => Ok(PointParametrization::Centripetal),
         _ => Err(PyValueError::new_err(
             "parametrization must be 'chordal' or 'centripetal'",
         )),

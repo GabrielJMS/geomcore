@@ -25,6 +25,10 @@ _Avoid_: inside (reserved for polygons), containment for anything other than thi
 **B-spline**:
 A curve or surface defined by poles, knots and optional weights. Every curve or surface is either elementary or a B-spline.
 
+**Bounding box**:
+The axis-aligned box around a curve or surface, used to cull pairs before intersecting them. An elementary shape's box is the tightest, touching the shape on every side; a B-spline's comes from its control points, holding the shape but possibly loose. An unbounded shape has none. A box encloses a point and overlaps another box.
+_Avoid_: AABB, bbox, extent, contains or inside (reserved) for a point in a box
+
 ## Precision
 
 **Model size**:
@@ -49,6 +53,10 @@ _Avoid_: fallback, approximate intersection
 
 **Not analytic**:
 The outcome when an exact intersection has no closed form for the given configuration. The caller decides whether to run a numeric intersection.
+
+**Completeness**:
+Whether a numeric intersection's hits, or the distance minima of numeric curve–curve extrema, are all of them. Complete: the search proved that no other hit exists. Incomplete: it did not settle everywhere, and says why (its budget ran out, or pieces never separated at a tangent contact or an overlap) and the regions where hits may be missing. Sampled: the hits were found from samples, so nothing is proven.
+_Avoid_: converged, exact (reserved for exact intersections), fallback
 
 **Coincident**:
 The outcome when two shapes overlap entirely, so their intersection is a whole shape rather than curves or points.

@@ -127,6 +127,61 @@ pub trait ParametricSurface {
 
     /// Returns whether `point` lies on the surface.
     fn contains(&self, point: Point3D, tol: Tolerance) -> bool;
+
+    /// The surface as a B-spline, or `None` for any other surface.
+    ///
+    /// Numeric algorithms such as
+    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// to work on the B-spline's polynomial patches. Default
+    /// implementation: `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::{BSplineSurface, ParametricSurface, Surface};
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let poles = vec![
+    ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    ///     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)],
+    /// ];
+    /// let (knots, mults) = (vec![0.0, 1.0], vec![2, 2]);
+    /// let patch =
+    ///     BSplineSurface::new(1, 1, poles, knots.clone(), mults.clone(), knots, mults, false, false)
+    ///         .unwrap();
+    /// let surface = Surface::from(&patch);
+    /// assert_eq!(surface.as_bspline(), Some(&patch));
+    ///
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(ParametricSurface::as_bspline(&plane), None);
+    /// ```
+    fn as_bspline(&self) -> Option<&BSplineSurface> {
+        None
+    }
+
+    /// The surface as an elementary surface, or `None` for any other
+    /// surface.
+    ///
+    /// Numeric algorithms such as
+    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// to convert the surface to an exact B-spline when the curve is one.
+    /// Default implementation: `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::{ElementarySurface, ParametricSurface};
+    /// use geomcore::{Point3D, Sphere};
+    ///
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+    /// assert_eq!(
+    ///     ParametricSurface::as_elementary(&sphere),
+    ///     Some(ElementarySurface::Sphere(sphere))
+    /// );
+    /// ```
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        None
+    }
 }
 
 impl ParametricSurface for Plane {
@@ -164,6 +219,10 @@ impl ParametricSurface for Plane {
 
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         Plane::eval_points(self, uvs)
+    }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Some(ElementarySurface::Plane(*self))
     }
 }
 
@@ -203,6 +262,10 @@ impl ParametricSurface for Cylinder {
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         Cylinder::eval_points(self, uvs)
     }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Some(ElementarySurface::Cylinder(*self))
+    }
 }
 
 impl ParametricSurface for Cone {
@@ -240,6 +303,10 @@ impl ParametricSurface for Cone {
 
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         Cone::eval_points(self, uvs)
+    }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Some(ElementarySurface::Cone(*self))
     }
 }
 
@@ -279,6 +346,10 @@ impl ParametricSurface for Sphere {
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         Sphere::eval_points(self, uvs)
     }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Some(ElementarySurface::Sphere(*self))
+    }
 }
 
 impl ParametricSurface for Torus {
@@ -316,6 +387,10 @@ impl ParametricSurface for Torus {
 
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         Torus::eval_points(self, uvs)
+    }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Some(ElementarySurface::Torus(*self))
     }
 }
 
@@ -498,6 +573,17 @@ impl ParametricSurface for Surface {
             Surface::Torus(s) => s.eval_points(uvs),
             Surface::BSpline(s) => s.eval_points(uvs),
         }
+    }
+
+    fn as_bspline(&self) -> Option<&BSplineSurface> {
+        match self {
+            Surface::BSpline(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Surface::as_elementary(self)
     }
 }
 
@@ -720,6 +806,10 @@ impl ParametricSurface for ElementarySurface {
             ElementarySurface::Sphere(s) => s.eval_points(uvs),
             ElementarySurface::Torus(s) => s.eval_points(uvs),
         }
+    }
+
+    fn as_elementary(&self) -> Option<ElementarySurface> {
+        Some(*self)
     }
 }
 

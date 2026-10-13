@@ -30,8 +30,20 @@ harness = false
 name = "discretization"
 harness = false
 
+[[bench]]
+name = "intersect_curve_surface"
+harness = false
+
+[[bench]]
+name = "intersect_curve_curve"
+harness = false
+
+[[bench]]
+name = "marching_intersection"
+harness = false
+
 [workspace]
 members = [".", "geomcore-py"]
 
 [workspace.package]
-version = "0.31.0"
+version = "0.32.0"
