@@ -2401,6 +2401,30 @@ mod tests {
     }
 
     #[test]
+    fn test_refine_knots_beyond_the_stack() {
+        // Enough knots that the rational poles refine on the heap; the
+        // spans so short that only points and tangents are compared, the
+        // second derivatives losing digits to their scale.
+        let curve = clamped_curve(true);
+        let (first, last) = curve.bounds();
+        let knots: Vec<f64> = (1..200)
+            .map(|i| first + (last - first) * i as f64 / 200.0)
+            .collect();
+        let refined = curve.refine_knots(&knots).unwrap();
+        assert_eq!(refined.poles().len(), curve.poles().len() + knots.len());
+        for i in 0..=100 {
+            let u = first + (last - first) * i as f64 / 100.0;
+            let (p, d1) = curve.eval_d1(u);
+            let (q, e1) = refined.eval_d1(u);
+            assert!(p.distance(q) <= 1e-12 * 8.0, "u = {u}: {p:?} vs {q:?}");
+            assert!(
+                (d1 - e1).magnitude() <= 1e-11 * d1.magnitude().max(8.0),
+                "u = {u}: {d1:?} vs {e1:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_refine_knots_random_curves() {
         let mut state = 0x9e37_79b9_7f4a_7c15u64;
         let mut next = move || {

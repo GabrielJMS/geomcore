@@ -19,7 +19,8 @@ the Python distribution are versioned in lockstep.
   `to_bezier_patches`). Every edit keeps the shape, works on clamped,
   unclamped and periodic directions, and keeps the poles it does not
   touch bit for bit, rational ones included. Rational poles are edited
-  in homogeneous form; errors are `KnotInsertionError` and
+  in homogeneous form, up to 128 of them on the stack, so that inserting
+  64 knots allocates only the result; errors are `KnotInsertionError` and
   `DegreeElevationError`. Inserting knots into a direction of degree 1
   to 3 blends its poles on a path fixed to the degree, whose loops
   unroll: 64 knots go in 8 to 19% faster than through the general path.

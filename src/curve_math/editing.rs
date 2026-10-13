@@ -775,10 +775,11 @@ fn insert_rational(
     insert: &[f64],
 ) -> Result<(KnotVector, Vec<Point3D>, Vec<f64>), KnotInsertionError> {
     /// The most homogeneous poles refined on the stack, in an array of
-    /// `SMALL` or `STACK` of them: few enough to zero quickly, the smaller
-    /// for the few slots of one or two knots.
+    /// `SMALL`, `MEDIUM` or `STACK` of them: few enough to zero quickly,
+    /// the smallest for the few slots of one or two knots.
     const SMALL: usize = 16;
-    const STACK: usize = 64;
+    const MEDIUM: usize = 48;
+    const STACK: usize = 128;
     check_insertion(knots, insert)?;
     let Merged {
         flat: new_flat,
@@ -796,11 +797,14 @@ fn insert_rational(
     let window_row = slots.len() * width;
     let size = rows * (n + s) * width;
     let (mut new_points, mut new_weights) = (Vec::with_capacity(size), Vec::with_capacity(size));
-    let (mut small, mut stack);
+    let (mut small, mut medium, mut stack);
     let mut heap = Vec::new();
     let window = if rows * window_row <= SMALL {
         small = [[0.0; 4]; SMALL];
         &mut small[..rows * window_row]
+    } else if rows * window_row <= MEDIUM {
+        medium = [[0.0; 4]; MEDIUM];
+        &mut medium[..rows * window_row]
     } else if rows * window_row <= STACK {
         stack = [[0.0; 4]; STACK];
         &mut stack[..rows * window_row]
