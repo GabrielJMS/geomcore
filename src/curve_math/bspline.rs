@@ -284,6 +284,50 @@ impl KnotVector {
         (span, u)
     }
 
+    /// The first pole and the non-zero basis functions at `u` of a
+    /// non-periodic direction of degree 1 to 3, unrolled, or `None` for
+    /// another direction.
+    #[inline(always)]
+    pub(crate) fn low_degree_basis(&self, u: f64) -> Option<(usize, [f64; 4])> {
+        if self.periodic {
+            return None;
+        }
+        match self.degree {
+            1 => Some(self.basis_of_degree::<1>(u)),
+            2 => Some(self.basis_of_degree::<2>(u)),
+            3 => Some(self.basis_of_degree::<3>(u)),
+            _ => None,
+        }
+    }
+
+    /// [`KnotVector::basis`] of a non-periodic direction of the constant
+    /// degree `P` (at most 3): the span's knots sliced once and every loop
+    /// unrolled.
+    #[inline(always)]
+    fn basis_of_degree<const P: usize>(&self, u: f64) -> (usize, [f64; 4]) {
+        let (span, u) = self.span(u);
+        // The 2P knots around the span, `around[k] = flat[span + 1 - P + k]`.
+        let around = &self.flat[span + 1 - P..span + 1 + P];
+        // Built as values rather than written in a loop, so that they stay
+        // in registers: stored one by one, the unrolled recurrence would
+        // reload them in pairs, which waits on the stores.
+        let left: [f64; 4] = std::array::from_fn(|j| {
+            if (1..=P).contains(&j) {
+                u - around[P - j]
+            } else {
+                0.0
+            }
+        });
+        let right: [f64; 4] = std::array::from_fn(|j| {
+            if (1..=P).contains(&j) {
+                around[P - 1 + j] - u
+            } else {
+                0.0
+            }
+        });
+        (span - P, basis_values_of::<P>(&left, &right))
+    }
+
     /// Index of the first of the `degree + 1` poles weighting the span
     /// containing `u`, wrapping modulo the pole count in a periodic
     /// direction (see [`KnotVector::span_knots`]).
@@ -830,32 +874,11 @@ pub(crate) fn point(knots: &KnotVector, poles: Poles, u: f64) -> Point3D {
 }
 
 /// [`point`] of a non-periodic direction of degree `P` (at most 3): the
-/// knots and poles of the span sliced once, every loop over constant
-/// bounds, so unrolled.
+/// span's poles sliced once and every loop over constant bounds, so
+/// unrolled.
 #[inline(always)]
 fn point_of_degree<const P: usize>(knots: &KnotVector, poles: Poles, u: f64) -> Point3D {
-    let (span, u) = knots.span(u);
-    // The 2P knots around the span, `around[k] = flat[span + 1 - P + k]`.
-    let around = &knots.flat[span + 1 - P..span + 1 + P];
-    // Built as values rather than written in a loop, so that they stay in
-    // registers: stored one by one, the unrolled recurrence would reload
-    // them in pairs, which waits on the stores.
-    let left: [f64; 4] = std::array::from_fn(|j| {
-        if (1..=P).contains(&j) {
-            u - around[P - j]
-        } else {
-            0.0
-        }
-    });
-    let right: [f64; 4] = std::array::from_fn(|j| {
-        if (1..=P).contains(&j) {
-            around[P - 1 + j] - u
-        } else {
-            0.0
-        }
-    });
-    let values = basis_values_of::<P>(&left, &right);
-    let first = span - P;
+    let (first, values) = knots.basis_of_degree::<P>(u);
     let points = &poles.points[first..=first + P];
     // Each sum starts from its first term, sparing additions of zero.
     match poles.weights {

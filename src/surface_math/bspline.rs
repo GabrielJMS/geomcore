@@ -35,6 +35,17 @@ pub(crate) fn surface_point(
     u: f64,
     v: f64,
 ) -> Point3D {
+    if let (Some((first_u, u_values)), Some((first_v, v_values))) =
+        (u_knots.low_degree_basis(u), v_knots.low_degree_basis(v))
+    {
+        return point_from_basis(
+            u_knots,
+            v_knots,
+            poles,
+            (first_u, &u_values),
+            (first_v, &v_values),
+        );
+    }
     if u_knots.degree().max(v_knots.degree()) < curve::SMALL {
         point_sized::<{ curve::SMALL }>(u_knots, v_knots, poles, u, v)
     } else {
@@ -54,14 +65,33 @@ fn point_sized<const N: usize>(
     let mut v_values = [0.0f64; N];
     let first_u = u_knots.basis(u, &mut u_values);
     let first_v = v_knots.basis(v, &mut v_values);
+    point_from_basis(
+        u_knots,
+        v_knots,
+        poles,
+        (first_u, &u_values),
+        (first_v, &v_values),
+    )
+}
+
+/// The point from each direction's first pole and non-zero basis
+/// functions.
+#[inline]
+fn point_from_basis<const N: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
+    (first_u, u_values): (usize, &[f64; N]),
+    (first_v, v_values): (usize, &[f64; N]),
+) -> Point3D {
     let s = match poles.weights {
         Some(weights) => point_sum::<N, true>(
             u_knots,
             v_knots,
             poles.points,
             weights,
-            &u_values,
-            &v_values,
+            u_values,
+            v_values,
             first_u,
             first_v,
         ),
@@ -70,8 +100,8 @@ fn point_sized<const N: usize>(
             v_knots,
             poles.points,
             &[],
-            &u_values,
-            &v_values,
+            u_values,
+            v_values,
             first_u,
             first_v,
         ),
@@ -836,6 +866,56 @@ fn sum<const N: usize, const ORDER: usize, const RATIONAL: bool>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- fixed-degree point path ----
+
+    #[test]
+    fn test_point_of_low_degrees_matches_general_path() {
+        // Every pair of degrees 1 to 3 and a degree-4 direction, which takes
+        // the general path, over uneven knots, polynomial and rational.
+        for (p, q) in [(1, 3), (2, 2), (3, 1), (3, 3), (2, 4)] {
+            let direction = |degree: usize| {
+                KnotVector::new(
+                    degree,
+                    vec![0.0, 0.4, 0.55, 1.0],
+                    vec![degree as u32 + 1, 1, 1, degree as u32 + 1],
+                    false,
+                    degree + 3,
+                )
+                .unwrap()
+            };
+            let (u_knots, v_knots) = (direction(p), direction(q));
+            let count = (p + 3) * (q + 3);
+            let poles: Vec<Point3D> = (0..count)
+                .map(|k| {
+                    let (i, j) = ((k / (q + 3)) as f64, (k % (q + 3)) as f64);
+                    Point3D::new(i, j, (0.7 * i + 1.3 * j).sin())
+                })
+                .collect();
+            let weights: Vec<f64> = (0..count).map(|k| 0.6 + 0.2 * (k % 4) as f64).collect();
+            for weights in [None, Some(weights.as_slice())] {
+                let view = Poles {
+                    points: &poles,
+                    weights,
+                };
+                for a in -1..=11 {
+                    for b in -1..=11 {
+                        let (u, v) = (a as f64 / 10.0, b as f64 / 10.0);
+                        let point = surface_point(&u_knots, &v_knots, view, u, v);
+                        let [s, ..] = surface_derivatives::<0>(&u_knots, &v_knots, view, u, v);
+                        let close = (point.x - s.x)
+                            .abs()
+                            .max((point.y - s.y).abs())
+                            .max((point.z - s.z).abs());
+                        assert!(
+                            close < 1e-12,
+                            "degrees {p} {q} at ({u}, {v}): {point:?} vs {s:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // ---- bilinear patch by hand: the smallest tensor product ----
 
