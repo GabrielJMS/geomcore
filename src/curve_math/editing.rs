@@ -278,6 +278,37 @@ pub(crate) trait Edit {
         lanes: Lanes,
     ) -> Result<(KnotVector, Vec<Point3D>, Vec<f64>), Self::Error> {
         let edited = self.apply(direction, Weighted { points, weights }, lanes)?;
+        let (rows, width) = lanes.rows_and_width();
+        let new_row = edited.knots.pole_count() * width;
+        if edited.start == 0 && edited.poles.len() == rows * new_row {
+            // Every pole laid out as stored: the points take over the
+            // homogeneous poles' storage, which they fit in, and the kept
+            // ones are copied back to keep every bit.
+            let mut new_weights: Vec<f64> = edited.poles.iter().map(|h| h[3]).collect();
+            let mut new_points: Vec<Point3D> = (edited.poles.into_iter())
+                .map(|[x, y, z, w]| {
+                    let inverse = 1.0 / w;
+                    Point3D::new(x * inverse, y * inverse, z * inverse)
+                })
+                .collect();
+            new_points.shrink_to_fit();
+            let old_row = points.len() / rows;
+            let (leading, trailing) = (edited.kept.leading * width, edited.kept.trailing * width);
+            for row in 0..rows {
+                let (new, old) = (row * new_row, row * old_row);
+                for (new, old) in [
+                    (new..new + leading, old..old + leading),
+                    (
+                        new + new_row - trailing..new + new_row,
+                        old + old_row - trailing..old + old_row,
+                    ),
+                ] {
+                    new_points[new.clone()].copy_from_slice(&points[old.clone()]);
+                    new_weights[new].copy_from_slice(&weights[old]);
+                }
+            }
+            return Ok((edited.knots, new_points, new_weights));
+        }
         let (points, weights) = from_homogeneous(&edited, points, weights, lanes);
         Ok((edited.knots, points, weights))
     }
