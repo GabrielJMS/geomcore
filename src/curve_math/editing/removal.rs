@@ -221,11 +221,7 @@ fn run<P: Deviation>(
     remove: &[f64],
     max: f64,
 ) -> Option<Run<P>> {
-    let (rows, width) = if lanes.consecutive {
-        (lanes.count, 1)
-    } else {
-        (1, lanes.count)
-    };
+    let (rows, width) = lanes.rows_and_width();
     let (first, last) = direction.bounds();
     let flat = direction.flat().to_vec();
     let mut removal = Removal {

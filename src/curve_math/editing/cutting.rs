@@ -153,11 +153,7 @@ impl<P: Pole> Stretch<P> {
     ) -> Stretch<P> {
         let p = direction.degree();
         let n = direction.pole_count();
-        let (rows, width) = if lanes.consecutive {
-            (lanes.count, 1)
-        } else {
-            (1, lanes.count)
-        };
+        let (rows, width) = lanes.rows_and_width();
         let (old, first_slot) = stretch_knots(direction, cuts[0], cuts[cuts.len() - 1]);
         let old_count = old.len() - p - 1;
         let mut stretch = Vec::with_capacity(rows * old_count * width);

@@ -209,13 +209,7 @@ fn from_homogeneous(
     weights: &[f64],
     lanes: Lanes,
 ) -> (Vec<Point3D>, Vec<f64>) {
-    // Consecutive lanes are rows of their own; interleaved ones one row of
-    // slots, a slot holding every lane's pole.
-    let (rows, width) = if lanes.consecutive {
-        (lanes.count, 1)
-    } else {
-        (1, lanes.count)
-    };
+    let (rows, width) = lanes.rows_and_width();
     let (old_row, new_row) = (points.len() / rows, edited.knots.pole_count() * width);
     let (leading, trailing) = (edited.kept.leading * width, edited.kept.trailing * width);
     let changed_count = new_row - leading - trailing;
@@ -272,6 +266,21 @@ pub(crate) trait Edit {
         poles: S,
         lanes: Lanes,
     ) -> Result<Edited<S::Pole>, Self::Error>;
+
+    /// The edited direction, points and weights of a rational shape:
+    /// [`Edit::apply`] on homogeneous points.
+    #[allow(clippy::type_complexity)] // the parts a B-spline stores
+    fn apply_rational(
+        &self,
+        direction: &KnotVector,
+        points: &[Point3D],
+        weights: &[f64],
+        lanes: Lanes,
+    ) -> Result<(KnotVector, Vec<Point3D>, Vec<f64>), Self::Error> {
+        let edited = self.apply(direction, Weighted { points, weights }, lanes)?;
+        let (points, weights) = from_homogeneous(&edited, points, weights, lanes);
+        Ok((edited.knots, points, weights))
+    }
 }
 
 /// The edited direction, poles and weights: `edit` run on the points, or
@@ -290,9 +299,9 @@ pub(crate) fn edit<E: Edit>(
             Ok((edited.knots, edited.poles, None))
         }
         Some(weights) => {
-            let edited = edit.apply(direction, Weighted { points, weights }, lanes)?;
-            let (points, weights) = from_homogeneous(&edited, points, weights, lanes);
-            Ok((edited.knots, points, Some(weights)))
+            let (knots, points, weights) =
+                edit.apply_rational(direction, points, weights, lanes)?;
+            Ok((knots, points, Some(weights)))
         }
     }
 }
@@ -377,6 +386,21 @@ impl Edit for Insertion<'_> {
     ) -> Result<Edited<S::Pole>, KnotInsertionError> {
         insert_knots(direction, poles, lanes, self.0)
     }
+
+    fn apply_rational(
+        &self,
+        direction: &KnotVector,
+        points: &[Point3D],
+        weights: &[f64],
+        lanes: Lanes,
+    ) -> Result<(KnotVector, Vec<Point3D>, Vec<f64>), KnotInsertionError> {
+        if direction.is_periodic() || self.0.is_empty() {
+            let edited = insert_knots(direction, Weighted { points, weights }, lanes, self.0)?;
+            let (points, weights) = from_homogeneous(&edited, points, weights, lanes);
+            return Ok((edited.knots, points, weights));
+        }
+        insert_rational(direction, points, weights, lanes, self.0)
+    }
 }
 
 /// Where the poles of `count` independent rows sit in a flat buffer, each
@@ -415,6 +439,17 @@ impl Lanes {
         }
     }
 
+    /// The rows of slots the lanes make and the poles in a slot:
+    /// consecutive lanes are rows of their own, interleaved ones one row
+    /// of slots, a slot holding every lane's pole.
+    fn rows_and_width(self) -> (usize, usize) {
+        if self.consecutive {
+            (self.count, 1)
+        } else {
+            (1, self.count)
+        }
+    }
+
     /// Index of pole `i` of lane `lane`, each lane holding `poles` poles.
     #[inline]
     fn index(self, lane: usize, i: usize, poles: usize) -> usize {
@@ -437,20 +472,7 @@ fn insert_knots<S: Source>(
     lanes: Lanes,
     insert: &[f64],
 ) -> Result<Edited<S::Pole>, KnotInsertionError> {
-    let (first, last) = knots.bounds();
-    if insert.iter().any(|x| !x.is_finite()) {
-        return Err(KnotInsertionError::NonFiniteKnot);
-    }
-    if insert.windows(2).any(|w| w[1] < w[0]) {
-        return Err(KnotInsertionError::KnotsNotSorted);
-    }
-    if insert
-        .first()
-        .zip(insert.last())
-        .is_some_and(|(&lo, &hi)| lo < first || hi > last)
-    {
-        return Err(KnotInsertionError::KnotOutOfRange);
-    }
+    check_insertion(knots, insert)?;
     if insert.is_empty() {
         let kept = Kept {
             leading: knots.pole_count(),
@@ -465,46 +487,15 @@ fn insert_knots<S: Source>(
         });
     }
     let (degree, periodic) = (knots.degree(), knots.is_periodic());
-    let seam = |x: f64| periodic && (x == first || x == last);
-    let seam_count = insert.iter().filter(|&&x| seam(x)).count();
-    let interior: &[f64] = if seam_count == 0 {
-        insert
-    } else {
-        // Sorted, so the seam values are the ones at either end.
-        let leading = insert.iter().take_while(|&&x| x == first).count();
-        &insert[leading..leading + insert.len() - seam_count]
-    };
-    // A clamped end may have one more copy than the degree, a periodic
-    // seam no more than it.
-    if seam_count > 0 && knots.multiplicities()[0] as usize + seam_count > degree {
-        return Err(KnotInsertionError::MultiplicityTooLarge);
-    }
-    let old_flat = knots.flat();
-    let mut new_flat = Vec::with_capacity(old_flat.len() + insert.len());
-    if seam_count > 0 {
-        new_flat.extend(std::iter::repeat_n(first, seam_count));
-    }
-    let ends = (old_flat[0], old_flat[old_flat.len() - 1]);
-    let mut copied = 0;
-    for &x in interior {
-        let at = copied + old_flat[copied..].iter().take_while(|&&k| k <= x).count();
-        append(&mut new_flat, &old_flat[copied..at]);
-        new_flat.push(x);
-        copied = at;
-        // The copies of `x` so far all end the new knots.
-        let copies = new_flat.iter().rev().take_while(|&&k| k == x).count();
-        let clamped_end = !periodic && (x == ends.0 || x == ends.1);
-        if copies > degree + usize::from(clamped_end) {
-            return Err(KnotInsertionError::MultiplicityTooLarge);
-        }
-    }
-    append(&mut new_flat, &old_flat[copied..]);
-    if seam_count > 0 {
-        new_flat.extend(std::iter::repeat_n(last, seam_count));
-    }
+    let Merged {
+        flat: new_flat,
+        seam_count,
+        interior,
+    } = merged_knots(knots, insert)?;
+    let interior = &insert[interior];
     let (poles, kept, start) = if periodic {
         // Seam insertions first, at the seam's first copy.
-        let mut tiled_insert = vec![first; seam_count];
+        let mut tiled_insert = vec![knots.bounds().0; seam_count];
         tiled_insert.extend_from_slice(interior);
         let poles = refine_periodic(
             degree,
@@ -544,6 +535,87 @@ fn insert_knots<S: Source>(
     })
 }
 
+/// Checks the knots to insert into `knots`: finite, non-decreasing and
+/// within its bounds.
+fn check_insertion(knots: &KnotVector, insert: &[f64]) -> Result<(), KnotInsertionError> {
+    let (first, last) = knots.bounds();
+    if insert.iter().any(|x| !x.is_finite()) {
+        return Err(KnotInsertionError::NonFiniteKnot);
+    }
+    if insert.windows(2).any(|w| w[1] < w[0]) {
+        return Err(KnotInsertionError::KnotsNotSorted);
+    }
+    if insert
+        .first()
+        .zip(insert.last())
+        .is_some_and(|(&lo, &hi)| lo < first || hi > last)
+    {
+        return Err(KnotInsertionError::KnotOutOfRange);
+    }
+    Ok(())
+}
+
+/// New flat knots: see [`merged_knots`].
+struct Merged {
+    flat: Vec<f64>,
+    /// How many of the inserted knots are seam copies, on a periodic
+    /// direction.
+    seam_count: usize,
+    /// The indices of the other inserted knots.
+    interior: std::ops::Range<usize>,
+}
+
+/// The flat knots of `knots` with `insert` (checked by
+/// [`check_insertion`]) merged in, an inserted knot after the old copies of its value,
+/// checking that no multiplicity grows too large: at most the degree, one
+/// more at a clamped end.
+fn merged_knots(knots: &KnotVector, insert: &[f64]) -> Result<Merged, KnotInsertionError> {
+    let (first, last) = knots.bounds();
+    let (degree, periodic) = (knots.degree(), knots.is_periodic());
+    let seam = |x: f64| periodic && (x == first || x == last);
+    let seam_count = insert.iter().filter(|&&x| seam(x)).count();
+    let interior = if seam_count == 0 {
+        0..insert.len()
+    } else {
+        // Sorted, so the seam values are the ones at either end.
+        let leading = insert.iter().take_while(|&&x| x == first).count();
+        leading..leading + insert.len() - seam_count
+    };
+    // A clamped end may have one more copy than the degree, a periodic
+    // seam no more than it.
+    if seam_count > 0 && knots.multiplicities()[0] as usize + seam_count > degree {
+        return Err(KnotInsertionError::MultiplicityTooLarge);
+    }
+    let old_flat = knots.flat();
+    let mut new_flat = Vec::with_capacity(old_flat.len() + insert.len());
+    if seam_count > 0 {
+        new_flat.extend(std::iter::repeat_n(first, seam_count));
+    }
+    let ends = (old_flat[0], old_flat[old_flat.len() - 1]);
+    let mut copied = 0;
+    for &x in &insert[interior.clone()] {
+        let at = copied + old_flat[copied..].iter().take_while(|&&k| k <= x).count();
+        append(&mut new_flat, &old_flat[copied..at]);
+        new_flat.push(x);
+        copied = at;
+        // The copies of `x` so far all end the new knots.
+        let copies = new_flat.iter().rev().take_while(|&&k| k == x).count();
+        let clamped_end = !periodic && (x == ends.0 || x == ends.1);
+        if copies > degree + usize::from(clamped_end) {
+            return Err(KnotInsertionError::MultiplicityTooLarge);
+        }
+    }
+    append(&mut new_flat, &old_flat[copied..]);
+    if seam_count > 0 {
+        new_flat.extend(std::iter::repeat_n(last, seam_count));
+    }
+    Ok(Merged {
+        flat: new_flat,
+        seam_count,
+        interior,
+    })
+}
+
 /// Appends `values` to `out`: a few values, as most runs between inserted
 /// knots are, are cheaper pushed one by one than copied.
 #[inline]
@@ -578,11 +650,7 @@ fn refine<S: Source>(
 ) -> (Vec<S::Pole>, usize) {
     let (p, s) = (degree, x.len());
     let n = old.len() - p - 1;
-    let (rows, width) = if lanes.consecutive {
-        (lanes.count, 1)
-    } else {
-        (1, lanes.count)
-    };
+    let (rows, width) = lanes.rows_and_width();
     if s == 0 {
         let mut out = Vec::with_capacity(poles.len());
         poles.extend_to(0..poles.len(), &mut out);
@@ -666,6 +734,81 @@ impl Width for One {
     fn get(self) -> usize {
         1
     }
+}
+
+/// [`insert_knots`] of the nonempty `insert` into a non-periodic rational
+/// direction: the new direction, points and weights.
+///
+/// The slots [`refine`] writes are refined in homogeneous form, on the
+/// stack if few enough as for most insertions, and the changed ones
+/// divided back into the new arrays, the kept ones copied as they are.
+#[allow(clippy::type_complexity)] // the parts a B-spline stores
+fn insert_rational(
+    knots: &KnotVector,
+    points: &[Point3D],
+    weights: &[f64],
+    lanes: Lanes,
+    insert: &[f64],
+) -> Result<(KnotVector, Vec<Point3D>, Vec<f64>), KnotInsertionError> {
+    /// The most homogeneous poles refined on the stack: few enough to
+    /// zero quickly.
+    const STACK: usize = 64;
+    check_insertion(knots, insert)?;
+    let new_flat = merged_knots(knots, insert)?.flat;
+    let (p, old, s) = (knots.degree(), knots.flat(), insert.len());
+    let n = knots.pole_count();
+    let (rows, width) = lanes.rows_and_width();
+    let (a, last) = spans(p, old, insert);
+    let b = last + 1;
+    let slots = refined_slots(p, n, s, (a, last), true);
+    // Slots up to `a - p` and from `b - 1 + s` are kept.
+    let (leading, trailing_start) = (a - p + 1, b - 1 + s);
+    let source = Weighted { points, weights };
+    let window_row = slots.len() * width;
+    let size = rows * (n + s) * width;
+    let (mut new_points, mut new_weights) = (Vec::with_capacity(size), Vec::with_capacity(size));
+    let mut stack = [[0.0; 4]; STACK];
+    let mut heap = Vec::new();
+    let window = if rows * window_row <= STACK {
+        &mut stack[..rows * window_row]
+    } else {
+        heap.resize(rows * window_row, [0.0; 4]);
+        &mut heap[..]
+    };
+    for (row, out) in window.chunks_exact_mut(window_row).enumerate() {
+        // The window's kept slots, for the refinement to read.
+        let at = |i: usize| (i - slots.start) * width;
+        let old_slot = |i: usize| (row * n + i) * width;
+        source.copy_to(old_slot(slots.start), &mut out[..at(leading)]);
+        source.copy_to(old_slot(b - 1), &mut out[at(trailing_start)..]);
+        let row_poles = source.slice(old_slot(0)..old_slot(n));
+        if lanes.consecutive {
+            refine_slots(p, old, &new_flat, insert, row_poles, One, slots.start, out);
+        } else {
+            refine_slots(
+                p,
+                old,
+                &new_flat,
+                insert,
+                row_poles,
+                width,
+                slots.start,
+                out,
+            );
+        }
+        new_points.extend_from_slice(&points[old_slot(0)..old_slot(leading)]);
+        new_weights.extend_from_slice(&weights[old_slot(0)..old_slot(leading)]);
+        let changed = &out[at(leading)..at(trailing_start)];
+        new_points.extend(changed.iter().map(|&[x, y, z, w]| {
+            let inverse = 1.0 / w;
+            Point3D::new(x * inverse, y * inverse, z * inverse)
+        }));
+        new_weights.extend(changed.iter().map(|h| h[3]));
+        new_points.extend_from_slice(&points[old_slot(b - 1)..old_slot(n)]);
+        new_weights.extend_from_slice(&weights[old_slot(b - 1)..old_slot(n)]);
+    }
+    let knots = KnotVector::from_flat(p, new_flat, false);
+    Ok((knots, new_points, new_weights))
 }
 
 /// [`refine`] of the changed slots of `out`, the new slots from `start`
