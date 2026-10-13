@@ -44,7 +44,7 @@ the parameter is arc length — equal steps in $u$ are equal steps in
 space.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/06-a-straight-line-with-equally-spaced.svg" alt="A line with equally spaced parameter marks">
+<img src="../../assets/figures/elementary-geometry/06-a-straight-line-with-equally-spaced.svg" alt="A line with equally spaced parameter marks">
 <figcaption>A line. u is the signed distance from the origin along the direction.</figcaption>
 </figure>
 
@@ -80,7 +80,7 @@ The parameter is the angle from X, and arc length is $R\,u$ — the only
 conic whose parameter is proportional to distance travelled.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/07-a-circle-with-a-point-resolved.svg" alt="A circle with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/07-a-circle-with-a-point-resolved.svg" alt="A circle with a point resolved into its coordinates">
 <figcaption>A circle. Equal steps in u are equal steps along the curve.</figcaption>
 </figure>
 
@@ -117,7 +117,7 @@ either: speed runs from $b$ to $a$, so uniform steps bunch at the ends
 of the major axis.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/08-an-ellipse-with-a-point-resolved.svg" alt="An ellipse with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/08-an-ellipse-with-a-point-resolved.svg" alt="An ellipse with a point resolved into its coordinates">
 <figcaption>An ellipse. u is the eccentric angle, not the polar angle.</figcaption>
 </figure>
 
@@ -150,7 +150,7 @@ $\cosh$ is never below 1, so this map reaches **one branch** only; the
 mirror branch is a second curve no value of $u$ reaches.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/09-one-branch-of-a-hyperbola-with.svg" alt="One branch of a hyperbola">
+<img src="../../assets/figures/elementary-geometry/09-one-branch-of-a-hyperbola-with.svg" alt="One branch of a hyperbola">
 <figcaption>A hyperbola. One branch only — the opposite branch is a second curve.</figcaption>
 </figure>
 
@@ -184,7 +184,7 @@ $Y$, the curve opens along $X$. $f$ is the focal distance — focus at
 $(f, 0)$, directrix $x = -f$.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/10-a-parabola-with-focus-directrix-and.svg" alt="A parabola with focus and directrix">
+<img src="../../assets/figures/elementary-geometry/10-a-parabola-with-focus-directrix-and.svg" alt="A parabola with focus and directrix">
 <figcaption>A parabola. The parameter is the offset along Y; the axis is X.</figcaption>
 </figure>
 
@@ -224,7 +224,7 @@ Both parameters are lengths; the only surface with no angles, no
 periodicity, no degenerate point.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/11-a-plane-with-a-point-resolved.svg" alt="A plane with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/11-a-plane-with-a-point-resolved.svg" alt="A plane with a point resolved into its coordinates">
 <figcaption>A plane. u and v are lengths along the frame directions.</figcaption>
 </figure>
 
@@ -256,7 +256,7 @@ $u$ is an angle, $v$ a length — the only surface whose parameters are
 not the same kind of quantity.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/12-a-cylinder-with-a-point-resolved.svg" alt="A cylinder with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/12-a-cylinder-with-a-point-resolved.svg" alt="A cylinder with a point resolved into its coordinates">
 <figcaption>A cylinder. u goes round the axis, v along it.</figcaption>
 </figure>
 
@@ -292,7 +292,7 @@ convention ($v = z$, $\rho = R + v\tan\alpha$) shares the cylinder's
 parameter plane instead; the article compares both.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/13-a-cone-with-a-point-resolved.svg" alt="A cone with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/13-a-cone-with-a-point-resolved.svg" alt="A cone with a point resolved into its coordinates">
 <figcaption>A cone. The radius grows along the ruling and reaches zero at the apex.</figcaption>
 </figure>
 
@@ -333,7 +333,7 @@ equator. Both ends of $v$ are degenerate — at the poles the whole
 circle of longitudes collapses onto the axis.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/15-a-sphere-with-a-point-resolved.svg" alt="A sphere with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/15-a-sphere-with-a-point-resolved.svg" alt="A sphere with a point resolved into its coordinates">
 <figcaption>A sphere. The red dots are the poles, where a whole circle of u is one point.</figcaption>
 </figure>
 
@@ -368,7 +368,7 @@ pairs of edges glued — is itself a torus, the most faithful
 rectangle of the five.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/16-a-torus-with-a-point-resolved.svg" alt="A torus with a point resolved into its coordinates">
+<img src="../../assets/figures/elementary-geometry/16-a-torus-with-a-point-resolved.svg" alt="A torus with a point resolved into its coordinates">
 <figcaption>A torus. v rounds the tube, changing the radius that u sweeps about the axis.</figcaption>
 </figure>
 
@@ -432,7 +432,7 @@ at these three places:
 - **Self-intersection** — the spindle torus above.
 
 <figure class="geom-fig">
-<img src="../assets/figures/elementary-geometry/17-the-parameter-rectangles-of-the-plane.svg" alt="The five parameter rectangles with seams and degenerate edges">
+<img src="../../assets/figures/elementary-geometry/17-the-parameter-rectangles-of-the-plane.svg" alt="The five parameter rectangles with seams and degenerate edges">
 <figcaption>The five domains. Dashed border: unbounded. Shaded edge: seam, two edges one curve. Red edge: a whole edge that is a single point.</figcaption>
 </figure>
 

@@ -18,7 +18,7 @@ hierarchy and solves each convex piece with bounded Newton — every
 minimum found, however close two basins sit.
 
 <figure class="geom-fig">
-<img src="../assets/figures/projection/01-four-feet-on-an-ellipse.svg" alt="Four foot points on an ellipse">
+<img src="../../assets/figures/projection/01-four-feet-on-an-ellipse.svg" alt="Four foot points on an ellipse">
 <figcaption>Four feet on an ellipse: one query point, four stationary points, one nearest.</figcaption>
 </figure>
 
@@ -27,7 +27,7 @@ An ellipse already shows why `extrema` (all minima) and
 have four feet, and the nearest is only one of them.
 
 <figure class="geom-fig">
-<img src="../assets/figures/projection/02-three-candidates-on-a-b-spline.svg" alt="Candidate feet on a B-spline">
+<img src="../../assets/figures/projection/02-three-candidates-on-a-b-spline.svg" alt="Candidate feet on a B-spline">
 <figcaption>On a B-spline the candidates come from every span — the search must cover all of them to never miss the nearest.</figcaption>
 </figure>
 

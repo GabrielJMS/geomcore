@@ -15,7 +15,7 @@ fundamental form stretches it — so every downstream algorithm must know
 what the parameters measure (see [Elementary](../geometry/elementary.md#what-the-parameters-measure)).
 
 <figure class="geom-fig">
-<img src="../assets/figures/parametric-domain/01-a-uniform-grid-drawn-on-the.svg" alt="A uniform grid drawn on the surface">
+<img src="../../assets/figures/parametric-domain/01-a-uniform-grid-drawn-on-the.svg" alt="A uniform grid drawn on the surface">
 <figcaption>A uniform grid in (u, v) is not uniform on the surface: the metric stretches it.</figcaption>
 </figure>
 
@@ -42,22 +42,22 @@ means, and anything farther off is `CurveNotOnSurface`.
 A few images across the surfaces:
 
 <figure class="geom-fig">
-<img src="../assets/figures/parametric-domain/02-three-curves-on-a-cylinder.svg" alt="Curves on a cylinder">
+<img src="../../assets/figures/parametric-domain/02-three-curves-on-a-cylinder.svg" alt="Curves on a cylinder">
 <figcaption>On a cylinder: coaxial circles are horizontal lines, generators vertical ones.</figcaption>
 </figure>
 
 <figure class="geom-fig">
-<img src="../assets/figures/parametric-domain/04-three-curves-on-a-cone.svg" alt="Curves on a cone">
+<img src="../../assets/figures/parametric-domain/04-three-curves-on-a-cone.svg" alt="Curves on a cone">
 <figcaption>On a cone the same construction winds with the growing radius.</figcaption>
 </figure>
 
 <figure class="geom-fig">
-<img src="../assets/figures/parametric-domain/05-three-curves-on-a-sphere.svg" alt="Curves on a sphere">
+<img src="../../assets/figures/parametric-domain/05-three-curves-on-a-sphere.svg" alt="Curves on a sphere">
 <figcaption>On a sphere: parallels are horizontal, meridians vertical — and both pinch at the poles.</figcaption>
 </figure>
 
 <figure class="geom-fig">
-<img src="../assets/figures/parametric-domain/06-three-curves-on-a-torus.svg" alt="Curves on a torus">
+<img src="../../assets/figures/parametric-domain/06-three-curves-on-a-torus.svg" alt="Curves on a torus">
 <figcaption>On a torus both families close: the rectangle glues into the surface itself.</figcaption>
 </figure>
 

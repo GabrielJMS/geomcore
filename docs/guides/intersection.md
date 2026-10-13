@@ -17,7 +17,7 @@ and ellipses keep their parameters inside `bounds()` and sorted, and a
 tangency is decided by distance, not by root separation:
 
 <figure class="geom-fig">
-<img src="../assets/figures/intersection/01-a-tangency-is-a-distance.svg" alt="Tangency decided by distance">
+<img src="../../assets/figures/intersection/01-a-tangency-is-a-distance.svg" alt="Tangency decided by distance">
 <figcaption>A tangency is a distance: a closest approach within confusion is one tangent hit, not two hits or none.</figcaption>
 </figure>
 
@@ -54,12 +54,12 @@ coplanar (up to four hits) or in crossing planes (met on the shared
 line). A few landmarks:
 
 <figure class="geom-fig">
-<img src="../assets/figures/intersection/15-plane-and-plane.svg" alt="Plane and plane intersection">
+<img src="../../assets/figures/intersection/15-plane-and-plane.svg" alt="Plane and plane intersection">
 <figcaption>Plane against plane: a line, or Parallel / Coincident classification by tolerance.</figcaption>
 </figure>
 
 <figure class="geom-fig">
-<img src="../assets/figures/intersection/16-plane-and-sphere.svg" alt="Plane and sphere intersection">
+<img src="../../assets/figures/intersection/16-plane-and-sphere.svg" alt="Plane and sphere intersection">
 <figcaption>Plane against sphere: a circle, a tangent point, or empty — classified, not sampled.</figcaption>
 </figure>
 
@@ -109,12 +109,12 @@ overlapping patch pairs, so isolated loops smaller than the seed grid
 are found there.
 
 <figure class="geom-fig">
-<img src="../assets/figures/intersection/31-marching-round-a-cylinder-and-a-sphere.svg" alt="Marching round a cylinder and a sphere">
+<img src="../../assets/figures/intersection/31-marching-round-a-cylinder-and-a-sphere.svg" alt="Marching round a cylinder and a sphere">
 <figcaption>Marching: seed, trace along the tangent, correct back onto both surfaces, fit the trail.</figcaption>
 </figure>
 
 <figure class="geom-fig">
-<img src="../assets/figures/intersection/33-the-loop-no-edge-sees.svg" alt="An isolated loop">
+<img src="../../assets/figures/intersection/33-the-loop-no-edge-sees.svg" alt="An isolated loop">
 <figcaption>The hard case: an isolated loop no seed grid line crosses. Patch-pair seeding finds these on B-spline pairs.</figcaption>
 </figure>
 
