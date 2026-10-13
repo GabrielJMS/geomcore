@@ -586,47 +586,38 @@ fn merged_knots(knots: &KnotVector, insert: &[f64]) -> Result<Merged, KnotInsert
     if seam_count > 0 && knots.multiplicities()[0] as usize + seam_count > degree {
         return Err(KnotInsertionError::MultiplicityTooLarge);
     }
-    let old_flat = knots.flat();
-    let mut new_flat = Vec::with_capacity(old_flat.len() + insert.len());
-    if seam_count > 0 {
-        new_flat.extend(std::iter::repeat_n(first, seam_count));
-    }
-    let ends = (old_flat[0], old_flat[old_flat.len() - 1]);
-    let mut copied = 0;
+    let old = knots.flat();
+    let ends = (old[0], old[old.len() - 1]);
+    // The seam copies go at both ends of the period block.
+    let total = old.len() + insert.len() + seam_count;
+    // Filled rather than zero-allocated, which is slower for few knots.
+    let mut flat = Vec::with_capacity(total);
+    flat.resize(total, 0.0);
+    let out = &mut flat[..];
+    out[..seam_count].fill(first);
+    let (mut written, mut copied) = (seam_count, 0);
     for &x in &insert[interior.clone()] {
-        let at = copied + old_flat[copied..].iter().take_while(|&&k| k <= x).count();
-        append(&mut new_flat, &old_flat[copied..at]);
-        new_flat.push(x);
-        copied = at;
+        while copied < old.len() && old[copied] <= x {
+            out[written] = old[copied];
+            (written, copied) = (written + 1, copied + 1);
+        }
+        out[written] = x;
+        written += 1;
         // The copies of `x` so far all end the new knots.
-        let copies = new_flat.iter().rev().take_while(|&&k| k == x).count();
+        let copies = out[..written].iter().rev().take_while(|&&k| k == x).count();
         let clamped_end = !periodic && (x == ends.0 || x == ends.1);
         if copies > degree + usize::from(clamped_end) {
             return Err(KnotInsertionError::MultiplicityTooLarge);
         }
     }
-    append(&mut new_flat, &old_flat[copied..]);
-    if seam_count > 0 {
-        new_flat.extend(std::iter::repeat_n(last, seam_count));
-    }
+    let rest = old.len() - copied;
+    out[written..written + rest].copy_from_slice(&old[copied..]);
+    out[written + rest..].fill(last);
     Ok(Merged {
-        flat: new_flat,
+        flat,
         seam_count,
         interior,
     })
-}
-
-/// Appends `values` to `out`: a few values, as most runs between inserted
-/// knots are, are cheaper pushed one by one than copied.
-#[inline]
-fn append<T: Copy>(out: &mut Vec<T>, values: &[T]) {
-    if values.len() <= 4 {
-        for &value in values {
-            out.push(value);
-        }
-    } else {
-        out.extend_from_slice(values);
-    }
 }
 
 /// The poles after inserting the knots `x` into the flat knots `old` in
