@@ -63,6 +63,13 @@ ones before them. If you'd like to help with any of it, see
 - **0.31** — Exact intersections between any two conics, coplanar or in
   crossing planes, with hit multiplicity; faster `contains` on ellipses,
   parabolas and hyperbolas; faster tangency detection through quartics.
+- **0.32** — B-spline editing: knot insertion and removal, degree
+  elevation, splitting, extraction and reversal, Bézier pieces, arc
+  length, and fitting within a deviation. Elementary curves and surfaces
+  as exact B-splines; bounding boxes. Curve discretization with proven
+  deviations. B-spline intersections and extrema pruned with Bézier hulls,
+  reporting whether their search was complete. Faster evaluation, fitting
+  and projection.
 
 ## Next
 
