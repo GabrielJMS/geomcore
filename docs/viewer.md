@@ -2,29 +2,41 @@
 
 Live [geomcore-viewer](https://github.com/GabrielJMS/geomcore-viewer) instance
 below — Babylon.js 3D pane plus a PixiJS 2D pane for parameter-space curves.
-The demo scene shows a circle coaxial with a cylinder and its 2D p-curve image.
+The demo scene shows an ellipse, a circle, a hyperbola and a line, with the points where they meet.
 
 <iframe src="https://gabrieljms.github.io/geomcore-viewer/" width="100%" height="640" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="geomcore-viewer live demo"></iframe>
 
 ## From your own code
 
-The embedded page above is static. For incremental, live-updating plots,
-serve the viewer locally and push entities from Rust or Python:
+The embedded page above is static. From a script, a debugger or a notebook, `view.add(...)` sends geomcore objects to a local viewer tab that updates live:
 
-```python
-from geomcore_viewer import Viewer, sample_curve
-import math
+=== "Python"
 
-viewer = Viewer()
-viewer.add_curve3d("circle", sample_curve(circle.eval_point, 0.0, 2 * math.pi))
-server = viewer.serve("path/to/frontend/dist")  # opens the browser, updates live
-```
+    ```python
+    from geomcore import Frame3D, Point3D, Vector3D
+    from geomcore.curves import Circle3D, Ellipse3D
+    import geomcore_viewer as gv
 
-```rust
-use geomcore_viewer::{Client, Entity};
+    view = gv.Viewer("Ellipse ∩ circle")          # starts the local viewer and opens a tab
+    E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
+    C = Circle3D(Point3D(2, 1, 0), Vector3D.z(), 1.5)
+    view.add(E, label="E")
+    view.add(C, label="C")
+    view.add(C.intersect(E), label="P")           # intersection points P₁, P₂
+    ```
 
-let client = Client::local();
-client.add(&Entity::curve3d("circle", "#ff5533", points))?;
-```
+=== "Rust"
+
+    ```rust
+    use geomcore::{Circle3D, Cylinder, Point3D, Vector3D};
+    use geomcore_viewer::{Geom, Opts, Viewer};
+
+    let mut view = Viewer::new("A circle on a cylinder")?;
+    let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0)?;
+    let ring = Circle3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z, 2.0)?;
+    let s = view.add(Geom::from(&cylinder).window(None, Some([-2.0, 2.0])), Opts::new().label("S"))?;
+    view.add(&ring, Opts::new().label("C"))?;
+    view.pcurve(&ring.parametrize_on(cylinder)?, &s, Opts::new().label("C in (u, v)"))?;
+    ```
 
 Protocol details: [protocol/SCENE.md](https://github.com/GabrielJMS/geomcore-viewer/blob/main/protocol/SCENE.md).

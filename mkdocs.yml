@@ -7,14 +7,18 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - content.tabs.link
 
 markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight
+  - pymdownx.tabbed:
+      alternate_style: true
   - tables
 
 nav:
   - Home: index.md
+  - NURBS: nurbs.md
   - Viewer: viewer.md
   - Python: python.md
   - Roadmap: roadmap.md
