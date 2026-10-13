@@ -190,3 +190,39 @@ Reproduce with:
 ```sh
 cargo bench --bench intersect_curve_surface
 ```
+
+# Curve–curve intersection and extrema on B-splines
+
+`benches/intersect_curve_curve.rs` times `intersect_curve_curve` on 64
+pairs of cubic B-spline curves in one plane, one crossing the square
+`[0, 5]^2` from left to right and the other from bottom to top along wavy
+paths, so that every pair crosses at least once; and `curve_curve_extrema`
+on 64 pairs of skew cubic B-spline curves, wavy in all three directions,
+one above the other.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
+--measurement-time 3` (2026-10-12), with the machine otherwise busy: both
+searches ran back to back under the same load, so their ratio holds
+better than their absolute times. Times are per pair.
+
+| query | grid (before) | Bézier piece pairs (after) |
+|---|---|---|
+| `intersect_curve_curve`, crossing pairs | ~157 µs | ~9.1 µs |
+| `curve_curve_extrema`, skew pairs | ~167 µs | ~55 µs |
+
+The grid search refined the local minima of a 32×32 sampling of the
+distance, whatever the shapes. For an intersection, the piece-pair search,
+about 17 times faster, only looks where the control-point boxes of two
+spans overlap and drops a pair as soon as their hulls part; each hit then
+costs a few halvings and one short Gauss–Newton run. Extrema must still
+visit every pair of spans, since every local minimum is reported, so the
+gain is about 3 times: a pair is dropped once the distance provably falls
+along one curve throughout it or bends like a saddle, and solved once it
+is provably convex. Tangencies, overlaps and other valleys of equal
+distance exhaust the search's budget and pay for both searches.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_curve_curve
+```

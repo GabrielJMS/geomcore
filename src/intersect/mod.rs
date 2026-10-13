@@ -20,6 +20,7 @@ use crate::{
 mod completeness;
 mod conic;
 mod curve_curve;
+mod curve_curve_hull;
 mod curve_surface;
 mod curve_surface_hull;
 mod dispatch;

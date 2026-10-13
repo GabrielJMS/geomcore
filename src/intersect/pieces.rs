@@ -144,6 +144,11 @@ impl Pool {
         })
     }
 
+    /// Makes room for `slots` more slots without reallocating.
+    pub(crate) fn reserve(&mut self, slots: usize) {
+        self.data.reserve(slots * self.size);
+    }
+
     /// Releases `slot` for reuse.
     pub(crate) fn release(&mut self, slot: usize) {
         self.free.push(slot);
@@ -219,17 +224,88 @@ pub(crate) fn box_size(b: &Aabb) -> f64 {
 /// Whether the projections of `a` and `b` onto `axis` are more than `gap`
 /// (times the axis length) apart: then so are their convex hulls.
 pub(crate) fn apart_along(axis: [f64; 3], a: &[[f64; 3]], b: &[[f64; 3]], gap: f64) -> bool {
-    let range = |points: &[[f64; 3]]| {
-        points
-            .iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), x| {
-                let y = dot(*x, axis);
-                (lo.min(y), hi.max(y))
-            })
-    };
-    let ((a0, a1), (b0, b1)) = (range(a), range(b));
+    let ((a0, a1), (b0, b1)) = (extent(a, axis), extent(b, axis));
     let gap = gap * dot(axis, axis).sqrt();
     a0 > b1 + gap || b0 > a1 + gap
+}
+
+/// The range of the projections of `points` onto `axis`.
+pub(crate) fn extent(points: &[[f64; 3]], axis: [f64; 3]) -> (f64, f64) {
+    points
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), x| {
+            let y = dot(*x, axis);
+            (lo.min(y), hi.max(y))
+        })
+}
+
+/// Whether two curve pieces, with the Euclidean control points `a` and
+/// `b`, meet at most once.
+///
+/// Two meetings `A(s1) = B(t1)` and `A(s2) = B(t2)` would give `(s2 - s1)
+/// c = (t2 - t1) d` with `c` and `d` integrals of tangents along the
+/// pieces, so in their tangent cones: some tangent of one would be
+/// parallel to one of the other. The cones (see [`tangent_cone`]) rule
+/// that out when the angle between their axes, as lines, exceeds the sum
+/// of their half-angles.
+pub(crate) fn curves_meet_at_most_once(a: &[[f64; 3]], b: &[[f64; 3]]) -> bool {
+    let (Some((axis_a, half_a)), Some((axis_b, half_b))) = (tangent_cone(a), tangent_cone(b))
+    else {
+        return false;
+    };
+    let between = norm(cross(axis_a, axis_b)).atan2(dot(axis_a, axis_b).abs());
+    half_a + half_b < between
+}
+
+/// The cone holding the tangents of the curve piece with the Euclidean
+/// control points `points`, positive combinations of their consecutive
+/// differences (see [`meets_at_most_once`]): its axis, the chord, and its
+/// half-angle, below a right angle; `None` if the chord vanishes or a
+/// difference turns away from it.
+fn tangent_cone(points: &[[f64; 3]]) -> Option<([f64; 3], f64)> {
+    let axis = unit(sub(points[points.len() - 1], points[0]))?;
+    let mut half = 0.0f64;
+    for d in points.windows(2).filter_map(|w| unit(sub(w[1], w[0]))) {
+        let cos = dot(d, axis);
+        if cos <= 0.0 {
+            return None;
+        }
+        half = half.max(norm(cross(d, axis)).atan2(cos));
+    }
+    Some((axis, half))
+}
+
+/// The sign of `(x - y) . d` over every `x` in the convex hull of
+/// `curve`, `y` in that of `other`, and `d` tangent to the curve piece
+/// with the Euclidean control points `curve`: `Some(1.0)` or
+/// `Some(-1.0)` when the hulls are apart along each consecutive
+/// difference of `curve` (tangents are positive combinations of them, see
+/// [`meets_at_most_once`]), always in the same order; else `None`, the
+/// product possibly vanishing.
+///
+/// With `x` on the curve and `y` on another shape, the product is the
+/// derivative along the curve of half their squared distance.
+pub(crate) fn tangent_sign(curve: &[[f64; 3]], other: &[[f64; 3]]) -> Option<f64> {
+    let mut sign = None;
+    for w in curve.windows(2) {
+        let d = sub(w[1], w[0]);
+        if d == [0.0; 3] {
+            continue;
+        }
+        let ((a0, a1), (b0, b1)) = (extent(curve, d), extent(other, d));
+        let side = if a0 > b1 {
+            1.0
+        } else if a1 < b0 {
+            -1.0
+        } else {
+            return None;
+        };
+        if sign.is_some_and(|s| s != side) {
+            return None;
+        }
+        sign = Some(side);
+    }
+    sign
 }
 
 /// The normal of the plane fitted to the corners of a net of Euclidean
@@ -359,7 +435,7 @@ pub(crate) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],

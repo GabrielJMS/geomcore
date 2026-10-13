@@ -231,6 +231,20 @@ the Python distribution are versioned in lockstep.
   only reads the hits keeps compiling unless it names the `Vec` type;
   call `into_hits()` there.
   See ADR 0007. Python is unchanged and still returns the list of hits.
+- Numeric curve–curve intersection and extrema of B-splines without a
+  sampling grid (#29): `intersect_curve_curve` and `curve_curve_extrema`
+  on two B-spline curves, or trimmed curves over them (owned or
+  borrowed), subdivide the Bézier pieces of both curves. Intersection
+  pairs pieces whose control points' boxes overlap and halves them until
+  each pair meets at most once, then solves it by Gauss–Newton steps:
+  about 17× faster on crossing cubics (9 µs per pair, from 157 µs).
+  Extrema drop the piece pairs where the distance cannot have a minimum
+  and solve those where it is convex: about 3× faster on skew cubics
+  (55 µs per pair, from 167 µs). Both handle rational and periodic
+  B-splines and return the same hits, multiplicities and minima as
+  before, plus crossings and minima the grid could miss between its
+  samples. Tangencies, overlaps and other valleys of equal distance
+  exceed the search's budget and fall back to the grid.
 
 ### Fixed
 

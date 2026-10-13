@@ -387,20 +387,20 @@ fn flat_against(normal: [f64; 3], curve: &[[f64; 3]], patch: &[[f64; 3]], gap: f
 
 /// A parameter interval of the curve or one direction of the surface.
 #[derive(Clone, Copy)]
-struct Range {
-    lo: f64,
-    hi: f64,
-    periodic: bool,
+pub(super) struct Range {
+    pub(super) lo: f64,
+    pub(super) hi: f64,
+    pub(super) periodic: bool,
 }
 
 impl Range {
-    fn slack(self) -> f64 {
+    pub(super) fn slack(self) -> f64 {
         SLACK * (self.hi - self.lo)
     }
 
     /// `x` wrapped into a periodic range (its end reading as its start),
     /// or clamped into the range from within its slack; `None` beyond.
-    fn admit(self, x: f64) -> Option<f64> {
+    pub(super) fn admit(self, x: f64) -> Option<f64> {
         let (lo, hi, slack) = (self.lo, self.hi, self.slack());
         if self.periodic {
             let wrapped = lo + (x - lo).rem_euclid(hi - lo);
