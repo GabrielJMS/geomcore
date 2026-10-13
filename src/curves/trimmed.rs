@@ -6,8 +6,8 @@
 //! topology (edges) of a kernel built on top of geomcore.
 
 use crate::curves::{
-    BSplineCurve3D, Curve2D, Curve3D, Line2D, Line3D, LineConstructionError, ParametricCurve2D,
-    ParametricCurve3D, PointExtrema2D, PointExtrema3D,
+    BSplineCurve3D, Curve2D, Curve3D, ElementaryCurve, Line2D, Line3D, LineConstructionError,
+    ParametricCurve2D, ParametricCurve3D, PointExtrema2D, PointExtrema3D,
 };
 use crate::projection::CurveProjection;
 use crate::{Point2D, Point3D, Tolerance, Vector2D, Vector3D};
@@ -361,6 +361,10 @@ impl<C: ParametricCurve3D> ParametricCurve3D for TrimmedCurve3D<C> {
 
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
         self.basis.as_bspline()
+    }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        self.basis.as_elementary()
     }
 }
 

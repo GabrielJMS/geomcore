@@ -25,6 +25,7 @@ mod curve_surface;
 mod curve_surface_hull;
 mod dispatch;
 mod marching;
+mod mixed;
 mod pieces;
 pub use completeness::{Completeness, IncompleteReason};
 mod surface_surface;

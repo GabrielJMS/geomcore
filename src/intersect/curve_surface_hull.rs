@@ -3,7 +3,7 @@
 //! B-spline surface by subdivision of their Bézier pieces (see
 //! [`bspline_curve_surface`]).
 
-use super::completeness::{Region, box_union, meet, of_unsettled, span};
+use super::completeness::{Region, both, box_union, meet, of_unsettled, span};
 use super::pieces::{
     CurvePieces, Pool, apart_along, bounding_box, box_size, dot, euclidean, meets_at_most_once,
     net_normal, norm, sub,
@@ -49,8 +49,8 @@ use std::ops::Deref;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveSurfaceHits {
-    hits: Vec<CurveSurfaceHit>,
-    completeness: Completeness<CurveSurfaceRegion>,
+    pub(super) hits: Vec<CurveSurfaceHit>,
+    pub(super) completeness: Completeness<CurveSurfaceRegion>,
 }
 
 impl CurveSurfaceHits {
@@ -60,6 +60,26 @@ impl CurveSurfaceHits {
             hits,
             completeness: Completeness::Sampled,
         }
+    }
+
+    /// Hits proven to be all of them.
+    pub(super) fn complete(hits: Vec<CurveSurfaceHit>) -> Self {
+        CurveSurfaceHits {
+            hits,
+            completeness: Completeness::Complete,
+        }
+    }
+
+    /// The hits of two searches of one curve against two parts of a
+    /// surface: those of `other` farther than `sqrt(tol.confusion)` from
+    /// every hit of `self` join them, and so do the regions of both.
+    pub(super) fn join(self, other: CurveSurfaceHits, tol: Tolerance) -> Self {
+        let mut joined = CurveSurfaceHits {
+            hits: self.hits,
+            completeness: both(self.completeness, other.completeness),
+        };
+        joined.add_sampled(other.hits, tol);
+        joined
     }
 
     /// Adds the `sampled` hits farther than `sqrt(tol.confusion)` from
@@ -1326,17 +1346,21 @@ mod tests {
     }
 
     #[test]
-    fn test_other_shapes_are_sampled() {
+    fn test_mixed_shapes_are_settled_and_elementary_pairs_sampled() {
         let surface = wavy(false);
         let cylinder = crate::Cylinder::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
         let ray = segment(Point3D::new(0.0, 0.0, 0.5), Point3D::new(4.0, 0.0, 0.5));
         let hits = intersect_curve_surface(&ray, &cylinder, TOL);
-        assert_eq!(hits.completeness(), &Completeness::Sampled);
+        assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 1);
         let line = crate::Line3D::new(Point3D::new(2.0, 2.0, -1.0), crate::Vector3D::Z).unwrap();
         let hits = intersect_curve_surface(&line, &surface, TOL);
-        assert_eq!(hits.completeness(), &Completeness::Sampled);
+        assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 1);
+        let axis = crate::Line3D::new(Point3D::new(1.0, 0.0, 0.0), crate::Vector3D::X).unwrap();
+        let hits = intersect_curve_surface(&axis, &cylinder, TOL);
+        assert_eq!(hits.completeness(), &Completeness::Sampled);
+        assert_eq!(hits.len(), 2);
     }
 
     #[test]

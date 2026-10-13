@@ -149,6 +149,33 @@ pub trait ParametricCurve3D {
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
         None
     }
+
+    /// The elementary curve this curve evaluates: the curve itself, or the
+    /// basis of a trimmed elementary curve, of which the curve is the
+    /// piece over [`bounds`](Self::bounds). `None` for any other curve.
+    ///
+    /// Numeric algorithms such as
+    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// to convert the curve to an exact B-spline when the other shape is
+    /// one. Default implementation: `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::{ElementaryCurve, ParametricCurve3D, TrimmedCurve3D};
+    /// use geomcore::{BSplineCurve3D, Circle3D, Point3D, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// let arc = TrimmedCurve3D::new(&circle, 0.0, 1.0).unwrap();
+    /// assert_eq!(arc.as_elementary(), Some(ElementaryCurve::Circle(circle)));
+    ///
+    /// let poles = vec![Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// assert_eq!(ParametricCurve3D::as_elementary(&curve), None);
+    /// ```
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        None
+    }
 }
 
 /// Distance extrema from a point to a 3D curve: what a
@@ -211,6 +238,10 @@ impl<C: ParametricCurve3D + ?Sized> ParametricCurve3D for &C {
 
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
         (**self).as_bspline()
+    }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        (**self).as_elementary()
     }
 }
 
@@ -290,6 +321,10 @@ impl ParametricCurve3D for Line3D {
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Line3D::eval_points(self, us)
     }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Some(ElementaryCurve::Line(*self))
+    }
 }
 
 impl ParametricCurve3D for Circle3D {
@@ -311,6 +346,10 @@ impl ParametricCurve3D for Circle3D {
 
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Circle3D::eval_points(self, us)
+    }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Some(ElementaryCurve::Circle(*self))
     }
 }
 
@@ -334,6 +373,10 @@ impl ParametricCurve3D for Ellipse3D {
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Ellipse3D::eval_points(self, us)
     }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Some(ElementaryCurve::Ellipse(*self))
+    }
 }
 
 impl ParametricCurve3D for Parabola3D {
@@ -356,6 +399,10 @@ impl ParametricCurve3D for Parabola3D {
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Parabola3D::eval_points(self, us)
     }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Some(ElementaryCurve::Parabola(*self))
+    }
 }
 
 impl ParametricCurve3D for Hyperbola3D {
@@ -377,6 +424,10 @@ impl ParametricCurve3D for Hyperbola3D {
 
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         Hyperbola3D::eval_points(self, us)
+    }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Some(ElementaryCurve::Hyperbola(*self))
     }
 }
 
@@ -541,6 +592,10 @@ impl ParametricCurve3D for Curve3D {
             _ => None,
         }
     }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Curve3D::as_elementary(self)
+    }
 }
 
 impl PointExtrema3D for Curve3D {
@@ -691,6 +746,10 @@ impl ParametricCurve3D for ElementaryCurve {
             ElementaryCurve::Parabola(c) => c.eval_points(us),
             ElementaryCurve::Hyperbola(c) => c.eval_points(us),
         }
+    }
+
+    fn as_elementary(&self) -> Option<ElementaryCurve> {
+        Some(*self)
     }
 }
 

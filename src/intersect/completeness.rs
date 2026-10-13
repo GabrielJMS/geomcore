@@ -73,6 +73,31 @@ pub(super) fn of_unsettled<R: Region>(regions: Vec<R>, exhausted: bool) -> Compl
     }
 }
 
+/// The completeness of the hits of two searches taken together: complete
+/// when both are, else incomplete with the regions of both, out of budget
+/// if either ran out; sampled if either is.
+pub(super) fn both<R: Region>(a: Completeness<R>, b: Completeness<R>) -> Completeness<R> {
+    use Completeness::{Complete, Incomplete, Sampled};
+    match (a, b) {
+        (Sampled, _) | (_, Sampled) => Sampled,
+        (Complete, other) | (other, Complete) => other,
+        (
+            Incomplete {
+                reason: ra,
+                mut regions,
+            },
+            Incomplete {
+                reason: rb,
+                regions: more,
+            },
+        ) => {
+            regions.extend(more);
+            let exhausted = [ra, rb].contains(&IncompleteReason::BudgetExhausted);
+            of_unsettled(regions, exhausted)
+        }
+    }
+}
+
 /// A region of an incomplete search: parameter ranges on both shapes and
 /// a box in space.
 pub(super) trait Region: Sized {

@@ -277,6 +277,26 @@ the Python distribution are versioned in lockstep.
   so does a B-spline pair whose search runs out of budget (overlapping
   surfaces). A seed counts as lying on a traced curve by its distance to
   the traced points rather than to the fitted curve.
+- Mixed elementary and B-spline pairs without sampling (#40):
+  `intersect_curve_surface` and `intersect_curve_curve` on an elementary
+  curve or surface against a B-spline curve or surface, either way
+  round, convert the elementary shape to its exact rational B-spline and
+  run the Bézier piece-pair search, so they report `Complete` or
+  `Incomplete` instead of `Sampled`. A circle, ellipse, sphere or torus
+  is converted whole and a trimmed curve over its range; a line,
+  parabola, hyperbola, plane, cylinder or cone over the part inside the
+  box of the B-spline's control points grown by a margin, which holds
+  every hit, and a cone whose apex lies in it as two patches, one per
+  nappe. Parameters are reported on the elementary shape itself. A
+  circle against a bicubic surface is about 58× faster (84 µs, from
+  4.9 ms), a circle against a cubic 4.4× (15 µs, from 66 µs), a cubic
+  against a cylinder 1.4× (62 µs, from 84 µs). `curve_curve_extrema`
+  searches a segment against a B-spline the same way, 2× faster (29 µs,
+  from 58 µs); a curved elementary curve or a full line against a
+  B-spline stays `Sampled`, as the grid is faster there. Two elementary
+  shapes stay `Sampled`. The new `ParametricCurve3D::as_elementary` and
+  `ParametricSurface::as_elementary` (default `None`) expose the
+  elementary shape behind a curve or surface. See ADR 0007.
 
 ### Fixed
 

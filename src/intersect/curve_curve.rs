@@ -1,8 +1,8 @@
 //! Numeric curve-curve extrema and intersection for any two parametric
 //! curves: grid-seeded box minimisation of the distance between them.
 
-use super::curve_curve_hull::{self, CurveCurveExtrema, CurveCurveHits};
-use super::{CurveCurveExtremum, CurveCurveHit, curve_surface_hull};
+use super::curve_curve_hull::{CurveCurveExtrema, CurveCurveHits};
+use super::{CurveCurveExtremum, CurveCurveHit, curve_surface_hull, mixed};
 use crate::curves::ParametricCurve3D;
 use crate::math::{newton_min_1d, newton_min_2d};
 use crate::{Point3D, Tolerance, Vector3D};
@@ -276,14 +276,17 @@ where
 /// with its closest point on the second, when that pair belongs to the
 /// family, else a member found by the search.
 ///
-/// Two B-spline curves, or trimmed curves over B-splines (see
-/// [`ParametricCurve3D::as_bspline`]), unless both are straight, are
-/// seeded without a grid: every pair of their Bézier pieces is halved
-/// until the derivatives of the squared distance provably keep a sign
-/// over it (no minimum inside), or its Hessian is provably indefinite, or
-/// provably positive definite, so that it holds at most one minimum,
-/// which Newton's method reaches; the box's edges are searched the same
-/// way along one curve. When every pair settles, the minima are
+/// A B-spline curve, or trimmed curve over one (see
+/// [`ParametricCurve3D::as_bspline`]), against another or against a
+/// segment (a line trimmed to a range, see
+/// [`ParametricCurve3D::as_elementary`]), unless both are straight, is
+/// seeded without a grid, the segment converted to a degree-1 B-spline.
+/// Every pair of their Bézier pieces is halved until the derivatives of
+/// the squared distance provably keep a sign over it (no minimum inside),
+/// or its Hessian is provably indefinite, or provably positive definite,
+/// so that it holds at most one minimum, which Newton's method reaches;
+/// the box's edges are searched the same way along one curve. When every
+/// pair settles, the minima are
 /// [`Completeness::Complete`](crate::Completeness::Complete). A pair that
 /// never settles (a tangent contact or a straight overlap, where the
 /// pieces run along one line within `tol.confusion`), or a search that
@@ -291,8 +294,11 @@ where
 /// overlap along a curved stretch), leaves them
 /// [`Completeness::Incomplete`](crate::Completeness::Incomplete), with the
 /// reason and the regions where minima may be missing; the grid above
-/// then seeds the minimiser too. Any other pair, straight ones included,
-/// is [`Completeness::Sampled`](crate::Completeness::Sampled).
+/// then seeds the minimiser too. Any other pair is
+/// [`Completeness::Sampled`](crate::Completeness::Sampled): two straight
+/// curves, two elementary curves, and a B-spline against a full line or a
+/// curved elementary curve, where the grid is faster than the search on
+/// its exact rational B-spline.
 ///
 /// # Examples
 ///
@@ -331,7 +337,18 @@ where
     B: ParametricCurve3D,
 {
     let (da, db) = (ParamDomain::of(a), ParamDomain::of(b));
-    let minima = match (Straight::of(a, da), Straight::of(b, db)) {
+    let straight = (Straight::of(a, da), Straight::of(b, db));
+    if pieces
+        && !matches!(straight, (Some(_), Some(_)))
+        && let Some((mut seeds, completeness)) = mixed::curve_curve_seeds(a, b, tol)
+    {
+        if !completeness.is_complete() {
+            seeds.extend(box_seeds(a, da, b, db));
+        }
+        let minima = refine_minima(a, da, b, db, seeds, tol);
+        return CurveCurveExtrema::new(minima, completeness);
+    }
+    let minima = match straight {
         (Some(la), Some(lb)) => vec![straight_pair_minimum(a, la, da, b, lb, db, tol)],
         (Some(la), None) if da.is_unbounded() => line_curve_minima(a, la, b, db, tol),
         (None, Some(lb)) if db.is_unbounded() => line_curve_minima(b, lb, a, da, tol)
@@ -342,18 +359,7 @@ where
                 distance: e.distance,
             })
             .collect(),
-        _ => match (a.as_bspline(), b.as_bspline()) {
-            (Some(sa), Some(sb)) if pieces => {
-                let (mut seeds, completeness) =
-                    curve_curve_hull::bspline_minima(sa, da.range(), sb, db.range(), tol);
-                if !completeness.is_complete() {
-                    seeds.extend(box_seeds(a, da, b, db));
-                }
-                let minima = refine_minima(a, da, b, db, seeds, tol);
-                return CurveCurveExtrema::new(minima, completeness);
-            }
-            _ => refine_minima(a, da, b, db, box_seeds(a, da, b, db), tol),
-        },
+        _ => refine_minima(a, da, b, db, box_seeds(a, da, b, db), tol),
     };
     CurveCurveExtrema::sampled(minima)
 }
@@ -766,10 +772,16 @@ fn merge_valleys(
 /// to detect coincidence.
 ///
 /// The hits are [`Completeness::Sampled`](crate::Completeness::Sampled),
-/// except on two B-spline curves, or trimmed curves over B-splines (see
-/// [`ParametricCurve3D::as_bspline`]), which are searched without
-/// extrema: the pairs of their Bézier pieces whose control
-/// points' boxes overlap are halved until each is proven apart or
+/// except where one curve is a B-spline, or trimmed curve over one (see
+/// [`ParametricCurve3D::as_bspline`]), and the other is too, or is an
+/// elementary curve (see [`ParametricCurve3D::as_elementary`]). Such a
+/// pair is searched without extrema, the elementary curve converted to
+/// its exact rational B-spline: a circle or ellipse whole, a trimmed
+/// curve over its range, a line, parabola or hyperbola over the part of
+/// its range inside the box of the other curve's control points, which
+/// holds every hit, grown by a margin. The pairs of their Bézier pieces
+/// whose control points' boxes overlap are halved until each is proven
+/// apart or
 /// provably holds at most one hit, which Gauss-Newton steps from the
 /// pair's centre then reach. When every pair settles, the hits are
 /// [`Completeness::Complete`](crate::Completeness::Complete). A pair that
@@ -781,25 +793,32 @@ fn merge_valleys(
 /// reason and the regions where hits may be missing; the hits are then
 /// those found, together with the hits of the grid-seeded extrema that do
 /// not merge into them.
+/// Parameters are reported on the curves themselves.
 ///
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
+/// use geomcore::{BSplineCurve3D, Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
 /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
 /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
 /// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
 /// assert_eq!(hits.len(), 2);
 /// assert!(!hits.is_complete());
+///
+/// // A B-spline chord across the circle: the search proves both hits.
+/// let poles = vec![Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)];
+/// let chord = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+/// let hits = intersect_curve_curve(&circle, &chord, Tolerance::DEFAULT);
+/// assert_eq!(hits.len(), 2);
+/// assert!(hits.is_complete());
+/// assert!(hits[0].first_param.abs() < 1e-9); // the circle's own angle
 /// ```
 pub fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
 where
     A: ParametricCurve3D,
     B: ParametricCurve3D,
 {
-    if let (Some(sa), Some(sb)) = (a.as_bspline(), b.as_bspline()) {
-        let (ra, rb) = (ParamDomain::of(a).range(), ParamDomain::of(b).range());
-        let (meetings, completeness) = curve_curve_hull::bspline_curve_curve(sa, ra, sb, rb, tol);
+    if let Some((meetings, completeness)) = mixed::curve_curve_meetings(a, b, tol) {
         let mut hits = CurveCurveHits::new(hits_at_minima(a, b, meetings, tol), completeness);
         if !hits.is_complete() {
             hits.add_sampled(sampled_curve_curve(a, b, tol), tol);
