@@ -1691,7 +1691,7 @@ impl BSplineSurface {
         // Every patch that may hold the closest point, by their pole boxes
         // then their Bernstein nets (whose corners tighten the bound),
         // searched closest control point first.
-        let mut roots = Vec::new();
+        let mut roots = Vec::with_capacity(RESERVED_SLOTS);
         patches.tree.nearest_first(point, |k| {
             if let Some(root) = search.root(patches, k) {
                 let (rect, creases) = patches.patch(k);
@@ -1929,6 +1929,10 @@ impl ParametricSurface for BSplineSurface {
 /// search reaches it, the later patches get an eighth of it.
 const MAX_SPLITS: usize = 256;
 
+/// Net slots reserved when a search starts: a closest point search holds
+/// a few patches and their pending subpatches, about this many.
+const RESERVED_SLOTS: usize = 8;
+
 /// Newton refinements once [`MAX_SPLITS`] is reached.
 const MAX_FALLBACKS: usize = 8;
 /// Subdivisions from a patch down to one subpatch: halving below this,
@@ -2038,9 +2042,9 @@ impl<'a> PatchSearch<'a> {
             cols,
             h,
             size,
-            nets: Vec::new(),
-            free: Vec::new(),
-            pending: BinaryHeap::new(),
+            nets: Vec::with_capacity(RESERVED_SLOTS * size),
+            free: Vec::with_capacity(RESERVED_SLOTS),
+            pending: BinaryHeap::with_capacity(RESERVED_SLOTS),
             points: Vec::with_capacity(rows * cols),
             scratch: vec![0.0; size],
             best: (f64::INFINITY, 0.0, 0.0),
@@ -2285,13 +2289,13 @@ impl<'a> PatchSearch<'a> {
             let x = self.points[i * self.cols + j];
             (0..3).map(|c| (x[c] - target[c]).powi(2)).sum::<f64>()
         };
-        let candidates: Vec<(usize, usize)> = match edge {
-            Some((0, side)) => (0..=q).map(|j| (side * p, j)).collect(),
-            Some((_, side)) => (0..=p).map(|i| (i, side * q)).collect(),
-            None => (0..=p).flat_map(|i| (0..=q).map(move |j| (i, j))).collect(),
+        let (rows, cols) = match edge {
+            Some((0, side)) => (side * p..=side * p, 0..=q),
+            Some((_, side)) => (0..=p, side * q..=side * q),
+            None => (0..=p, 0..=q),
         };
-        let (i, j) = candidates
-            .into_iter()
+        let (i, j) = rows
+            .flat_map(|i| cols.clone().map(move |j| (i, j)))
             .min_by(|a, b| distance(a.0, a.1).total_cmp(&distance(b.0, b.1)))
             .unwrap_or((0, 0));
         (i as f64 / p as f64, j as f64 / q as f64)

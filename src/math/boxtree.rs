@@ -71,10 +71,14 @@ impl BoxTree {
     /// hold anything closer.
     pub(crate) fn nearest_first(&self, point: Point3D, mut visit: impl FnMut(usize) -> f64) {
         let mut best = f64::INFINITY;
-        let mut heap = BinaryHeap::from([Pending {
+        // A frontier of the tree, so never more entries than leaves: room
+        // for them all, up to a few levels' worth.
+        let leaves = self.nodes.len().div_ceil(2);
+        let mut heap = BinaryHeap::with_capacity(leaves.min(64));
+        heap.push(Pending {
             lower: box_distance(point, &self.nodes[0].bbox),
             node: 0,
-        }]);
+        });
         while let Some(Pending { lower, node }) = heap.pop() {
             if lower >= best {
                 break;
