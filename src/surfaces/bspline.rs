@@ -1710,18 +1710,47 @@ impl BSplineSurface {
         let mut search = PatchSearch::new(self, point, patches.resolution(point), false);
         // Every patch that may hold the closest point, by their pole boxes
         // then their Bernstein nets (whose corners tighten the bound),
-        // searched closest control point first.
+        // searched closest control point first. Only the first keeps its
+        // net while waiting, the others' written again when searched.
         let mut roots = Vec::with_capacity(RESERVED_SLOTS);
+        let mut first: Option<Subpatch> = None;
         patches.tree.nearest_first(point, |k| {
             if let Some(root) = search.root(patches, k) {
-                let (rect, creases) = patches.patch(k);
-                roots.push((root, rect, creases));
+                roots.push((root.key, root.lower, k));
+                let freed = if first.is_none_or(|held| root.key < held.key) {
+                    first.replace(root)
+                } else {
+                    Some(root)
+                };
+                if let Some(freed) = freed {
+                    search.free.push(freed.slot);
+                }
             }
             search.best.0
         });
-        roots.sort_by(|a, b| a.0.key.total_cmp(&b.0.key));
-        for (root, rect, creases) in roots {
-            search.search(root, rect, creases);
+        // A stable sort, so that the first held stays first among ties.
+        roots.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (index, (key, lower, k)) in roots.into_iter().enumerate() {
+            if lower < search.best.0 - search.resolution {
+                let slot = match first {
+                    Some(held) if index == 0 => held.slot,
+                    _ => {
+                        let slot = search.slot();
+                        search.write_root(patches, k, slot);
+                        slot
+                    }
+                };
+                let (rect, creases) = patches.patch(k);
+                let root = Subpatch {
+                    lower,
+                    key,
+                    slot,
+                    rect,
+                    depth: 0,
+                    edge: None,
+                };
+                search.search(root, rect, creases);
+            }
         }
         let (distance, u, v) = search.best;
         SurfaceProjection {
@@ -2079,13 +2108,18 @@ impl<'a> PatchSearch<'a> {
     /// is farther than the closest point so far.
     fn root(&mut self, patches: &PatchTree, k: usize) -> Option<Subpatch> {
         let slot = self.slot();
+        self.write_root(patches, k, slot);
+        self.node(slot, patches.patch(k).0, 0, None)
+    }
+
+    /// Writes the net of the whole patch `k` of `patches` at `slot`.
+    fn write_root(&mut self, patches: &PatchTree, k: usize, slot: usize) {
         self.surface.write_patch_net(
             patches,
             k,
             &mut self.scratch,
             &mut self.nets[slot..slot + self.size],
         );
-        self.node(slot, patches.patch(k).0, 0, None)
     }
 
     /// Searches the patch over `rect`, with the subpatch `root` over all of
@@ -2133,6 +2167,7 @@ impl<'a> PatchSearch<'a> {
                     if node.depth < MAX_DEPTH && splits < self.budget {
                         splits += 1;
                         self.split(&node, along_u);
+                        continue;
                     } else if fallbacks < MAX_FALLBACKS {
                         fallbacks += 1;
                         let start = self.closest_control_point(node.edge);
@@ -2344,11 +2379,12 @@ impl<'a> PatchSearch<'a> {
         }
     }
 
-    /// Halves the subpatch along `u` (else `v`) and queues both halves.
+    /// Halves the subpatch along `u` (else `v`) and queues both halves,
+    /// the first taking over its slot.
     fn split(&mut self, node: &Subpatch, along_u: bool) {
         self.scratch
             .copy_from_slice(&self.nets[node.slot..node.slot + self.size]);
-        let (left, right) = (self.slot(), self.slot());
+        let (left, right) = (node.slot, self.slot());
         let (lo, hi) = if left < right {
             let (a, b) = self.nets.split_at_mut(right);
             (&mut a[left..left + self.size], &mut b[..self.size])

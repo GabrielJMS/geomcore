@@ -197,6 +197,11 @@ the Python distribution are versioned in lockstep.
   coefficients of the tangent's direction `D`, which leaves out its change
   along itself. With an angle limit, cubic B-splines get about 40% fewer
   points, and the representative fixtures less than half as many.
+- `BSplineSurface::project_point` holds fewer subpatch nets at once: the
+  patches waiting their turn, but the closest, keep only their bounds,
+  their nets written again when searched, and a split subpatch hands its
+  storage to its first half. A typical query's peak memory drops by 20 to
+  45%, at the same speed.
 
 - **Breaking:** `parametrize_on` takes a `Tolerance`, like every other
   query: `curve.parametrize_on(surface, tol)` on all six 3D curve types.
