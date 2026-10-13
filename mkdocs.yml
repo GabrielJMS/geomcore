@@ -5,8 +5,8 @@ repo_url: https://github.com/geomcore/geomcore
 theme:
   name: material
   features:
-    - navigation.tabs
     - navigation.sections
+    - navigation.footer
     - content.tabs.link
 
 markdown_extensions:
