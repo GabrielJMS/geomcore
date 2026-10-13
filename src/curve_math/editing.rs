@@ -791,10 +791,10 @@ fn insert_rational(
         &mut heap[..]
     };
     for (row, out) in window.chunks_exact_mut(window_row).enumerate() {
-        // The window's kept slots, for the refinement to read.
+        // The kept slots the refinement reads: those after the changed
+        // ones, the one before being written over with itself.
         let at = |i: usize| (i - slots.start) * width;
         let old_slot = |i: usize| (row * n + i) * width;
-        source.copy_to(old_slot(slots.start), &mut out[..at(leading)]);
         source.copy_to(old_slot(b - 1), &mut out[at(trailing_start)..]);
         let row_poles = source.slice(old_slot(0)..old_slot(n));
         refine_row(
