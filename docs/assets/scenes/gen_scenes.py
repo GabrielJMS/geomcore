@@ -3,8 +3,10 @@
 Uses the real kernel + the real viewer client, so every scene is computed,
 not drawn: exact intersections, marching loops, projection feet.
 
-Run:  python3.11 docs/assets/scenes/gen_scenes.py
-Needs geomcore + geomcore_viewer importable (this repo's geomcore-py build).
+Run:  python3 docs/assets/scenes/gen_scenes.py
+Needs the released packages: pip install "geomcore>=0.33" "geomcore-viewer>=0.2"
+(the viewer only writes the JSON here; no server is started). A scene that
+shows an unreleased API needs this repo's geomcore-py build instead.
 """
 
 from __future__ import annotations
