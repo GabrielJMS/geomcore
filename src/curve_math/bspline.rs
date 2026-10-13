@@ -246,9 +246,23 @@ impl KnotVector {
         if self.periodic {
             return self.periodic_span_knots(u, left, right);
         }
+        let (span, u) = self.span(u);
         let flat = &self.flat;
-        let lo = degree;
-        let hi = flat.len() - 1 - degree;
+        for j in 1..=degree {
+            left[j] = u - flat[span + 1 - j];
+            right[j] = flat[span + j] - u;
+        }
+        span - degree
+    }
+
+    /// The index `s` of the flat knot opening the nonzero-width span that
+    /// holds `u` in a non-periodic direction, `flat[s] <= u < flat[s + 1]`
+    /// (`<=` at the range end), and `u` clamped into the range.
+    #[inline(always)]
+    fn span(&self, u: f64) -> (usize, f64) {
+        let flat = &self.flat;
+        let lo = self.degree;
+        let hi = flat.len() - 1 - self.degree;
         let u = u.clamp(flat[lo], flat[hi]);
         // Binary search for the rightmost lo <= s < hi with flat[s] <= u
         // (flat[lo] <= u always holds), without data-dependent branches.
@@ -267,11 +281,7 @@ impl KnotVector {
         while span > lo && flat[span] >= flat[span + 1] {
             span -= 1;
         }
-        for j in 1..=degree {
-            left[j] = u - flat[span + 1 - j];
-            right[j] = flat[span + j] - u;
-        }
-        span - degree
+        (span, u)
     }
 
     /// Index of the first of the `degree + 1` poles weighting the span
@@ -804,11 +814,104 @@ fn basis_derivatives<const N: usize>(
 /// The point at `u`: the value-only path of [`derivatives`].
 #[inline]
 pub(crate) fn point(knots: &KnotVector, poles: Poles, u: f64) -> Point3D {
+    if !knots.periodic {
+        match knots.degree {
+            1 => return point_of_degree::<1>(knots, poles, u),
+            2 => return point_of_degree::<2>(knots, poles, u),
+            3 => return point_of_degree::<3>(knots, poles, u),
+            _ => {}
+        }
+    }
     if knots.degree < SMALL {
         point_sized::<SMALL>(knots, poles, u)
     } else {
         point_sized::<LARGE>(knots, poles, u)
     }
+}
+
+/// [`point`] of a non-periodic direction of degree `P` (at most 3): the
+/// knots and poles of the span sliced once, every loop over constant
+/// bounds, so unrolled.
+#[inline(always)]
+fn point_of_degree<const P: usize>(knots: &KnotVector, poles: Poles, u: f64) -> Point3D {
+    let (span, u) = knots.span(u);
+    // The 2P knots around the span, `around[k] = flat[span + 1 - P + k]`.
+    let around = &knots.flat[span + 1 - P..span + 1 + P];
+    // Built as values rather than written in a loop, so that they stay in
+    // registers: stored one by one, the unrolled recurrence would reload
+    // them in pairs, which waits on the stores.
+    let left: [f64; 4] = std::array::from_fn(|j| {
+        if (1..=P).contains(&j) {
+            u - around[P - j]
+        } else {
+            0.0
+        }
+    });
+    let right: [f64; 4] = std::array::from_fn(|j| {
+        if (1..=P).contains(&j) {
+            around[P - 1 + j] - u
+        } else {
+            0.0
+        }
+    });
+    let values = basis_values_of::<P>(&left, &right);
+    let first = span - P;
+    let points = &poles.points[first..=first + P];
+    // Each sum starts from its first term, sparing additions of zero.
+    match poles.weights {
+        None => {
+            let mut sum = [
+                values[0] * points[0].x,
+                values[0] * points[0].y,
+                values[0] * points[0].z,
+            ];
+            for j in 1..=P {
+                sum[0] += values[j] * points[j].x;
+                sum[1] += values[j] * points[j].y;
+                sum[2] += values[j] * points[j].z;
+            }
+            Point3D::new(sum[0], sum[1], sum[2])
+        }
+        Some(weights) => {
+            let weights = &weights[first..=first + P];
+            let b = values[0] * weights[0];
+            let mut sum = [b * points[0].x, b * points[0].y, b * points[0].z, b];
+            for j in 1..=P {
+                let b = values[j] * weights[j];
+                sum[0] += b * points[j].x;
+                sum[1] += b * points[j].y;
+                sum[2] += b * points[j].z;
+                sum[3] += b;
+            }
+            let inverse = 1.0 / sum[3];
+            Point3D::new(sum[0] * inverse, sum[1] * inverse, sum[2] * inverse)
+        }
+    }
+}
+
+/// The recurrence of [`basis_values`] for the constant degree `P` (at
+/// most 3).
+#[inline(always)]
+fn basis_values_of<const P: usize>(left: &[f64; 4], right: &[f64; 4]) -> [f64; 4] {
+    let mut out = [1.0, 0.0, 0.0, 0.0];
+    for j in 1..=P {
+        let mut saved = 0.0;
+        // Bounded by `P` rather than `j`, so that the loop's bounds are
+        // constant and it unrolls.
+        for r in 0..P {
+            if r < j {
+                let temp = out[r] * (1.0 / (right[r + 1] + left[j - r]));
+                out[r] = if r == 0 {
+                    right[1] * temp
+                } else {
+                    saved + right[r + 1] * temp
+                };
+                saved = left[j - r] * temp;
+            }
+        }
+        out[j] = saved;
+    }
+    out
 }
 
 #[inline]
@@ -1176,6 +1279,45 @@ mod tests {
         assert_close(&components(d1), &[2.0, 0.0, 0.0]);
         let p = point(&knots, view, 0.5);
         assert_close(&[p.x, p.y, p.z], &[1.0, 1.0, 0.0]);
+    }
+
+    // ---- fixed-degree point path ----
+
+    #[test]
+    fn test_point_of_low_degree_matches_general_path() {
+        // Uneven knots with an interior double knot; parameters across every
+        // span, on the knots, at the ends and outside the range.
+        for degree in 1..=3usize {
+            let double = degree.min(2) as u32;
+            let knots = knot_vector(
+                degree,
+                &[0.0, 0.3, 0.45, 1.2, 2.0],
+                &[degree as u32 + 1, 1, double, 1, degree as u32 + 1],
+                false,
+                degree + 3 + double as usize,
+            );
+            let poles: Vec<Point3D> = (0..knots.pole_count)
+                .map(|i| {
+                    let t = i as f64;
+                    Point3D::new(t, (1.7 * t).sin(), 0.3 * t * t)
+                })
+                .collect();
+            let weights: Vec<f64> = (0..knots.pole_count)
+                .map(|i| 0.5 + 0.3 * (i % 3) as f64)
+                .collect();
+            for weights in [None, Some(weights.as_slice())] {
+                let view = Poles {
+                    points: &poles,
+                    weights,
+                };
+                for step in -2..=42 {
+                    let u = step as f64 / 20.0;
+                    let p = point(&knots, view, u);
+                    let [c, _, _] = derivatives::<0>(&knots, view, u);
+                    assert_close(&[p.x, p.y, p.z], &components(c));
+                }
+            }
+        }
     }
 
     // ---- rational quarter circle ----

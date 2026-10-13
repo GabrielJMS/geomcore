@@ -178,6 +178,9 @@ the Python distribution are versioned in lockstep.
   reciprocals ahead of the chain that uses them. A cubic curve point is
   about 1.6 times faster and its second derivatives about 1.4 times; on
   surfaces, points gain about 10% and second derivatives about 15%.
+  Non-periodic curves of degree 1 to 3 evaluate points on a path fixed to
+  their degree, which slices the span's knots and poles once and unrolls
+  every loop: their points are about 1.7 times faster again.
 - `discretize` walks the curve once, growing its result, instead of
   counting the points twice and then filling them. A B-spline piece's
   bounds are computed once and handed to its halves, and a rational
