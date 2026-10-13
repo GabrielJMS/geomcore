@@ -8,7 +8,7 @@ mod conversion;
 mod curve;
 mod curve2d;
 mod ellipse;
-mod fitting;
+pub(crate) mod fitting;
 mod hyperbola;
 mod line;
 mod parabola;

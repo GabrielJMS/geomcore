@@ -257,6 +257,26 @@ impl BSplineSurface {
         )
     }
 
+    /// A polynomial surface from flat knots consistent with its pole grid
+    /// (row-major, a row per `u` pole), clamped in both directions:
+    /// fitting results skip revalidation.
+    pub(crate) fn from_flat_knots(
+        (u_degree, u_flat): (usize, Vec<f64>),
+        (v_degree, v_flat): (usize, Vec<f64>),
+        poles: Vec<Point3D>,
+    ) -> BSplineSurface {
+        let u_knots = curve::KnotVector::from_flat(u_degree, u_flat, false);
+        let v_knots = curve::KnotVector::from_flat(v_degree, v_flat, false);
+        debug_assert_eq!(u_knots.pole_count() * v_knots.pole_count(), poles.len());
+        BSplineSurface {
+            u_knots,
+            v_knots,
+            poles,
+            weights: None,
+            patches: Lazy::default(),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)] // internal shared builder
     fn build(
         u_degree: usize,

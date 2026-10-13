@@ -29,6 +29,21 @@ the Python distribution are versioned in lockstep.
   many copies were removed. Rational shapes are bounded about one centre
   for every row of a surface's net, and the seam of a periodic direction
   keeps one copy. Errors are `KnotRemovalError`.
+- Least-squares fitting within a deviation, and of surfaces:
+  `BSplineCurve3D::approximate_within(points, degree, max_deviation,
+  parametrization)` fits with few poles, every point within
+  `max_deviation` of the curve at its parameter. Starting from one Bézier
+  piece, each round splits the knot spans that deviate the most, so knots
+  gather where the points bend; when no span is left to split, the
+  fewest poles that fit on knots spread along the parameters are
+  searched instead, and when nothing fits, the points are interpolated.
+  `BSplineSurface::approximate(points, u_degree, v_degree, u_pole_count,
+  v_pole_count, parametrization)` fits a grid of points: the fit
+  separates, each row along `v` and then each column of the rows' poles
+  along `u`, one factored system per direction serving every line.
+  `BSplineSurface::approximate_within` fits a grid within a deviation the
+  same way, the rows within 0.8 of it, each direction keeping the fewer
+  poles of refined knots and of the fewest poles on spread knots.
 - Splitting, extraction and reversal of B-spline curves and surfaces:
   `split_at(u)`, `extract(first, last)` and `reversed()` on
   `BSplineCurve3D`, and `split_u_at`, `split_v_at`,
@@ -151,7 +166,10 @@ the Python distribution are versioned in lockstep.
   half-bandwidth `degree` for the normal equations of approximation).
   Interpolating 128 points with a cubic is about 8 times faster, and
   approximating them with 32 poles about 3.5 times faster, with a
-  handful of allocations instead of hundreds.
+  handful of allocations instead of hundreds. Approximation places its
+  interior knots along the points' parameters, so that every knot span
+  holds some, instead of evenly: unevenly spaced points no longer leave
+  poles undetermined.
 - B-spline curves and surfaces store their poles once, as points with a
   separate weight per pole when rational, instead of keeping a second,
   homogeneous copy. Evaluation reads them in place, folding each weight
