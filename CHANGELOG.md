@@ -29,6 +29,19 @@ the Python distribution are versioned in lockstep.
   many copies were removed. Rational shapes are bounded about one centre
   for every row of a surface's net, and the seam of a periodic direction
   keeps one copy. Errors are `KnotRemovalError`.
+- Splitting, extraction and reversal of B-spline curves and surfaces:
+  `split_at(u)`, `extract(first, last)` and `reversed()` on
+  `BSplineCurve3D`, and `split_u_at`, `split_v_at`,
+  `extract(u_range, v_range)`, `extract_u`, `extract_v`, `reversed_u`
+  and `reversed_v` on `BSplineSurface`. Pieces are clamped, non-periodic
+  B-splines that evaluate as the original over their range, rational
+  ones keeping the poles no insertion touched bit for bit; on a periodic
+  direction a range may cross the seam and span up to one period. The
+  cuts are raised to full multiplicity in one refinement of the spans
+  between them. Reversal mirrors the parameter (`first + last - u`) and
+  keeps a periodic shape periodic. A non-finite parameter, one outside
+  the bounds, an empty range, a periodic range longer than one period or
+  a split at an end is a `BSplineSplitError`.
 - Discretization of curves with proven deviations (#17): circles,
   B-splines and trimmed circles and B-splines become points on the curve
   joined by straight segments, each segment reporting a proven upper

@@ -1,6 +1,7 @@
 //! Editing one direction of a B-spline: knot insertion and removal,
-//! degree elevation and Bézier pieces of the poles that direction weights, a curve's or
-//! every row of a surface's.
+//! degree elevation, cutting into pieces, Bézier pieces included, and
+//! reversal of the poles that direction weights, a curve's or every row
+//! of a surface's.
 //!
 //! The algorithms are generic over the [`Pole`] they combine: points for a
 //! nonrational shape, homogeneous points for a rational one. [`Lanes`]
@@ -9,10 +10,14 @@
 //! coefficients.
 
 mod bezier;
+mod cutting;
 mod elevation;
 mod removal;
 
 use bezier::{Walker, bezier_pieces};
+pub(crate) use cutting::{
+    check_piece, check_split, cut, is_clamped_to, reversed_knots, reversed_slot,
+};
 pub(crate) use elevation::Elevation;
 pub(crate) use removal::{check_removal, remove_knots};
 
@@ -692,7 +697,11 @@ fn refine_slots<S: Source>(
     let mut k = b + p + s - 1;
     for &xj in x.iter().rev() {
         // The poles right of `xj` move along by the knots inserted since.
-        let count = old[a + 1..=i].iter().rev().take_while(|&&k| xj <= k).count();
+        let count = old[a + 1..=i]
+            .iter()
+            .rev()
+            .take_while(|&&k| xj <= k)
+            .count();
         let moved = i - count;
         poles.copy_to((moved - p) * width, &mut out[at(k - p - count)..at(k - p)]);
         (i, k) = (moved, k - count);
