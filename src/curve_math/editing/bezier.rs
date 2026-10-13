@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 
-use super::{Lanes, One, Pole, Source, Width};
+use super::{Count, Lanes, One, Pole, Source};
 use crate::curve_math::bspline::{KnotVector, LARGE};
 
 /// The Bézier pieces of `knots` and its poles over its range, a periodic
@@ -77,7 +77,7 @@ impl<'a, P: Pole> Walker<'a, P> {
     pub(crate) fn for_each_piece<S: Source<Pole = P>>(
         &mut self,
         poles: S,
-        width: impl Width,
+        width: impl Count,
         mut visit: impl FnMut(usize, f64, f64, &[P]),
     ) {
         let (p, flat, scratch) = (self.degree, &self.flat[..], &mut self.scratch[..]);
@@ -137,7 +137,7 @@ pub(super) fn walk<S: Source>(
     p: usize,
     u: &[f64],
     poles: S,
-    width: impl Width,
+    width: impl Count,
     scratch: &mut [S::Pole],
     mut visit: impl FnMut(usize, f64, f64, usize, &[S::Pole]),
 ) {
@@ -204,7 +204,7 @@ fn clamp_start<P: Pole>(
     knots: &[f64],
     piece: &mut [P],
     spare: &mut [P],
-    width: impl Width,
+    width: impl Count,
 ) {
     let w = width.get();
     let x = knots[p - 1];

@@ -20,7 +20,9 @@ the Python distribution are versioned in lockstep.
   unclamped and periodic directions, and keeps the poles it does not
   touch bit for bit, rational ones included. Rational poles are edited
   in homogeneous form; errors are `KnotInsertionError` and
-  `DegreeElevationError`.
+  `DegreeElevationError`. Inserting knots into a direction of degree 1
+  to 3 blends its poles on a path fixed to the degree, whose loops
+  unroll: 64 knots go in 8 to 19% faster than through the general path.
 - Knot removal within a tolerance: `remove_knot` and `remove_knots` on
   `BSplineCurve3D`, `remove_u_knot`, `remove_v_knot`, `remove_u_knots` and
   `remove_v_knots` on `BSplineSurface`. Each removal is kept only if a

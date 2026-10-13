@@ -629,8 +629,7 @@ fn merged_knots(knots: &KnotVector, insert: &[f64]) -> Result<Merged, KnotInsert
 /// [`refined_slots`].
 ///
 /// Each lane's poles are its kept ones copied, then its changed ones
-/// refined in place: interleaved lanes together, consecutive ones one by
-/// one (see [`refine_slots`]).
+/// refined in place (see [`refine_row`]).
 fn refine<S: Source>(
     degree: usize,
     old: &[f64],
@@ -668,29 +667,16 @@ fn refine<S: Source>(
     let row_len = slots.len() * width;
     for (row, row_out) in out.chunks_exact_mut(row_len).enumerate() {
         let row_poles = poles.slice(row * n * width..(row + 1) * n * width);
-        if lanes.consecutive {
-            refine_slots(
-                p,
-                old,
-                new,
-                (x, x_spans),
-                row_poles,
-                One,
-                slots.start,
-                row_out,
-            );
-        } else {
-            refine_slots(
-                p,
-                old,
-                new,
-                (x, x_spans),
-                row_poles,
-                width,
-                slots.start,
-                row_out,
-            );
-        }
+        refine_row(
+            p,
+            old,
+            new,
+            (x, x_spans),
+            row_poles,
+            lanes,
+            slots.start,
+            row_out,
+        );
     }
     (out, slots.start)
 }
@@ -723,12 +709,14 @@ fn spans(degree: usize, old: &[f64], x: &[f64]) -> (usize, usize) {
     (span(x[0]), span(x[x.len() - 1]))
 }
 
-/// The number of poles in a slot, a constant one for a single lane.
-trait Width: Copy {
+/// A count an edit loops over, constant where it is small so that its
+/// loops unroll: the number of poles in a slot, a constant one for a
+/// single lane, or a degree.
+trait Count: Copy {
     fn get(self) -> usize;
 }
 
-impl Width for usize {
+impl Count for usize {
     #[inline]
     fn get(self) -> usize {
         self
@@ -739,10 +727,21 @@ impl Width for usize {
 #[derive(Clone, Copy)]
 struct One;
 
-impl Width for One {
+impl Count for One {
     #[inline]
     fn get(self) -> usize {
         1
+    }
+}
+
+/// A count fixed to `N`.
+#[derive(Clone, Copy)]
+struct Fixed<const N: usize>;
+
+impl<const N: usize> Count for Fixed<N> {
+    #[inline]
+    fn get(self) -> usize {
+        N
     }
 }
 
@@ -798,29 +797,16 @@ fn insert_rational(
         source.copy_to(old_slot(slots.start), &mut out[..at(leading)]);
         source.copy_to(old_slot(b - 1), &mut out[at(trailing_start)..]);
         let row_poles = source.slice(old_slot(0)..old_slot(n));
-        if lanes.consecutive {
-            refine_slots(
-                p,
-                old,
-                &new_flat,
-                (insert, (a, last)),
-                row_poles,
-                One,
-                slots.start,
-                out,
-            );
-        } else {
-            refine_slots(
-                p,
-                old,
-                &new_flat,
-                (insert, (a, last)),
-                row_poles,
-                width,
-                slots.start,
-                out,
-            );
-        }
+        refine_row(
+            p,
+            old,
+            &new_flat,
+            (insert, (a, last)),
+            row_poles,
+            lanes,
+            slots.start,
+            out,
+        );
         new_points.extend_from_slice(&points[old_slot(0)..old_slot(leading)]);
         new_weights.extend_from_slice(&weights[old_slot(0)..old_slot(leading)]);
         let changed = &out[at(leading)..at(trailing_start)];
@@ -836,6 +822,46 @@ fn insert_rational(
     Ok((knots, new_points, new_weights))
 }
 
+/// [`refine_slots`] of one row of `lanes`, interleaved lanes together and
+/// consecutive ones one by one, with the lane width and up to a cubic the
+/// degree fixed, so that its loops unroll.
+#[allow(clippy::too_many_arguments)] // the parts of A5.4
+fn refine_row<S: Source>(
+    degree: usize,
+    old: &[f64],
+    new: &[f64],
+    x_spans: (&[f64], (usize, usize)),
+    poles: S,
+    lanes: Lanes,
+    start: usize,
+    out: &mut [S::Pole],
+) {
+    #[allow(clippy::too_many_arguments)] // the parts of A5.4
+    fn of_width<S: Source>(
+        degree: usize,
+        old: &[f64],
+        new: &[f64],
+        x_spans: (&[f64], (usize, usize)),
+        poles: S,
+        width: impl Count,
+        start: usize,
+        out: &mut [S::Pole],
+    ) {
+        match degree {
+            1 => refine_slots(Fixed::<1>, old, new, x_spans, poles, width, start, out),
+            2 => refine_slots(Fixed::<2>, old, new, x_spans, poles, width, start, out),
+            3 => refine_slots(Fixed::<3>, old, new, x_spans, poles, width, start, out),
+            _ => refine_slots(degree, old, new, x_spans, poles, width, start, out),
+        }
+    }
+    if lanes.consecutive {
+        of_width(degree, old, new, x_spans, poles, One, start, out);
+    } else {
+        let (_, width) = lanes.rows_and_width();
+        of_width(degree, old, new, x_spans, poles, width, start, out);
+    }
+}
+
 /// [`refine`] of the changed slots of `out`, the new slots from `start`
 /// on, the kept ones already copied: `poles` are held in slots of `width`
 /// poles, slot `i` holding pole `i` of every lane. Each inserted knot
@@ -843,17 +869,16 @@ fn insert_rational(
 /// coefficients.
 #[allow(clippy::too_many_arguments)] // the parts of A5.4
 fn refine_slots<S: Source>(
-    degree: usize,
+    degree: impl Count,
     old: &[f64],
     new: &[f64],
     (x, (a, last)): (&[f64], (usize, usize)),
     poles: S,
-    width: impl Width,
+    width: impl Count,
     start: usize,
     out: &mut [S::Pole],
 ) {
-    let width = width.get();
-    let p = degree;
+    let (width, p) = (width.get(), degree.get());
     let s = x.len();
     debug_assert_eq!(new.len(), old.len() + s);
     debug_assert_eq!(poles.len(), width * (old.len() - p - 1));

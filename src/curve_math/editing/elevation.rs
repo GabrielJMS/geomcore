@@ -10,7 +10,7 @@
 //! the B-spline, symmetric and affine in each argument.
 
 use super::bezier::walk;
-use super::{Edit, Edited, Kept, Lanes, One, Pole, Source, Width};
+use super::{Count, Edit, Edited, Kept, Lanes, One, Pole, Source};
 use crate::curve_math::bspline::{KnotVector, LARGE, MAX_DEGREE, flat_knots};
 use crate::curves::DegreeElevationError;
 
@@ -231,7 +231,7 @@ impl Plan {
         direction: &KnotVector,
         coefficients: &[f64],
         poles: S,
-        width: impl Width,
+        width: impl Count,
         out: &mut [S::Pole],
     ) {
         let (p, by) = (direction.degree(), self.by);
@@ -283,7 +283,7 @@ fn sweep<S: Source>(
     new: &[f64],
     coefficients: &[f64],
     poles: S,
-    width: impl Width,
+    width: impl Count,
     out: &mut [S::Pole],
 ) {
     let w = width.get();
@@ -356,7 +356,7 @@ fn raise<P: Pole>(
     p: usize,
     by: usize,
     from: usize,
-    width: impl Width,
+    width: impl Count,
 ) {
     let w = width.get();
     for slot in 0..out.len() / w {
@@ -397,7 +397,7 @@ fn join<P: Pole>(
     count: usize,
     (b, c): (f64, f64),
     (piece, coefficients, p, by): (&[P], &[f64], usize, usize),
-    width: impl Width,
+    width: impl Count,
     left: &mut [P],
     right: &mut [P],
 ) {
