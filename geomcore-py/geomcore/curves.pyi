@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple, Union, final
+from typing import Any, ClassVar, List, Optional, Tuple, Union, final
 
 from typing_extensions import deprecated
 
@@ -7,6 +7,7 @@ from geomcore.surfaces import Cone, Cylinder, Plane, Sphere, Torus
 
 @final
 class Line3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, origin: Point3D, direction: Vector3D) -> Line3D: ...
     @staticmethod
     def from_axis(axis: Axis3D) -> Line3D: ...
@@ -78,6 +79,7 @@ class Line3D:
 
 @final
 class Circle3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point3D, normal: Vector3D, radius: float) -> Circle3D: ...
     @staticmethod
     def from_axis(axis: Axis3D, radius: float) -> Circle3D: ...
@@ -153,6 +155,7 @@ class Circle3D:
 
 @final
 class Ellipse3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,
         center: Point3D,
@@ -223,6 +226,7 @@ class Ellipse3D:
 
 @final
 class Parabola3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, apex: Point3D, normal: Vector3D, x_direction: Vector3D, focal: float
     ) -> Parabola3D: ...
@@ -275,6 +279,7 @@ class Parabola3D:
 
 @final
 class Hyperbola3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,
         center: Point3D,
@@ -336,6 +341,7 @@ class Hyperbola3D:
 
 @final
 class BSplineCurve3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,
         degree: int,
@@ -412,6 +418,7 @@ class BSplineCurve3D:
 
 @final
 class Line2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, origin: Point2D, direction: Vector2D) -> Line2D: ...
     def origin(self) -> Point2D: ...
     def direction(self) -> Vector2D: ...
@@ -439,6 +446,7 @@ class Line2D:
 
 @final
 class Circle2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point2D, radius: float) -> Circle2D: ...
     def center(self) -> Point2D: ...
     def radius(self) -> float: ...
@@ -467,6 +475,7 @@ class Circle2D:
 
 @final
 class TrimmedCurve3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, basis: Any, first: float, last: float) -> TrimmedCurve3D: ...
     @staticmethod
     def segment(start: Point3D, end: Point3D) -> TrimmedCurve3D: ...
@@ -498,6 +507,7 @@ class TrimmedCurve3D:
 
 @final
 class TrimmedCurve2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, basis: Any, first: float, last: float) -> TrimmedCurve2D: ...
     @staticmethod
     def segment(start: Point2D, end: Point2D) -> TrimmedCurve2D: ...

@@ -6,6 +6,7 @@ from . import curves, surfaces
 
 @final
 class Point3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, x: float, y: float, z: float) -> Point3D: ...
     @staticmethod
     def origin() -> Point3D: ...
@@ -16,10 +17,12 @@ class Point3D:
     @property
     def z(self) -> float: ...
     def distance(self, other: Point3D) -> float: ...
+    def coincides(self, other: Point3D, tol: Optional[Tolerance] = ...) -> bool: ...
     def __repr__(self) -> str: ...
 
 @final
 class Point2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, x: float, y: float) -> Point2D: ...
     @staticmethod
     def origin() -> Point2D: ...
@@ -28,9 +31,11 @@ class Point2D:
     @property
     def y(self) -> float: ...
     def distance(self, other: Point2D) -> float: ...
+    def coincides(self, other: Point2D, tol: Optional[Tolerance] = ...) -> bool: ...
 
 @final
 class Vector3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, x: float, y: float, z: float) -> Vector3D: ...
     @staticmethod
     def zero() -> Vector3D: ...
@@ -47,6 +52,7 @@ class Vector3D:
 
 @final
 class Vector2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, x: float, y: float) -> Vector2D: ...
     @property
     def x(self) -> float: ...
@@ -57,12 +63,14 @@ class Vector2D:
 
 @final
 class Axis3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, origin: Point3D, direction: Vector3D) -> Axis3D: ...
     def origin(self) -> Point3D: ...
     def direction(self) -> Vector3D: ...
 
 @final
 class Frame3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, origin: Point3D, z_direction: Vector3D, x_hint: Vector3D) -> Frame3D: ...
     @staticmethod
     def from_z(origin: Point3D, z_direction: Vector3D) -> Frame3D: ...
@@ -75,6 +83,7 @@ class Frame3D:
 
 @final
 class Tolerance:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, confusion: float = ..., angular: float = ..., parametric: float = ...
     ) -> Tolerance: ...
@@ -92,6 +101,7 @@ class Tolerance:
 
 @final
 class Transform:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     @staticmethod
     def identity() -> Transform: ...
     @staticmethod
@@ -112,6 +122,7 @@ class Transform:
 
 @final
 class BoundingBox3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, a: Point3D, b: Point3D) -> BoundingBox3D: ...
     @staticmethod
     def from_points(points: List[Point3D]) -> BoundingBox3D: ...
@@ -127,6 +138,7 @@ class BoundingBox3D:
 
 @final
 class Discretization2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     @property
     def parameters(self) -> List[float]: ...
     @property
@@ -139,6 +151,7 @@ class Discretization2D:
 
 @final
 class Discretization3D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     @property
     def parameters(self) -> List[float]: ...
     @property

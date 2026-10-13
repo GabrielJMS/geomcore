@@ -114,8 +114,8 @@ macro_rules! dispatch_intersect {
 // ---------------------------------------------------------------------------
 
 /// A point in 3D space with `x`, `y` and `z` coordinates.
-#[pyclass(name = "Point3D", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Point3D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyPoint3D(Point3D);
 
 #[pymethods]
@@ -152,6 +152,15 @@ impl PyPoint3D {
         self.0.distance(other.0)
     }
 
+    /// Returns whether `other` is within `tol.confusion` of this point
+    /// (`Tolerance.default()` when omitted). `==` compares coordinates
+    /// exactly instead.
+    #[pyo3(signature = (other, tol = None))]
+    fn coincides(&self, other: &PyPoint3D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .coincides(other.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
     fn __repr__(&self) -> String {
         format!("Point3D({}, {}, {})", self.0.x, self.0.y, self.0.z)
     }
@@ -161,8 +170,8 @@ impl PyPoint3D {
 ///
 /// Components are read with `components()`; the unit vectors along the world
 /// axes are available as the static methods `x()`, `y()` and `z()`.
-#[pyclass(name = "Vector3D", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Vector3D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyVector3D(Vector3D);
 
 #[pymethods]
@@ -223,8 +232,8 @@ impl PyVector3D {
 }
 
 /// A point in 2D space (used by curves living in a surface's (u, v) domain).
-#[pyclass(name = "Point2D", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Point2D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyPoint2D(Point2D);
 
 #[pymethods]
@@ -256,14 +265,23 @@ impl PyPoint2D {
         self.0.distance(other.0)
     }
 
+    /// Returns whether `other` is within `tol.confusion` of this point
+    /// (`Tolerance.default()` when omitted). `==` compares coordinates
+    /// exactly instead.
+    #[pyo3(signature = (other, tol = None))]
+    fn coincides(&self, other: &PyPoint2D, tol: Option<PyTolerance>) -> bool {
+        self.0
+            .coincides(other.0, tol.map(|t| t.0).unwrap_or_default())
+    }
+
     fn __repr__(&self) -> String {
         format!("Point2D({}, {})", self.0.x, self.0.y)
     }
 }
 
 /// A vector in 2D space.
-#[pyclass(name = "Vector2D", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Vector2D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyVector2D(Vector2D);
 
 #[pymethods]
@@ -300,8 +318,8 @@ impl PyVector2D {
 }
 
 /// An axis: a point plus a unit direction.
-#[pyclass(name = "Axis3D", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Axis3D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyAxis3D(Axis3D);
 
 #[pymethods]
@@ -326,8 +344,8 @@ impl PyAxis3D {
 }
 
 /// A right-handed orthonormal placement frame (origin + x/y/z directions).
-#[pyclass(name = "Frame3D", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Frame3D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyFrame3D(Frame3D);
 
 #[pymethods]
@@ -380,8 +398,8 @@ impl PyFrame3D {
 /// (`contains`, and later projection and intersection).
 ///
 /// `Tolerance()` with no arguments equals `Tolerance.default()`.
-#[pyclass(name = "Tolerance", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Tolerance", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyTolerance(Tolerance);
 
 #[pymethods]
@@ -442,8 +460,8 @@ impl PyTolerance {
 }
 
 /// A rigid (or mirrored/scaled) affine transformation.
-#[pyclass(name = "Transform", module = "geomcore")]
-#[derive(Clone)]
+#[pyclass(name = "Transform", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
 struct PyTransform(Transform);
 
 #[pymethods]
@@ -510,8 +528,8 @@ impl PyTransform {
 /// The axis-aligned box around a curve or surface, holding the shape but
 /// possibly loose for B-splines (their control points' box); `None`
 /// wherever `bounding_box` reports no box for an unbounded shape.
-#[pyclass(name = "BoundingBox3D", module = "geomcore")]
-#[derive(Clone, Copy)]
+#[pyclass(name = "BoundingBox3D", module = "geomcore", eq)]
+#[derive(Clone, Copy, PartialEq)]
 struct PyBoundingBox3D(BoundingBox3D);
 
 #[pymethods]
@@ -586,8 +604,8 @@ impl PyBoundingBox3D {
 // ---------------------------------------------------------------------------
 
 /// An infinite plane, parametrized by in-plane coordinates (u, v).
-#[pyclass(name = "Plane", module = "geomcore.surfaces")]
-#[derive(Clone)]
+#[pyclass(name = "Plane", module = "geomcore.surfaces", eq)]
+#[derive(Clone, PartialEq)]
 struct PyPlane(Plane);
 
 #[pymethods]
@@ -953,8 +971,8 @@ impl PyPlane {
 
 /// An infinite circular cylinder; u is the angle around the axis, v the
 /// height along it.
-#[pyclass(name = "Cylinder", module = "geomcore.surfaces")]
-#[derive(Clone)]
+#[pyclass(name = "Cylinder", module = "geomcore.surfaces", eq)]
+#[derive(Clone, PartialEq)]
 struct PyCylinder(Cylinder);
 
 #[pymethods]
@@ -1197,8 +1215,8 @@ impl PyCylinder {
 
 /// An infinite cone; u is the angle around the axis, v the distance along a
 /// generator from the reference circle.
-#[pyclass(name = "Cone", module = "geomcore.surfaces")]
-#[derive(Clone)]
+#[pyclass(name = "Cone", module = "geomcore.surfaces", eq)]
+#[derive(Clone, PartialEq)]
 struct PyCone(Cone);
 
 #[pymethods]
@@ -1475,8 +1493,8 @@ impl PyCone {
 }
 
 /// A sphere; u is the longitude in [0, 2*pi), v the latitude in [-pi/2, pi/2].
-#[pyclass(name = "Sphere", module = "geomcore.surfaces")]
-#[derive(Clone)]
+#[pyclass(name = "Sphere", module = "geomcore.surfaces", eq)]
+#[derive(Clone, PartialEq)]
 struct PySphere(Sphere);
 
 #[pymethods]
@@ -1784,8 +1802,8 @@ impl PySphere {
 }
 
 /// A torus; u is the angle around the main axis, v the angle around the tube.
-#[pyclass(name = "Torus", module = "geomcore.surfaces")]
-#[derive(Clone)]
+#[pyclass(name = "Torus", module = "geomcore.surfaces", eq)]
+#[derive(Clone, PartialEq)]
 struct PyTorus(Torus);
 
 #[pymethods]
@@ -2156,8 +2174,8 @@ impl PyTorus {
 }
 
 /// A tensor-product B-spline (optionally rational, optionally periodic) surface.
-#[pyclass(name = "BSplineSurface", module = "geomcore.surfaces")]
-#[derive(Clone)]
+#[pyclass(name = "BSplineSurface", module = "geomcore.surfaces", eq)]
+#[derive(Clone, PartialEq)]
 struct PyBSplineSurface(BSplineSurface);
 
 #[pymethods]
@@ -3038,7 +3056,8 @@ fn py_intersect_marching(
 /// distance from the curve to the segment) and angle deviation (the
 /// largest angle between the curve's tangent and the segment, π where no
 /// bound exists).
-#[pyclass(name = "Discretization3D", module = "geomcore", frozen)]
+#[pyclass(name = "Discretization3D", module = "geomcore", frozen, eq)]
+#[derive(PartialEq)]
 struct PyDiscretization3D(Discretization3D);
 
 #[pymethods]
@@ -3075,7 +3094,8 @@ impl PyDiscretization3D {
 /// A discretized 2D curve, such as a curve in a surface's parameter
 /// plane: the 2D counterpart of `Discretization3D`, its chord deviations
 /// being distances in the plane.
-#[pyclass(name = "Discretization2D", module = "geomcore", frozen)]
+#[pyclass(name = "Discretization2D", module = "geomcore", frozen, eq)]
+#[derive(PartialEq)]
 struct PyDiscretization2D(Discretization2D);
 
 #[pymethods]
@@ -3144,8 +3164,8 @@ fn discretize_2d(
 // ---------------------------------------------------------------------------
 
 /// An infinite straight line in 3D, parametrized by arc length from its origin.
-#[pyclass(name = "Line3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Line3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyLine3D(Line3D);
 
 #[pymethods]
@@ -3608,8 +3628,8 @@ impl PyLine3D {
 }
 
 /// A circle in 3D, parametrized by the angle from its frame's x direction.
-#[pyclass(name = "Circle3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Circle3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyCircle3D(Circle3D);
 
 #[pymethods]
@@ -4033,8 +4053,8 @@ impl PyCircle3D {
 }
 
 /// An ellipse in 3D.
-#[pyclass(name = "Ellipse3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Ellipse3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyEllipse3D(Ellipse3D);
 
 #[pymethods]
@@ -4375,8 +4395,8 @@ impl PyEllipse3D {
 }
 
 /// A parabola in 3D, parametrized so the apex is at parameter 0.
-#[pyclass(name = "Parabola3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Parabola3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyParabola3D(Parabola3D);
 
 #[pymethods]
@@ -4642,8 +4662,8 @@ impl PyParabola3D {
 }
 
 /// One branch of a hyperbola in 3D.
-#[pyclass(name = "Hyperbola3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Hyperbola3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyHyperbola3D(Hyperbola3D);
 
 #[pymethods]
@@ -4936,8 +4956,8 @@ impl PyHyperbola3D {
 }
 
 /// A B-spline (optionally rational, optionally periodic) curve in 3D.
-#[pyclass(name = "BSplineCurve3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "BSplineCurve3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyBSplineCurve3D(BSplineCurve3D);
 
 #[pymethods]
@@ -5245,8 +5265,8 @@ impl PyBSplineCurve3D {
 }
 
 /// A straight line in a surface's 2D (u, v) parameter space.
-#[pyclass(name = "Line2D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Line2D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyLine2D(Line2D);
 
 #[pymethods]
@@ -5429,8 +5449,8 @@ impl PyLine2D {
 }
 
 /// A circle in a surface's 2D (u, v) parameter space.
-#[pyclass(name = "Circle2D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "Circle2D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyCircle2D(Circle2D);
 
 #[pymethods]
@@ -5615,8 +5635,8 @@ fn max_curve_order(curve: &Curve3D) -> u32 {
 /// `curve_curve_extrema`, `intersect_curve_curve`,
 /// `intersect_curve_surface` or `parametrize_numeric` to search only the
 /// range.
-#[pyclass(name = "TrimmedCurve3D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "TrimmedCurve3D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyTrimmedCurve3D(TrimmedCurve3D);
 
 #[pymethods]
@@ -5791,8 +5811,8 @@ impl PyTrimmedCurve3D {
 /// A 2D curve restricted to the parameter range `[first, last]` of a
 /// basis curve: a line segment or a circular arc, typically a trimmed
 /// pcurve in a surface's (u, v) parameter space. Mirrors `TrimmedCurve3D`.
-#[pyclass(name = "TrimmedCurve2D", module = "geomcore.curves")]
-#[derive(Clone)]
+#[pyclass(name = "TrimmedCurve2D", module = "geomcore.curves", eq)]
+#[derive(Clone, PartialEq)]
 struct PyTrimmedCurve2D(TrimmedCurve2D);
 
 #[pymethods]

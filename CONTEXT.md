@@ -35,8 +35,8 @@ _Avoid_: AABB, bbox, extent, contains or inside (reserved) for a point in a box
 The side of the cube, centred on the origin, that models are assumed to fit in: 1e5 model units. It bounds the model, not its carriers: an infinite line or plane matters only inside it. Within it, `f64` coordinates are exact to far below the confusion tolerance.
 
 **Confusion tolerance**:
-The distance below which two points coincide (`tol.confusion`). Every geometric decision is a distance decision against it.
-_Avoid_: precision, resolution, epsilon
+The distance below which two points coincide (`tol.confusion`), tested by `coincides`. Every geometric decision is a distance decision against it.
+_Avoid_: precision, resolution, epsilon, close or near for points that coincide
 
 **Equal**:
 Two values are equal when they are the same value, field by field (`==`). Equality never takes a tolerance: two points that are not equal may still coincide, within the confusion tolerance.

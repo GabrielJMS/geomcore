@@ -9,6 +9,24 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Point coincidence (#65): `Point2D::coincides` and `Point3D::coincides`
+  return whether another point is within `tol.confusion`, the test every
+  geometric decision already made by hand; in Python `p.coincides(q)`,
+  with `Tolerance.default()` when no tolerance is given.
+
+### Changed
+
+- Python value equality (#65): `==` on every Python class compares values
+  exactly, field by field, as in Rust, so
+  `Point3D(1, 2, 3) == Point3D(1, 2, 3)` is now `True` instead of an
+  identity check. Comparing with a value of another class is `False`. As
+  `f64` is not `Eq`, the classes are no longer hashable: code that put
+  points in a set or used them as dict keys, where they were matched by
+  identity, now raises `TypeError`. ADR 0009 records why equality never
+  takes a tolerance.
+
 ## [0.33.0] - 2026-10-13
 
 ### Added
