@@ -1,8 +1,8 @@
 //! [`ParametricSurface`] trait and the [`Surface`] enum adaptor unifying the
 //! concrete analytic surface types.
 
-use crate::curves::BSplineCurve3D;
-use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, Torus};
+use crate::curves::{BSplineCurve3D, Curve3D};
+use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, SurfaceIsoError, Torus};
 use crate::{Point3D, SurfaceProjection, Tolerance, Vector3D};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
@@ -450,6 +450,63 @@ impl Surface {
     /// ```
     pub fn intersect_marching(&self, other: &Surface, tol: Tolerance) -> Vec<BSplineCurve3D> {
         crate::marching_intersection(self, other, tol)
+    }
+
+    /// The `u` isoparametric curve at `u`: `u` fixed, running along `v`,
+    /// so `u_iso(u).eval_point(t)` is `eval_point(u, t)` for every `t`.
+    /// A line on a plane, cylinder or cone, a circle on a sphere or torus,
+    /// a B-spline curve on a B-spline surface; see each type's `u_iso`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SurfaceIsoError::NonFinite`] for a NaN or infinite `u`,
+    /// and [`SurfaceIsoError::OutOfRange`] for a `u` outside the bounds of
+    /// a non-periodic B-spline direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Curve3D, Cylinder, Point3D, Surface, Vector3D};
+    /// let cylinder = Surface::from(Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
+    /// assert!(matches!(cylinder.u_iso(0.0), Ok(Curve3D::Line(_))));
+    /// assert!(matches!(cylinder.v_iso(0.0), Ok(Curve3D::Circle(_))));
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<Curve3D, SurfaceIsoError> {
+        Ok(match self {
+            Surface::Plane(s) => Curve3D::Line(s.u_iso(u)?),
+            Surface::Cylinder(s) => Curve3D::Line(s.u_iso(u)?),
+            Surface::Cone(s) => Curve3D::Line(s.u_iso(u)?),
+            Surface::Sphere(s) => Curve3D::Circle(s.u_iso(u)?),
+            Surface::Torus(s) => Curve3D::Circle(s.u_iso(u)?),
+            Surface::BSpline(s) => Curve3D::BSpline(s.u_iso(u)?),
+        })
+    }
+
+    /// The `v` isoparametric curve at `v`: `v` fixed, running along `u`,
+    /// so `v_iso(v).eval_point(t)` is `eval_point(t, v)` for every `t`.
+    /// A line on a plane, a circle on a cylinder, cone, sphere or torus, a
+    /// B-spline curve on a B-spline surface; see each type's `v_iso`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Surface::u_iso`], for `v`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Curve3D, Plane, Point3D, Surface, Vector3D};
+    /// let plane = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// assert!(matches!(plane.v_iso(1.0), Ok(Curve3D::Line(_))));
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<Curve3D, SurfaceIsoError> {
+        Ok(match self {
+            Surface::Plane(s) => Curve3D::Line(s.v_iso(v)?),
+            Surface::Cylinder(s) => Curve3D::Circle(s.v_iso(v)?),
+            Surface::Cone(s) => Curve3D::Circle(s.v_iso(v)?),
+            Surface::Sphere(s) => Curve3D::Circle(s.v_iso(v)?),
+            Surface::Torus(s) => Curve3D::Circle(s.v_iso(v)?),
+            Surface::BSpline(s) => Curve3D::BSpline(s.v_iso(v)?),
+        })
     }
 }
 

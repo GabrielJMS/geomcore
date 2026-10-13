@@ -6,6 +6,7 @@ use crate::frame::frame_error;
 use crate::math::{QuadraticSolution, solve_quadratic};
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
+use crate::surfaces::iso::{SurfaceIsoError, check_iso_param, iso_circle};
 use crate::{
     Circle3D, Cone, Cylinder, Frame3D, LatitudeRing, Plane, Point3D, Sphere, Tolerance,
     TorusConeIntersection, TorusCylinderIntersection, TorusPlaneIntersection,
@@ -179,6 +180,64 @@ impl Torus {
     /// ```
     pub fn minor_radius(&self) -> f64 {
         self.minor_radius
+    }
+
+    /// The `u` isoparametric circle at `u`: the meridian, a section of the
+    /// tube of the minor radius centred `major_radius` from the center in
+    /// the half-plane at angle `u`, so `u_iso(u).eval_point(t)` is
+    /// `eval_point(u, t)` for every `t`.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `u`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let iso = torus.u_iso(0.0).unwrap();
+    /// assert_eq!(iso.center(), Point3D::new(5.0, 0.0, 0.0));
+    /// assert_eq!(iso.radius(), 1.5);
+    /// ```
+    pub fn u_iso(&self, u: f64) -> Result<Circle3D, SurfaceIsoError> {
+        let u = check_iso_param(u, None)?;
+        let frame = self.frame;
+        let radial = frame.x_direction() * u.cos() + frame.y_direction() * u.sin();
+        iso_circle(
+            frame.origin() + radial * self.major_radius,
+            radial.cross(frame.z_direction()),
+            radial,
+            self.minor_radius,
+        )
+    }
+
+    /// The `v` isoparametric circle at `v`: the parallel of radius
+    /// `|major + minor * cos(v)|` at height `minor * sin(v)` along the
+    /// axis, so `v_iso(v).eval_point(t)` is `eval_point(t, v)` for every
+    /// `t`. Where a horn or spindle torus pinches on its axis it is the
+    /// circle of radius zero.
+    ///
+    /// Fails with [`SurfaceIsoError::NonFinite`] for a NaN or infinite
+    /// `v`; any finite value is accepted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let iso = torus.v_iso(0.0).unwrap();
+    /// assert_eq!(iso.center(), Point3D::ORIGIN);
+    /// assert_eq!(iso.radius(), 6.5);
+    /// ```
+    pub fn v_iso(&self, v: f64) -> Result<Circle3D, SurfaceIsoError> {
+        let v = check_iso_param(v, None)?;
+        let frame = self.frame;
+        iso_circle(
+            frame.point_at(0.0, 0.0, self.minor_radius * v.sin()),
+            frame.z_direction(),
+            frame.x_direction(),
+            self.major_radius + self.minor_radius * v.cos(),
+        )
     }
 
     /// Returns the image of this torus under `transform`: the center and
