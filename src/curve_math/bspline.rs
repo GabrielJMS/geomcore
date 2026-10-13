@@ -272,6 +272,14 @@ impl KnotVector {
         span - degree
     }
 
+    /// Index of the first of the `degree + 1` poles weighting the span
+    /// containing `u`, wrapping modulo the pole count in a periodic
+    /// direction (see [`KnotVector::span_knots`]).
+    pub(crate) fn span_first_pole(&self, u: f64) -> usize {
+        let (mut left, mut right) = ([0.0; LARGE], [0.0; LARGE]);
+        self.span_knots(u, &mut left, &mut right)
+    }
+
     /// [`KnotVector::span_knots`] on a periodic direction.
     fn periodic_span_knots<const N: usize>(
         &self,
@@ -602,7 +610,8 @@ pub(crate) fn basis_at<const N: usize>(
 }
 
 /// Non-zero basis functions alone (The NURBS Book, A2.2): the value-only
-/// fast path of [`basis_derivatives`], without its triangular table.
+/// fast path of `basis_derivatives` (the tests' reference), without its
+/// triangular table.
 fn basis_values<const N: usize>(
     degree: usize,
     left: &[f64; N],

@@ -76,6 +76,22 @@ the Python distribution are versioned in lockstep.
   `BSplineConversionError::Unbounded` for a plane, cylinder or cone, also
   returned for an infinite range. A NaN, empty or out-of-bounds range, or
   one longer than a turn, returns the new `InvalidRange`.
+- Bounding boxes of curves and surfaces (#39): the new `BoundingBox3D`
+  (`min`, `max`, `center`, `diagonal`, `union`, `enlarged`, `encloses`
+  for a point, `overlaps` for another box) and the `Bound3D` trait,
+  whose `bounding_box()` returns the axis-aligned box around a shape, or
+  `None` for an unbounded one (lines, parabolas, hyperbolas, planes,
+  cylinders, cones). Implemented for every 3D curve and surface type,
+  trimmed curves, references and the run-time `Curve3D`, `Surface`,
+  `ElementaryCurve` and `ElementarySurface`. Elementary boxes are the
+  tightest, touching the shape on every side, in closed form and
+  without allocating: a circular or elliptic arc from its ends and the
+  angles where a coordinate peaks within its range, a trimmed parabola
+  or hyperbola from its ends and the parameters where a coordinate is
+  stationary, a torus from its radii and the tilt of its axis. A
+  B-spline's box is the box of its poles; a trimmed B-spline's, of the
+  poles of the knot spans its range covers and the Bézier control points
+  of its pieces of those it cuts, so it holds the piece but may be loose.
 - Discretization of curves with proven deviations (#17): circles,
   B-splines and trimmed circles and B-splines become points on the curve
   joined by straight segments, each segment reporting a proven upper

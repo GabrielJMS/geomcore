@@ -85,9 +85,9 @@ pub struct BSplineSurface {
 }
 
 /// The knot-span boundaries of each direction, whether the surface is a
-/// crease or ends there ([`curve::crease_breaks`]), each span's Bezier
-/// matrix ([`curve::span_bezier_matrices`]), and the box hierarchy over
-/// the patches (`i_u * (v_breaks.len() - 1) + i_v`).
+/// crease or ends there ([`curve::KnotVector::crease_breaks`]), each
+/// span's Bezier matrix ([`curve::KnotVector::span_bezier_matrices`]), and
+/// the box hierarchy over the patches (`i_u * (v_breaks.len() - 1) + i_v`).
 #[derive(Clone)]
 struct PatchTree {
     u_breaks: Vec<f64>,

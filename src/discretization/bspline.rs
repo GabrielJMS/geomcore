@@ -21,7 +21,6 @@
 
 use super::sealed::{DiscretizeRange, Run};
 use super::{DiscretizationCriteria, smallest_count};
-use crate::curves::ParametricCurve3D;
 use crate::{BSplineCurve3D, Point3D};
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -468,21 +467,6 @@ impl DiscretizeRange for BSplineCurve3D {
     ) where
         F: FnMut(Run, &dyn Fn(f64) -> Point3D),
     {
-        let (start, end) = self.bounds();
-        let interior = self
-            .knots()
-            .iter()
-            .copied()
-            .filter(|&k| k > start && k < end);
-        // A periodic curve repeats its spans every period, so a range
-        // across the seam takes them from consecutive periods.
-        let (shifts, period) = match self.period() {
-            Some(period) => {
-                let shift = |u: f64| ((u - start) / period).floor() as i64;
-                (shift(first)..=shift(last), period)
-            }
-            None => (0..=0, 0.0),
-        };
         let context = Context::new(criteria, self.degree(), self.is_rational());
         let mut piece = Piece {
             first: 0.0,
@@ -495,23 +479,17 @@ impl DiscretizeRange for BSplineCurve3D {
         // when a range overshoots a knot, would make a segment of no
         // length: the end's neighbouring span covers it instead.
         let negligible = 1e-12 * (last - first).max(first.abs()).max(last.abs());
-        let mut span_start = start + *shifts.start() as f64 * period;
-        for shift in shifts {
-            let offset = shift as f64 * period;
-            for knot in interior.clone().chain([end]) {
-                let span_end = knot + offset;
-                let (a, b) = (span_start.max(first), span_end.min(last));
-                let at_one_end = (a == first) != (b == last);
-                if a < b && !(at_one_end && b - a <= negligible) {
-                    self.span_bezier_points(0.5 * (span_start + span_end), &mut piece.points);
-                    piece.first = span_start;
-                    piece.last = span_end;
-                    let piece = piece.restricted(a, b);
-                    let bounds = piece.bounds(&context);
-                    piece.visit_leaves(bounds, &context, 0, min_segments, &mut visit);
-                }
-                span_start = span_end;
+        self.for_each_span_in(first, last, |(span_start, span_end), (a, b)| {
+            let at_one_end = (a == first) != (b == last);
+            if at_one_end && b - a <= negligible {
+                return;
             }
-        }
+            self.span_bezier_points(0.5 * (span_start + span_end), &mut piece.points);
+            piece.first = span_start;
+            piece.last = span_end;
+            let piece = piece.restricted(a, b);
+            let bounds = piece.bounds(&context);
+            piece.visit_leaves(bounds, &context, 0, min_segments, &mut visit);
+        });
     }
 }

@@ -25,6 +25,9 @@
 //!   [`surfaces::Sphere`], [`surfaces::Torus`]) plus
 //!   [`surfaces::BSplineSurface`], the [`surfaces::Surface`] enum adaptor,
 //!   and the [`surfaces::ParametricSurface`] trait.
+//! - [`bounding_box`] holds [`BoundingBox3D`] and the [`Bound3D`] trait,
+//!   through which curves and surfaces report the axis-aligned box
+//!   bounding them.
 //!
 //! # Quick start
 //!
@@ -86,6 +89,8 @@ pub(crate) mod tol {
     pub const P_CONFUSION: f64 = crate::Tolerance::DEFAULT.parametric;
 }
 
+/// Axis-aligned bounding boxes of curves and surfaces.
+pub mod bounding_box;
 /// Internal analytic curve evaluation math.
 pub(crate) mod curve_math;
 /// Public curve types: lines, conics, and B-spline curves.
@@ -115,6 +120,7 @@ pub mod transform;
 /// Vectors in 2D and 3D space.
 pub mod vector;
 
+pub use bounding_box::{Bound3D, BoundingBox3D};
 pub use curves::{
     BSplineConstructionError, BSplineConversionError, BSplineCurve3D, BSplineSplitError, Circle2D,
     Circle3D, CircleConstructionError, Curve2D, Curve3D, DegreeElevationError, ElementaryCurve,

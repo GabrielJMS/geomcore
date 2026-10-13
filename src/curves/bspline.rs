@@ -1331,6 +1331,57 @@ impl BSplineCurve3D {
         }
     }
 
+    /// The poles weighting the knot spans from the one containing `u0` to
+    /// the one containing `u1`, `u0 <= u1` at most a period apart.
+    pub(crate) fn run_poles(&self, u0: f64, u1: f64) -> impl Iterator<Item = Point3D> + '_ {
+        let n = self.poles.len();
+        let (first, last) = (
+            self.knots.span_first_pole(u0),
+            self.knots.span_first_pole(u1),
+        );
+        // Periodic pole indices wrap, so the run may end below its start.
+        let count = ((last + n - first) % n + self.degree() + 1).min(n);
+        (first..first + count).map(move |i| self.poles[i % n])
+    }
+
+    /// Calls `visit(span, piece)` in order for every knot span
+    /// `span = (start, end)` meeting `[first, last]`, `piece` being the
+    /// part of `[first, last]` inside it. A periodic curve repeats its
+    /// spans every period, so a range across the seam takes them from
+    /// consecutive periods.
+    pub(crate) fn for_each_span_in(
+        &self,
+        first: f64,
+        last: f64,
+        mut visit: impl FnMut((f64, f64), (f64, f64)),
+    ) {
+        let (start, end) = self.bounds();
+        let interior = self
+            .knots()
+            .iter()
+            .copied()
+            .filter(|&k| k > start && k < end);
+        let (shifts, period) = match self.knots.period() {
+            Some(period) => {
+                let shift = |u: f64| ((u - start) / period).floor() as i64;
+                (shift(first)..=shift(last), period)
+            }
+            None => (0..=0, 0.0),
+        };
+        let mut span_start = start + *shifts.start() as f64 * period;
+        for shift in shifts {
+            let offset = shift as f64 * period;
+            for knot in interior.clone().chain([end]) {
+                let span_end = knot + offset;
+                let (a, b) = (span_start.max(first), span_end.min(last));
+                if a < b {
+                    visit((span_start, span_end), (a, b));
+                }
+                span_start = span_end;
+            }
+        }
+    }
+
     /// The knot-span box hierarchy, built on first use.
     fn span_tree(&self) -> &SpanTree {
         self.spans.get_or_init(|| {
