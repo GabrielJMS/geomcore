@@ -22,6 +22,43 @@ pub(crate) struct PyPlane(pub(crate) Plane);
 
 #[pymethods]
 impl PyPlane {
+    /// The point and the first partial derivatives `(du, dv)` at `(u, v)`.
+    fn eval_d1(&self, u: f64, v: f64) -> (PyPoint3D, (PyVector3D, PyVector3D)) {
+        let (point, [du, dv]) = ParametricSurface::eval_d1(&self.0, u, v);
+        (PyPoint3D(point), (PyVector3D(du), PyVector3D(dv)))
+    }
+
+    /// The point, the first partial derivatives `(du, dv)` and the second
+    /// partial derivatives `(du du, du dv, dv dv)` at `(u, v)`.
+    fn eval_d2(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (
+        PyPoint3D,
+        (PyVector3D, PyVector3D),
+        (PyVector3D, PyVector3D, PyVector3D),
+    ) {
+        let (point, [du, dv], [duu, duv, dvv]) = ParametricSurface::eval_d2(&self.0, u, v);
+        (
+            PyPoint3D(point),
+            (PyVector3D(du), PyVector3D(dv)),
+            (PyVector3D(duu), PyVector3D(duv), PyVector3D(dvv)),
+        )
+    }
+
+    /// The period of the u parameter, or `None` when the surface is not
+    /// periodic in u.
+    fn u_period(&self) -> Option<f64> {
+        ParametricSurface::u_period(&self.0)
+    }
+
+    /// The period of the v parameter, or `None` when the surface is not
+    /// periodic in v.
+    fn v_period(&self) -> Option<f64> {
+        ParametricSurface::v_period(&self.0)
+    }
+
     /// The placement frame of the plane.
     fn frame(&self) -> PyFrame3D {
         PyFrame3D(self.0.frame())
@@ -206,6 +243,43 @@ pub(crate) struct PyCylinder(pub(crate) Cylinder);
 
 #[pymethods]
 impl PyCylinder {
+    /// The point and the first partial derivatives `(du, dv)` at `(u, v)`.
+    fn eval_d1(&self, u: f64, v: f64) -> (PyPoint3D, (PyVector3D, PyVector3D)) {
+        let (point, [du, dv]) = ParametricSurface::eval_d1(&self.0, u, v);
+        (PyPoint3D(point), (PyVector3D(du), PyVector3D(dv)))
+    }
+
+    /// The point, the first partial derivatives `(du, dv)` and the second
+    /// partial derivatives `(du du, du dv, dv dv)` at `(u, v)`.
+    fn eval_d2(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (
+        PyPoint3D,
+        (PyVector3D, PyVector3D),
+        (PyVector3D, PyVector3D, PyVector3D),
+    ) {
+        let (point, [du, dv], [duu, duv, dvv]) = ParametricSurface::eval_d2(&self.0, u, v);
+        (
+            PyPoint3D(point),
+            (PyVector3D(du), PyVector3D(dv)),
+            (PyVector3D(duu), PyVector3D(duv), PyVector3D(dvv)),
+        )
+    }
+
+    /// The period of the u parameter, or `None` when the surface is not
+    /// periodic in u.
+    fn u_period(&self) -> Option<f64> {
+        ParametricSurface::u_period(&self.0)
+    }
+
+    /// The period of the v parameter, or `None` when the surface is not
+    /// periodic in v.
+    fn v_period(&self) -> Option<f64> {
+        ParametricSurface::v_period(&self.0)
+    }
+
     /// The axis of the cylinder: its origin and unit direction.
     fn axis(&self) -> PyAxis3D {
         PyAxis3D(self.0.axis())
@@ -401,6 +475,43 @@ pub(crate) struct PyCone(pub(crate) Cone);
 
 #[pymethods]
 impl PyCone {
+    /// The point and the first partial derivatives `(du, dv)` at `(u, v)`.
+    fn eval_d1(&self, u: f64, v: f64) -> (PyPoint3D, (PyVector3D, PyVector3D)) {
+        let (point, [du, dv]) = ParametricSurface::eval_d1(&self.0, u, v);
+        (PyPoint3D(point), (PyVector3D(du), PyVector3D(dv)))
+    }
+
+    /// The point, the first partial derivatives `(du, dv)` and the second
+    /// partial derivatives `(du du, du dv, dv dv)` at `(u, v)`.
+    fn eval_d2(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (
+        PyPoint3D,
+        (PyVector3D, PyVector3D),
+        (PyVector3D, PyVector3D, PyVector3D),
+    ) {
+        let (point, [du, dv], [duu, duv, dvv]) = ParametricSurface::eval_d2(&self.0, u, v);
+        (
+            PyPoint3D(point),
+            (PyVector3D(du), PyVector3D(dv)),
+            (PyVector3D(duu), PyVector3D(duv), PyVector3D(dvv)),
+        )
+    }
+
+    /// The period of the u parameter, or `None` when the surface is not
+    /// periodic in u.
+    fn u_period(&self) -> Option<f64> {
+        ParametricSurface::u_period(&self.0)
+    }
+
+    /// The period of the v parameter, or `None` when the surface is not
+    /// periodic in v.
+    fn v_period(&self) -> Option<f64> {
+        ParametricSurface::v_period(&self.0)
+    }
+
     /// The placement frame of the cone.
     fn frame(&self) -> PyFrame3D {
         PyFrame3D(self.0.frame())
@@ -597,6 +708,43 @@ pub(crate) struct PySphere(pub(crate) Sphere);
 
 #[pymethods]
 impl PySphere {
+    /// The point and the first partial derivatives `(du, dv)` at `(u, v)`.
+    fn eval_d1(&self, u: f64, v: f64) -> (PyPoint3D, (PyVector3D, PyVector3D)) {
+        let (point, [du, dv]) = ParametricSurface::eval_d1(&self.0, u, v);
+        (PyPoint3D(point), (PyVector3D(du), PyVector3D(dv)))
+    }
+
+    /// The point, the first partial derivatives `(du, dv)` and the second
+    /// partial derivatives `(du du, du dv, dv dv)` at `(u, v)`.
+    fn eval_d2(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (
+        PyPoint3D,
+        (PyVector3D, PyVector3D),
+        (PyVector3D, PyVector3D, PyVector3D),
+    ) {
+        let (point, [du, dv], [duu, duv, dvv]) = ParametricSurface::eval_d2(&self.0, u, v);
+        (
+            PyPoint3D(point),
+            (PyVector3D(du), PyVector3D(dv)),
+            (PyVector3D(duu), PyVector3D(duv), PyVector3D(dvv)),
+        )
+    }
+
+    /// The period of the u parameter, or `None` when the surface is not
+    /// periodic in u.
+    fn u_period(&self) -> Option<f64> {
+        ParametricSurface::u_period(&self.0)
+    }
+
+    /// The period of the v parameter, or `None` when the surface is not
+    /// periodic in v.
+    fn v_period(&self) -> Option<f64> {
+        ParametricSurface::v_period(&self.0)
+    }
+
     /// The placement frame of the sphere.
     fn frame(&self) -> PyFrame3D {
         PyFrame3D(self.0.frame())
@@ -786,6 +934,43 @@ pub(crate) struct PyTorus(pub(crate) Torus);
 
 #[pymethods]
 impl PyTorus {
+    /// The point and the first partial derivatives `(du, dv)` at `(u, v)`.
+    fn eval_d1(&self, u: f64, v: f64) -> (PyPoint3D, (PyVector3D, PyVector3D)) {
+        let (point, [du, dv]) = ParametricSurface::eval_d1(&self.0, u, v);
+        (PyPoint3D(point), (PyVector3D(du), PyVector3D(dv)))
+    }
+
+    /// The point, the first partial derivatives `(du, dv)` and the second
+    /// partial derivatives `(du du, du dv, dv dv)` at `(u, v)`.
+    fn eval_d2(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (
+        PyPoint3D,
+        (PyVector3D, PyVector3D),
+        (PyVector3D, PyVector3D, PyVector3D),
+    ) {
+        let (point, [du, dv], [duu, duv, dvv]) = ParametricSurface::eval_d2(&self.0, u, v);
+        (
+            PyPoint3D(point),
+            (PyVector3D(du), PyVector3D(dv)),
+            (PyVector3D(duu), PyVector3D(duv), PyVector3D(dvv)),
+        )
+    }
+
+    /// The period of the u parameter, or `None` when the surface is not
+    /// periodic in u.
+    fn u_period(&self) -> Option<f64> {
+        ParametricSurface::u_period(&self.0)
+    }
+
+    /// The period of the v parameter, or `None` when the surface is not
+    /// periodic in v.
+    fn v_period(&self) -> Option<f64> {
+        ParametricSurface::v_period(&self.0)
+    }
+
     /// The center of the torus.
     fn center(&self) -> PyPoint3D {
         PyPoint3D(self.0.center())
@@ -979,6 +1164,43 @@ pub(crate) struct PyBSplineSurface(pub(crate) BSplineSurface);
 
 #[pymethods]
 impl PyBSplineSurface {
+    /// The point and the first partial derivatives `(du, dv)` at `(u, v)`.
+    fn eval_d1(&self, u: f64, v: f64) -> (PyPoint3D, (PyVector3D, PyVector3D)) {
+        let (point, [du, dv]) = ParametricSurface::eval_d1(&self.0, u, v);
+        (PyPoint3D(point), (PyVector3D(du), PyVector3D(dv)))
+    }
+
+    /// The point, the first partial derivatives `(du, dv)` and the second
+    /// partial derivatives `(du du, du dv, dv dv)` at `(u, v)`.
+    fn eval_d2(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (
+        PyPoint3D,
+        (PyVector3D, PyVector3D),
+        (PyVector3D, PyVector3D, PyVector3D),
+    ) {
+        let (point, [du, dv], [duu, duv, dvv]) = ParametricSurface::eval_d2(&self.0, u, v);
+        (
+            PyPoint3D(point),
+            (PyVector3D(du), PyVector3D(dv)),
+            (PyVector3D(duu), PyVector3D(duv), PyVector3D(dvv)),
+        )
+    }
+
+    /// The period of the u parameter, or `None` when the surface is not
+    /// periodic in u.
+    fn u_period(&self) -> Option<f64> {
+        ParametricSurface::u_period(&self.0)
+    }
+
+    /// The period of the v parameter, or `None` when the surface is not
+    /// periodic in v.
+    fn v_period(&self) -> Option<f64> {
+        ParametricSurface::v_period(&self.0)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "BSplineSurface(u_degree={}, v_degree={}, pole_count=({}, {}), rational={})",

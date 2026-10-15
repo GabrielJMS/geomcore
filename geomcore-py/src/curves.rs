@@ -3,7 +3,8 @@ use pyo3::prelude::*;
 use geomcore::Bound3D;
 use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve3D, Ellipse3D, Hyperbola3D, Line2D, Line3D,
-    Parabola3D, ParametricCurve3D, PointExtrema2D, PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D,
+    Parabola3D, ParametricCurve2D, ParametricCurve3D, PointExtrema2D, PointExtrema3D,
+    TrimmedCurve2D, TrimmedCurve3D,
 };
 
 use crate::numeric::*;
@@ -23,6 +24,44 @@ pub(crate) struct PyLine3D(pub(crate) Line3D);
 
 #[pymethods]
 impl PyLine3D {
+    /// All stationary points of the distance from `point` to the line, as
+    /// `CurveProjection` objects ordered by ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
+        let tol = tolerance(tol);
+        let projections = PointExtrema3D::extrema(&slf.borrow().0, point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
+            .collect()
+    }
+
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve3D::is_periodic(&self.0)
+    }
+
     /// The axis of the line: its origin and unit direction.
     fn axis(&self) -> PyAxis3D {
         PyAxis3D(self.0.axis())
@@ -187,6 +226,44 @@ pub(crate) struct PyCircle3D(pub(crate) Circle3D);
 
 #[pymethods]
 impl PyCircle3D {
+    /// All stationary points of the distance from `point` to the circle, as
+    /// `CurveProjection` objects ordered by ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
+        let tol = tolerance(tol);
+        let projections = PointExtrema3D::extrema(&slf.borrow().0, point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
+            .collect()
+    }
+
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve3D::is_periodic(&self.0)
+    }
+
     /// The placement frame of the circle.
     fn frame(&self) -> PyFrame3D {
         PyFrame3D(self.0.frame())
@@ -399,6 +476,28 @@ pub(crate) struct PyEllipse3D(pub(crate) Ellipse3D);
 
 #[pymethods]
 impl PyEllipse3D {
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve3D::is_periodic(&self.0)
+    }
+
     /// The placement frame of the ellipse.
     fn frame(&self) -> PyFrame3D {
         PyFrame3D(self.0.frame())
@@ -624,6 +723,28 @@ pub(crate) struct PyParabola3D(pub(crate) Parabola3D);
 
 #[pymethods]
 impl PyParabola3D {
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve3D::is_periodic(&self.0)
+    }
+
     /// The apex of the parabola: its point of smallest radius, at the frame
     /// origin.
     fn apex(&self) -> PyPoint3D {
@@ -803,6 +924,28 @@ pub(crate) struct PyHyperbola3D(pub(crate) Hyperbola3D);
 
 #[pymethods]
 impl PyHyperbola3D {
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve3D::is_periodic(&self.0)
+    }
+
     /// The placement frame of the hyperbola.
     fn frame(&self) -> PyFrame3D {
         PyFrame3D(self.0.frame())
@@ -1004,6 +1147,23 @@ pub(crate) struct PyBSplineCurve3D(pub(crate) BSplineCurve3D);
 
 #[pymethods]
 impl PyBSplineCurve3D {
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "BSplineCurve3D(degree={}, pole_count={}, rational={}, periodic={})",
@@ -1353,6 +1513,59 @@ pub(crate) struct PyLine2D(pub(crate) Line2D);
 
 #[pymethods]
 impl PyLine2D {
+    /// All stationary points of the distance from `point` to the line, as
+    /// `CurveProjection2D` objects ordered by ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint2D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection2D> {
+        let tol = tolerance(tol);
+        let projections = PointExtrema2D::extrema(&slf.borrow().0, point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection2D::new(projection, slf, point.0))
+            .collect()
+    }
+
+    /// Build the line through two distinct points, with the first as origin
+    /// and the second at positive parameter.
+    #[staticmethod]
+    fn from_two_points(p1: PyPoint2D, p2: PyPoint2D) -> PyResult<Self> {
+        Ok(PyLine2D(
+            Line2D::from_two_points(p1.0, p2.0).map_err(val_err)?,
+        ))
+    }
+
+    /// The parameter range `(first, last)`; infinite ends where the curve
+    /// is unbounded.
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve2D::bounds(&self.0)
+    }
+
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint2D, PyVector2D) {
+        let (point, first) = ParametricCurve2D::eval_d1(&self.0, u);
+        (PyPoint2D(point), PyVector2D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint2D, PyVector2D, PyVector2D) {
+        let (point, first, second) = ParametricCurve2D::eval_d2(&self.0, u);
+        (PyPoint2D(point), PyVector2D(first), PyVector2D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve2D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve2D::is_periodic(&self.0)
+    }
+
     /// Build a 2D line from an axis.
     #[staticmethod]
     fn from_axis(axis: PyAxis2D) -> Self {
@@ -1476,6 +1689,50 @@ pub(crate) struct PyCircle2D(pub(crate) Circle2D);
 
 #[pymethods]
 impl PyCircle2D {
+    /// All stationary points of the distance from `point` to the circle, as
+    /// `CurveProjection2D` objects ordered by ascending distance.
+    #[pyo3(signature = (point, tol = None))]
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint2D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection2D> {
+        let tol = tolerance(tol);
+        let projections = PointExtrema2D::extrema(&slf.borrow().0, point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection2D::new(projection, slf, point.0))
+            .collect()
+    }
+
+    /// The parameter range `(first, last)`; infinite ends where the curve
+    /// is unbounded.
+    fn bounds(&self) -> (f64, f64) {
+        ParametricCurve2D::bounds(&self.0)
+    }
+
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint2D, PyVector2D) {
+        let (point, first) = ParametricCurve2D::eval_d1(&self.0, u);
+        (PyPoint2D(point), PyVector2D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint2D, PyVector2D, PyVector2D) {
+        let (point, first, second) = ParametricCurve2D::eval_d2(&self.0, u);
+        (PyPoint2D(point), PyVector2D(first), PyVector2D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve2D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve2D::is_periodic(&self.0)
+    }
+
     /// The placement frame of the circle.
     fn frame(&self) -> PyFrame2D {
         PyFrame2D(self.0.frame())
@@ -1623,6 +1880,28 @@ pub(crate) struct PyTrimmedCurve3D(pub(crate) TrimmedCurve3D);
 
 #[pymethods]
 impl PyTrimmedCurve3D {
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
+        let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint3D, PyVector3D, PyVector3D) {
+        let (point, first, second) = ParametricCurve3D::eval_d2(&self.0, u);
+        (PyPoint3D(point), PyVector3D(first), PyVector3D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve3D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve3D::is_periodic(&self.0)
+    }
+
     #[new]
     /// Restrict `basis` (any 3D curve) to the parameter range
     /// `[first, last]`. Raises `ValueError` for non-finite ends, an empty
@@ -1827,6 +2106,28 @@ pub(crate) struct PyTrimmedCurve2D(pub(crate) TrimmedCurve2D);
 
 #[pymethods]
 impl PyTrimmedCurve2D {
+    /// The point and the first derivative at parameter `u`.
+    fn eval_d1(&self, u: f64) -> (PyPoint2D, PyVector2D) {
+        let (point, first) = ParametricCurve2D::eval_d1(&self.0, u);
+        (PyPoint2D(point), PyVector2D(first))
+    }
+
+    /// The point and the first two derivatives at parameter `u`.
+    fn eval_d2(&self, u: f64) -> (PyPoint2D, PyVector2D, PyVector2D) {
+        let (point, first, second) = ParametricCurve2D::eval_d2(&self.0, u);
+        (PyPoint2D(point), PyVector2D(first), PyVector2D(second))
+    }
+
+    /// The period of the parameter, or `None` when the curve is not periodic.
+    fn period(&self) -> Option<f64> {
+        ParametricCurve2D::period(&self.0)
+    }
+
+    /// Whether the curve is periodic.
+    fn is_periodic(&self) -> bool {
+        ParametricCurve2D::is_periodic(&self.0)
+    }
+
     #[new]
     /// Restrict `basis` (a Line2D or Circle2D) to the parameter range
     /// `[first, last]`, under the rules of `TrimmedCurve3D`.

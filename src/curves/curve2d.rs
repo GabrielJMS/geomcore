@@ -51,6 +51,50 @@ pub trait ParametricCurve2D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     fn eval_derivative(&self, u: f64, order: u32) -> Vector2D;
 
+    /// Evaluates the point and the first derivative at parameter `u`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative) of order 1.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve2D;
+    /// use geomcore::{Circle2D, Point2D, Vector2D};
+    ///
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let (point, tangent) = ParametricCurve2D::eval_d1(&circle, 0.0);
+    /// assert_eq!(point, Point2D::new(2.0, 0.0));
+    /// assert!((tangent - Vector2D::new(0.0, 2.0)).magnitude() < 1e-15);
+    /// ```
+    fn eval_d1(&self, u: f64) -> (Point2D, Vector2D) {
+        (self.eval_point(u), self.eval_derivative(u, 1))
+    }
+
+    /// Evaluates the point and the first two derivatives at parameter `u`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative) of orders 1 and 2.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve2D;
+    /// use geomcore::{Circle2D, Point2D, Vector2D};
+    ///
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let (point, _, acceleration) = ParametricCurve2D::eval_d2(&circle, 0.0);
+    /// assert_eq!(point, Point2D::new(2.0, 0.0));
+    /// assert!((acceleration - Vector2D::new(-2.0, 0.0)).magnitude() < 1e-15);
+    /// ```
+    fn eval_d2(&self, u: f64) -> (Point2D, Vector2D, Vector2D) {
+        (
+            self.eval_point(u),
+            self.eval_derivative(u, 1),
+            self.eval_derivative(u, 2),
+        )
+    }
+
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn bounds(&self) -> (f64, f64);
@@ -110,6 +154,14 @@ impl<C: ParametricCurve2D + ?Sized> ParametricCurve2D for &C {
 
     fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         (**self).eval_derivative(u, order)
+    }
+
+    fn eval_d1(&self, u: f64) -> (Point2D, Vector2D) {
+        (**self).eval_d1(u)
+    }
+
+    fn eval_d2(&self, u: f64) -> (Point2D, Vector2D, Vector2D) {
+        (**self).eval_d2(u)
     }
 
     fn bounds(&self) -> (f64, f64) {

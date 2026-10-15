@@ -100,3 +100,143 @@ def test_center_on_torus_and_apex_on_parabola():
     frame = Frame3D.from_z(Point3D(1.0, 2.0, 3.0), Z)
     assert Torus.from_frame(frame, 3.0, 1.0).center() == Point3D(1.0, 2.0, 3.0)
     assert Parabola3D.from_frame(frame, 1.5).apex() == Point3D(1.0, 2.0, 3.0)
+
+
+# ---------------------------------------------------------------------------
+# Group 2: period, eval_d1/eval_d2, 2D bounds, from_two_points, extrema
+# ---------------------------------------------------------------------------
+
+from geomcore.curves import BSplineCurve3D, TrimmedCurve2D, TrimmedCurve3D
+from geomcore.surfaces import BSplineSurface
+
+
+def curves_3d():
+    frame = Frame3D.from_z(Point3D(0.0, 0.0, 0.0), Z)
+    return [
+        Line3D(Point3D(0.0, 0.0, 0.0), Vector3D(1.0, 0.0, 0.0)),
+        Circle3D(Point3D(0.0, 0.0, 0.0), Z, 2.0),
+        Ellipse3D.from_frame(frame, 3.0, 2.0),
+        Parabola3D.from_frame(frame, 1.5),
+        Hyperbola3D.from_frame(frame, 3.0, 2.0),
+        BSplineCurve3D(
+            2,
+            [Point3D(0.0, 0.0, 0.0), Point3D(1.0, 1.0, 0.0), Point3D(2.0, 0.0, 1.0)],
+            [0.0, 1.0],
+            [3, 3],
+            False,
+        ),
+        TrimmedCurve3D(Circle3D(Point3D(0.0, 0.0, 0.0), Z, 2.0), 0.0, 1.0),
+    ]
+
+
+def curves_2d():
+    return [
+        Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0)),
+        Circle2D(Point2D(0.0, 0.0), 2.0),
+        TrimmedCurve2D(Circle2D(Point2D(0.0, 0.0), 2.0), 0.0, 1.0),
+    ]
+
+
+def test_period_and_is_periodic_on_curves():
+    line, circle, ellipse, parabola, hyperbola, spline, trimmed = curves_3d()
+    assert line.period() is None and not line.is_periodic()
+    assert circle.period() == pytest.approx(math.tau) and circle.is_periodic()
+    assert ellipse.period() == pytest.approx(math.tau)
+    assert parabola.period() is None and hyperbola.period() is None
+    assert spline.period() is None
+    assert trimmed.period() is None and not trimmed.is_periodic()
+    line_2d, circle_2d, trimmed_2d = curves_2d()
+    assert line_2d.period() is None and not line_2d.is_periodic()
+    assert circle_2d.period() == pytest.approx(math.tau) and circle_2d.is_periodic()
+    assert trimmed_2d.period() is None
+
+
+def test_u_and_v_period_on_surfaces():
+    origin = Point3D(0.0, 0.0, 0.0)
+    assert Plane(origin, Z).u_period() is None
+    assert Plane(origin, Z).v_period() is None
+    assert Cylinder(origin, Z, 1.0).u_period() == pytest.approx(math.tau)
+    assert Cylinder(origin, Z, 1.0).v_period() is None
+    assert Sphere(origin, 1.0).u_period() == pytest.approx(math.tau)
+    assert Sphere(origin, 1.0).v_period() is None
+    assert Torus(origin, Z, 3.0, 1.0).v_period() == pytest.approx(math.tau)
+    assert Cone(origin, Z, 0.5, 2.0).u_period() == pytest.approx(math.tau)
+
+
+@pytest.mark.parametrize("curve", curves_3d())
+def test_eval_d1_d2_on_3d_curves(curve):
+    u = 0.5
+    point, first = curve.eval_d1(u)
+    assert point == curve.eval_point(u)
+    assert first == curve.eval_derivative(u, 1)
+    point, first, second = curve.eval_d2(u)
+    assert point == curve.eval_point(u)
+    assert first == curve.eval_derivative(u, 1)
+    assert second == curve.eval_derivative(u, 2)
+
+
+@pytest.mark.parametrize("curve", curves_2d())
+def test_eval_d1_d2_on_2d_curves(curve):
+    u = 0.5
+    point, first = curve.eval_d1(u)
+    assert point == curve.eval_point(u)
+    assert first == curve.eval_derivative(u, 1)
+    point, first, second = curve.eval_d2(u)
+    assert second == curve.eval_derivative(u, 2)
+
+
+def test_eval_d1_d2_on_surfaces():
+    origin = Point3D(0.0, 0.0, 0.0)
+    surfaces = [
+        Plane(origin, Z),
+        Cylinder(origin, Z, 1.0),
+        Cone(origin, Z, 0.5, 2.0),
+        Sphere(origin, 2.0),
+        Torus(origin, Z, 3.0, 1.0),
+    ]
+    for surface in surfaces:
+        u, v = 0.4, 0.3
+        point, (du, dv) = surface.eval_d1(u, v)
+        assert point == surface.eval_point(u, v)
+        assert du == surface.eval_derivative(u, v, 1, 0)
+        assert dv == surface.eval_derivative(u, v, 0, 1)
+        point, (du, dv), (duu, duv, dvv) = surface.eval_d2(u, v)
+        assert duu == surface.eval_derivative(u, v, 2, 0)
+        assert duv == surface.eval_derivative(u, v, 1, 1)
+        assert dvv == surface.eval_derivative(u, v, 0, 2)
+
+
+def test_bounds_on_2d_curves():
+    line, circle, _ = curves_2d()
+    assert line.bounds() == (-math.inf, math.inf)
+    assert circle.bounds() == pytest.approx((0.0, math.tau))
+
+
+def test_line_2d_from_two_points():
+    line = Line2D.from_two_points(Point2D(1.0, 1.0), Point2D(1.0, 5.0))
+    assert line.origin() == Point2D(1.0, 1.0)
+    assert line.direction() == Vector2D(0.0, 1.0)
+    with pytest.raises(ValueError):
+        Line2D.from_two_points(Point2D(1.0, 1.0), Point2D(1.0, 1.0))
+
+
+def test_extrema_on_lines_and_circles():
+    line = Line3D(Point3D(0.0, 0.0, 0.0), Vector3D(1.0, 0.0, 0.0))
+    query = Point3D(2.0, 3.0, 0.0)
+    (minimum,) = line.extrema(query)
+    assert minimum.point == Point3D(2.0, 0.0, 0.0)
+    assert minimum.distance == pytest.approx(3.0)
+    assert minimum.target is line
+
+    circle = Circle3D(Point3D(0.0, 0.0, 0.0), Z, 2.0)
+    results = circle.extrema(Point3D(3.0, 0.0, 0.0))
+    assert results[0].distance == pytest.approx(1.0)
+    assert results[0].query_point == Point3D(3.0, 0.0, 0.0)
+
+    line_2d = Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0))
+    (minimum_2d,) = line_2d.extrema(Point2D(2.0, 3.0))
+    assert minimum_2d.point == Point2D(2.0, 0.0)
+    assert minimum_2d.target is line_2d
+
+    circle_2d = Circle2D(Point2D(0.0, 0.0), 2.0)
+    assert circle_2d.extrema(Point2D(3.0, 0.0))[0].distance == pytest.approx(1.0)
