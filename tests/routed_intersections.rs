@@ -596,3 +596,40 @@ fn test_2d_hit_just_below_the_seam_reports_the_start_like_3d() {
     assert!(!r.hits().is_empty());
     assert_eq!(r.hits()[0].first_parameter, 0.0);
 }
+
+#[test]
+fn test_concrete_pairs_route_like_their_enums_bit_for_bit() {
+    let line = Line3D::new(Point3D::new(-5.0, 0.3, 0.2), Vector3D::new(1.0, 0.1, 0.4)).unwrap();
+    let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::new(0.1, 0.0, 1.0), 1.5).unwrap();
+    let typed = line.intersect(&cylinder, TOL);
+    assert_eq!(typed.hits().len(), 2);
+    assert_eq!(
+        typed,
+        Curve3D::from(line).intersect(&Surface::from(cylinder), TOL)
+    );
+    let segment = TrimmedCurve3D::new(line, 0.0, 5.0).unwrap();
+    assert_eq!(
+        segment.intersect(&cylinder, TOL),
+        TrimmedCurve3D::new(Curve3D::from(line), 0.0, 5.0)
+            .unwrap()
+            .intersect(&Surface::from(cylinder), TOL)
+    );
+
+    let first = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    let second = Circle3D::new(Point3D::new(1.5, 0.0, 0.0), Vector3D::Z, 1.0).unwrap();
+    let typed = first.intersect(&second, TOL);
+    assert_eq!(typed.hits().len(), 2);
+    assert_eq!(
+        typed,
+        Curve3D::from(first).intersect(&Curve3D::from(second), TOL)
+    );
+
+    let first = Circle2D::new(Point2D::new(0.0, 0.0), 2.0).unwrap();
+    let second = Circle2D::new(Point2D::new(1.5, 0.5), 1.0).unwrap();
+    let typed = first.intersect(&second, TOL);
+    assert_eq!(typed.hits().len(), 2);
+    assert_eq!(
+        typed,
+        Curve2D::from(first).intersect(&Curve2D::from(second), TOL)
+    );
+}

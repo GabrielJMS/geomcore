@@ -555,6 +555,120 @@ impl From<ConicSurfaceIntersection> for ExactCurveSurfaceIntersection {
     }
 }
 
+/// The exact intersection of a curve with a surface of type `S` in the
+/// general form, solved by the pair's typed solver.
+///
+/// The router calls it on the concrete types of a pair, so a pair known at
+/// compile time skips the untyped enums and their dispatch. The untyped
+/// [`IntersectExact`] goes through the same implementations, so both paths
+/// return the same result.
+pub(crate) trait ExactCurveSurface<S> {
+    /// Intersects `self` with `surface`, deciding tangency and coincidence
+    /// with `tol`.
+    fn exact_curve_surface(&self, surface: &S, tol: Tolerance) -> ExactCurveSurfaceIntersection;
+}
+
+/// Implements [`ExactCurveSurface`] for each pair with a closed form
+/// (`solved`) through its typed solver, and for each pair without one
+/// (`not_analytic`) as [`ExactCurveSurfaceIntersection::NotAnalytic`].
+macro_rules! exact_curve_surface {
+    (solved: $($curve:ty => [$($surface:ty),*]),*) => {
+        $($(
+            impl ExactCurveSurface<$surface> for $curve {
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    surface: &$surface,
+                    tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    self.intersect_exact(surface, tol).into()
+                }
+            }
+        )*)*
+    };
+    (not_analytic: $($other:ty => $torus:ty),*) => {
+        $(
+            impl ExactCurveSurface<$torus> for $other {
+                /// A circle or conic against a torus has no closed form.
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    _surface: &$torus,
+                    _tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    ExactCurveSurfaceIntersection::NotAnalytic
+                }
+            }
+        )*
+    };
+}
+
+exact_curve_surface!(
+    solved:
+    Line3D => [Plane, Cylinder, Cone, Sphere, Torus],
+    Circle3D => [Plane, Cylinder, Cone, Sphere],
+    Ellipse3D => [Plane, Cylinder, Cone, Sphere],
+    Parabola3D => [Plane, Cylinder, Cone, Sphere],
+    Hyperbola3D => [Plane, Cylinder, Cone, Sphere]
+);
+
+exact_curve_surface!(
+    not_analytic:
+    Circle3D => Torus,
+    Ellipse3D => Torus,
+    Parabola3D => Torus,
+    Hyperbola3D => Torus
+);
+
+/// Implements [`ExactCurveSurface`] between each concrete curve and the
+/// untyped [`ElementarySurface`], and between [`ElementaryCurve`] and each
+/// concrete surface, by dispatching on the untyped operand.
+macro_rules! exact_curve_surface_untyped {
+    (curves: $($curve:ty),*; surfaces: $($surface:ty),*) => {
+        $(
+            impl ExactCurveSurface<ElementarySurface> for $curve {
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    surface: &ElementarySurface,
+                    tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    match surface {
+                        ElementarySurface::Plane(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Cylinder(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Cone(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Sphere(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Torus(s) => self.exact_curve_surface(s, tol),
+                    }
+                }
+            }
+        )*
+        $(
+            impl ExactCurveSurface<$surface> for ElementaryCurve {
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    surface: &$surface,
+                    tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    match self {
+                        ElementaryCurve::Line(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Circle(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Ellipse(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Parabola(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Hyperbola(c) => c.exact_curve_surface(surface, tol),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+exact_curve_surface_untyped!(
+    curves: Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D;
+    surfaces: Plane, Cylinder, Cone, Sphere, Torus, ElementarySurface
+);
+
 impl IntersectExact<ElementarySurface> for ElementaryCurve {
     type Output = ExactCurveSurfaceIntersection;
 
@@ -566,32 +680,7 @@ impl IntersectExact<ElementarySurface> for ElementaryCurve {
         other: &ElementarySurface,
         tol: Tolerance,
     ) -> ExactCurveSurfaceIntersection {
-        use ElementaryCurve as C;
-        use ElementarySurface as S;
-        match (self, other) {
-            (C::Line(c), S::Torus(s)) => c.intersect_exact(s, tol).into(),
-            (_, S::Torus(_)) => ExactCurveSurfaceIntersection::NotAnalytic,
-            (C::Line(c), S::Plane(s)) => c.intersect_exact(s, tol).into(),
-            (C::Line(c), S::Cylinder(s)) => c.intersect_exact(s, tol).into(),
-            (C::Line(c), S::Cone(s)) => c.intersect_exact(s, tol).into(),
-            (C::Line(c), S::Sphere(s)) => c.intersect_exact(s, tol).into(),
-            (C::Circle(c), S::Plane(s)) => c.intersect_exact(s, tol).into(),
-            (C::Circle(c), S::Cylinder(s)) => c.intersect_exact(s, tol).into(),
-            (C::Circle(c), S::Cone(s)) => c.intersect_exact(s, tol).into(),
-            (C::Circle(c), S::Sphere(s)) => c.intersect_exact(s, tol).into(),
-            (C::Ellipse(c), S::Plane(s)) => c.intersect_exact(s, tol).into(),
-            (C::Ellipse(c), S::Cylinder(s)) => c.intersect_exact(s, tol).into(),
-            (C::Ellipse(c), S::Cone(s)) => c.intersect_exact(s, tol).into(),
-            (C::Ellipse(c), S::Sphere(s)) => c.intersect_exact(s, tol).into(),
-            (C::Parabola(c), S::Plane(s)) => c.intersect_exact(s, tol).into(),
-            (C::Parabola(c), S::Cylinder(s)) => c.intersect_exact(s, tol).into(),
-            (C::Parabola(c), S::Cone(s)) => c.intersect_exact(s, tol).into(),
-            (C::Parabola(c), S::Sphere(s)) => c.intersect_exact(s, tol).into(),
-            (C::Hyperbola(c), S::Plane(s)) => c.intersect_exact(s, tol).into(),
-            (C::Hyperbola(c), S::Cylinder(s)) => c.intersect_exact(s, tol).into(),
-            (C::Hyperbola(c), S::Cone(s)) => c.intersect_exact(s, tol).into(),
-            (C::Hyperbola(c), S::Sphere(s)) => c.intersect_exact(s, tol).into(),
-        }
+        self.exact_curve_surface(other, tol)
     }
 }
 
@@ -815,6 +904,126 @@ fn conic_conic(result: ConicConicIntersection) -> ExactCurveCurveIntersection {
     }
 }
 
+/// The exact intersection of a curve with a curve of type `B` in the
+/// general form, solved by the pair's typed solver, the parameters on both
+/// curves recovered once.
+///
+/// The router calls it on the concrete types of a pair, so a pair known at
+/// compile time skips the untyped enums and their dispatch. The untyped
+/// [`IntersectExact`] goes through the same implementations, so both paths
+/// return the same result.
+pub(crate) trait ExactCurveCurve<B> {
+    /// Intersects `self` with `other`, deciding tangency and coincidence
+    /// with `tol`.
+    fn exact_curve_curve(&self, other: &B, tol: Tolerance) -> ExactCurveCurveIntersection;
+}
+
+/// Implements [`ExactCurveCurve`] for each listed pair with the given body,
+/// which reads the pair as `(a, b)`.
+macro_rules! exact_curve_curve {
+    ($(($first:ty, $second:ty) => |$a:ident, $b:ident, $tol:ident| $body:expr;)*) => {$(
+        impl ExactCurveCurve<$second> for $first {
+            #[inline]
+            fn exact_curve_curve(
+                &self,
+                other: &$second,
+                $tol: Tolerance,
+            ) -> ExactCurveCurveIntersection {
+                let ($a, $b) = (self, other);
+                $body
+            }
+        }
+    )*};
+}
+
+exact_curve_curve!(
+    (Line3D, Line3D) => |a, b, tol| line_line(a.intersect_exact(b, tol));
+    (Line3D, Circle3D) => |a, b, tol| line_circle(a.intersect_exact(b, tol), a, b, tol);
+    (Line3D, Ellipse3D) => |a, b, tol| line_conic(a.intersect_exact(b, tol), a, b, tol);
+    (Line3D, Parabola3D) => |a, b, tol| line_conic(a.intersect_exact(b, tol), a, b, tol);
+    (Line3D, Hyperbola3D) => |a, b, tol| line_conic(a.intersect_exact(b, tol), a, b, tol);
+    (Circle3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Ellipse3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Parabola3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Hyperbola3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Circle3D, Circle3D) => |a, b, tol| circle_circle(a.intersect_exact(b, tol), a, b, tol);
+    (Circle3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Circle3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Circle3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Circle3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Circle3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Circle3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+);
+
+/// Implements [`ExactCurveCurve`] between each concrete curve and the
+/// untyped [`ElementaryCurve`], in both orders, by dispatching on the
+/// untyped operand.
+macro_rules! exact_curve_curve_untyped {
+    ($($curve:ty),*) => {$(
+        impl ExactCurveCurve<ElementaryCurve> for $curve {
+            #[inline]
+            fn exact_curve_curve(
+                &self,
+                other: &ElementaryCurve,
+                tol: Tolerance,
+            ) -> ExactCurveCurveIntersection {
+                match other {
+                    ElementaryCurve::Line(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Circle(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Ellipse(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Parabola(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Hyperbola(b) => self.exact_curve_curve(b, tol),
+                }
+            }
+        }
+
+        impl ExactCurveCurve<$curve> for ElementaryCurve {
+            #[inline]
+            fn exact_curve_curve(
+                &self,
+                other: &$curve,
+                tol: Tolerance,
+            ) -> ExactCurveCurveIntersection {
+                match self {
+                    ElementaryCurve::Line(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Circle(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Ellipse(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Parabola(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Hyperbola(a) => a.exact_curve_curve(other, tol),
+                }
+            }
+        }
+    )*};
+}
+
+exact_curve_curve_untyped!(Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D);
+
+impl ExactCurveCurve<ElementaryCurve> for ElementaryCurve {
+    #[inline]
+    fn exact_curve_curve(
+        &self,
+        other: &ElementaryCurve,
+        tol: Tolerance,
+    ) -> ExactCurveCurveIntersection {
+        match self {
+            ElementaryCurve::Line(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Circle(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Ellipse(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Parabola(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Hyperbola(a) => a.exact_curve_curve(other, tol),
+        }
+    }
+}
+
 impl IntersectExact for ElementaryCurve {
     type Output = ExactCurveCurveIntersection;
 
@@ -825,31 +1034,7 @@ impl IntersectExact for ElementaryCurve {
         other: &ElementaryCurve,
         tol: Tolerance,
     ) -> ExactCurveCurveIntersection {
-        use ElementaryCurve as C;
-        match (self, other) {
-            (C::Line(a), C::Line(b)) => line_line(a.intersect_exact(b, tol)),
-            (C::Line(a), C::Circle(b)) => line_circle(a.intersect_exact(b, tol), a, b, tol),
-            (C::Line(a), C::Ellipse(b)) => line_conic(a.intersect_exact(b, tol), a, b, tol),
-            (C::Line(a), C::Parabola(b)) => line_conic(a.intersect_exact(b, tol), a, b, tol),
-            (C::Line(a), C::Hyperbola(b)) => line_conic(a.intersect_exact(b, tol), a, b, tol),
-            (C::Circle(a), C::Circle(b)) => circle_circle(a.intersect_exact(b, tol), a, b, tol),
-            (C::Circle(a), C::Ellipse(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Circle(a), C::Parabola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Circle(a), C::Hyperbola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Ellipse(a), C::Circle(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Ellipse(a), C::Ellipse(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Ellipse(a), C::Parabola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Ellipse(a), C::Hyperbola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Parabola(a), C::Circle(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Parabola(a), C::Ellipse(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Parabola(a), C::Parabola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Parabola(a), C::Hyperbola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Hyperbola(a), C::Circle(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Hyperbola(a), C::Ellipse(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Hyperbola(a), C::Parabola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (C::Hyperbola(a), C::Hyperbola(b)) => conic_conic(a.intersect_exact(b, tol)),
-            (_, C::Line(_)) => other.intersect_exact(self, tol).swapped(),
-        }
+        self.exact_curve_curve(other, tol)
     }
 }
 

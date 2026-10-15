@@ -130,7 +130,11 @@ pub(crate) fn line_parameter(axis: &Axis3D, p: Point3D) -> f64 {
 /// signed angle from `x_dir` to `p - origin`, referenced against `z_dir`.
 pub(crate) fn circle_parameter(frame: &Frame3D, p: Point3D) -> f64 {
     let op = p - frame.origin();
-    wrap_to_turn(frame.x_direction().angle_with_ref(op, frame.z_direction()))
+    wrap_to_turn(signed_angle_around_unit_axis(
+        frame.x_direction(),
+        op,
+        frame.z_direction(),
+    ))
 }
 
 /// Recovers the angular parameter of a point on (or near) the ellipse,
@@ -145,7 +149,21 @@ pub(crate) fn ellipse_parameter(frame: &Frame3D, maj: f64, min: f64, p: Point3D)
     let nx = op.dot(frame.x_direction());
     let ny = op.dot(frame.y_direction());
     let om = nx * frame.x_direction() + ny * (maj / min) * frame.y_direction();
-    wrap_to_turn(frame.x_direction().angle_with_ref(om, frame.z_direction()))
+    wrap_to_turn(signed_angle_around_unit_axis(
+        frame.x_direction(),
+        om,
+        frame.z_direction(),
+    ))
+}
+
+/// Signed angle from `from` to `to` around `unit_axis` (right-hand rule),
+/// in `(-PI, PI]`.
+///
+/// The same angle as [`Vector3D::angle_with_ref`], without normalizing
+/// the axis on every call: a frame's z direction is unit by construction,
+/// so the circle and ellipse parameters skip that square root and division.
+fn signed_angle_around_unit_axis(from: Vector3D, to: Vector3D, unit_axis: Vector3D) -> f64 {
+    unit_axis.dot(from.cross(to)).atan2(from.dot(to))
 }
 
 /// Whether `p` is within `tol` of a conic in the frame's plane, decided

@@ -9,6 +9,18 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Changed
+
+- `a.intersect(&b, tol)` between two concrete elementary types (for
+  example `Line3D` and `Cylinder`, two `Circle3D`, two `Circle2D`), or a
+  trimmed curve on one, now calls the pair's typed exact solver directly
+  instead of going through the `ElementaryCurve` / `ElementarySurface`
+  enums; the result is unchanged. Routed circle–circle is about 20%
+  faster, 2D circle–circle about 15%.
+- `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the
+  frame's z direction on every call (it is unit by construction): about
+  13 ns faster per call, and the parameters may differ in the last bits.
+
 ### Removed
 
 - The numeric free functions `intersect_curve_surface` and
