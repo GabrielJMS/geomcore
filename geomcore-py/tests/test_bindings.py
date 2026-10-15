@@ -1333,6 +1333,10 @@ def test_discretize_2d_curves():
         segment.discretize(0.0)
     # Any positive deviation is accepted, however small; a segment stays two points.
     assert len(segment.discretize(1e-9).points) == 2
+    arc = geomcore.curves.TrimmedCurve2D(geomcore.curves.Circle2D(Point2D(0.0, 0.0), 1.0), 0.0, 1.0)
+    fine = arc.discretize(1e-9)
+    assert all(dev <= 1e-9 for dev in fine.chord_deviations)
+    assert len(fine.points) > len(arc.discretize(1e-3).points)
 
 
 def _cubic_curve():
