@@ -1331,9 +1331,8 @@ def test_discretize_2d_curves():
     assert d.chord_deviations == [0.0] and d.angle_deviations == [0.0]
     with pytest.raises(ValueError):
         segment.discretize(0.0)
-    # Below the confusion tolerance, segments already lie on the curve.
-    with pytest.raises(ValueError, match="confusion"):
-        segment.discretize(1e-9)
+    # Any positive deviation is accepted, however small; a segment stays two points.
+    assert len(segment.discretize(1e-9).points) == 2
 
 
 def _cubic_curve():
