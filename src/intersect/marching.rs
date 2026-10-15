@@ -50,13 +50,14 @@ use crate::{Bound3D, BoundingBox3D, Point3D, Tolerance, Vector3D};
 /// curvature (a chord deviation of about `1000 * confusion`), with no
 /// fixed cap. A step is halved when the intersection at its midpoint,
 /// converged onto both surfaces, strays from the chord by more than twice
-/// that deviation, or when it advances more than one knot span in a
-/// parameter of a B-spline side (within a span the control points bound
-/// the features). A trace ends when it closes a loop, stalls, reaches a parameter
-/// bound, or leaves the cube of side [`Tolerance::MODEL_SIZE`] centred on
-/// the origin, its last point then lying on the bound or the cube. Traces
-/// fit [`BSplineCurve3D`] interpolants (degree 3, closed loops by repeated
-/// end points).
+/// that deviation, or when it crosses more than one knot in a parameter
+/// of a B-spline side, so that it never steps over a whole knot span
+/// (within a span the control points bound the features). A trace ends
+/// when it closes a loop, stalls, reaches a parameter bound, or leaves
+/// the cube of side [`Tolerance::MODEL_SIZE`] centred on the origin, its
+/// last point then lying on the bound or the cube. Traces fit
+/// [`BSplineCurve3D`] interpolants (degree 3, closed loops by repeated end
+/// points).
 ///
 /// Two B-spline surfaces (see [`ParametricSurface::as_bspline`]) are
 /// seeded from pairs of their Bézier patches instead. The pairs whose
@@ -585,9 +586,10 @@ where
     // Chord deviation allowed per step. The step follows the curvature of
     // the last one (a chord deviation of `chord_deviation`), and a step
     // whose corrected midpoint strays farther from its chord is halved, so
-    // a feature as wide as the step is not crossed. A B-spline side caps
-    // the step at one knot span (see `span_step`): within a span its
-    // control points bound the features.
+    // a feature as wide as the step is not crossed. On a B-spline side a
+    // step crosses at most one knot (see `crosses_one_knot_at_most`), so it
+    // never steps over a whole knot span: within a span its control points
+    // bound the features.
     let chord_deviation = CHORD_DEVIATION * tol.confusion;
     // A trace ends on closing its loop, on a parameter bound, or on the
     // model-size cube; this count only guards against a runaway trace (a
@@ -612,7 +614,7 @@ where
             break;
         }
         let (mut x, mut p, mut t) = (seed, start, t0 * dir);
-        let mut h = (8.0 * chord_deviation).sqrt().min(span_step(a, b, x, t));
+        let mut h = (8.0 * chord_deviation).sqrt();
         // Curvature of the last accepted step (none before the first).
         let mut last_curvature = 0.0;
         for _ in 0..SAFETY_STEP_LIMIT {
@@ -628,7 +630,11 @@ where
                     // The step leaves a parameter domain: end on its edge.
                     if let Some(y) = land(a, b, guess, pin, bound, tol) {
                         let q = a.eval_point(y[0], y[1]);
-                        if (q - p).dot(t) >= 0.0 && q.distance(p) <= 2.0 * h {
+                        if (q - p).dot(t) >= 0.0
+                            && q.distance(p) <= 2.0 * h
+                            && crosses_one_knot_at_most(a, b, (x, p), (y, q), tol)
+                            && !bulges(a, b, (x, p), (y, q), chord_deviation, tol)
+                        {
                             edge = Some(q);
                             break;
                         }
@@ -644,7 +650,7 @@ where
                         && chord <= 2.0 * h
                         && chord * turn <= 32.0 * chord_deviation
                         && smooth
-                        && within_one_span(a, b, x, y)
+                        && crosses_one_knot_at_most(a, b, (x, p), (y, q), tol)
                         && !bulges(a, b, (x, p), (y, q), chord_deviation, tol)
                     {
                         step = Some((y, q, ty, turn / chord.max(f64::MIN_POSITIVE)));
@@ -655,6 +661,13 @@ where
             }
             if let Some(q) = edge {
                 if q.distance(p) > tol.confusion.max(crate::tol::CONFUSION) {
+                    // A last step much shorter than the one before makes
+                    // the fitted curve overshoot the edge: the edge point
+                    // then replaces the last point.
+                    let before = half.len().checked_sub(2).map_or(start, |i| half[i]);
+                    if !half.is_empty() && q.distance(p) < 0.25 * p.distance(before) {
+                        half.pop();
+                    }
                     half.push(q);
                 }
                 break;
@@ -683,9 +696,7 @@ where
             half.push(q);
             (x, p, t) = (y, q, ty);
             last_curvature = curvature;
-            h = (2.0 * h)
-                .min((8.0 * chord_deviation / curvature.max(f64::MIN_POSITIVE)).sqrt())
-                .min(span_step(a, b, x, t));
+            h = (2.0 * h).min((8.0 * chord_deviation / curvature.max(f64::MIN_POSITIVE)).sqrt());
         }
     }
     let [forward, backward] = halves;
@@ -727,50 +738,34 @@ where
         .is_none_or(|z| a.eval_point(z[0], z[1]).distance(middle) > MIDPOINT_SLACK * deviation)
 }
 
-/// The longest step from parameters `x` along the unit tangent `t` that
-/// advances at most one knot span in each parameter of a B-spline side
-/// (to first order), or infinity when neither side is a B-spline.
-fn span_step<A, B>(a: &A, b: &B, x: [f64; 4], t: Vector3D) -> f64
+/// Whether the move from `p` (parameters `x`) to `q` (parameters `y`)
+/// crosses at most one knot in each parameter of a B-spline side (knots at
+/// either end count), so that it never both enters and leaves a knot span
+/// and steps over the span. Spans crossed whole that are no wider than the
+/// confusion distance (in space, at the move's average speed) are let
+/// through: no step could land inside them.
+fn crosses_one_knot_at_most<A, B>(
+    a: &A,
+    b: &B,
+    (x, p): ([f64; 4], Point3D),
+    (y, q): ([f64; 4], Point3D),
+    tol: Tolerance,
+) -> bool
 where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let on = |surface: Option<&BSplineSurface>, u: f64, v: f64| {
-        surface.map_or(f64::INFINITY, |s| {
-            let (_, [su, sv]) = s.eval_d1(u, v);
-            let m = [[su.dot(su), su.dot(sv)], [su.dot(sv), sv.dot(sv)]];
-            let Some([du, dv]) = solve_2x2(m, [su.dot(t), sv.dot(t)], 1e-12) else {
-                return f64::INFINITY;
-            };
-            let along = |knots: &[f64], periodic: bool, at: f64, rate: f64| {
-                if rate == 0.0 {
-                    return f64::INFINITY;
-                }
-                span_width(knots, periodic, at, rate > 0.0) / rate.abs()
-            };
-            along(s.u_knots(), s.is_u_periodic(), u, du).min(along(
-                s.v_knots(),
-                s.is_v_periodic(),
-                v,
-                dv,
-            ))
-        })
+    let chord = p.distance(q);
+    let fits = |knots: &[f64], periodic: bool, from: f64, to: f64| {
+        let (low, high) = (from.min(to), from.max(to));
+        let first = knots_below(knots, periodic, low, false);
+        let last = knots_below(knots, periodic, high, true) - 1;
+        last <= first
+            || (knot(knots, periodic, last) - knot(knots, periodic, first)) * chord
+                <= tol.confusion * (high - low)
     };
-    on(a.as_bspline(), x[0], x[1]).min(on(b.as_bspline(), x[2], x[3]))
-}
-
-/// Whether the move from parameters `x` to `y` advances at most one knot
-/// span in each parameter of a B-spline side.
-fn within_one_span<A, B>(a: &A, b: &B, x: [f64; 4], y: [f64; 4]) -> bool
-where
-    A: ParametricSurface,
-    B: ParametricSurface,
-{
     let on = |surface: Option<&BSplineSurface>, k: usize| {
         surface.is_none_or(|s| {
-            let fits = |knots: &[f64], periodic: bool, from: f64, to: f64| {
-                (to - from).abs() <= span_width(knots, periodic, from, to > from)
-            };
             fits(s.u_knots(), s.is_u_periodic(), x[k], y[k])
                 && fits(s.v_knots(), s.is_v_periodic(), x[k + 1], y[k + 1])
         })
@@ -778,23 +773,41 @@ where
     on(a.as_bspline(), 0) && on(b.as_bspline(), 2)
 }
 
-/// The width of the knot span holding `at` (wrapped into the knots' range
-/// when `periodic`), taking the span ahead when `at` lies on a knot:
-/// the next one when `forward`, the previous one otherwise.
-fn span_width(knots: &[f64], periodic: bool, at: f64, forward: bool) -> f64 {
-    let (first, last) = (knots[0], knots[knots.len() - 1]);
-    let at = if periodic {
-        first + (at - first).rem_euclid(last - first)
-    } else {
-        at
+/// The number of knots below `at` (or at it when `inclusive`). A periodic
+/// direction repeats its knots every period, its last knot being the next
+/// period's first, so the count runs on past the range and below zero.
+fn knots_below(knots: &[f64], periodic: bool, at: f64, inclusive: bool) -> i64 {
+    let below = |knots: &[f64], at: f64| {
+        let count = if inclusive {
+            knots.partition_point(|&k| k <= at)
+        } else {
+            knots.partition_point(|&k| k < at)
+        };
+        count as i64
     };
-    let end = if forward {
-        knots.partition_point(|&k| k <= at)
-    } else {
-        knots.partition_point(|&k| k < at)
-    };
-    let end = end.clamp(1, knots.len() - 1);
-    knots[end] - knots[end - 1]
+    if !periodic {
+        return below(knots, at);
+    }
+    let first = knots[0];
+    let period = knots[knots.len() - 1] - first;
+    let once = &knots[..knots.len() - 1];
+    let turns = ((at - first) / period).floor();
+    turns as i64 * once.len() as i64 + below(once, at - turns * period)
+}
+
+/// The knot of index `index` in the count of [`knots_below`]; minus or
+/// plus infinity before or after a non-periodic range.
+fn knot(knots: &[f64], periodic: bool, index: i64) -> f64 {
+    if !periodic {
+        return match usize::try_from(index) {
+            Err(_) => f64::NEG_INFINITY,
+            Ok(i) => knots.get(i).copied().unwrap_or(f64::INFINITY),
+        };
+    }
+    let first = knots[0];
+    let period = knots[knots.len() - 1] - first;
+    let count = knots.len() as i64 - 1;
+    knots[index.rem_euclid(count) as usize] + index.div_euclid(count) as f64 * period
 }
 
 /// Half the side of the model-size cube centred on the origin, where
@@ -1533,8 +1546,14 @@ mod tests {
 
     /// The straight wall along the diagonal of the xy plane over 280,
     /// extruded along z over `[-1, 1]`, with one pole pushed off by `bump`
-    /// at `at` along it, its neighbours `width` apart.
-    fn bumped_wall(bump: f64, width: f64, at: f64) -> crate::surfaces::BSplineSurface {
+    /// at `at` along it, its neighbours `width` apart, with the given knots
+    /// (uniform when `None`).
+    fn bumped_wall(
+        bump: f64,
+        width: f64,
+        at: f64,
+        knots: Option<&[f64]>,
+    ) -> crate::surfaces::BSplineSurface {
         let r = std::f64::consts::FRAC_1_SQRT_2;
         let along = [
             0.0,
@@ -1559,7 +1578,10 @@ mod tests {
                 vec![Point3D::new(x, y, -1.0), Point3D::new(x, y, 1.0)]
             })
             .collect::<Vec<_>>();
-        let knots: Vec<f64> = (0..=poles.len() - 3).map(|k| k as f64).collect();
+        let knots: Vec<f64> = knots.map_or_else(
+            || (0..=poles.len() - 3).map(|k| k as f64).collect(),
+            <[f64]>::to_vec,
+        );
         let mut multiplicities = vec![1; knots.len()];
         multiplicities[0] = 4;
         *multiplicities.last_mut().unwrap() = 4;
@@ -1584,8 +1606,21 @@ mod tests {
         use crate::Plane;
         let tol = Tolerance::DEFAULT;
         let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
-        for (bump, width, at) in [(0.05, 0.25, 125.0), (0.02, 0.1, 150.0), (0.2, 0.5, 175.0)] {
-            let wall = bumped_wall(bump, width, at);
+        // Chord-length knots, and a wide span before narrow ones at the
+        // bump: a step must not cross the narrow spans in one go.
+        let chord_length = [
+            0.0, 40.0, 80.0, 120.0, 149.0, 149.5, 150.0, 150.5, 151.0, 280.0,
+        ];
+        let wide_then_narrow = [0.0, 1.0, 2.0, 3.0, 3.001, 3.002, 3.003, 3.004, 3.005, 4.0];
+        for (bump, width, at, knots) in [
+            (0.05, 0.25, 125.0, None),
+            (0.02, 0.1, 150.0, None),
+            (0.2, 0.5, 175.0, None),
+            (0.02, 0.1, 150.0, Some(&chord_length[..])),
+            (0.05, 0.25, 150.0, Some(&wide_then_narrow[..])),
+            (0.2, 0.5, 150.0, Some(&wide_then_narrow[..])),
+        ] {
+            let wall = bumped_wall(bump, width, at, knots);
             let curves = marching_intersection(&plane, &wall, tol);
             assert_eq!(curves.len(), 1, "bump {bump} at {at}");
             let curve = &curves[0];

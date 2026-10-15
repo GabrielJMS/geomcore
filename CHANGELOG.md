@@ -49,7 +49,8 @@ the Python distribution are versioned in lockstep.
   steps: an unbounded curve now runs to the cube, and a long loop closes.
   The step follows the curvature with no fixed cap of 0.1; a step is
   halved when the intersection at its midpoint strays from its chord, or
-  when it advances more than one knot span of a B-spline side. Traced
+  when it crosses more than one knot of a B-spline side (so uneven knot
+  spans cannot hide a feature from it). Traced
   curves of low curvature take fewer points; each step costs one more
   Newton solve.
 - `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the

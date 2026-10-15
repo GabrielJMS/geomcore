@@ -424,8 +424,8 @@ versions:
 - the iso-curve seeding of the first review round, whose steps grew with
   the distance from the seed;
 - the current one. Steps follow the curvature with no fixed cap, are
-  halved when the midpoint strays from the chord or the step advances more
-  than one knot span of a B-spline side, and stop on the model-size cube.
+  halved when the midpoint strays from the chord or the step crosses more
+  than one knot of a B-spline side, and stop on the model-size cube.
   Bounded pairs add both grids.
 
 | case | grid | first round | current |
