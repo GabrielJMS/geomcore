@@ -11,6 +11,18 @@ the Python distribution are versioned in lockstep.
 
 ### Added
 
+- Python binding gaps closed against the Rust API: `Axis2D` and `Frame2D`;
+  `frame()` on every curve and surface that has one, `axis()` on `Line3D`,
+  `Line2D` and `Cylinder`, `Torus.center()`, `Parabola3D.apex()`;
+  `period()` and `is_periodic()` on curves, `u_period()` and `v_period()` on
+  surfaces; `eval_d1` and `eval_d2` on curves and surfaces; `bounds()` on
+  `Line2D` and `Circle2D`; `Line2D.from_two_points` and `Line2D.from_axis`;
+  `extrema` on `Line3D`, `Circle3D`, `Line2D` and `Circle2D`; `point_count`
+  on the discretizable curves; `+`, `-` and `*` on points and vectors;
+  `Vector3D.normalized`, `square_magnitude`, `is_finite` and
+  `angle_with_ref`, the members of `Vector2D` that `Vector3D` has, and
+  `Frame3D.axis`, `local_coordinates` and `point_at`.
+- `ParametricCurve2D::eval_d1` and `eval_d2`, mirroring the 3D trait.
 - Python `project_point`, `project_points` and `extrema` return
   `CurveProjection`, `CurveProjection2D` and `SurfaceProjection` objects with
   `parameter` (or `u`, `v`), `point` and `distance`, plus the `target` they
@@ -33,6 +45,9 @@ the Python distribution are versioned in lockstep.
 
 ### Changed
 
+- Python: the `Vector3D` unit constructors `x()`, `y()` and `z()` are renamed
+  `unit_x()`, `unit_y()` and `unit_z()`, matching `Vector3D::X`, `Y` and `Z`;
+  `x`, `y` and `z` are now the component properties, as on `Point3D`.
 - `intersect_curve_surface` and `intersect_curve_curve` return the
   routed results `CurveSurfaceIntersection` and `CurveCurveIntersection`
   (breaking): read the hits with `.hits()` and the search status with

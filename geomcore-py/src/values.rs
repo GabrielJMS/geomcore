@@ -15,6 +15,21 @@ use crate::{tolerance, val_err};
 // Root value types
 // ---------------------------------------------------------------------------
 
+/// What `Point3D.__sub__` accepts: a point (giving the vector between the
+/// two) or a vector (giving the moved point).
+#[derive(FromPyObject)]
+enum PointOrVector3D {
+    Point(PyPoint3D),
+    Vector(PyVector3D),
+}
+
+/// What `Point2D.__sub__` accepts: a point or a vector.
+#[derive(FromPyObject)]
+enum PointOrVector2D {
+    Point(PyPoint2D),
+    Vector(PyVector2D),
+}
+
 /// A point in 3D space with `x`, `y` and `z` coordinates.
 #[pyclass(name = "Point3D", module = "geomcore", eq)]
 #[derive(Clone, PartialEq)]
@@ -62,6 +77,28 @@ impl PyPoint3D {
         self.0.coincides(other.0, tolerance(tol))
     }
 
+    /// Whether every coordinate is finite.
+    fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
+
+    fn __add__(&self, offset: PyVector3D) -> PyPoint3D {
+        PyPoint3D(self.0 + offset.0)
+    }
+
+    fn __sub__(&self, other: PointOrVector3D, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match other {
+            PointOrVector3D::Point(point) => Ok(PyVector3D(self.0 - point.0)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind()),
+            PointOrVector3D::Vector(vector) => Ok(PyPoint3D(self.0 - vector.0)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind()),
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!("Point3D({}, {}, {})", self.0.x, self.0.y, self.0.z)
     }
@@ -69,8 +106,10 @@ impl PyPoint3D {
 
 /// A vector in 3D space.
 ///
-/// Components are read with `components()`; the unit vectors along the world
-/// axes are available as the static methods `x()`, `y()` and `z()`.
+/// Components are read with the properties `x`, `y` and `z` or with
+/// `components()`; the unit vectors along the world axes are the static
+/// methods `unit_x()`, `unit_y()` and `unit_z()`. Vectors add, subtract,
+/// negate and scale by a number with the usual operators.
 #[pyclass(name = "Vector3D", module = "geomcore", eq)]
 #[derive(Clone, PartialEq)]
 pub(crate) struct PyVector3D(pub(crate) Vector3D);
@@ -91,20 +130,35 @@ impl PyVector3D {
 
     /// The unit vector along the world x axis.
     #[staticmethod]
-    fn x() -> Self {
+    fn unit_x() -> Self {
         PyVector3D(Vector3D::X)
     }
 
     /// The unit vector along the world y axis.
     #[staticmethod]
-    fn y() -> Self {
+    fn unit_y() -> Self {
         PyVector3D(Vector3D::Y)
     }
 
     /// The unit vector along the world z axis.
     #[staticmethod]
-    fn z() -> Self {
+    fn unit_z() -> Self {
         PyVector3D(Vector3D::Z)
+    }
+
+    #[getter]
+    fn x(&self) -> f64 {
+        self.0.x
+    }
+
+    #[getter]
+    fn y(&self) -> f64 {
+        self.0.y
+    }
+
+    #[getter]
+    fn z(&self) -> f64 {
+        self.0.z
     }
 
     /// The `(x, y, z)` components as a tuple.
@@ -125,6 +179,49 @@ impl PyVector3D {
     /// Euclidean length of the vector.
     fn magnitude(&self) -> f64 {
         self.0.magnitude()
+    }
+
+    /// The squared length of the vector.
+    fn square_magnitude(&self) -> f64 {
+        self.0.square_magnitude()
+    }
+
+    /// Whether every component is finite.
+    fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
+
+    /// The unit vector with the same direction, or `None` for a vector too
+    /// short to normalize.
+    fn normalized(&self) -> Option<PyVector3D> {
+        self.0.normalized().map(PyVector3D)
+    }
+
+    /// The signed angle from this vector to `other` around `reference`
+    /// (right-hand rule), in (-pi, pi]. A zero `reference` gives the unsigned
+    /// angle in [0, pi].
+    fn angle_with_ref(&self, other: &PyVector3D, reference: &PyVector3D) -> f64 {
+        self.0.angle_with_ref(other.0, reference.0)
+    }
+
+    fn __add__(&self, other: &PyVector3D) -> PyVector3D {
+        PyVector3D(self.0 + other.0)
+    }
+
+    fn __sub__(&self, other: &PyVector3D) -> PyVector3D {
+        PyVector3D(self.0 - other.0)
+    }
+
+    fn __neg__(&self) -> PyVector3D {
+        PyVector3D(-self.0)
+    }
+
+    fn __mul__(&self, scalar: f64) -> PyVector3D {
+        PyVector3D(self.0 * scalar)
+    }
+
+    fn __rmul__(&self, scalar: f64) -> PyVector3D {
+        PyVector3D(scalar * self.0)
     }
 
     fn __repr__(&self) -> String {
@@ -174,6 +271,28 @@ impl PyPoint2D {
         self.0.coincides(other.0, tolerance(tol))
     }
 
+    /// Whether every coordinate is finite.
+    fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
+
+    fn __add__(&self, offset: PyVector2D) -> PyPoint2D {
+        PyPoint2D(self.0 + offset.0)
+    }
+
+    fn __sub__(&self, other: PointOrVector2D, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match other {
+            PointOrVector2D::Point(point) => Ok(PyVector2D(self.0 - point.0)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind()),
+            PointOrVector2D::Vector(vector) => Ok(PyPoint2D(self.0 - vector.0)
+                .into_pyobject(py)?
+                .into_any()
+                .unbind()),
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!("Point2D({}, {})", self.0.x, self.0.y)
     }
@@ -192,6 +311,24 @@ impl PyVector2D {
         PyVector2D(Vector2D::new(x, y))
     }
 
+    /// The zero vector.
+    #[staticmethod]
+    fn zero() -> Self {
+        PyVector2D(Vector2D::ZERO)
+    }
+
+    /// The unit vector along the x axis.
+    #[staticmethod]
+    fn unit_x() -> Self {
+        PyVector2D(Vector2D::X)
+    }
+
+    /// The unit vector along the y axis.
+    #[staticmethod]
+    fn unit_y() -> Self {
+        PyVector2D(Vector2D::Y)
+    }
+
     #[getter]
     fn x(&self) -> f64 {
         self.0.x
@@ -202,14 +339,66 @@ impl PyVector2D {
         self.0.y
     }
 
+    /// The `(x, y)` components as a tuple.
+    fn components(&self) -> (f64, f64) {
+        (self.0.x, self.0.y)
+    }
+
     /// Dot product with another vector.
     fn dot(&self, other: &PyVector2D) -> f64 {
         self.0.dot(other.0)
     }
 
+    /// The z component of the 3D cross product: positive when `other` lies
+    /// counter-clockwise from this vector.
+    fn cross(&self, other: &PyVector2D) -> f64 {
+        self.0.cross(other.0)
+    }
+
+    /// This vector turned a quarter turn counter-clockwise.
+    fn perp(&self) -> PyVector2D {
+        PyVector2D(self.0.perp())
+    }
+
     /// Euclidean length of the vector.
     fn magnitude(&self) -> f64 {
         self.0.magnitude()
+    }
+
+    /// The squared length of the vector.
+    fn square_magnitude(&self) -> f64 {
+        self.0.square_magnitude()
+    }
+
+    /// Whether every component is finite.
+    fn is_finite(&self) -> bool {
+        self.0.is_finite()
+    }
+
+    /// The unit vector with the same direction, or `None` for a vector too
+    /// short to normalize.
+    fn normalized(&self) -> Option<PyVector2D> {
+        self.0.normalized().map(PyVector2D)
+    }
+
+    fn __add__(&self, other: &PyVector2D) -> PyVector2D {
+        PyVector2D(self.0 + other.0)
+    }
+
+    fn __sub__(&self, other: &PyVector2D) -> PyVector2D {
+        PyVector2D(self.0 - other.0)
+    }
+
+    fn __neg__(&self) -> PyVector2D {
+        PyVector2D(-self.0)
+    }
+
+    fn __mul__(&self, scalar: f64) -> PyVector2D {
+        PyVector2D(self.0 * scalar)
+    }
+
+    fn __rmul__(&self, scalar: f64) -> PyVector2D {
+        PyVector2D(scalar * self.0)
     }
 
     fn __repr__(&self) -> String {
@@ -390,6 +579,22 @@ impl PyFrame3D {
     /// The unit z direction.
     fn z_direction(&self) -> PyVector3D {
         PyVector3D(self.0.z_direction())
+    }
+
+    /// The axis through the origin along the z direction.
+    fn axis(&self) -> PyAxis3D {
+        PyAxis3D(self.0.axis())
+    }
+
+    /// The coordinates `(u, v, w)` of `point` along the x, y and z
+    /// directions, measured from the origin.
+    fn local_coordinates(&self, point: PyPoint3D) -> (f64, f64, f64) {
+        self.0.local_coordinates(point.0)
+    }
+
+    /// The point at `u` along x, `v` along y and `w` along z from the origin.
+    fn point_at(&self, u: f64, v: f64, w: f64) -> PyPoint3D {
+        PyPoint3D(self.0.point_at(u, v, w))
     }
 }
 

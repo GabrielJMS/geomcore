@@ -23,7 +23,7 @@ def _assert_points_close(a, b):
 
 
 def test_curve_projection():
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     query = Point3D(3.0, 0.0, 1.0)
     projection = circle.project_point(query)
     assert isinstance(projection, CurveProjection)
@@ -91,7 +91,7 @@ def test_bspline_surface_projection():
 
 
 def test_trimmed_curve_extrema_hold_the_trimmed_curve():
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0)
     arc = TrimmedCurve3D(circle, 0.0, 1.0)
     extrema = arc.extrema(Point3D(3.0, 0.0, 0.0))
     assert extrema
@@ -99,7 +99,7 @@ def test_trimmed_curve_extrema_hold_the_trimmed_curve():
 
 
 def test_project_points_returns_a_list_of_projection_objects():
-    plane = Plane(Point3D.origin(), Vector3D.z())
+    plane = Plane(Point3D.origin(), Vector3D.unit_z())
     queries = [Point3D(1.0, 2.0, 3.0), Point3D(0.0, 0.0, 2.0)]
     projections = plane.project_points(queries)
     assert isinstance(projections, list)
@@ -109,12 +109,12 @@ def test_project_points_returns_a_list_of_projection_objects():
         assert projection.query_point == query
         assert projection == plane.project_point(query)
 
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     assert [type(p) for p in circle.project_points(queries)] == [CurveProjection] * 2
 
 
 def test_equality_and_repr():
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     query = Point3D(3.0, 0.0, 0.0)
     projection = circle.project_point(query)
     assert projection == circle.project_point(query)

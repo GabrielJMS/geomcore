@@ -65,7 +65,7 @@ def _segment(start, end):
 
 
 def test_closed_form_pair_is_exact_and_complete():
-    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.x())
+    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.unit_x())
     result = line.intersect(Sphere(Point3D.origin(), 2.0))
     assert isinstance(result, CurveSurfaceIntersection)
     assert result.method == IntersectionMethod.EXACT
@@ -78,7 +78,7 @@ def test_closed_form_pair_is_exact_and_complete():
 
 def test_bspline_pair_is_numeric():
     curve = _segment(Point3D(0.5, 0.5, -1.0), Point3D(0.5, 0.5, 1.0))
-    result = curve.intersect(Plane(Point3D.origin(), Vector3D.z()))
+    result = curve.intersect(Plane(Point3D.origin(), Vector3D.unit_z()))
     assert result.method == IntersectionMethod.NUMERIC
     (hit,) = result.hits
     assert isinstance(hit, CurveSurfaceHit)
@@ -89,7 +89,7 @@ def test_bspline_pair_is_numeric():
 
 def test_bspline_surfaces_march_and_are_sampled():
     square = _square()
-    plane = Plane(Point3D(1.0, 0.0, 0.0), Vector3D.x())
+    plane = Plane(Point3D(1.0, 0.0, 0.0), Vector3D.unit_x())
     result = square.intersect(plane)
     assert isinstance(result, SurfaceSurfaceIntersection)
     assert result.method == IntersectionMethod.NUMERIC
@@ -146,8 +146,8 @@ def test_tangent_curve_curve_contact_is_incomplete_with_a_region():
 
 
 def test_results_hold_the_operands_passed():
-    a = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
-    b = Plane(Point3D.origin(), Vector3D.x())
+    a = Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0)
+    b = Plane(Point3D.origin(), Vector3D.unit_x())
     result = a.intersect(b)
     assert result.first is a
     assert result.second is b
@@ -156,7 +156,7 @@ def test_results_hold_the_operands_passed():
 
 
 def test_swapped_curve_surface_order_gives_the_same_hits():
-    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.x())
+    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.unit_x())
     sphere = Sphere(Point3D.origin(), 2.0)
     forward, backward = line.intersect(sphere), sphere.intersect(line)
     assert backward.first is sphere and backward.second is line
@@ -165,8 +165,8 @@ def test_swapped_curve_surface_order_gives_the_same_hits():
 
 
 def test_swapped_curve_curve_order_swaps_the_parameters():
-    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.x())
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.unit_x())
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     forward, backward = line.intersect(circle), circle.intersect(line)
     assert len(forward.hits) == len(backward.hits) == 2
     for hit in forward.hits:
@@ -181,9 +181,9 @@ def test_swapped_curve_curve_order_swaps_the_parameters():
 
 
 def test_trimmed_arc_across_the_seam_keeps_both_hits():
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0)
     arc = TrimmedCurve3D(circle, 1.5 * math.pi, 2.5 * math.pi)
-    result = arc.intersect(Plane(Point3D(0.5, 0.0, 0.0), Vector3D.x()))
+    result = arc.intersect(Plane(Point3D(0.5, 0.0, 0.0), Vector3D.unit_x()))
     assert result.first is arc
     assert len(result.hits) == 2
     for hit in result.hits:
@@ -192,7 +192,7 @@ def test_trimmed_arc_across_the_seam_keeps_both_hits():
     for t in parameters:
         assert 1.5 * math.pi <= t <= 2.5 * math.pi
     # Half the circle is outside the arc: a plane there misses it.
-    miss = arc.intersect(Plane(Point3D(-0.5, 0.0, 0.0), Vector3D.x()))
+    miss = arc.intersect(Plane(Point3D(-0.5, 0.0, 0.0), Vector3D.unit_x()))
     assert miss.is_empty()
 
 
@@ -214,7 +214,7 @@ def test_trimmed_2d_curves_intersect():
 
 def test_curve_lying_on_a_surface_is_an_overlap():
     sphere = Sphere(Point3D.origin(), 2.0)
-    equator = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    equator = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     result = equator.intersect(sphere)
     assert result.hits == []
     assert result.overlaps == [pytest.approx((0.0, TAU))]
@@ -222,8 +222,8 @@ def test_curve_lying_on_a_surface_is_an_overlap():
 
 
 def test_coincident_curves_are_an_overlap():
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
-    result = circle.intersect(Circle3D(Point3D.origin(), Vector3D.z(), 1.0))
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0)
+    result = circle.intersect(Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0))
     (overlap,) = result.overlaps
     assert isinstance(overlap, CurveCurveOverlap)
     assert overlap.first_range == pytest.approx((0.0, TAU))
@@ -233,8 +233,8 @@ def test_coincident_curves_are_an_overlap():
 
 
 def test_coincident_surfaces():
-    plane = Plane(Point3D.origin(), Vector3D.z())
-    result = plane.intersect(Plane(Point3D.origin(), Vector3D.z()))
+    plane = Plane(Point3D.origin(), Vector3D.unit_z())
+    result = plane.intersect(Plane(Point3D.origin(), Vector3D.unit_z()))
     assert result.is_coincident()
     assert not result.is_empty()
     assert result.curves == []
@@ -245,15 +245,15 @@ def test_coincident_surfaces():
 
 def test_missing_pairs_are_empty_and_complete():
     sphere = Sphere(Point3D.origin(), 1.0)
-    far = Plane(Point3D(0.0, 0.0, 5.0), Vector3D.z())
-    for result in (sphere.intersect(far), Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.x()).intersect(sphere)):
+    far = Plane(Point3D(0.0, 0.0, 5.0), Vector3D.unit_z())
+    for result in (sphere.intersect(far), Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.unit_x()).intersect(sphere)):
         assert result.is_empty()
         assert result.is_complete()
 
 
 def test_tangent_plane_gives_a_contact_point():
     sphere = Sphere(Point3D.origin(), 2.0)
-    result = Plane(Point3D(0.0, 0.0, 2.0), Vector3D.z()).intersect(sphere)
+    result = Plane(Point3D(0.0, 0.0, 2.0), Vector3D.unit_z()).intersect(sphere)
     assert result.curves == []
     (point,) = result.contact_points
     assert point.distance(Point3D(0.0, 0.0, 2.0)) < 1e-9
@@ -261,7 +261,7 @@ def test_tangent_plane_gives_a_contact_point():
 
 
 def test_surface_surface_curves_are_geomcore_curves():
-    result = Plane(Point3D.origin(), Vector3D.z()).intersect(Sphere(Point3D.origin(), 2.0))
+    result = Plane(Point3D.origin(), Vector3D.unit_z()).intersect(Sphere(Point3D.origin(), 2.0))
     assert result.method == IntersectionMethod.EXACT
     (piece,) = result.curves
     assert isinstance(piece.curve, Circle3D)
@@ -273,12 +273,12 @@ def test_surface_surface_curves_are_geomcore_curves():
 
 def test_every_curve_and_surface_class_accepts_every_other():
     operands = [
-        Line3D(Point3D(0.0, 0.0, -3.0), Vector3D.z()),
-        Circle3D(Point3D.origin(), Vector3D.z(), 1.0),
+        Line3D(Point3D(0.0, 0.0, -3.0), Vector3D.unit_z()),
+        Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0),
         _segment(Point3D(-2.0, 0.1, 0.1), Point3D(2.0, 0.1, 0.1)),
         TrimmedCurve3D.segment(Point3D(0.0, -2.0, 0.0), Point3D(0.0, 2.0, 0.0)),
-        Plane(Point3D.origin(), Vector3D.x()),
-        Cylinder(Point3D.origin(), Vector3D.y(), 0.5),
+        Plane(Point3D.origin(), Vector3D.unit_x()),
+        Cylinder(Point3D.origin(), Vector3D.unit_y(), 0.5),
         _square(),
     ]
     for a in operands:
@@ -289,7 +289,7 @@ def test_every_curve_and_surface_class_accepts_every_other():
 
 def test_mixed_dimensions_and_foreign_objects_raise_type_error():
     line2 = Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0))
-    line3 = Line3D(Point3D.origin(), Vector3D.x())
+    line3 = Line3D(Point3D.origin(), Vector3D.unit_x())
     with pytest.raises(TypeError):
         line2.intersect(line3)
     with pytest.raises(TypeError):
@@ -334,7 +334,7 @@ def test_curve_curve_extrema_is_an_object():
 
 
 def test_repr_names_the_class_and_its_fields():
-    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.x())
+    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.unit_x())
     result = line.intersect(Sphere(Point3D.origin(), 2.0))
     text = repr(result)
     assert text.startswith("CurveSurfaceIntersection(")
@@ -346,8 +346,8 @@ def test_repr_names_the_class_and_its_fields():
     assert "multiplicity=1" in repr(hit)
     assert repr(result.completeness) == "Completeness(status=CompletenessStatus.COMPLETE)"
 
-    overlap = Circle3D(Point3D.origin(), Vector3D.z(), 1.0).intersect(
-        Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    overlap = Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0).intersect(
+        Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0)
     ).overlaps[0]
     assert repr(overlap).startswith("CurveCurveOverlap(first_range=(")
     assert "same_direction=True" in repr(overlap)
@@ -357,7 +357,7 @@ def test_repr_names_the_class_and_its_fields():
 
 
 def test_results_compare_by_value():
-    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.x())
+    line = Line3D(Point3D(-5.0, 0.0, 0.0), Vector3D.unit_x())
     sphere = Sphere(Point3D.origin(), 2.0)
     assert line.intersect(sphere) == line.intersect(sphere)
     assert line.intersect(sphere).hits[0] == line.intersect(sphere).hits[0]
@@ -377,7 +377,7 @@ def test_swapped_numeric_curve_curve_order_swaps_both_parameters():
         [3, 3],
         False,
     )
-    line = Line3D(Point3D(-1.0, 0.0, 0.0), Vector3D.x())
+    line = Line3D(Point3D(-1.0, 0.0, 0.0), Vector3D.unit_x())
     forward, backward = spline.intersect(line), line.intersect(spline)
     assert forward.method == backward.method == IntersectionMethod.NUMERIC
     assert len(forward.hits) == len(backward.hits) == 2
@@ -434,13 +434,13 @@ def test_enums_are_hashable_and_named():
 
 def test_empty_results_are_falsy():
     sphere = Sphere(Point3D.origin(), 1.0)
-    assert Line3D(Point3D.origin(), Vector3D.x()).intersect(sphere)
-    assert not Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.x()).intersect(sphere)
-    assert sphere.intersect(Plane(Point3D.origin(), Vector3D.z()))
-    assert not sphere.intersect(Plane(Point3D(0.0, 0.0, 5.0), Vector3D.z()))
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
-    assert circle.intersect(Line3D(Point3D.origin(), Vector3D.x()))
-    assert not circle.intersect(Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.x()))
+    assert Line3D(Point3D.origin(), Vector3D.unit_x()).intersect(sphere)
+    assert not Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.unit_x()).intersect(sphere)
+    assert sphere.intersect(Plane(Point3D.origin(), Vector3D.unit_z()))
+    assert not sphere.intersect(Plane(Point3D(0.0, 0.0, 5.0), Vector3D.unit_z()))
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 1.0)
+    assert circle.intersect(Line3D(Point3D.origin(), Vector3D.unit_x()))
+    assert not circle.intersect(Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.unit_x()))
     circle_2d = Circle2D(Point2D(0.0, 0.0), 1.0)
     assert circle_2d.intersect(Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0)))
     assert not circle_2d.intersect(Line2D(Point2D(0.0, 5.0), Vector2D(1.0, 0.0)))
@@ -455,10 +455,10 @@ def test_extrema_length_is_the_number_of_minima():
 
 
 def test_curves_and_surfaces_have_deterministic_reprs():
-    circle = Circle3D(Point3D(1.0, 0.0, 0.0), Vector3D.z(), 2.5)
+    circle = Circle3D(Point3D(1.0, 0.0, 0.0), Vector3D.unit_z(), 2.5)
     assert repr(circle) == "Circle3D(center=(1, 0, 0), normal=(0, 0, 1), radius=2.5)"
     assert repr(Sphere(Point3D.origin(), 3.0)) == "Sphere(center=(0, 0, 0), radius=3)"
-    assert repr(Plane(Point3D.origin(), Vector3D.z())) == "Plane(origin=(0, 0, 0), normal=(0, 0, 1))"
-    result = Plane(Point3D.origin(), Vector3D.z()).intersect(Sphere(Point3D.origin(), 3.0))
+    assert repr(Plane(Point3D.origin(), Vector3D.unit_z())) == "Plane(origin=(0, 0, 0), normal=(0, 0, 1))"
+    result = Plane(Point3D.origin(), Vector3D.unit_z()).intersect(Sphere(Point3D.origin(), 3.0))
     assert "Circle3D(center=(0, 0, 0), normal=(0, 0, 1), radius=3)" in repr(result)
     assert " at 0x" not in repr(result)

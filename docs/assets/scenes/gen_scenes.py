@@ -49,7 +49,7 @@ def exact_scene() -> None:
     t0 = time.perf_counter()
     view = gv.Viewer("Sphere ∩ cylinder (exact)", spawn=False, open_browser=False)
     s = Sphere(Point3D.origin(), 3.0)
-    y = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    y = Cylinder(Point3D.origin(), Vector3D.unit_z(), 2.0)
     view.add(s, label="S", opacity=0.35, group="exact")
     view.add(y, label="Y", opacity=0.35, v=(-3.5, 3.5), group="exact")
     t0 = time.perf_counter()
@@ -92,7 +92,7 @@ def marching_scene() -> None:
 def projection_scene() -> None:
     """Ellipse with all four feet of one query point."""
     view = gv.Viewer("Four feet on an ellipse", spawn=False, open_browser=False)
-    e = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 2.0)
+    e = Ellipse3D(Point3D.origin(), Vector3D.unit_z(), Vector3D.unit_x(), 3.0, 2.0)
     q = Point3D(0.5, 0.2, 0)
     feet = e.extrema(q)
     print(
@@ -160,7 +160,7 @@ def three_curves_scene(
 def facing_frame() -> Frame3D:
     """z up, u = 0 turned so the figures' u ≈ 1 faces the viewer's default camera."""
     return Frame3D(
-        Point3D.origin(), Vector3D.z(), Vector3D(math.cos(-1.5), math.sin(-1.5), 0)
+        Point3D.origin(), Vector3D.unit_z(), Vector3D(math.cos(-1.5), math.sin(-1.5), 0)
     )
 
 
@@ -241,7 +241,7 @@ def point_resolved_scene(
 
 
 def elementary_scenes() -> None:
-    o, z = Point3D.origin(), Vector3D.z()
+    o, z = Point3D.origin(), Vector3D.unit_z()
     sphere = Sphere(o, 2.0)
     # u = -0.4: the default camera looks from u ≈ -1, so P sits in front, just right of centre.
     view = point_resolved_scene(
@@ -272,7 +272,7 @@ def plane_sphere_scene() -> None:
     ):
         c = Point3D(3.5 * (i - 1), 0, 0)
         sphere = Sphere(c, 1.0)
-        plane = Plane(Point3D(c.x, 0, delta), Vector3D.z())
+        plane = Plane(Point3D(c.x, 0, delta), Vector3D.unit_z())
         view.add(
             sphere,
             label=f"S ({what})",

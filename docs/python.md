@@ -16,7 +16,7 @@ API.
     from geomcore.curves import Circle3D
     import math
 
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     point = circle.eval_point(math.pi / 4)
     ```
 

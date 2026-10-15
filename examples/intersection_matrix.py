@@ -55,36 +55,36 @@ CELL_STEP = 18.0
 def canonical(name: str):
     """One representative instance per surface type (cell-local coords)."""
     if name == "Plane":
-        return Plane(Point3D.origin(), Vector3D.z())
+        return Plane(Point3D.origin(), Vector3D.unit_z())
     if name == "Cylinder":
-        return Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+        return Cylinder(Point3D.origin(), Vector3D.unit_z(), 2.0)
     if name == "Cone":
         return Cone.from_frame(Frame3D.world(), 0.4, 2.0)
     if name == "Sphere":
         return Sphere(Point3D.origin(), 3.0)
     if name == "Torus":
-        return Torus(Point3D.origin(), Vector3D.z(), 4.0, 1.0)
+        return Torus(Point3D.origin(), Vector3D.unit_z(), 4.0, 1.0)
     raise KeyError(name)
 
 
 # The surfaces of each cell, in receiver order. Configurations other than
 # the canonical pair are chosen so that the surfaces meet.
-TILTED_CONE = Cone.from_frame(Frame3D(Point3D(0.0, 0.0, 1.0), Vector3D.z(), Vector3D.x()), 0.6, 1.0)
+TILTED_CONE = Cone.from_frame(Frame3D(Point3D(0.0, 0.0, 1.0), Vector3D.unit_z(), Vector3D.unit_x()), 0.6, 1.0)
 WIDE_CONE = Cone.from_frame(Frame3D.world(), 1.1, 2.0)
 RAISED_SPHERE = Sphere(Point3D(0.0, 0.0, 1.0), 4.0)
-WIDE_CYLINDER = Cylinder(Point3D.origin(), Vector3D.z(), 4.5)
+WIDE_CYLINDER = Cylinder(Point3D.origin(), Vector3D.unit_z(), 4.5)
 PAIRS = {
-    ("Plane", "Plane"): (canonical("Plane"), Plane(Point3D.origin(), Vector3D.x())),
+    ("Plane", "Plane"): (canonical("Plane"), Plane(Point3D.origin(), Vector3D.unit_x())),
     ("Sphere", "Sphere"): (canonical("Sphere"), Sphere(Point3D(3.0, 0.0, 0.0), 2.0)),
     ("Cylinder", "Cylinder"): (
         canonical("Cylinder"),
-        Cylinder(Point3D(3.0, 0.0, 0.0), Vector3D.z(), 2.0),
+        Cylinder(Point3D(3.0, 0.0, 0.0), Vector3D.unit_z(), 2.0),
     ),
     # Both cones are double-napped: they meet in two circles.
     ("Cone", "Cone"): (canonical("Cone"), TILTED_CONE),
     ("Torus", "Torus"): (
         canonical("Torus"),
-        Torus(Point3D(0.0, 0.0, 1.5), Vector3D.z(), 4.0, 1.0),
+        Torus(Point3D(0.0, 0.0, 1.5), Vector3D.unit_z(), 4.0, 1.0),
     ),
     ("Torus", "Sphere"): (canonical("Torus"), RAISED_SPHERE),
     ("Sphere", "Torus"): (RAISED_SPHERE, canonical("Torus")),

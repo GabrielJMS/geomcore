@@ -133,14 +133,14 @@ patches.
 === "Python"
 
     ```python
-    circle_bs = Circle3D(Point3D.origin(), Vector3D.z(), 2.0).to_bspline()
+    circle_bs = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0).to_bspline()
     assert circle_bs.is_periodic()
 
-    ellipse_bs = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.0).to_bspline()
+    ellipse_bs = Ellipse3D(Point3D.origin(), Vector3D.unit_z(), Vector3D.unit_x(), 3.0, 1.0).to_bspline()
 
     seg_bs = TrimmedCurve3D.segment(Point3D(0, 0, 0), Point3D(1, 0, 0)).to_bspline()
 
-    patch = Cylinder(Point3D.origin(), Vector3D.z(), 2.0).to_bspline_patch((0.0, 1.0), (-1.0, 1.0))
+    patch = Cylinder(Point3D.origin(), Vector3D.unit_z(), 2.0).to_bspline_patch((0.0, 1.0), (-1.0, 1.0))
     ```
 
 === "Rust"

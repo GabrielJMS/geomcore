@@ -49,7 +49,7 @@ space.
     from geomcore import Point3D, Vector3D
     from geomcore.curves import Line3D
 
-    line = Line3D(Point3D.origin(), Vector3D.z())
+    line = Line3D(Point3D.origin(), Vector3D.unit_z())
     p = line.eval_point(2.0)  # parameter -> 3D point
     assert (p.x, p.y, p.z) == (0.0, 0.0, 2.0)
     assert line.parameter_of(p) == 2.0  # 3D point -> parameter
@@ -88,7 +88,7 @@ conic whose parameter is proportional to distance travelled.
     ```python
     from geomcore.curves import Circle3D
 
-    circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+    circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
     assert abs(circle.circumference() - 4.0 * 3.141592653589793) < 1e-12
     p = circle.eval_point(1.0)  # parameter -> 3D point
     assert abs(circle.parameter_of(p) - 1.0) < 1e-12  # 3D point -> parameter
@@ -129,7 +129,7 @@ of the major axis.
     ```python
     from geomcore.curves import Ellipse3D
 
-    ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.0)
+    ellipse = Ellipse3D(Point3D.origin(), Vector3D.unit_z(), Vector3D.unit_x(), 3.0, 1.0)
     p = ellipse.eval_point(1.0)  # parameter -> 3D point
     assert abs(ellipse.parameter_of(p) - 1.0) < 1e-12  # 3D point -> parameter
     ```
@@ -166,7 +166,7 @@ mirror branch is a second curve no value of $u$ reaches.
     ```python
     from geomcore.curves import Hyperbola3D
 
-    hyp = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
+    hyp = Hyperbola3D(Point3D.origin(), Vector3D.unit_z(), Vector3D.unit_x(), 2.0, 1.0)
     p = hyp.eval_point(1.0)  # parameter -> 3D point
     assert abs(hyp.parameter_of(p) - 1.0) < 1e-12  # 3D point -> parameter
     ```
@@ -204,7 +204,7 @@ $(f, 0)$, directrix $x = -f$.
     ```python
     from geomcore.curves import Parabola3D
 
-    parab = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.5)
+    parab = Parabola3D(Point3D.origin(), Vector3D.unit_z(), Vector3D.unit_x(), 1.5)
     p = parab.eval_point(2.0)  # parameter -> 3D point
     assert abs(parab.parameter_of(p) - 2.0) < 1e-12  # 3D point -> parameter
     ```
@@ -248,7 +248,7 @@ periodicity, no degenerate point.
     ```python
     from geomcore.surfaces import Plane
 
-    plane = Plane(Point3D.origin(), Vector3D.z())
+    plane = Plane(Point3D.origin(), Vector3D.unit_z())
     p = plane.eval_point(1.0, 2.0)  # parameters -> 3D point
     assert (p.x, p.y, p.z) == (1.0, 2.0, 0.0)
     assert plane.parameters_of(p) == (1.0, 2.0)  # 3D point -> parameters
@@ -286,7 +286,7 @@ not the same kind of quantity.
     ```python
     from geomcore.surfaces import Cylinder
 
-    cyl = Cylinder(Point3D.origin(), Vector3D.z(), 2.0)
+    cyl = Cylinder(Point3D.origin(), Vector3D.unit_z(), 2.0)
     p = cyl.eval_point(1.0, 2.0)  # parameters -> 3D point
     u, v = cyl.parameters_of(p)  # 3D point -> parameters
     assert abs(u - 1.0) < 1e-12 and abs(v - 2.0) < 1e-12
@@ -329,7 +329,7 @@ parameter plane instead; the article compares both.
     from geomcore.surfaces import Cone
     import math
 
-    cone = Cone(Point3D.origin(), Vector3D.z(), math.radians(28), 4.0)
+    cone = Cone(Point3D.origin(), Vector3D.unit_z(), math.radians(28), 4.0)
     p = cone.eval_point(1.0, 2.0)  # parameters -> 3D point
     u, v = cone.parameters_of(p)  # 3D point -> parameters
     assert abs(u - 1.0) < 1e-9 and abs(v - 2.0) < 1e-9
@@ -418,7 +418,7 @@ rectangle of the five.
     ```python
     from geomcore.surfaces import Torus
 
-    torus = Torus(Point3D.origin(), Vector3D.z(), 5.0, 1.5)
+    torus = Torus(Point3D.origin(), Vector3D.unit_z(), 5.0, 1.5)
     p = torus.eval_point(0.5, 1.0)  # parameters -> 3D point
     u, v = torus.parameters_of(p)  # 3D point -> parameters
     assert abs(u - 0.5) < 1e-12 and abs(v - 1.0) < 1e-12

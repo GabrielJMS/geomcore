@@ -294,3 +294,97 @@ def test_point_count_matches_discretize():
     assert trimmed_2d.point_count(0.01) == len(trimmed_2d.discretize(0.01).points)
     with pytest.raises(ValueError):
         circle.point_count(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Group 4: operators, Vector3D properties and unit constructors, Vector2D,
+# Frame3D members
+# ---------------------------------------------------------------------------
+
+
+def test_vector_3d_unit_constructors_and_properties():
+    assert Vector3D.unit_x() == Vector3D(1.0, 0.0, 0.0)
+    assert Vector3D.unit_y() == Vector3D(0.0, 1.0, 0.0)
+    assert Vector3D.unit_z() == Vector3D(0.0, 0.0, 1.0)
+    v = Vector3D(1.0, 2.0, 3.0)
+    assert (v.x, v.y, v.z) == (1.0, 2.0, 3.0)
+    assert not callable(v.x)
+
+
+def test_vector_3d_members():
+    v = Vector3D(3.0, 0.0, 4.0)
+    assert v.square_magnitude() == 25.0
+    assert v.is_finite()
+    assert not Vector3D(math.nan, 0.0, 0.0).is_finite()
+    assert v.normalized() == Vector3D(0.6, 0.0, 0.8)
+    assert Vector3D.zero().normalized() is None
+    angle = Vector3D.unit_x().angle_with_ref(Vector3D.unit_y(), Vector3D.unit_z())
+    assert angle == pytest.approx(math.pi / 2)
+
+
+def test_vector_3d_operators():
+    a, b = Vector3D(1.0, 2.0, 3.0), Vector3D(4.0, 5.0, 6.0)
+    assert a + b == Vector3D(5.0, 7.0, 9.0)
+    assert b - a == Vector3D(3.0, 3.0, 3.0)
+    assert -a == Vector3D(-1.0, -2.0, -3.0)
+    assert a * 2.0 == Vector3D(2.0, 4.0, 6.0)
+    assert 2.0 * a == Vector3D(2.0, 4.0, 6.0)
+    with pytest.raises(TypeError):
+        a + 1.0
+    with pytest.raises(TypeError):
+        a * b
+
+
+def test_point_3d_operators():
+    p, q = Point3D(1.0, 2.0, 3.0), Point3D(4.0, 6.0, 8.0)
+    v = Vector3D(1.0, 0.0, -1.0)
+    assert p + v == Point3D(2.0, 2.0, 2.0)
+    assert p - v == Point3D(0.0, 2.0, 4.0)
+    assert q - p == Vector3D(3.0, 4.0, 5.0)
+    assert p.is_finite()
+    assert not Point3D(math.inf, 0.0, 0.0).is_finite()
+    with pytest.raises(TypeError):
+        p + q
+    with pytest.raises(TypeError):
+        v + p
+
+
+def test_point_and_vector_2d_operators():
+    p, q = Point2D(1.0, 2.0), Point2D(4.0, 6.0)
+    v = Vector2D(1.0, -1.0)
+    assert p + v == Point2D(2.0, 1.0)
+    assert p - v == Point2D(0.0, 3.0)
+    assert q - p == Vector2D(3.0, 4.0)
+    assert p.is_finite()
+    assert v + v == Vector2D(2.0, -2.0)
+    assert v - Vector2D(1.0, 1.0) == Vector2D(0.0, -2.0)
+    assert -v == Vector2D(-1.0, 1.0)
+    assert v * 3.0 == Vector2D(3.0, -3.0)
+    assert 3.0 * v == Vector2D(3.0, -3.0)
+    with pytest.raises(TypeError):
+        p + q
+
+
+def test_vector_2d_members():
+    assert Vector2D.zero() == Vector2D(0.0, 0.0)
+    assert Vector2D.unit_x() == Vector2D(1.0, 0.0)
+    assert Vector2D.unit_y() == Vector2D(0.0, 1.0)
+    v = Vector2D(3.0, 4.0)
+    assert v.components() == (3.0, 4.0)
+    assert v.square_magnitude() == 25.0
+    assert v.cross(Vector2D(0.0, 1.0)) == 3.0
+    assert v.perp() == Vector2D(-4.0, 3.0)
+    assert v.normalized() == Vector2D(0.6, 0.8)
+    assert Vector2D.zero().normalized() is None
+    assert v.is_finite()
+    assert not Vector2D(math.nan, 0.0).is_finite()
+
+
+def test_frame_3d_members():
+    frame = Frame3D.from_z(Point3D(1.0, 2.0, 3.0), Z)
+    assert frame.axis() == Axis3D(Point3D(1.0, 2.0, 3.0), Z)
+    local = frame.local_coordinates(Point3D(2.0, 4.0, 6.0))
+    point = frame.point_at(*local)
+    assert point.distance(Point3D(2.0, 4.0, 6.0)) == pytest.approx(0.0)
+    assert frame.point_at(0.0, 0.0, 2.0) == Point3D(1.0, 2.0, 5.0)
+    assert frame.local_coordinates(Point3D(1.0, 2.0, 5.0))[2] == pytest.approx(2.0)

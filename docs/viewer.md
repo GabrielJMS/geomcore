@@ -47,7 +47,7 @@ The embedded page above is static. From a script, a debugger or a notebook, `vie
 
     view = gv.Viewer("Ellipse ∩ circle")          # starts the local viewer and opens a tab
     E = Ellipse3D.from_frame(Frame3D.world(), 3.0, 2.0)
-    C = Circle3D(Point3D(2, 1, 0), Vector3D.z(), 1.5)
+    C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
     view.add(E, label="E")
     view.add(C, label="C")
     view.add(C.intersect(E), label="P")           # intersection points P₁, P₂
