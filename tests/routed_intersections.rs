@@ -201,6 +201,7 @@ fn test_overlapping_segments_clip_to_both_ranges() {
     let o = r.overlaps()[0];
     assert!((o.first_range.0 - 1.0).abs() < 1e-12 && (o.first_range.1 - 2.0).abs() < 1e-12);
     assert!((o.second_range.0 - 1.0).abs() < 1e-12 && (o.second_range.1 - 2.0).abs() < 1e-12);
+    assert!(o.same_direction);
 }
 
 #[test]
@@ -236,6 +237,7 @@ fn test_coincident_arcs_overlap_on_both_sides_of_the_seam() {
     assert!(close(o[0].second_range, (TAU, 7.0)));
     assert!(close(o[1].first_range, (4.0, 5.0)));
     assert!(close(o[1].second_range, (4.0, 5.0)));
+    assert!(o.iter().all(|piece| piece.same_direction));
     // The other order reads the same overlaps from b's side.
     let reverse = b.intersect(&a, TOL);
     assert_eq!(reverse.overlaps().len(), 2);
@@ -253,12 +255,14 @@ fn test_coincident_lines_with_opposite_directions() {
     assert_eq!(r.overlaps().len(), 1);
     assert!(close(r.overlaps()[0].first_range, (2.0, 4.0)));
     assert!(close(r.overlaps()[0].second_range, (1.0, 3.0)));
+    assert!(!r.overlaps()[0].same_direction);
     // Unbounded and opposite: both ranges are the whole line.
     let whole = a.intersect(&b, TOL);
     assert_eq!(whole.overlaps().len(), 1);
     let o = whole.overlaps()[0];
     assert_eq!(o.first_range, (f64::NEG_INFINITY, f64::INFINITY));
     assert_eq!(o.second_range, (f64::NEG_INFINITY, f64::INFINITY));
+    assert!(!o.same_direction);
 }
 
 #[test]
@@ -266,12 +270,13 @@ fn test_coincident_full_circles_with_different_frames() {
     let a = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     let rotated = Frame3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::new(1.0, 1.0, 0.0)).unwrap();
     let flipped = Frame3D::new(Point3D::ORIGIN, -Vector3D::Z, Vector3D::Y).unwrap();
-    for frame in [rotated, flipped] {
+    for (frame, same_direction) in [(rotated, true), (flipped, false)] {
         let b = Circle3D::from_frame(frame, 2.0).unwrap();
         let r = a.intersect(&b, TOL);
         assert_eq!(r.method(), IntersectionMethod::Exact);
         assert_eq!(r.overlaps().len(), 1, "{frame:?}");
         let o = r.overlaps()[0];
+        assert_eq!(o.same_direction, same_direction, "{frame:?}");
         assert!(close(o.first_range, a.bounds()));
         assert!((o.second_range.1 - o.second_range.0 - TAU).abs() < 1e-9);
         assert_overlaps_within(&r, a.bounds(), b.bounds());

@@ -37,7 +37,11 @@ pub enum IntersectionMethod {
 ///
 /// ```
 /// use geomcore::CurveCurveOverlap;
-/// let overlap = CurveCurveOverlap { first_range: (0.0, 1.0), second_range: (3.0, 4.0) };
+/// let overlap = CurveCurveOverlap {
+///     first_range: (0.0, 1.0),
+///     second_range: (3.0, 4.0),
+///     same_direction: true,
+/// };
 /// assert_eq!(overlap.second_range.1 - overlap.second_range.0, 1.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,6 +50,9 @@ pub struct CurveCurveOverlap {
     pub first_range: (f64, f64),
     /// The parameter range on the second curve.
     pub second_range: (f64, f64),
+    /// Whether both curves run the same way along the overlap. With
+    /// opposite directions, `first_range.0` pairs with `second_range.1`.
+    pub same_direction: bool,
 }
 
 /// One curve along which two surfaces meet.
@@ -112,6 +119,7 @@ fn swapped_overlaps(overlaps: Vec<CurveCurveOverlap>) -> Vec<CurveCurveOverlap> 
         .map(|o| CurveCurveOverlap {
             first_range: o.second_range,
             second_range: o.first_range,
+            same_direction: o.same_direction,
         })
         .collect()
 }
@@ -218,7 +226,9 @@ impl CurveCurveIntersection {
     /// The ranges over which the curves coincide, sorted by the start of
     /// the first range. Each range is increasing and lies in its curve's
     /// own range; an overlap crossing a closed curve's seam comes in two
-    /// pieces.
+    /// pieces. `same_direction` says whether the curves run the same way
+    /// along the overlap; with opposite directions, `first_range.0` pairs
+    /// with `second_range.1`.
     ///
     /// # Examples
     ///
@@ -234,7 +244,11 @@ impl CurveCurveIntersection {
     /// assert!(result.hits().is_empty());
     /// assert_eq!(
     ///     result.overlaps(),
-    ///     &[CurveCurveOverlap { first_range: (1.0, 2.0), second_range: (1.0, 2.0) }]
+    ///     &[CurveCurveOverlap {
+    ///         first_range: (1.0, 2.0),
+    ///         second_range: (1.0, 2.0),
+    ///         same_direction: true,
+    ///     }]
     /// );
     /// ```
     pub fn overlaps(&self) -> &[CurveCurveOverlap] {

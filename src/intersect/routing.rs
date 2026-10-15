@@ -388,15 +388,17 @@ fn coincident_overlaps(
     (second, second_range): (&ElementaryCurve, (f64, f64)),
     tol: Tolerance,
 ) -> Vec<CurveCurveOverlap> {
-    let on_first = mapped_range(second, second_range, first, tol);
+    let same_direction = runs_along(second, second_range, first);
+    let on_first = mapped_range(second, second_range, first, same_direction, tol);
     let mut overlaps = Vec::new();
     for piece in clip_range(on_first, first_range, first.period(), tol) {
-        let on_second = mapped_range(first, piece, second, tol);
+        let on_second = mapped_range(first, piece, second, same_direction, tol);
         let pieces_on_second = clip_range(on_second, second_range, second.period(), tol);
         if let [single] = pieces_on_second[..] {
             overlaps.push(CurveCurveOverlap {
                 first_range: piece,
                 second_range: single,
+                same_direction,
             });
             continue;
         }
@@ -413,6 +415,7 @@ fn coincident_overlaps(
             overlaps.push(CurveCurveOverlap {
                 first_range: (start.min(finish), start.max(finish)),
                 second_range: part,
+                same_direction,
             });
         }
     }
@@ -420,8 +423,24 @@ fn coincident_overlaps(
     overlaps
 }
 
+/// Whether the coincident curves `from` and `to` run the same way: the
+/// sign of the tangents' dot product at a sample of `range`.
+fn runs_along(from: &ElementaryCurve, range: (f64, f64), to: &ElementaryCurve) -> bool {
+    let sample = match (range.0.is_finite(), range.1.is_finite()) {
+        (true, true) => 0.5 * (range.0 + range.1),
+        (true, false) => range.0,
+        (false, true) => range.1,
+        (false, false) => 0.0,
+    };
+    let image = to.parameter_of(from.eval_point(sample));
+    from.eval_derivative(sample, 1)
+        .dot(to.eval_derivative(image, 1))
+        >= 0.0
+}
+
 /// The image of `range` of curve `from` on the coincident curve `to`, as a
 /// monotone interval that may lie outside `to`'s own representation.
+/// `along` says whether the curves run the same way.
 ///
 /// An infinite end maps to the infinity its direction gives on `to`. On a
 /// periodic curve the image starts at the image of the range's start in
@@ -430,19 +449,10 @@ fn mapped_range(
     from: &ElementaryCurve,
     range: (f64, f64),
     to: &ElementaryCurve,
+    along: bool,
     tol: Tolerance,
 ) -> (f64, f64) {
     let image = |parameter: f64| to.parameter_of(from.eval_point(parameter));
-    let sample = match (range.0.is_finite(), range.1.is_finite()) {
-        (true, true) => 0.5 * (range.0 + range.1),
-        (true, false) => range.0,
-        (false, true) => range.1,
-        (false, false) => 0.0,
-    };
-    let along = from
-        .eval_derivative(sample, 1)
-        .dot(to.eval_derivative(image(sample), 1))
-        >= 0.0;
     let Some(period) = to.period() else {
         let end = |parameter: f64| {
             if parameter.is_finite() {
