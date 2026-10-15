@@ -448,9 +448,11 @@ impl Hyperbola3D {
         if s2 == 0.0 {
             // Both radii zero: the branch is its centre, every parameter
             // equally close.
-            let distance = self.center().distance(point);
+            let centre = self.center();
+            let distance = centre.distance(point);
             return vec![CurveProjection {
                 parameter: 0.0,
+                point: centre,
                 distance: projection::snap_distance(distance, tol.confusion),
             }];
         }
@@ -472,9 +474,11 @@ impl Hyperbola3D {
             .filter(|r| r.value > 0.0)
             .map(|r| {
                 let t = polish_root(g, dg, r.value.ln(), 8);
-                let distance = self.eval_point(t).distance(point);
+                let foot = self.eval_point(t);
+                let distance = foot.distance(point);
                 CurveProjection {
                     parameter: t,
+                    point: foot,
                     distance: projection::snap_distance(distance, tol.confusion),
                 }
             })

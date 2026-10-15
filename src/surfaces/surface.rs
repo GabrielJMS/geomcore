@@ -761,6 +761,30 @@ pub enum ElementarySurface {
 }
 
 impl Surface {
+    /// Projects `point` onto the surface: the closest parameters, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::Surface;
+    /// use geomcore::{Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// let surface = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let projection = surface.project_point(Point3D::new(1.0, 2.0, 3.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point3D::new(1.0, 2.0, 0.0));
+    /// assert_eq!(projection.distance, 3.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        ParametricSurface::project_point(self, point, tol)
+    }
+
+    /// Projects each point in `points` onto the surface.
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
     /// The surface as an [`ElementarySurface`], or `None` for a B-spline.
     pub fn as_elementary(&self) -> Option<ElementarySurface> {
         match self {
@@ -771,6 +795,32 @@ impl Surface {
             Surface::Torus(s) => Some(ElementarySurface::Torus(*s)),
             Surface::BSpline(_) => None,
         }
+    }
+}
+
+impl ElementarySurface {
+    /// Projects `point` onto the surface: the closest parameters, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ElementarySurface;
+    /// use geomcore::{Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// let surface = ElementarySurface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let projection = surface.project_point(Point3D::new(1.0, 2.0, 3.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point3D::new(1.0, 2.0, 0.0));
+    /// assert_eq!(projection.distance, 3.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        ParametricSurface::project_point(self, point, tol)
+    }
+
+    /// Projects each point in `points` onto the surface.
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 }
 

@@ -316,9 +316,11 @@ impl Parabola3D {
         let mut out: Vec<CurveProjection> = real_roots(&coeffs, tol.confusion)
             .into_iter()
             .map(|r| {
-                let distance = self.eval_point(r.value).distance(point);
+                let foot = self.eval_point(r.value);
+                let distance = foot.distance(point);
                 CurveProjection {
                     parameter: r.value,
+                    point: foot,
                     distance: projection::snap_distance(distance, tol.confusion),
                 }
             })

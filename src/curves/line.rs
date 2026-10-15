@@ -12,7 +12,7 @@ use crate::intersect::{
     LineQuadricIntersection, LineTorusHit, LineTorusIntersection, PlacedConic,
 };
 use crate::math::{QuadraticSolution, quadratic_centre, roots_with_tangency, solve_quadratic};
-use crate::projection::{self, CurveProjection};
+use crate::projection::{self, CurveProjection, CurveProjection2D};
 use crate::surfaces::Surface;
 use crate::{
     Axis2D, Axis3D, Circle2D, Circle3D, Cone, Cylinder, Ellipse3D, Hyperbola3D, Parabola3D, Plane,
@@ -291,8 +291,10 @@ impl Line3D {
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
         let u = self.parameter_of(point);
-        let distance = self.eval_point(u).distance(point);
+        let foot = self.eval_point(u);
+        let distance = foot.distance(point);
         CurveProjection {
+            point: foot,
             parameter: u,
             distance: projection::snap_distance(distance, tol.confusion),
         }
@@ -668,10 +670,12 @@ impl Line2D {
     /// assert_eq!(proj.parameter, 2.5);
     /// assert_eq!(proj.distance, 1.0);
     /// ```
-    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection {
+    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection2D {
         let u = self.parameter_of(point);
-        let distance = self.eval_point(u).distance(point);
-        CurveProjection {
+        let foot = self.eval_point(u);
+        let distance = foot.distance(point);
+        CurveProjection2D {
+            point: foot,
             parameter: u,
             distance: projection::snap_distance(distance, tol.confusion),
         }
@@ -681,7 +685,7 @@ impl Line2D {
     ///
     /// Default-style batch wrapper over [`Line2D::project_point`]: one
     /// native call per batch, mirroring [`Line2D::eval_points`].
-    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
+    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection2D> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 }

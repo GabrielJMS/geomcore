@@ -10,7 +10,7 @@ use crate::frame::frame_error;
 use crate::intersect::{
     CircleSurfaceIntersection, ConicSurfaceIntersection, intersect_conic_quadric,
 };
-use crate::projection::{self, CurveProjection};
+use crate::projection::{self, CurveProjection, CurveProjection2D};
 use crate::surfaces::Surface;
 use crate::tol;
 use crate::{
@@ -403,8 +403,10 @@ impl Circle3D {
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
         let u = self.parameter_of(point);
-        let distance = self.eval_point(u).distance(point);
+        let foot = self.eval_point(u);
+        let distance = foot.distance(point);
         CurveProjection {
+            point: foot,
             parameter: self.parameter_in_bounds(u, tol),
             distance: projection::snap_distance(distance, tol.confusion),
         }
@@ -692,10 +694,12 @@ impl Circle2D {
     /// assert_eq!(proj.parameter, 0.0);
     /// assert_eq!(proj.distance, 1.0);
     /// ```
-    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection {
+    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection2D {
         let u = self.parameter_of(point);
-        let distance = self.eval_point(u).distance(point);
-        CurveProjection {
+        let foot = self.eval_point(u);
+        let distance = foot.distance(point);
+        CurveProjection2D {
+            point: foot,
             parameter: u,
             distance: projection::snap_distance(distance, tol.confusion),
         }
@@ -705,7 +709,7 @@ impl Circle2D {
     ///
     /// Default-style batch wrapper over [`Circle2D::project_point`]: one
     /// native call per batch, mirroring [`Circle2D::eval_points`].
-    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
+    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection2D> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 }

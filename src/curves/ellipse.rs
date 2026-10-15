@@ -482,7 +482,7 @@ impl Ellipse3D {
         ];
         // s = -1/r maps the quartic to its reversal with alternating signs.
         let reversed = [coeffs[4], -coeffs[3], coeffs[2], -coeffs[1], coeffs[0]];
-        let mut ts: Vec<(f64, f64)> = real_roots(&coeffs, tol.confusion)
+        let mut ts: Vec<(f64, Point3D, f64)> = real_roots(&coeffs, tol.confusion)
             .into_iter()
             .map(|r| 2.0 * r.value.atan())
             .chain(
@@ -494,13 +494,13 @@ impl Ellipse3D {
             .map(|t| {
                 let t = polish_root(g, dg, t, 8);
                 // Measured at the polished parameter, reported in bounds.
-                let distance = self.eval_point(t).distance(point);
-                (self.parameter_in_bounds(t, tol), distance)
+                let foot = self.eval_point(t);
+                (self.parameter_in_bounds(t, tol), foot, foot.distance(point))
             })
             .collect();
         ts.sort_by(|x, y| x.0.total_cmp(&y.0));
         let mut out: Vec<CurveProjection> = Vec::with_capacity(ts.len());
-        for (t, distance) in ts {
+        for (t, foot, distance) in ts {
             let fresh = match out.last() {
                 Some(last) => (t - last.parameter).abs() > tol.parametric * (1.0 + t.abs()),
                 None => true,
@@ -508,6 +508,7 @@ impl Ellipse3D {
             if fresh {
                 out.push(CurveProjection {
                     parameter: t,
+                    point: foot,
                     distance: projection::snap_distance(distance, tol.confusion),
                 });
             }

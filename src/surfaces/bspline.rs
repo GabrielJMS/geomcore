@@ -1774,6 +1774,7 @@ impl BSplineSurface {
             out.push(SurfaceProjection {
                 u,
                 v,
+                point: p,
                 distance: snap_distance(p.distance(point), tol.confusion),
             });
         }
@@ -1877,9 +1878,11 @@ impl BSplineSurface {
             }
         }
         let (distance, u, v) = search.best;
+        // The search tracks distances, not points: one evaluation.
         SurfaceProjection {
             u,
             v,
+            point: self.eval_point(u, v),
             distance: snap_distance(distance, tol.confusion),
         }
     }

@@ -361,10 +361,12 @@ impl Sphere {
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
         let (u, v) = self.parameters_of(point);
-        let distance = self.eval_point(u, v).distance(point);
+        let foot = self.eval_point(u, v);
+        let distance = foot.distance(point);
         SurfaceProjection {
             u,
             v,
+            point: foot,
             distance: projection::snap_distance(distance, tol.confusion),
         }
     }

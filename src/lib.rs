@@ -164,7 +164,7 @@ pub use intersect::{
 };
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};
-pub use projection::{CurveProjection, SurfaceProjection};
+pub use projection::{CurveProjection, CurveProjection2D, SurfaceProjection};
 pub use surfaces::{
     BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
     ElementarySurface, ParametricSurface, Plane, PlaneConstructionError, Sphere,
