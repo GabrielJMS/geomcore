@@ -5,8 +5,9 @@ Builds a 5x5 grid (Plane, Cylinder, Cone, Sphere, Torus), one cell per
 ``row.intersect(col)``. Each cell hands the intersection result straight to the viewer, which draws
 both surfaces translucent, the curves in the accent colour and a note on the
 method that found them: ``exact`` where a closed form exists, ``numeric``
-(marched) where not. The viewer windows the unbounded surfaces (plane,
-cylinder, cone) from the scene extent, so they grow with the grid. Extend PAIRS to show other configurations.
+(marched) where not. The viewer windows each unbounded surface (plane,
+cylinder, cone) around its intersection. Extend PAIRS to show other
+configurations.
 
 Usage:
     python examples/intersection_matrix.py [--out scene.json] [--serve]
