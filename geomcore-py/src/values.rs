@@ -1,4 +1,3 @@
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use geomcore::{
@@ -9,7 +8,8 @@ use geomcore::{
     Discretize3D,
 };
 
-use crate::{tolerance, val_err};
+use crate::errors::{invalid_argument, python_error};
+use crate::tolerance;
 
 // ---------------------------------------------------------------------------
 // Root value types
@@ -417,7 +417,7 @@ impl PyAxis3D {
     /// Build an axis from an origin and a direction (normalized internally).
     fn py_new(origin: PyPoint3D, direction: PyVector3D) -> PyResult<Self> {
         Ok(PyAxis3D(
-            Axis3D::new(origin.0, direction.0).map_err(val_err)?,
+            Axis3D::new(origin.0, direction.0).map_err(python_error)?,
         ))
     }
 
@@ -443,7 +443,7 @@ impl PyAxis2D {
     /// Build an axis from an origin and a direction (normalized internally).
     fn py_new(origin: PyPoint2D, direction: PyVector2D) -> PyResult<Self> {
         Ok(PyAxis2D(
-            Axis2D::new(origin.0, direction.0).map_err(val_err)?,
+            Axis2D::new(origin.0, direction.0).map_err(python_error)?,
         ))
     }
 
@@ -483,7 +483,7 @@ impl PyFrame2D {
         y_direction: PyVector2D,
     ) -> PyResult<Self> {
         Ok(PyFrame2D(
-            Frame2D::new(origin.0, x_direction.0, y_direction.0).map_err(val_err)?,
+            Frame2D::new(origin.0, x_direction.0, y_direction.0).map_err(python_error)?,
         ))
     }
 
@@ -491,7 +491,7 @@ impl PyFrame2D {
     #[staticmethod]
     fn from_x(origin: PyPoint2D, x_direction: PyVector2D) -> PyResult<Self> {
         Ok(PyFrame2D(
-            Frame2D::from_x(origin.0, x_direction.0).map_err(val_err)?,
+            Frame2D::from_x(origin.0, x_direction.0).map_err(python_error)?,
         ))
     }
 
@@ -542,7 +542,7 @@ impl PyFrame3D {
     /// Build a frame from an origin, main (z) direction, and an x hint.
     fn py_new(origin: PyPoint3D, z_direction: PyVector3D, x_hint: PyVector3D) -> PyResult<Self> {
         Ok(PyFrame3D(
-            Frame3D::new(origin.0, z_direction.0, x_hint.0).map_err(val_err)?,
+            Frame3D::new(origin.0, z_direction.0, x_hint.0).map_err(python_error)?,
         ))
     }
 
@@ -551,7 +551,7 @@ impl PyFrame3D {
     #[staticmethod]
     fn from_z(origin: PyPoint3D, z_direction: PyVector3D) -> PyResult<Self> {
         Ok(PyFrame3D(
-            Frame3D::from_z(origin.0, z_direction.0).map_err(val_err)?,
+            Frame3D::from_z(origin.0, z_direction.0).map_err(python_error)?,
         ))
     }
 
@@ -757,7 +757,7 @@ impl PyBoundingBox3D {
         let points = points.into_iter().map(|p| p.0);
         BoundingBox3D::from_points(points)
             .map(PyBoundingBox3D)
-            .ok_or_else(|| PyValueError::new_err("from_points needs at least one point"))
+            .ok_or_else(|| invalid_argument("from_points needs at least one point"))
     }
 
     /// The corner with the smallest coordinates.
@@ -895,9 +895,11 @@ pub(crate) fn discretization_criteria(
     max_chord_deviation: f64,
     max_angle_deviation: Option<f64>,
 ) -> PyResult<DiscretizationCriteria> {
-    let criteria = DiscretizationCriteria::new(max_chord_deviation).map_err(val_err)?;
+    let criteria = DiscretizationCriteria::new(max_chord_deviation).map_err(python_error)?;
     match max_angle_deviation {
-        Some(angle) => criteria.with_max_angle_deviation(angle).map_err(val_err),
+        Some(angle) => criteria
+            .with_max_angle_deviation(angle)
+            .map_err(python_error),
         None => Ok(criteria),
     }
 }

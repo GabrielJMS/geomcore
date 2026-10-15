@@ -1,4 +1,5 @@
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use crate::errors::invalid_argument;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use geomcore::curves::{
@@ -120,7 +121,7 @@ pub(crate) fn curve3d_to_py(py: Python<'_>, curve: Curve3D) -> PyResult<Py<PyAny
         Curve3D::Parabola(c) => Ok(PyParabola3D(c).into_pyobject(py)?.into_any().unbind()),
         Curve3D::Hyperbola(c) => Ok(PyHyperbola3D(c).into_pyobject(py)?.into_any().unbind()),
         Curve3D::BSpline(c) => Ok(PyBSplineCurve3D(c).into_pyobject(py)?.into_any().unbind()),
-        _ => Err(PyValueError::new_err("unsupported 3d curve variant")),
+        _ => Err(invalid_argument("unsupported 3d curve variant")),
     }
 }
 
@@ -214,6 +215,6 @@ pub(crate) fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny
     match curve {
         Curve2D::Line(l) => Ok(PyLine2D(l).into_pyobject(py)?.into_any().unbind()),
         Curve2D::Circle(c) => Ok(PyCircle2D(c).into_pyobject(py)?.into_any().unbind()),
-        _ => Err(PyValueError::new_err("unsupported 2d curve variant")),
+        _ => Err(invalid_argument("unsupported 2d curve variant")),
     }
 }

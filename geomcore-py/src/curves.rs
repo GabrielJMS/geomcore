@@ -7,11 +7,12 @@ use geomcore::curves::{
     TrimmedCurve2D, TrimmedCurve3D,
 };
 
+use crate::errors::python_error;
 use crate::numeric::*;
 use crate::results::*;
 use crate::surfaces::*;
 use crate::values::*;
-use crate::{check_curve_order, parse_parametrization, tolerance, val_err};
+use crate::{check_curve_order, parse_parametrization, tolerance};
 
 // ---------------------------------------------------------------------------
 // Curves
@@ -79,7 +80,7 @@ impl PyLine3D {
     /// Build a line from an origin and a direction (normalized internally).
     fn py_new(origin: PyPoint3D, direction: PyVector3D) -> PyResult<Self> {
         Ok(PyLine3D(
-            Line3D::new(origin.0, direction.0).map_err(val_err)?,
+            Line3D::new(origin.0, direction.0).map_err(python_error)?,
         ))
     }
 
@@ -93,7 +94,7 @@ impl PyLine3D {
     #[staticmethod]
     fn from_two_points(p1: PyPoint3D, p2: PyPoint3D) -> PyResult<Self> {
         Ok(PyLine3D(
-            Line3D::from_two_points(p1.0, p2.0).map_err(val_err)?,
+            Line3D::from_two_points(p1.0, p2.0).map_err(python_error)?,
         ))
     }
 
@@ -111,7 +112,9 @@ impl PyLine3D {
     /// collapsing transform).
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
-        Ok(PyLine3D(self.0.transformed(transform.0).map_err(val_err)?))
+        Ok(PyLine3D(
+            self.0.transformed(transform.0).map_err(python_error)?,
+        ))
     }
 
     /// Evaluate the point at parameter `u`.
@@ -196,7 +199,7 @@ impl PyLine3D {
     ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         let tol = tolerance(tol);
-        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(python_error)?)
     }
 
     /// Intersects with any curve or surface, in either order.
@@ -293,7 +296,7 @@ impl PyCircle3D {
     /// Build a circle from its center, plane normal and radius.
     fn py_new(center: PyPoint3D, normal: PyVector3D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle3D(
-            Circle3D::new(center.0, normal.0, radius).map_err(val_err)?,
+            Circle3D::new(center.0, normal.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -301,7 +304,7 @@ impl PyCircle3D {
     #[staticmethod]
     fn from_axis(axis: PyAxis3D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle3D(
-            Circle3D::from_axis(axis.0, radius).map_err(val_err)?,
+            Circle3D::from_axis(axis.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -309,7 +312,7 @@ impl PyCircle3D {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle3D(
-            Circle3D::from_frame(frame.0, radius).map_err(val_err)?,
+            Circle3D::from_frame(frame.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -318,7 +321,7 @@ impl PyCircle3D {
     #[staticmethod]
     fn from_three_points(p1: PyPoint3D, p2: PyPoint3D, p3: PyPoint3D) -> PyResult<Self> {
         Ok(PyCircle3D(
-            Circle3D::from_three_points(p1.0, p2.0, p3.0).map_err(val_err)?,
+            Circle3D::from_three_points(p1.0, p2.0, p3.0).map_err(python_error)?,
         ))
     }
 
@@ -368,7 +371,7 @@ impl PyCircle3D {
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
         Ok(PyCircle3D(
-            self.0.transformed(transform.0).map_err(val_err)?,
+            self.0.transformed(transform.0).map_err(python_error)?,
         ))
     }
 
@@ -457,7 +460,7 @@ impl PyCircle3D {
     ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         let tol = tolerance(tol);
-        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(python_error)?)
     }
 
     /// Intersects with any curve or surface, in either order.
@@ -552,7 +555,7 @@ impl PyEllipse3D {
                 major_radius,
                 minor_radius,
             )
-            .map_err(val_err)?,
+            .map_err(python_error)?,
         ))
     }
 
@@ -560,7 +563,7 @@ impl PyEllipse3D {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
         Ok(PyEllipse3D(
-            Ellipse3D::from_frame(frame.0, major_radius, minor_radius).map_err(val_err)?,
+            Ellipse3D::from_frame(frame.0, major_radius, minor_radius).map_err(python_error)?,
         ))
     }
 
@@ -569,7 +572,7 @@ impl PyEllipse3D {
     #[staticmethod]
     fn from_center_and_points(center: PyPoint3D, s1: PyPoint3D, s2: PyPoint3D) -> PyResult<Self> {
         Ok(PyEllipse3D(
-            Ellipse3D::from_center_and_points(center.0, s1.0, s2.0).map_err(val_err)?,
+            Ellipse3D::from_center_and_points(center.0, s1.0, s2.0).map_err(python_error)?,
         ))
     }
 
@@ -614,7 +617,7 @@ impl PyEllipse3D {
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
         Ok(PyEllipse3D(
-            self.0.transformed(transform.0).map_err(val_err)?,
+            self.0.transformed(transform.0).map_err(python_error)?,
         ))
     }
 
@@ -715,7 +718,7 @@ impl PyEllipse3D {
     ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         let tol = tolerance(tol);
-        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(python_error)?)
     }
 
     /// Intersects with any curve or surface, in either order.
@@ -796,7 +799,7 @@ impl PyParabola3D {
         focal: f64,
     ) -> PyResult<Self> {
         Ok(PyParabola3D(
-            Parabola3D::new(apex.0, normal.0, x_direction.0, focal).map_err(val_err)?,
+            Parabola3D::new(apex.0, normal.0, x_direction.0, focal).map_err(python_error)?,
         ))
     }
 
@@ -804,7 +807,7 @@ impl PyParabola3D {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, focal: f64) -> PyResult<Self> {
         Ok(PyParabola3D(
-            Parabola3D::from_frame(frame.0, focal).map_err(val_err)?,
+            Parabola3D::from_frame(frame.0, focal).map_err(python_error)?,
         ))
     }
 
@@ -828,7 +831,7 @@ impl PyParabola3D {
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
         Ok(PyParabola3D(
-            self.0.transformed(transform.0).map_err(val_err)?,
+            self.0.transformed(transform.0).map_err(python_error)?,
         ))
     }
 
@@ -916,7 +919,7 @@ impl PyParabola3D {
     ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         let tol = tolerance(tol);
-        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(python_error)?)
     }
 
     /// Intersects with any curve or surface, in either order.
@@ -1000,7 +1003,7 @@ impl PyHyperbola3D {
                 major_radius,
                 minor_radius,
             )
-            .map_err(val_err)?,
+            .map_err(python_error)?,
         ))
     }
 
@@ -1008,7 +1011,7 @@ impl PyHyperbola3D {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
         Ok(PyHyperbola3D(
-            Hyperbola3D::from_frame(frame.0, major_radius, minor_radius).map_err(val_err)?,
+            Hyperbola3D::from_frame(frame.0, major_radius, minor_radius).map_err(python_error)?,
         ))
     }
 
@@ -1017,7 +1020,7 @@ impl PyHyperbola3D {
     #[staticmethod]
     fn from_center_and_points(center: PyPoint3D, s1: PyPoint3D, s2: PyPoint3D) -> PyResult<Self> {
         Ok(PyHyperbola3D(
-            Hyperbola3D::from_center_and_points(center.0, s1.0, s2.0).map_err(val_err)?,
+            Hyperbola3D::from_center_and_points(center.0, s1.0, s2.0).map_err(python_error)?,
         ))
     }
 
@@ -1051,7 +1054,7 @@ impl PyHyperbola3D {
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
         Ok(PyHyperbola3D(
-            self.0.transformed(transform.0).map_err(val_err)?,
+            self.0.transformed(transform.0).map_err(python_error)?,
         ))
     }
 
@@ -1139,7 +1142,7 @@ impl PyHyperbola3D {
     ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         let tol = tolerance(tol);
-        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(python_error)?)
     }
 
     /// Intersects with any curve or surface, in either order.
@@ -1218,7 +1221,8 @@ impl PyBSplineCurve3D {
     ) -> PyResult<Self> {
         let poles = poles.into_iter().map(|p| p.0).collect();
         Ok(PyBSplineCurve3D(
-            BSplineCurve3D::new(degree, poles, knots, multiplicities, periodic).map_err(val_err)?,
+            BSplineCurve3D::new(degree, poles, knots, multiplicities, periodic)
+                .map_err(python_error)?,
         ))
     }
 
@@ -1235,7 +1239,7 @@ impl PyBSplineCurve3D {
         let poles = poles.into_iter().map(|p| p.0).collect();
         Ok(PyBSplineCurve3D(
             BSplineCurve3D::new_rational(degree, poles, weights, knots, multiplicities, periodic)
-                .map_err(val_err)?,
+                .map_err(python_error)?,
         ))
     }
 
@@ -1249,7 +1253,7 @@ impl PyBSplineCurve3D {
         let param = parse_parametrization(parametrization)?;
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         Ok(PyBSplineCurve3D(
-            BSplineCurve3D::interpolate(&points, degree, param).map_err(val_err)?,
+            BSplineCurve3D::interpolate(&points, degree, param).map_err(python_error)?,
         ))
     }
 
@@ -1267,7 +1271,7 @@ impl PyBSplineCurve3D {
         let param = parse_parametrization(parametrization)?;
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         Ok(PyBSplineCurve3D(
-            BSplineCurve3D::approximate(&points, degree, num_poles, param).map_err(val_err)?,
+            BSplineCurve3D::approximate(&points, degree, num_poles, param).map_err(python_error)?,
         ))
     }
 
@@ -1328,7 +1332,7 @@ impl PyBSplineCurve3D {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         Ok(PyBSplineCurve3D(
             BSplineCurve3D::approximate_within(&points, degree, max_deviation, param)
-                .map_err(val_err)?,
+                .map_err(python_error)?,
         ))
     }
 
@@ -1336,7 +1340,7 @@ impl PyBSplineCurve3D {
     /// more poles).
     fn insert_knot(&self, u: f64, times: u32) -> PyResult<Self> {
         Ok(PyBSplineCurve3D(
-            self.0.insert_knot(u, times).map_err(val_err)?,
+            self.0.insert_knot(u, times).map_err(python_error)?,
         ))
     }
 
@@ -1344,14 +1348,14 @@ impl PyBSplineCurve3D {
     /// poles).
     fn refine_knots(&self, knots: Vec<f64>) -> PyResult<Self> {
         Ok(PyBSplineCurve3D(
-            self.0.refine_knots(&knots).map_err(val_err)?,
+            self.0.refine_knots(&knots).map_err(python_error)?,
         ))
     }
 
     /// The curve of degree raised by `amount` (same shape).
     fn elevate_degree(&self, amount: usize) -> PyResult<Self> {
         Ok(PyBSplineCurve3D(
-            self.0.elevate_degree(amount).map_err(val_err)?,
+            self.0.elevate_degree(amount).map_err(python_error)?,
         ))
     }
 
@@ -1362,7 +1366,7 @@ impl PyBSplineCurve3D {
         let (curve, removed) = self
             .0
             .remove_knot(u, times, max_deviation)
-            .map_err(val_err)?;
+            .map_err(python_error)?;
         Ok((PyBSplineCurve3D(curve), removed))
     }
 
@@ -1372,7 +1376,7 @@ impl PyBSplineCurve3D {
         let (curve, removed) = self
             .0
             .remove_knots(&knots, max_deviation)
-            .map_err(val_err)?;
+            .map_err(python_error)?;
         Ok((PyBSplineCurve3D(curve), removed))
     }
 
@@ -1391,13 +1395,13 @@ impl PyBSplineCurve3D {
     /// period).
     fn extract(&self, first: f64, last: f64) -> PyResult<Self> {
         Ok(PyBSplineCurve3D(
-            self.0.extract(first, last).map_err(val_err)?,
+            self.0.extract(first, last).map_err(python_error)?,
         ))
     }
 
     /// The two halves split at `u`, each a clamped, non-periodic B-spline.
     fn split_at(&self, u: f64) -> PyResult<(Self, Self)> {
-        let (a, b) = self.0.split_at(u).map_err(val_err)?;
+        let (a, b) = self.0.split_at(u).map_err(python_error)?;
         Ok((PyBSplineCurve3D(a), PyBSplineCurve3D(b)))
     }
 
@@ -1516,7 +1520,7 @@ impl PyBSplineCurve3D {
     ) -> PyResult<Py<PyAny>> {
         let s = extract_surface(surface)?;
         let tol = tolerance(tol);
-        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
+        curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(python_error)?)
     }
 
     /// Intersects with any curve or surface, in either order.
@@ -1567,7 +1571,7 @@ impl PyLine2D {
     #[staticmethod]
     fn from_two_points(p1: PyPoint2D, p2: PyPoint2D) -> PyResult<Self> {
         Ok(PyLine2D(
-            Line2D::from_two_points(p1.0, p2.0).map_err(val_err)?,
+            Line2D::from_two_points(p1.0, p2.0).map_err(python_error)?,
         ))
     }
 
@@ -1614,7 +1618,7 @@ impl PyLine2D {
     /// Build a 2D line from an origin and a direction (normalized internally).
     fn py_new(origin: PyPoint2D, direction: PyVector2D) -> PyResult<Self> {
         Ok(PyLine2D(
-            Line2D::new(origin.0, direction.0).map_err(val_err)?,
+            Line2D::new(origin.0, direction.0).map_err(python_error)?,
         ))
     }
 
@@ -1785,7 +1789,7 @@ impl PyCircle2D {
     /// Build a 2D circle from its center and radius.
     fn py_new(center: PyPoint2D, radius: f64) -> PyResult<Self> {
         Ok(PyCircle2D(
-            Circle2D::new(center.0, radius).map_err(val_err)?,
+            Circle2D::new(center.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -1962,7 +1966,7 @@ impl PyTrimmedCurve3D {
     fn py_new(basis: &Bound<'_, PyAny>, first: f64, last: f64) -> PyResult<Self> {
         let basis = extract_curve3d(basis)?;
         Ok(PyTrimmedCurve3D(
-            TrimmedCurve3D::new(basis, first, last).map_err(val_err)?,
+            TrimmedCurve3D::new(basis, first, last).map_err(python_error)?,
         ))
     }
 
@@ -1970,7 +1974,7 @@ impl PyTrimmedCurve3D {
     /// `start` over `[0, |end - start|]`.
     #[staticmethod]
     fn segment(start: PyPoint3D, end: PyPoint3D) -> PyResult<Self> {
-        let segment = TrimmedCurve3D::segment(start.0, end.0).map_err(val_err)?;
+        let segment = TrimmedCurve3D::segment(start.0, end.0).map_err(python_error)?;
         Ok(PyTrimmedCurve3D(segment.into_curve3d()))
     }
 
@@ -2007,16 +2011,18 @@ impl PyTrimmedCurve3D {
         let (first, last) = (self.0.first(), self.0.last());
         let basis = self.0.basis().clone();
         if let Some(b) = basis.as_bspline() {
-            return Ok(PyBSplineCurve3D(b.extract(first, last).map_err(val_err)?));
+            return Ok(PyBSplineCurve3D(
+                b.extract(first, last).map_err(python_error)?,
+            ));
         }
         let elementary = basis
             .as_elementary()
             .expect("every non-B-spline curve is elementary");
         Ok(PyBSplineCurve3D(
             TrimmedCurve3D::new(elementary, first, last)
-                .map_err(val_err)?
+                .map_err(python_error)?
                 .to_bspline()
-                .map_err(val_err)?,
+                .map_err(python_error)?,
         ))
     }
 
@@ -2193,7 +2199,7 @@ impl PyTrimmedCurve2D {
     fn py_new(basis: &Bound<'_, PyAny>, first: f64, last: f64) -> PyResult<Self> {
         let basis = extract_curve2d(basis)?;
         Ok(PyTrimmedCurve2D(
-            TrimmedCurve2D::new(basis, first, last).map_err(val_err)?,
+            TrimmedCurve2D::new(basis, first, last).map_err(python_error)?,
         ))
     }
 
@@ -2201,7 +2207,7 @@ impl PyTrimmedCurve2D {
     /// `start` over `[0, |end - start|]`.
     #[staticmethod]
     fn segment(start: PyPoint2D, end: PyPoint2D) -> PyResult<Self> {
-        let segment = TrimmedCurve2D::segment(start.0, end.0).map_err(val_err)?;
+        let segment = TrimmedCurve2D::segment(start.0, end.0).map_err(python_error)?;
         Ok(PyTrimmedCurve2D(segment.into_curve2d()))
     }
 

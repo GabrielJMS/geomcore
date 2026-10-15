@@ -4,6 +4,42 @@ from geomcore.curves import BSplineCurve3D
 
 from . import curves, surfaces
 
+class GeomcoreError(ValueError):
+    """Base class of every error raised by geomcore. Subclasses `ValueError`."""
+
+class ConstructionError(GeomcoreError):
+    """A geometric object could not be built from the given arguments (for example a zero radius or a degenerate direction)."""
+
+class FrameConstructionError(ConstructionError):
+    """A frame could not be built, for example from parallel or zero directions."""
+
+class TrimmedCurveConstructionError(ConstructionError):
+    """A trimmed curve could not be built, for example from an invalid parameter range."""
+
+class KnotInsertionError(GeomcoreError):
+    """A knot could not be inserted into a B-spline."""
+
+class KnotRemovalError(GeomcoreError):
+    """A knot could not be removed from a B-spline."""
+
+class DegreeElevationError(GeomcoreError):
+    """The degree of a B-spline could not be elevated."""
+
+class BSplineSplitError(GeomcoreError):
+    """A B-spline could not be split at the given parameter."""
+
+class BSplineConversionError(GeomcoreError):
+    """A curve or surface patch could not be converted to a B-spline."""
+
+class ParametrizeError(GeomcoreError):
+    """A curve could not be re-parametrized as requested."""
+
+class SurfaceIsoError(GeomcoreError):
+    """An iso-parametric curve of a surface could not be extracted."""
+
+class DiscretizationCriteriaError(GeomcoreError):
+    """Discretization criteria were invalid, for example a non-positive deviation."""
+
 @final
 class Point3D:
     __hash__: ClassVar[None]  # type: ignore[assignment]
@@ -525,6 +561,18 @@ def curve_curve_extrema(
 ) -> CurveCurveExtrema: ...
 
 __all__ = [
+    "GeomcoreError",
+    "ConstructionError",
+    "FrameConstructionError",
+    "TrimmedCurveConstructionError",
+    "KnotInsertionError",
+    "KnotRemovalError",
+    "DegreeElevationError",
+    "BSplineSplitError",
+    "BSplineConversionError",
+    "ParametrizeError",
+    "SurfaceIsoError",
+    "DiscretizationCriteriaError",
     "Axis3D",
     "BoundingBox3D",
     "Completeness",

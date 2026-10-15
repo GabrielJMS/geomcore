@@ -1,6 +1,18 @@
 from geomcore import *
 
 __all__ = [
+    "GeomcoreError",
+    "ConstructionError",
+    "FrameConstructionError",
+    "TrimmedCurveConstructionError",
+    "KnotInsertionError",
+    "KnotRemovalError",
+    "DegreeElevationError",
+    "BSplineSplitError",
+    "BSplineConversionError",
+    "ParametrizeError",
+    "SurfaceIsoError",
+    "DiscretizationCriteriaError",
     "Axis2D",
     "Axis3D",
     "Frame2D",

@@ -11,6 +11,11 @@ the Python distribution are versioned in lockstep.
 
 ### Added
 
+- Python exceptions mirror the Rust error types: `GeomcoreError` (a
+  `ValueError`) with `ConstructionError`, `FrameConstructionError`,
+  `TrimmedCurveConstructionError`, `KnotInsertionError`, `KnotRemovalError`,
+  `DegreeElevationError`, `BSplineSplitError`, `BSplineConversionError`,
+  `ParametrizeError`, `SurfaceIsoError` and `DiscretizationCriteriaError`.
 - Python binding gaps closed against the Rust API: `Axis2D` and `Frame2D`;
   `frame()` on every curve and surface that has one, `axis()` on `Line3D`,
   `Line2D` and `Cylinder`, `Torus.center()`, `Parabola3D.apex()`;

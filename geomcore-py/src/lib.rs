@@ -2,10 +2,14 @@
 //!
 //! The extension module mirrors the Rust crate's namespaces: value types live
 //! at the package root (`geomcore`), curves under `geomcore.curves`, and
-//! surfaces under `geomcore.surfaces`. Fallible constructors raise
-//! `ValueError` carrying the underlying error description.
+//! surfaces under `geomcore.surfaces`. Fallible operations raise
+//! the `GeomcoreError` subclass matching the Rust error type (see `errors`);
+//! `GeomcoreError` is a `ValueError`.
 
-use pyo3::exceptions::PyValueError;
+mod errors;
+
+use errors::invalid_argument;
+
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
@@ -17,20 +21,16 @@ pub(crate) fn tolerance(tolerance: Option<PyTolerance>) -> Tolerance {
     tolerance.map_or(Tolerance::DEFAULT, |given| given.0)
 }
 
-pub(crate) fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
-    PyValueError::new_err(e.to_string())
-}
-
 /// Checks a curve derivative order lies in `1..=max`.
 pub(crate) fn check_curve_order(order: u32, max: u32) -> PyResult<()> {
     if (1..=max).contains(&order) {
         Ok(())
     } else if order == 0 {
-        Err(PyValueError::new_err(
+        Err(invalid_argument(
             "order must be >= 1 (use eval_point for order 0)",
         ))
     } else {
-        Err(PyValueError::new_err(format!(
+        Err(invalid_argument(format!(
             "order {order} is not supported (at most {max})"
         )))
     }
@@ -40,10 +40,10 @@ pub(crate) fn check_curve_order(order: u32, max: u32) -> PyResult<()> {
 pub(crate) fn check_surface_order(du: u32, dv: u32) -> PyResult<()> {
     match du.checked_add(dv) {
         Some(1 | 2) => Ok(()),
-        Some(0) => Err(PyValueError::new_err(
+        Some(0) => Err(invalid_argument(
             "du + dv must be >= 1 (use eval_point for the (0, 0) order)",
         )),
-        _ => Err(PyValueError::new_err(format!(
+        _ => Err(invalid_argument(format!(
             "order du={du}, dv={dv} is not supported (du + dv must be <= 2)"
         ))),
     }
@@ -53,7 +53,7 @@ pub(crate) fn parse_parametrization(s: &str) -> PyResult<PointParametrization> {
     match s {
         "chordal" => Ok(PointParametrization::Chordal),
         "centripetal" => Ok(PointParametrization::Centripetal),
-        _ => Err(PyValueError::new_err(
+        _ => Err(invalid_argument(
             "parametrization must be 'chordal' or 'centripetal'",
         )),
     }
@@ -93,6 +93,7 @@ use values::{
 fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
 
+    errors::register(m)?;
     m.add_class::<PyPoint3D>()?;
     m.add_class::<PyPoint2D>()?;
     m.add_class::<PyVector3D>()?;

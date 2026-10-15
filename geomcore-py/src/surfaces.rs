@@ -7,9 +7,10 @@ use geomcore::surfaces::{
 };
 
 use crate::curves::*;
+use crate::errors::python_error;
 use crate::results::*;
 use crate::values::*;
-use crate::{check_surface_order, parse_parametrization, tolerance, val_err};
+use crate::{check_surface_order, parse_parametrization, tolerance};
 
 // ---------------------------------------------------------------------------
 // Surfaces
@@ -75,7 +76,9 @@ impl PyPlane {
     #[new]
     /// Build a plane from a point and a normal direction.
     fn py_new(point: PyPoint3D, normal: PyVector3D) -> PyResult<Self> {
-        Ok(PyPlane(Plane::new(point.0, normal.0).map_err(val_err)?))
+        Ok(PyPlane(
+            Plane::new(point.0, normal.0).map_err(python_error)?,
+        ))
     }
 
     /// Build a plane from a placement frame (normal = frame z direction).
@@ -88,7 +91,7 @@ impl PyPlane {
     #[staticmethod]
     fn from_three_points(p1: PyPoint3D, p2: PyPoint3D, p3: PyPoint3D) -> PyResult<Self> {
         Ok(PyPlane(
-            Plane::from_three_points(p1.0, p2.0, p3.0).map_err(val_err)?,
+            Plane::from_three_points(p1.0, p2.0, p3.0).map_err(python_error)?,
         ))
     }
 
@@ -96,7 +99,7 @@ impl PyPlane {
     #[staticmethod]
     fn from_coefficients(a: f64, b: f64, c: f64, d: f64) -> PyResult<Self> {
         Ok(PyPlane(
-            Plane::from_coefficients(a, b, c, d).map_err(val_err)?,
+            Plane::from_coefficients(a, b, c, d).map_err(python_error)?,
         ))
     }
 
@@ -109,7 +112,9 @@ impl PyPlane {
     /// collapsing transform).
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
-        Ok(PyPlane(self.0.transformed(transform.0).map_err(val_err)?))
+        Ok(PyPlane(
+            self.0.transformed(transform.0).map_err(python_error)?,
+        ))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -151,14 +156,14 @@ impl PyPlane {
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
     /// a non-finite parameter).
     fn u_iso(&self, u: f64) -> PyResult<PyLine3D> {
-        Ok(PyLine3D(self.0.u_iso(u).map_err(val_err)?))
+        Ok(PyLine3D(self.0.u_iso(u).map_err(python_error)?))
     }
 
     /// The `v` isoparametric line through `(0, v)` along the plane's `u` axis, parametrized by `u` like the surface:
     /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
     /// a non-finite parameter).
     fn v_iso(&self, v: f64) -> PyResult<PyLine3D> {
-        Ok(PyLine3D(self.0.v_iso(v).map_err(val_err)?))
+        Ok(PyLine3D(self.0.v_iso(v).map_err(python_error)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -174,7 +179,9 @@ impl PyPlane {
         v_range: (f64, f64),
     ) -> PyResult<PyBSplineSurface> {
         Ok(PyBSplineSurface(
-            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+            self.0
+                .to_bspline_patch(u_range, v_range)
+                .map_err(python_error)?,
         ))
     }
 
@@ -303,7 +310,7 @@ impl PyCylinder {
     /// Build a cylinder from a point on its axis, the axis direction and a radius.
     fn py_new(center: PyPoint3D, axis_direction: PyVector3D, radius: f64) -> PyResult<Self> {
         Ok(PyCylinder(
-            Cylinder::new(center.0, axis_direction.0, radius).map_err(val_err)?,
+            Cylinder::new(center.0, axis_direction.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -311,7 +318,7 @@ impl PyCylinder {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, radius: f64) -> PyResult<Self> {
         Ok(PyCylinder(
-            Cylinder::from_frame(frame.0, radius).map_err(val_err)?,
+            Cylinder::from_frame(frame.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -319,7 +326,7 @@ impl PyCylinder {
     #[staticmethod]
     fn from_axis(axis: PyAxis3D, radius: f64) -> PyResult<Self> {
         Ok(PyCylinder(
-            Cylinder::from_axis(axis.0, radius).map_err(val_err)?,
+            Cylinder::from_axis(axis.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -340,7 +347,7 @@ impl PyCylinder {
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
         Ok(PyCylinder(
-            self.0.transformed(transform.0).map_err(val_err)?,
+            self.0.transformed(transform.0).map_err(python_error)?,
         ))
     }
 
@@ -383,14 +390,14 @@ impl PyCylinder {
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
     /// a non-finite parameter).
     fn u_iso(&self, u: f64) -> PyResult<PyLine3D> {
-        Ok(PyLine3D(self.0.u_iso(u).map_err(val_err)?))
+        Ok(PyLine3D(self.0.u_iso(u).map_err(python_error)?))
     }
 
     /// The `v` isoparametric section circle at height `v`, parametrized by `u` like the surface:
     /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
     /// a non-finite parameter).
     fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
-        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(python_error)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -406,7 +413,9 @@ impl PyCylinder {
         v_range: (f64, f64),
     ) -> PyResult<PyBSplineSurface> {
         Ok(PyBSplineSurface(
-            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+            self.0
+                .to_bspline_patch(u_range, v_range)
+                .map_err(python_error)?,
         ))
     }
 
@@ -536,7 +545,7 @@ impl PyCone {
         ref_radius: f64,
     ) -> PyResult<Self> {
         Ok(PyCone(
-            Cone::new(center.0, axis_direction.0, semi_angle, ref_radius).map_err(val_err)?,
+            Cone::new(center.0, axis_direction.0, semi_angle, ref_radius).map_err(python_error)?,
         ))
     }
 
@@ -544,7 +553,7 @@ impl PyCone {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, semi_angle: f64, ref_radius: f64) -> PyResult<Self> {
         Ok(PyCone(
-            Cone::from_frame(frame.0, semi_angle, ref_radius).map_err(val_err)?,
+            Cone::from_frame(frame.0, semi_angle, ref_radius).map_err(python_error)?,
         ))
     }
 
@@ -552,7 +561,7 @@ impl PyCone {
     #[staticmethod]
     fn from_two_points_and_radii(p1: PyPoint3D, p2: PyPoint3D, r1: f64, r2: f64) -> PyResult<Self> {
         Ok(PyCone(
-            Cone::from_two_points_and_radii(p1.0, p2.0, r1, r2).map_err(val_err)?,
+            Cone::from_two_points_and_radii(p1.0, p2.0, r1, r2).map_err(python_error)?,
         ))
     }
 
@@ -575,7 +584,9 @@ impl PyCone {
     /// collapsing transform).
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
-        Ok(PyCone(self.0.transformed(transform.0).map_err(val_err)?))
+        Ok(PyCone(
+            self.0.transformed(transform.0).map_err(python_error)?,
+        ))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -617,14 +628,14 @@ impl PyCone {
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
     /// a non-finite parameter).
     fn u_iso(&self, u: f64) -> PyResult<PyLine3D> {
-        Ok(PyLine3D(self.0.u_iso(u).map_err(val_err)?))
+        Ok(PyLine3D(self.0.u_iso(u).map_err(python_error)?))
     }
 
     /// The `v` isoparametric section circle at `v` (radius zero at the apex), parametrized by `u` like the surface:
     /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
     /// a non-finite parameter).
     fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
-        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(python_error)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -640,7 +651,9 @@ impl PyCone {
         v_range: (f64, f64),
     ) -> PyResult<PyBSplineSurface> {
         Ok(PyBSplineSurface(
-            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+            self.0
+                .to_bspline_patch(u_range, v_range)
+                .map_err(python_error)?,
         ))
     }
 
@@ -761,14 +774,16 @@ impl PySphere {
     #[new]
     /// Build a sphere from its center and radius (world-aligned frame).
     fn py_new(center: PyPoint3D, radius: f64) -> PyResult<Self> {
-        Ok(PySphere(Sphere::new(center.0, radius).map_err(val_err)?))
+        Ok(PySphere(
+            Sphere::new(center.0, radius).map_err(python_error)?,
+        ))
     }
 
     /// Build a sphere from a placement frame and radius.
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, radius: f64) -> PyResult<Self> {
         Ok(PySphere(
-            Sphere::from_frame(frame.0, radius).map_err(val_err)?,
+            Sphere::from_frame(frame.0, radius).map_err(python_error)?,
         ))
     }
 
@@ -796,7 +811,9 @@ impl PySphere {
     /// collapsing transform).
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
-        Ok(PySphere(self.0.transformed(transform.0).map_err(val_err)?))
+        Ok(PySphere(
+            self.0.transformed(transform.0).map_err(python_error)?,
+        ))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -838,14 +855,14 @@ impl PySphere {
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
     /// a non-finite parameter).
     fn u_iso(&self, u: f64) -> PyResult<PyCircle3D> {
-        Ok(PyCircle3D(self.0.u_iso(u).map_err(val_err)?))
+        Ok(PyCircle3D(self.0.u_iso(u).map_err(python_error)?))
     }
 
     /// The `v` isoparametric parallel circle at latitude `v` (radius zero at a pole), parametrized by `u` like the surface:
     /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
     /// a non-finite parameter).
     fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
-        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(python_error)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -866,7 +883,9 @@ impl PySphere {
         v_range: (f64, f64),
     ) -> PyResult<PyBSplineSurface> {
         Ok(PyBSplineSurface(
-            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+            self.0
+                .to_bspline_patch(u_range, v_range)
+                .map_err(python_error)?,
         ))
     }
 
@@ -1000,7 +1019,7 @@ impl PyTorus {
         minor_radius: f64,
     ) -> PyResult<Self> {
         Ok(PyTorus(
-            Torus::new(center.0, normal.0, major_radius, minor_radius).map_err(val_err)?,
+            Torus::new(center.0, normal.0, major_radius, minor_radius).map_err(python_error)?,
         ))
     }
 
@@ -1008,7 +1027,7 @@ impl PyTorus {
     #[staticmethod]
     fn from_frame(frame: PyFrame3D, major_radius: f64, minor_radius: f64) -> PyResult<Self> {
         Ok(PyTorus(
-            Torus::from_frame(frame.0, major_radius, minor_radius).map_err(val_err)?,
+            Torus::from_frame(frame.0, major_radius, minor_radius).map_err(python_error)?,
         ))
     }
 
@@ -1026,7 +1045,9 @@ impl PyTorus {
     /// collapsing transform).
     #[pyo3(signature = (transform,))]
     fn transformed(&self, transform: &PyTransform) -> PyResult<Self> {
-        Ok(PyTorus(self.0.transformed(transform.0).map_err(val_err)?))
+        Ok(PyTorus(
+            self.0.transformed(transform.0).map_err(python_error)?,
+        ))
     }
 
     /// Evaluate the point at surface parameters (u, v).
@@ -1068,14 +1089,14 @@ impl PyTorus {
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
     /// a non-finite parameter).
     fn u_iso(&self, u: f64) -> PyResult<PyCircle3D> {
-        Ok(PyCircle3D(self.0.u_iso(u).map_err(val_err)?))
+        Ok(PyCircle3D(self.0.u_iso(u).map_err(python_error)?))
     }
 
     /// The `v` isoparametric parallel circle at tube angle `v` (radius zero at a pinch), parametrized by `u` like the surface:
     /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
     /// a non-finite parameter).
     fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
-        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(python_error)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -1096,7 +1117,9 @@ impl PyTorus {
         v_range: (f64, f64),
     ) -> PyResult<PyBSplineSurface> {
         Ok(PyBSplineSurface(
-            self.0.to_bspline_patch(u_range, v_range).map_err(val_err)?,
+            self.0
+                .to_bspline_patch(u_range, v_range)
+                .map_err(python_error)?,
         ))
     }
 
@@ -1242,7 +1265,7 @@ impl PyBSplineSurface {
                 u_periodic,
                 v_periodic,
             )
-            .map_err(val_err)?,
+            .map_err(python_error)?,
         ))
     }
 
@@ -1278,7 +1301,7 @@ impl PyBSplineSurface {
                 u_periodic,
                 v_periodic,
             )
-            .map_err(val_err)?,
+            .map_err(python_error)?,
         ))
     }
 
@@ -1370,14 +1393,14 @@ impl PyBSplineSurface {
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
     /// a non-finite parameter or one outside a non-periodic direction (a periodic one wraps)).
     fn u_iso(&self, u: f64) -> PyResult<PyBSplineCurve3D> {
-        Ok(PyBSplineCurve3D(self.0.u_iso(u).map_err(val_err)?))
+        Ok(PyBSplineCurve3D(self.0.u_iso(u).map_err(python_error)?))
     }
 
     /// The `v` isoparametric B-spline curve at `v`, blended from the pole net, parametrized by `u` like the surface:
     /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
     /// a non-finite parameter or one outside a non-periodic direction (a periodic one wraps)).
     fn v_iso(&self, v: f64) -> PyResult<PyBSplineCurve3D> {
-        Ok(PyBSplineCurve3D(self.0.v_iso(v).map_err(val_err)?))
+        Ok(PyBSplineCurve3D(self.0.v_iso(v).map_err(python_error)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -1413,7 +1436,7 @@ impl PyBSplineSurface {
                 v_pole_count,
                 param,
             )
-            .map_err(val_err)?,
+            .map_err(python_error)?,
         ))
     }
 
@@ -1439,7 +1462,7 @@ impl PyBSplineSurface {
             .collect::<Vec<Vec<_>>>();
         Ok(PyBSplineSurface(
             BSplineSurface::approximate_within(&points, u_degree, v_degree, max_deviation, param)
-                .map_err(val_err)?,
+                .map_err(python_error)?,
         ))
     }
 
@@ -1447,7 +1470,7 @@ impl PyBSplineSurface {
     /// direction (same shape, more poles).
     fn insert_u_knot(&self, u: f64, times: u32) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.insert_u_knot(u, times).map_err(val_err)?,
+            self.0.insert_u_knot(u, times).map_err(python_error)?,
         ))
     }
 
@@ -1455,7 +1478,7 @@ impl PyBSplineSurface {
     /// direction (same shape, more poles).
     fn insert_v_knot(&self, v: f64, times: u32) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.insert_v_knot(v, times).map_err(val_err)?,
+            self.0.insert_v_knot(v, times).map_err(python_error)?,
         ))
     }
 
@@ -1463,7 +1486,7 @@ impl PyBSplineSurface {
     /// direction (same shape, more poles).
     fn refine_u_knots(&self, knots: Vec<f64>) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.refine_u_knots(&knots).map_err(val_err)?,
+            self.0.refine_u_knots(&knots).map_err(python_error)?,
         ))
     }
 
@@ -1471,21 +1494,21 @@ impl PyBSplineSurface {
     /// direction (same shape, more poles).
     fn refine_v_knots(&self, knots: Vec<f64>) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.refine_v_knots(&knots).map_err(val_err)?,
+            self.0.refine_v_knots(&knots).map_err(python_error)?,
         ))
     }
 
     /// The surface of `u` degree raised by `amount` (same shape).
     fn elevate_u_degree(&self, amount: usize) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.elevate_u_degree(amount).map_err(val_err)?,
+            self.0.elevate_u_degree(amount).map_err(python_error)?,
         ))
     }
 
     /// The surface of `v` degree raised by `amount` (same shape).
     fn elevate_v_degree(&self, amount: usize) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.elevate_v_degree(amount).map_err(val_err)?,
+            self.0.elevate_v_degree(amount).map_err(python_error)?,
         ))
     }
 
@@ -1496,7 +1519,7 @@ impl PyBSplineSurface {
         let (surface, removed) = self
             .0
             .remove_u_knot(u, times, max_deviation)
-            .map_err(val_err)?;
+            .map_err(python_error)?;
         Ok((PyBSplineSurface(surface), removed))
     }
 
@@ -1507,7 +1530,7 @@ impl PyBSplineSurface {
         let (surface, removed) = self
             .0
             .remove_v_knot(v, times, max_deviation)
-            .map_err(val_err)?;
+            .map_err(python_error)?;
         Ok((PyBSplineSurface(surface), removed))
     }
 
@@ -1517,7 +1540,7 @@ impl PyBSplineSurface {
         let (surface, removed) = self
             .0
             .remove_u_knots(&knots, max_deviation)
-            .map_err(val_err)?;
+            .map_err(python_error)?;
         Ok((PyBSplineSurface(surface), removed))
     }
 
@@ -1527,7 +1550,7 @@ impl PyBSplineSurface {
         let (surface, removed) = self
             .0
             .remove_v_knots(&knots, max_deviation)
-            .map_err(val_err)?;
+            .map_err(python_error)?;
         Ok((PyBSplineSurface(surface), removed))
     }
 
@@ -1547,7 +1570,7 @@ impl PyBSplineSurface {
     /// to one period).
     fn extract(&self, u_range: (f64, f64), v_range: (f64, f64)) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.extract(u_range, v_range).map_err(val_err)?,
+            self.0.extract(u_range, v_range).map_err(python_error)?,
         ))
     }
 
@@ -1555,7 +1578,7 @@ impl PyBSplineSurface {
     /// unchanged.
     fn extract_u(&self, first: f64, last: f64) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.extract_u(first, last).map_err(val_err)?,
+            self.0.extract_u(first, last).map_err(python_error)?,
         ))
     }
 
@@ -1563,19 +1586,19 @@ impl PyBSplineSurface {
     /// unchanged.
     fn extract_v(&self, first: f64, last: f64) -> PyResult<Self> {
         Ok(PyBSplineSurface(
-            self.0.extract_v(first, last).map_err(val_err)?,
+            self.0.extract_v(first, last).map_err(python_error)?,
         ))
     }
 
     /// The two halves split at `u`, each a clamped, non-periodic B-spline.
     fn split_u_at(&self, u: f64) -> PyResult<(Self, Self)> {
-        let (a, b) = self.0.split_u_at(u).map_err(val_err)?;
+        let (a, b) = self.0.split_u_at(u).map_err(python_error)?;
         Ok((PyBSplineSurface(a), PyBSplineSurface(b)))
     }
 
     /// The two halves split at `v`, each a clamped, non-periodic B-spline.
     fn split_v_at(&self, v: f64) -> PyResult<(Self, Self)> {
-        let (a, b) = self.0.split_v_at(v).map_err(val_err)?;
+        let (a, b) = self.0.split_v_at(v).map_err(python_error)?;
         Ok((PyBSplineSurface(a), PyBSplineSurface(b)))
     }
 
