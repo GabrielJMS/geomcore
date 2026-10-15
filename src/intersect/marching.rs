@@ -1,20 +1,39 @@
-//! Numeric surface-surface intersection by marching: seeds from a
-//! parameter grid, or from Bézier patch pairs on B-splines, traced along
-//! the intersection and fitted.
+//! Numeric surface-surface intersection by marching: seeds from the
+//! exact intersections of iso-curves with the other surface, from Bézier
+//! patch pairs on B-splines, or from a parameter grid, traced along the
+//! intersection and fitted.
 
-use super::{pieces, surface_surface};
-use crate::curves::{BSplineCurve3D, PointParametrization};
+use super::routing::route_curve_surface;
+use super::{CurveSurfaceIntersection, pieces, surface_surface};
+use crate::curves::{BSplineCurve3D, ElementaryCurve, ParametricCurve3D, PointParametrization};
 use crate::math::boxtree::{Aabb, boxes_apart};
 use crate::math::{solve_2x2, solve_3x3, solve_4x4};
-use crate::surfaces::ParametricSurface;
-use crate::{Point3D, Tolerance, Vector3D};
+use crate::surfaces::{BSplineSurface, ElementarySurface, ParametricSurface, Surface};
+use crate::{Bound3D, BoundingBox3D, Point3D, Tolerance, Vector3D};
 
 /// Marching surface-surface intersection for any two parametric surfaces.
 ///
-/// Seeds come from both parameter grids: the samples where the distance
-/// to the other surface is a local minimum are converged onto the
-/// intersection by Newton's method on `S1(u1, v1) = S2(u2, v2)`, so curves
-/// running between grid lines are found too. Each seed traces both ways
+/// When either surface is elementary (and the other elementary or a
+/// B-spline), seeds are the points where its iso-curves meet the other
+/// surface, found by the routed curve-surface intersection (exact for
+/// every elementary pair but a circle against a torus):
+/// - cylinder and cone: 24 rulings (iso-`u` lines) over the period;
+/// - sphere: 24 iso-`u` great circles over half the period (each is a
+///   whole meridian circle);
+/// - torus: 24 iso-`u` circles over the period;
+/// - plane: 24 lines each way across the other surface's bounding box,
+///   grown by 10 %; against a surface without one (a plane, cylinder or
+///   cone), its two iso-lines through its origin.
+///
+/// Both sides seed when both are elementary. A line is intersected whole,
+/// so an unbounded direction is searched whole: an intersection far from
+/// the parameter origin is found.
+///
+/// Otherwise seeds come from both parameter grids (unbounded directions
+/// sampled over `[-10, 10]`): the samples where the distance to the other
+/// surface is a local minimum are converged onto the intersection by
+/// Newton's method on `S1(u1, v1) = S2(u2, v2)`, so curves running between
+/// grid lines are found too. Each seed traces both ways
 /// along the `N1 x N2` tangent; every step is corrected by Newton's method
 /// on the same system plus the plane through the predicted point normal to
 /// the tangent, and the step length follows the curvature (a chord
@@ -40,10 +59,10 @@ use crate::{Point3D, Tolerance, Vector3D};
 /// classification stays with the exact intersection
 /// ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact)). Likewise
 /// no tangency classification (grazing pairs may trace partially or not
-/// at all), no marching through singular points (poles, apexes), and,
-/// unless both surfaces are B-splines, a fixed seed grid (a loop that
-/// leaves no distance minimum on either grid is missed) — v1 heuristics,
-/// documented so callers can judge fit.
+/// at all), no marching through singular points (poles, apexes), and a
+/// fixed number of seeding iso-curves or grid samples (a loop that no
+/// seeding iso-curve crosses, or that leaves no distance minimum on either
+/// grid, is missed) — v1 heuristics, documented so callers can judge fit.
 ///
 /// # Examples
 ///
@@ -81,8 +100,220 @@ where
             return traced.curves;
         }
     }
-    trace_grid_seeds(a, b, tol, &mut traced);
+    match iso_curve_seeds(a, b, tol) {
+        Some(seeds) => {
+            for seed in seeds {
+                if let Some(seed) = meet(a, b, seed, None, tol) {
+                    traced.follow(a, b, seed, tol);
+                }
+            }
+        }
+        None => trace_grid_seeds(a, b, tol, &mut traced),
+    }
     traced.curves
+}
+
+/// Iso-curves seeding from one elementary side.
+const ISO_CURVE_COUNT: usize = 24;
+
+/// Which parameter an iso-curve holds fixed.
+#[derive(Clone, Copy)]
+enum IsoDirection {
+    /// `u` fixed, the curve running along `v`.
+    U,
+    /// `v` fixed, the curve running along `u`.
+    V,
+}
+
+/// A surface the routed curve-surface intersection takes: the one an
+/// iso-curve of the other side meets.
+#[derive(Clone, Copy)]
+enum SeedTarget<'a> {
+    Elementary(ElementarySurface),
+    BSpline(&'a BSplineSurface),
+}
+
+impl<'a> SeedTarget<'a> {
+    /// `surface` as a target, or `None` when it is neither elementary nor
+    /// a B-spline.
+    fn of<S: ParametricSurface>(surface: &'a S) -> Option<SeedTarget<'a>> {
+        surface
+            .as_elementary()
+            .map(SeedTarget::Elementary)
+            .or_else(|| surface.as_bspline().map(SeedTarget::BSpline))
+    }
+
+    fn intersect(self, curve: &ElementaryCurve, tol: Tolerance) -> CurveSurfaceIntersection {
+        match self {
+            SeedTarget::Elementary(surface) => route_curve_surface(curve, &surface, tol),
+            SeedTarget::BSpline(surface) => route_curve_surface(curve, surface, tol),
+        }
+    }
+
+    fn parameters_of(self, point: Point3D, tol: Tolerance) -> (f64, f64) {
+        match self {
+            SeedTarget::Elementary(surface) => surface.parameters_of(point),
+            SeedTarget::BSpline(surface) => {
+                let projection = surface.project_point(point, tol);
+                (projection.u, projection.v)
+            }
+        }
+    }
+
+    fn bounding_box(self) -> Option<BoundingBox3D> {
+        match self {
+            SeedTarget::Elementary(surface) => surface.bounding_box(),
+            SeedTarget::BSpline(surface) => surface.bounding_box(),
+        }
+    }
+}
+
+/// Parameters `[a_u, a_v, b_u, b_v]` of the points where the seeding
+/// iso-curves of each elementary side meet the other side (see
+/// [`marching_intersection`]), or `None` when neither side is elementary
+/// or a side is neither elementary nor a B-spline.
+fn iso_curve_seeds<A, B>(a: &A, b: &B, tol: Tolerance) -> Option<Vec<[f64; 4]>>
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let (first, second) = (SeedTarget::of(a)?, SeedTarget::of(b)?);
+    let mut seeds = Vec::new();
+    if let SeedTarget::Elementary(own) = first {
+        seeds.extend(family_seeds(own, second, tol));
+    }
+    if let SeedTarget::Elementary(own) = second {
+        seeds.extend(
+            family_seeds(own, first, tol)
+                .into_iter()
+                .map(|x| [x[2], x[3], x[0], x[1]]),
+        );
+    }
+    let any_elementary =
+        matches!(first, SeedTarget::Elementary(_)) || matches!(second, SeedTarget::Elementary(_));
+    any_elementary.then_some(seeds)
+}
+
+/// Parameters `[own_u, own_v, other_u, other_v]` of the points where the
+/// seeding iso-curves of `own` meet `other`: every hit, and a point of
+/// every stretch of an iso-curve lying on `other`.
+fn family_seeds(own: ElementarySurface, other: SeedTarget, tol: Tolerance) -> Vec<[f64; 4]> {
+    let surface = Surface::from(own);
+    let mut seeds = Vec::new();
+    for (direction, value) in seeding_iso_values(own, other) {
+        let curve = match direction {
+            IsoDirection::U => surface.u_iso(value),
+            IsoDirection::V => surface.v_iso(value),
+        };
+        let Some(curve) = curve.ok().and_then(|curve| curve.as_elementary()) else {
+            continue;
+        };
+        let result = other.intersect(&curve, tol);
+        let hits = result.hits().iter().map(|hit| {
+            let parameter = hit
+                .curve_parameter
+                .unwrap_or_else(|| curve.parameter_of(hit.point));
+            (parameter, hit.point, hit.surface_parameters)
+        });
+        let overlaps = result.overlaps().iter().map(|&range| {
+            let parameter = point_of_range(range);
+            (parameter, curve.eval_point(parameter), None)
+        });
+        for (parameter, point, other_parameters) in hits.chain(overlaps) {
+            let (u, v) = own_parameters(own, direction, value, parameter, point);
+            let (other_u, other_v) =
+                other_parameters.unwrap_or_else(|| other.parameters_of(point, tol));
+            seeds.push([u, v, other_u, other_v]);
+        }
+    }
+    seeds
+}
+
+/// The iso-curves `own` seeds from, as `(direction, fixed value)`.
+fn seeding_iso_values(own: ElementarySurface, other: SeedTarget) -> Vec<(IsoDirection, f64)> {
+    let spread = |lo: f64, hi: f64| {
+        (0..ISO_CURVE_COUNT).map(move |i| lo + (hi - lo) * i as f64 / ISO_CURVE_COUNT as f64)
+    };
+    let tau = std::f64::consts::TAU;
+    match own {
+        ElementarySurface::Plane(plane) => match other.bounding_box() {
+            Some(bounds) => {
+                // The other surface's box, in the plane's parameters.
+                let (min, max) = (bounds.min(), bounds.max());
+                let corners = (0..8).map(|k| {
+                    plane.parameters_of(Point3D::new(
+                        if k & 1 == 0 { min.x } else { max.x },
+                        if k & 2 == 0 { min.y } else { max.y },
+                        if k & 4 == 0 { min.z } else { max.z },
+                    ))
+                });
+                let (mut low, mut high) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+                for (u, v) in corners {
+                    (low[0], high[0]) = (low[0].min(u), high[0].max(u));
+                    (low[1], high[1]) = (low[1].min(v), high[1].max(v));
+                }
+                // Grown by 10 %, lines at both ends.
+                let across = |k: usize| {
+                    let margin = 0.05 * (high[k] - low[k]);
+                    let (lo, hi) = (low[k] - margin, high[k] + margin);
+                    (0..ISO_CURVE_COUNT)
+                        .map(move |i| lo + (hi - lo) * i as f64 / (ISO_CURVE_COUNT - 1) as f64)
+                };
+                across(0)
+                    .map(|u| (IsoDirection::U, u))
+                    .chain(across(1).map(|v| (IsoDirection::V, v)))
+                    .collect()
+            }
+            // An unbounded other surface: two crossing lines meet any plane
+            // that is not parallel; a cylinder or cone seeds from its own
+            // rulings.
+            None => vec![(IsoDirection::U, 0.0), (IsoDirection::V, 0.0)],
+        },
+        // A meridian circle is whole: the one at `u + PI` is the same.
+        ElementarySurface::Sphere(_) => spread(0.0, 0.5 * tau)
+            .map(|u| (IsoDirection::U, u))
+            .collect(),
+        ElementarySurface::Cylinder(_)
+        | ElementarySurface::Cone(_)
+        | ElementarySurface::Torus(_) => spread(0.0, tau).map(|u| (IsoDirection::U, u)).collect(),
+    }
+}
+
+/// Parameters on `own` of the point at `parameter` on its iso-curve at
+/// `value`: the iso-curve runs along the free direction with the surface's
+/// own parametrization, so they are `(value, parameter)` for an iso-`u`
+/// curve and `(parameter, value)` for an iso-`v` one. Where that leaves a
+/// bounded parameter's range (the half of a sphere's meridian circle that
+/// lies on the meridian at `value + PI`), the closed form recovers them.
+fn own_parameters(
+    own: ElementarySurface,
+    direction: IsoDirection,
+    value: f64,
+    parameter: f64,
+    point: Point3D,
+) -> (f64, f64) {
+    let (u, v) = match direction {
+        IsoDirection::U => (value, parameter),
+        IsoDirection::V => (parameter, value),
+    };
+    let within = |x: f64, (lo, hi): (f64, f64), period: Option<f64>| {
+        period.is_some() || (lo..=hi).contains(&x)
+    };
+    if within(u, own.u_bounds(), own.u_period()) && within(v, own.v_bounds(), own.v_period()) {
+        (u, v)
+    } else {
+        own.parameters_of(point)
+    }
+}
+
+/// A finite parameter in `range`: its middle, or its finite end.
+fn point_of_range((first, last): (f64, f64)) -> f64 {
+    match (first.is_finite(), last.is_finite()) {
+        (true, true) => 0.5 * (first + last),
+        (true, false) => first,
+        (false, true) => last,
+        (false, false) => 0.0,
+    }
 }
 
 /// [`marching_intersection`] seeded from the parameter grids alone.
@@ -258,6 +489,10 @@ where
     // Chord deviation allowed per step, and the longest step.
     let chord_deviation = CHORD_DEVIATION * tol.confusion;
     const H_MAX: f64 = 0.1;
+    // Steps each way: at most 1000 units of length at the longest step, so
+    // a loop of a few hundred units (two cylinders of radius 50) closes,
+    // and an unbounded curve stops.
+    const STEPS_PER_DIRECTION: usize = 10_000;
     // Turn always allowed in one step. Beyond it, a step may turn by at
     // most `CURVATURE_GROWTH` times the previous step's curvature times
     // its chord: on a smooth curve turn/chord tends to the curvature as
@@ -278,7 +513,7 @@ where
         let mut h = (8.0 * chord_deviation).sqrt().min(H_MAX);
         // Curvature of the last accepted step (none before the first).
         let mut last_curvature = 0.0;
-        for _ in 0..2000 {
+        for _ in 0..STEPS_PER_DIRECTION {
             // Predict along the tangent, correct onto both surfaces in the
             // plane normal to it; halve the step until the result stays on
             // this branch with a small chord deviation.
@@ -795,6 +1030,106 @@ mod tests {
         assert!(!meets([-1.0, 0.5, 0.5], [-0.1, 0.5, 0.5]));
         assert!(!meets([-1.0, 0.0, 0.5], [0.0, -1.0, 0.5]));
         assert!(!meets([0.5, 0.5, 2.0], [0.5, 0.6, 2.0]));
+    }
+
+    /// Asserts every traced curve is closed and lies on both surfaces.
+    fn assert_closed_on_both<A, B>(curves: &[BSplineCurve3D], a: &A, b: &B)
+    where
+        A: ParametricSurface,
+        B: ParametricSurface,
+    {
+        let tol = Tolerance::DEFAULT;
+        for curve in curves {
+            let (t0, t1) = curve.bounds();
+            let gap = curve.eval_point(t0).distance(curve.eval_point(t1));
+            assert!(gap < 1e-6, "open curve, end gap {gap}");
+            for k in 0..=40 {
+                let p = curve.eval_point(t0 + (t1 - t0) * k as f64 / 40.0);
+                assert!(a.project_point(p, tol).distance < 1e-3, "{p:?}");
+                assert!(b.project_point(p, tol).distance < 1e-3, "{p:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_marching_finds_skew_cylinders_far_from_the_origin() {
+        // The cylinders meet around x = 500, far beyond the grid window of
+        // +-10 along the first cylinder's axis, in one loop about 510 long.
+        use crate::Cylinder;
+        let tol = Tolerance::DEFAULT;
+        let along_x = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 50.0).unwrap();
+        let along_y = Cylinder::new(Point3D::new(500.0, 0.0, 30.0), Vector3D::Y, 50.0).unwrap();
+        // The same second cylinder, its parameters measured from y = 300:
+        // neither grid window holds a point of the intersection.
+        let along_y_far =
+            Cylinder::new(Point3D::new(500.0, 300.0, 30.0), Vector3D::Y, 50.0).unwrap();
+        for curves in [
+            marching_intersection(&along_x, &along_y, tol),
+            marching_intersection(&along_y, &along_x, tol),
+            marching_intersection(&along_x, &along_y_far, tol),
+        ] {
+            assert!((1..=2).contains(&curves.len()), "{} curves", curves.len());
+            assert_closed_on_both(&curves, &along_x, &along_y);
+            for curve in &curves {
+                let (t0, t1) = curve.bounds();
+                for k in 0..=20 {
+                    let p = curve.eval_point(t0 + (t1 - t0) * k as f64 / 20.0);
+                    assert!((p.x - 500.0).abs() <= 50.0 + 1e-6, "{p:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_marching_steinmetz_cylinders_trace_both_ellipses() {
+        // Equal radii, perpendicular axes crossing: two ellipses of
+        // semi-axes 1 and sqrt(2), crossing where the cylinders touch, at
+        // (0, 0, +-1). Traces stop at a crossing (no marching through
+        // tangent points), so each ellipse comes as its two halves.
+        use crate::Cylinder;
+        let tol = Tolerance::DEFAULT;
+        let along_x = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 1.0).unwrap();
+        let along_y = Cylinder::new(Point3D::ORIGIN, Vector3D::Y, 1.0).unwrap();
+        let curves = marching_intersection(&along_x, &along_y, tol);
+        assert_eq!(curves.len(), 4);
+        for curve in &curves {
+            let (t0, t1) = curve.bounds();
+            for end in [t0, t1] {
+                let p = curve.eval_point(end);
+                assert!((p.z.abs() - 1.0).abs() < 1e-6, "{p:?}");
+            }
+            for k in 0..=40 {
+                let p = curve.eval_point(t0 + (t1 - t0) * k as f64 / 40.0);
+                assert!(along_x.project_point(p, tol).distance < 1e-3, "{p:?}");
+                assert!(along_y.project_point(p, tol).distance < 1e-3, "{p:?}");
+            }
+        }
+        // Two ellipse perimeters (Ramanujan's approximation).
+        let (a, b) = (2f64.sqrt(), 1.0);
+        let h = ((a - b) / (a + b)).powi(2);
+        let perimeter =
+            std::f64::consts::PI * (a + b) * (1.0 + 3.0 * h / (10.0 + (4.0 - 3.0 * h).sqrt()));
+        let total: f64 = curves.iter().map(traced_length).sum();
+        assert!(
+            (total - 2.0 * perimeter).abs() < 1e-3 * perimeter,
+            "{total}"
+        );
+    }
+
+    #[test]
+    fn test_marching_oblique_torus_plane() {
+        use crate::{Plane, Torus};
+        let tol = Tolerance::DEFAULT;
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+        let tilt: f64 = 0.6;
+        let plane = Plane::new(
+            Point3D::new(0.5, 0.0, 0.2),
+            Vector3D::new(-tilt.sin(), 0.0, tilt.cos()),
+        )
+        .unwrap();
+        let curves = marching_intersection(&torus, &plane, tol);
+        assert!(!curves.is_empty());
+        assert_closed_on_both(&curves, &torus, &plane);
     }
 
     #[test]

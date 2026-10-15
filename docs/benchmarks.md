@@ -381,7 +381,7 @@ Reproduce with:
 cargo bench --bench intersect_curve_curve
 ```
 
-# Marching intersection of B-splines
+# Marching intersection
 
 `benches/marching_intersection.rs` times `marching_intersection` on two
 bicubic B-spline surfaces (6×6 poles over `[0, 5]^2`, knots `[0, 1, 2,
@@ -406,6 +406,23 @@ dropped or small enough to seed from, about 4000 visits of a few hundred
 nanoseconds; most leaves lie on a curve traced already and are skipped
 by a box test against the traced points, so about half the time goes to
 the search and most of the rest to tracing the six curves.
+
+The same bench times an elementary pair: a torus of radii 3 and 1 about z
+against the plane through `(0.5, 0, 0.2)` tilted 0.6 radians about y,
+which cut in two closed curves. Fastest of three runs, same settings
+(2026-10-15, machine loaded):
+
+| seeds | torus–plane | B-spline pair |
+|---|---|---|
+| grid over `[-10, 10]` (before) | ~491 µs | ~2.61 ms |
+| iso-curves meeting the other surface (after) | ~418 µs | ~2.62 ms |
+
+The torus seeds from 24 meridian circles cut by the plane, and the plane
+from 48 lines across the torus's box, each line–torus pair solved by its
+quartic: up to 2 seed points per circle and 4 per line, most skipped by
+the box test against the traced curves, against the grid's 2 × 625
+projections. The B-spline pair
+does not use the iso-curves, so its time is unchanged.
 
 Reproduce with:
 

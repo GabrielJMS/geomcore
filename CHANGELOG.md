@@ -35,6 +35,16 @@ the Python distribution are versioned in lockstep.
   `geomcore.intersect_curve_curve` keep their signatures and now call the
   routed `intersect`, so a pair with a closed form is solved exactly;
   ranges where the shapes coincide are no longer returned as dense hits.
+- `marching_intersection` seeds from the exact intersections of the
+  iso-curves of an elementary surface (rulings of a cylinder or cone,
+  circles of a sphere or torus, lines of a plane across the other
+  surface's bounding box) with the other surface, instead of a parameter
+  grid limited to `[-10, 10]` along unbounded directions: an intersection
+  far from the parameter origin is found. Two B-spline surfaces still seed
+  from their Bézier patch pairs, then the grid. A trace now runs up to
+  10 000 steps each way instead of 2000, so long loops close; an
+  unbounded curve traces about 1000 units of length each way instead of
+  200.
 - `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the
   frame's z direction on every call (it is unit by construction): about
   13 ns faster per call, and the parameters may differ in the last bits.
