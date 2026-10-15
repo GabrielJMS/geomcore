@@ -97,14 +97,26 @@ pub trait ParametricSurface {
         )
     }
 
-    /// Unit normal `Su × Sv` at parameters `(u, v)`, or `None` where the
-    /// normal degenerates: a partial derivative vanishes or both run
-    /// parallel, as at a sphere's poles or a cone's apex.
+    /// Unit normal `Su × Sv` at parameters `(u, v)`.
     ///
-    /// A partial at or below `tol.confusion` is numerical noise rather
-    /// than a direction; otherwise the sine of the angle between the
-    /// partials is checked against `tol.angular`, so the outcome agrees
-    /// with the crate's parallelism convention (see `CONTEXT.md`).
+    /// Recovery runs in three rungs, returning the first defined normal:
+    ///
+    /// 1. The unitized cross product of the first partials. A partial
+    ///    at or below `tol.confusion` is numerical noise rather than a
+    ///    direction; otherwise the sine of the angle between the partials
+    ///    is checked against `tol.angular`, so the outcome agrees with the
+    ///    crate's parallelism convention (see `CONTEXT.md`).
+    /// 2. At a singular point (a sphere's pole, a cone's apex), second
+    ///    derivatives stand in for the degenerate direction: each pair
+    ///    from `{Su, Suv, Suu} × {Sv, Suv, Svv}` whose unitized cross
+    ///    product is well defined gives the limiting normal, oriented by
+    ///    which half of the parameter domain `(u, v)` lies in.
+    /// 3. Stepping off to nearby parameters (growing diagonal steps) and
+    ///    taking the first defined normal there.
+    ///
+    /// Returns `None` only when every rung fails: the normal is
+    /// genuinely undefined at and around `(u, v)`.
+    ///
     /// Raw partials stay available through
     /// [`eval_d1`](Self::eval_d1); there is no `tangent` method.
     ///
@@ -128,25 +140,35 @@ pub trait ParametricSurface {
     /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     /// let n = ParametricSurface::normal(&sphere, 0.0, 0.0, Tolerance::DEFAULT).unwrap();
     /// assert_eq!(n, Vector3D::X);
-    /// // Degenerate at the poles: no normal.
+    /// // Singular points recover their limiting normal: outward at the pole.
     /// use std::f64::consts::FRAC_PI_2;
-    /// assert_eq!(
-    ///     ParametricSurface::normal(&sphere, 0.0, FRAC_PI_2, Tolerance::DEFAULT),
-    ///     None
-    /// );
+    /// let pole =
+    ///     ParametricSurface::normal(&sphere, 0.0, FRAC_PI_2, Tolerance::DEFAULT).unwrap();
+    /// assert!((pole - Vector3D::Z).magnitude() < 1e-12);
     /// ```
     fn normal(&self, u: f64, v: f64, tol: Tolerance) -> Option<Vector3D> {
-        let (_, [su, sv]) = self.eval_d1(u, v);
-        let (mu, mv) = (su.magnitude(), sv.magnitude());
-        if mu <= tol.confusion || mv <= tol.confusion {
-            return None;
+        if let Some(n) = normal_rungs12(self, u, v, tol) {
+            return Some(n);
         }
-        let n = su.cross(sv);
-        if n.magnitude() <= tol.angular * mu * mv {
-            None
-        } else {
-            Some(n * (1.0 / n.magnitude()))
+        // Rung 3: step off to nearby parameters, first defined normal wins.
+        const STEPS: [f64; 4] = [1e-7, 1e-6, 1e-5, 1e-4];
+        const SHIFTS: [(f64, f64); 4] = [(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)];
+        let (u_bounds, v_bounds) = (self.u_bounds(), self.v_bounds());
+        let (u_period, v_period) = (self.u_period(), self.v_period());
+        for d in STEPS {
+            for (su, sv) in SHIFTS {
+                let (Some(uu), Some(vv)) = (
+                    shift_param(u, su * d, u_bounds, u_period),
+                    shift_param(v, sv * d, v_bounds, v_period),
+                ) else {
+                    continue;
+                };
+                if let Some(n) = normal_rungs12(self, uu, vv, tol) {
+                    return Some(n);
+                }
+            }
         }
+        None
     }
 
     /// Returns the surface's `u` parameter bounds as `(first, last)`.
@@ -233,6 +255,68 @@ pub trait ParametricSurface {
     /// ```
     fn as_elementary(&self) -> Option<ElementarySurface> {
         None
+    }
+}
+
+/// Rungs 1–2 of [`ParametricSurface::normal`]: the unitized cross product
+/// of the first partials, falling back to second-derivative substitution
+/// at a singular point. Each pair from `{Su, Suv, Suu} × {Sv, Suv, Svv}`
+/// whose unitized cross product clears `tol.angular` gives the limiting
+/// normal; the sign follows which half of the parameter domain `(u, v)`
+/// lies in, since a substituted derivative points out of the domain past
+/// its middle.
+fn normal_rungs12<S: ParametricSurface + ?Sized>(
+    s: &S,
+    u: f64,
+    v: f64,
+    tol: Tolerance,
+) -> Option<Vector3D> {
+    // Rung 1: direct unit normal.
+    let (_, [su, sv]) = s.eval_d1(u, v);
+    let (mu, mv) = (su.magnitude(), sv.magnitude());
+    if mu > tol.confusion && mv > tol.confusion {
+        let n = su.cross(sv);
+        if n.magnitude() > tol.angular * mu * mv {
+            return Some(n * (1.0 / n.magnitude()));
+        }
+    }
+    // Rung 2: stand a second derivative in for the degenerate direction.
+    let (_, _, [suu, suv, svv]) = s.eval_d2(u, v);
+    let unit = |w: Vector3D| (w.magnitude() > tol.confusion).then(|| w * (1.0 / w.magnitude()));
+    let (su, sv, suu, suv, svv) = (unit(su), unit(sv), unit(suu), unit(suv), unit(svv));
+    let flip = |x: f64, (lo, hi): (f64, f64)| {
+        if x > 0.5 * (lo + hi) { -1.0 } else { 1.0 }
+    };
+    let (flip_u, flip_v) = (flip(u, s.u_bounds()), flip(v, s.v_bounds()));
+    // (u-like, v-like, orientation sign).
+    let pairs = [
+        (suv, sv, flip_v),
+        (su, suv, flip_u),
+        (suu, sv, flip_u),
+        (su, svv, flip_v),
+        (suu, suv, 1.0),
+        (suv, svv, 1.0),
+        (suu, svv, flip_u * flip_v),
+    ];
+    for (a, b, sign) in pairs {
+        if let (Some(a), Some(b)) = (a, b) {
+            let n = a.cross(b);
+            if n.magnitude() > tol.angular {
+                return Some(sign * n * (1.0 / n.magnitude()));
+            }
+        }
+    }
+    None
+}
+
+/// `x + d` kept in `bounds`: wrapped for a periodic direction, rejected
+/// (`None`) outside a non-periodic one.
+fn shift_param(x: f64, d: f64, bounds: (f64, f64), period: Option<f64>) -> Option<f64> {
+    let y = x + d;
+    if let Some(p) = period {
+        Some(bounds.0 + (y - bounds.0).rem_euclid(p))
+    } else {
+        (bounds.0 <= y && y <= bounds.1).then_some(y)
     }
 }
 
@@ -1433,15 +1517,18 @@ mod tests {
     }
 
     #[test]
-    fn test_normal_sphere_points_outward_and_fails_at_poles() {
+    fn test_normal_sphere_points_outward_and_recovers_at_poles() {
         let s = sphere();
         let tol = Tolerance::DEFAULT;
         assert_eq!(
             ParametricSurface::normal(&s, 0.0, 0.0, tol),
             Some(Vector3D::X)
         );
-        assert_eq!(ParametricSurface::normal(&s, 0.0, FRAC_PI_2, tol), None);
-        assert_eq!(ParametricSurface::normal(&s, 1.0, -FRAC_PI_2, tol), None);
+        // Singular points recover their limiting (outward) normal via rung 2.
+        let north = ParametricSurface::normal(&s, 0.0, FRAC_PI_2, tol).unwrap();
+        assert!((north - Vector3D::Z).magnitude() < 1e-9);
+        let south = ParametricSurface::normal(&s, 1.0, -FRAC_PI_2, tol).unwrap();
+        assert!((south + Vector3D::Z).magnitude() < 1e-9);
     }
 
     #[test]
@@ -1455,12 +1542,19 @@ mod tests {
     }
 
     #[test]
-    fn test_normal_cone_fails_at_apex() {
+    fn test_normal_cone_recovers_at_apex() {
         let c = cone();
         let tol = Tolerance::DEFAULT;
         let v_apex = -2.0 / 0.4f64.sin();
-        assert_eq!(ParametricSurface::normal(&c, 0.0, v_apex, tol), None);
-        assert_eq!(ParametricSurface::normal(&c, 2.0, v_apex, tol), None);
+        for u in [0.0f64, 2.0] {
+            let expected = Vector3D::new(
+                0.4f64.cos() * u.cos(),
+                0.4f64.cos() * u.sin(),
+                -0.4f64.sin(),
+            );
+            let n = ParametricSurface::normal(&c, u, v_apex, tol).unwrap();
+            assert!((n - expected).magnitude() < 1e-9, "u = {u}: {n:?}");
+        }
     }
 
     #[test]
@@ -1493,6 +1587,79 @@ mod tests {
             let expected = su.cross(sv).normalized().unwrap();
             assert!((n - expected).magnitude() < 1e-15);
         }
+    }
+
+    // ---- normal rung 3 (step-off) and hopeless cases, via a mock ----
+
+    /// Flat everywhere except a dead zone of half-width `dead` around the
+    /// origin, where all derivatives through order 2 vanish: rung 3 must
+    /// step out of the zone, and an everywhere-dead surface must give `None`.
+    struct DeadZone {
+        dead: f64,
+    }
+
+    impl ParametricSurface for DeadZone {
+        fn eval_point(&self, _u: f64, _v: f64) -> Point3D {
+            Point3D::ORIGIN
+        }
+
+        fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
+            let dead = u.abs() < self.dead && v.abs() < self.dead;
+            match (du, dv) {
+                (1, 0) if !dead => Vector3D::X,
+                (0, 1) if !dead => Vector3D::Y,
+                _ => Vector3D::ZERO,
+            }
+        }
+
+        fn u_bounds(&self) -> (f64, f64) {
+            (-1.0, 1.0)
+        }
+
+        fn v_bounds(&self) -> (f64, f64) {
+            (-1.0, 1.0)
+        }
+
+        fn u_period(&self) -> Option<f64> {
+            None
+        }
+
+        fn v_period(&self) -> Option<f64> {
+            None
+        }
+
+        fn project_point(&self, _point: Point3D, _tol: Tolerance) -> SurfaceProjection {
+            SurfaceProjection {
+                u: 0.0,
+                v: 0.0,
+                distance: 0.0,
+            }
+        }
+
+        fn contains(&self, _point: Point3D, _tol: Tolerance) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn test_normal_steps_off_a_locally_dead_zone() {
+        let s = DeadZone { dead: 5e-8 };
+        let tol = Tolerance::DEFAULT;
+        // Rungs 1–2 fail at the origin; the 1e-7 steps land outside the
+        // dead zone where the normal is +Z.
+        assert_eq!(
+            ParametricSurface::normal(&s, 0.0, 0.0, tol),
+            Some(Vector3D::Z)
+        );
+    }
+
+    #[test]
+    fn test_normal_is_none_where_no_rung_recovers() {
+        let s = DeadZone {
+            dead: f64::INFINITY,
+        };
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(ParametricSurface::normal(&s, 0.5, 0.5, tol), None);
     }
 
     // ---- elementary surfaces ----
