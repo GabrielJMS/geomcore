@@ -632,7 +632,7 @@ where
                         let q = a.eval_point(y[0], y[1]);
                         if (q - p).dot(t) >= 0.0
                             && q.distance(p) <= 2.0 * h
-                            && crosses_one_knot_at_most(a, b, (x, p), (y, q), tol)
+                            && crosses_one_knot_at_most(a, b, x, y, tol)
                             && !bulges(a, b, (x, p), (y, q), chord_deviation, tol)
                         {
                             edge = Some(q);
@@ -650,7 +650,7 @@ where
                         && chord <= 2.0 * h
                         && chord * turn <= 32.0 * chord_deviation
                         && smooth
-                        && crosses_one_knot_at_most(a, b, (x, p), (y, q), tol)
+                        && crosses_one_knot_at_most(a, b, x, y, tol)
                         && !bulges(a, b, (x, p), (y, q), chord_deviation, tol)
                     {
                         step = Some((y, q, ty, turn / chord.max(f64::MIN_POSITIVE)));
@@ -738,39 +738,78 @@ where
         .is_none_or(|z| a.eval_point(z[0], z[1]).distance(middle) > MIDPOINT_SLACK * deviation)
 }
 
-/// Whether the move from `p` (parameters `x`) to `q` (parameters `y`)
-/// crosses at most one knot in each parameter of a B-spline side (knots at
-/// either end count), so that it never both enters and leaves a knot span
-/// and steps over the span. Spans crossed whole that are no wider than the
-/// confusion distance (in space, at the move's average speed) are let
-/// through: no step could land inside them.
-fn crosses_one_knot_at_most<A, B>(
-    a: &A,
-    b: &B,
-    (x, p): ([f64; 4], Point3D),
-    (y, q): ([f64; 4], Point3D),
-    tol: Tolerance,
-) -> bool
+/// Whether the move from parameters `x` to parameters `y` crosses at most
+/// one knot in each parameter of a B-spline side (knots at either end
+/// count), so that it never both enters and leaves a knot span and steps
+/// over the span. Spans crossed whole that together are no longer than
+/// the confusion distance (see [`crossed_knots_fit`]) are let through: no
+/// step could land inside them.
+fn crosses_one_knot_at_most<A, B>(a: &A, b: &B, x: [f64; 4], y: [f64; 4], tol: Tolerance) -> bool
 where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let chord = p.distance(q);
-    let fits = |knots: &[f64], periodic: bool, from: f64, to: f64| {
-        let (low, high) = (from.min(to), from.max(to));
-        let first = knots_below(knots, periodic, low, false);
-        let last = knots_below(knots, periodic, high, true) - 1;
-        last <= first
-            || (knot(knots, periodic, last) - knot(knots, periodic, first)) * chord
-                <= tol.confusion * (high - low)
-    };
     let on = |surface: Option<&BSplineSurface>, k: usize| {
         surface.is_none_or(|s| {
-            fits(s.u_knots(), s.is_u_periodic(), x[k], y[k])
-                && fits(s.v_knots(), s.is_v_periodic(), x[k + 1], y[k + 1])
+            let (from, to) = ([x[k], x[k + 1]], [y[k], y[k + 1]]);
+            crossed_knots_fit(s, 0, from, to, tol) && crossed_knots_fit(s, 1, from, to, tol)
         })
     };
     on(a.as_bspline(), 0) && on(b.as_bspline(), 2)
+}
+
+/// Whether the move from parameters `from` to parameters `to` on `surface`
+/// crosses at most one knot in its parameter `direction` (0 for u, 1 for
+/// v), or only a run of knots whose spans are tiny in space: the surface
+/// points over the crossed knots, along the move (the other parameter
+/// interpolated), lie on a path no longer than the confusion distance.
+/// Their size is measured in space, not from the move's average speed,
+/// because that speed may jump at a knot where the surface is only
+/// continuous, and a cluster narrow in parameter can be long in space.
+fn crossed_knots_fit(
+    surface: &BSplineSurface,
+    direction: usize,
+    from: [f64; 2],
+    to: [f64; 2],
+    tol: Tolerance,
+) -> bool {
+    let (knots, periodic) = if direction == 0 {
+        (surface.u_knots(), surface.is_u_periodic())
+    } else {
+        (surface.v_knots(), surface.is_v_periodic())
+    };
+    let (start, end) = (from[direction], to[direction]);
+    let (low, high) = (start.min(end), start.max(end));
+    let first = knots_below(knots, periodic, low, false);
+    let last = knots_below(knots, periodic, high, true) - 1;
+    if last <= first {
+        return true;
+    }
+    // More than one knot crossed (so `start != end`): rare, and the
+    // evaluations stop as soon as the crossed spans are known to be long.
+    let other = 1 - direction;
+    let point_over_knot = |index: i64| {
+        let crossed = knot(knots, periodic, index);
+        let fraction = (crossed - start) / (end - start);
+        let interpolated = from[other] + fraction * (to[other] - from[other]);
+        let (u, v) = if direction == 0 {
+            (crossed, interpolated)
+        } else {
+            (interpolated, crossed)
+        };
+        surface.eval_point(u, v)
+    };
+    let mut length = 0.0;
+    let mut previous = point_over_knot(first);
+    for index in first + 1..=last {
+        let point = point_over_knot(index);
+        length += previous.distance(point);
+        if length > tol.confusion {
+            return false;
+        }
+        previous = point;
+    }
+    true
 }
 
 /// The number of knots below `at` (or at it when `inclusive`). A periodic
@@ -1634,6 +1673,112 @@ mod tests {
                     );
                     assert!(p.z.abs() < 1e-3, "{p:?}");
                 }
+            }
+        }
+    }
+
+    /// A wall of degree 1 along x over `[0, 100]`, extruded along z over
+    /// `[-1, 1]`, at unit speed except over a tent of height `bump` on
+    /// `[at, at + 2 * half]`, whose three knots are `cluster` apart: the
+    /// speed jumps there by a factor `half / cluster`.
+    fn tent_wall(bump: f64, half: f64, at: f64, cluster: f64) -> crate::surfaces::BSplineSurface {
+        let along = [0.0, at, at + half, at + 2.0 * half, 100.0];
+        let poles = along
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| {
+                let y = if i == 2 { bump } else { 0.0 };
+                vec![Point3D::new(x, y, -1.0), Point3D::new(x, y, 1.0)]
+            })
+            .collect::<Vec<_>>();
+        let knots = vec![
+            0.0,
+            at,
+            at + 0.5 * cluster,
+            at + cluster,
+            100.0 - 2.0 * half + cluster,
+        ];
+        crate::surfaces::BSplineSurface::new(
+            1,
+            1,
+            poles,
+            knots,
+            vec![2, 1, 1, 1, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_marching_does_not_skip_a_tent_in_a_knot_cluster() {
+        // The tent's knots are so close in parameter that their spans look
+        // tiny at the step's average speed, while they are 0.1 to 1 long
+        // in space: a step must not cross them whole. The curve breaks at
+        // the tent's three corners into four pieces, each on both surfaces
+        // and between consecutive corners, so none is skipped or traced
+        // twice.
+        use crate::Plane;
+        let tol = Tolerance::DEFAULT;
+        let at = 50.0;
+        for (cluster, bump, half, z0) in [
+            (5e-8, 0.05, 0.05, 0.0),
+            (5e-8, 0.2, 0.1, 0.0),
+            (5e-8, 0.5, 0.5, 0.3),
+            (1e-8, 0.05, 0.05, 0.3),
+        ] {
+            let wall = tent_wall(bump, half, at, cluster);
+            let plane = Plane::new(Point3D::new(0.0, 0.0, z0), Vector3D::Z).unwrap();
+            let curves = marching_intersection(&plane, &wall, tol);
+            assert_eq!(curves.len(), 4, "cluster {cluster:e} bump {bump}");
+            // The distance to the wall, exactly: to the polyline through
+            // its corners in the xy plane (its projection misreports inside
+            // the tiny knot spans).
+            let corners = [
+                (0.0, 0.0),
+                (at, 0.0),
+                (at + half, bump),
+                (at + 2.0 * half, 0.0),
+                (100.0, 0.0),
+            ];
+            let wall_distance = |p: Point3D| {
+                corners
+                    .windows(2)
+                    .map(|side| {
+                        let ((ax, ay), (bx, by)) = (side[0], side[1]);
+                        let (dx, dy) = (bx - ax, by - ay);
+                        let along = (((p.x - ax) * dx + (p.y - ay) * dy) / (dx * dx + dy * dy))
+                            .clamp(0.0, 1.0);
+                        (p.x - ax - along * dx).hypot(p.y - ay - along * dy)
+                    })
+                    .fold(f64::INFINITY, f64::min)
+            };
+            let mut extents = Vec::new();
+            for curve in &curves {
+                let (mut lowest, mut highest) = (f64::INFINITY, f64::NEG_INFINITY);
+                let knots = curve.knots();
+                for span in knots.windows(2) {
+                    for k in 0..=20 {
+                        let p = curve.eval_point(span[0] + (span[1] - span[0]) * k as f64 / 20.0);
+                        lowest = lowest.min(p.x);
+                        highest = highest.max(p.x);
+                        assert!(
+                            wall_distance(p) < 1e-3,
+                            "cluster {cluster:e} bump {bump}: {p:?}"
+                        );
+                        assert!((p.z - z0).abs() < 1e-3, "{p:?}");
+                    }
+                }
+                extents.push((lowest, highest));
+            }
+            extents.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for ((lowest, highest), ends) in extents.iter().zip(corners.windows(2)) {
+                assert!(
+                    (lowest - ends[0].0).abs() < 1e-3 && (highest - ends[1].0).abs() < 1e-3,
+                    "cluster {cluster:e} bump {bump}: piece [{lowest}, {highest}] for {ends:?}"
+                );
             }
         }
     }
