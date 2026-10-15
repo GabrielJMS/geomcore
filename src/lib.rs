@@ -112,7 +112,7 @@
 //! a general result such as [`ExactSurfaceIntersection`], which reports
 //! `NotAnalytic` for a B-spline or a pair without a closed form, where
 //! [`Intersect::intersect`] runs the numeric search. Two surfaces without
-//! a closed form are traced by [`marching_intersection`].
+//! a closed form are traced numerically by the same call.
 //!
 //! # Extending the kernel
 //!
@@ -183,7 +183,6 @@ pub use discretization::{
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
 pub use intersect::curve_curve_extrema;
-pub use intersect::marching_intersection;
 pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
     ConeConeIntersection, ConeCylinderIntersection, ConicConicIntersection, ConicSurfaceHit,

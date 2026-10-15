@@ -1,6 +1,6 @@
 //! Cost of the marching intersection.
 //!
-//! Times `marching_intersection` on two bicubic 6×6 B-spline surfaces over
+//! Times the routed `intersect` of two surfaces, which marches pairs without a closed form, on two bicubic 6×6 B-spline surfaces over
 //! `[0, 5]^2`, with heights `sin(0.7 i j)` and `0.5 cos(1.3 i) cos(1.1 j)`
 //! at their poles `(i, j)`. They cross in six curves: five open across the
 //! footprint and one closed loop. Also times elementary pairs:
@@ -19,9 +19,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::surfaces::BSplineSurface;
-use geomcore::{
-    Cone, Cylinder, Plane, Point3D, Sphere, Tolerance, Torus, Vector3D, marching_intersection,
-};
+use geomcore::{Cone, Cylinder, Intersect, Plane, Point3D, Sphere, Tolerance, Torus, Vector3D};
 
 fn surface(height: impl Fn(f64, f64) -> f64) -> BSplineSurface {
     let poles = (0..6)
@@ -79,7 +77,7 @@ fn bench_marching_intersection(c: &mut Criterion) {
     let tol = Tolerance::default();
     let mut group = c.benchmark_group("marching_intersection");
     group.bench_function("bspline_surface_pair", |b| {
-        b.iter(|| black_box(marching_intersection(black_box(&wavy), &bumpy, tol)))
+        b.iter(|| black_box(black_box(&wavy).intersect(&bumpy, tol)))
     });
     let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
     let tilt: f64 = 0.6;
@@ -89,28 +87,22 @@ fn bench_marching_intersection(c: &mut Criterion) {
     )
     .unwrap();
     group.bench_function("torus_plane_oblique", |b| {
-        b.iter(|| black_box(marching_intersection(black_box(&torus), &plane, tol)))
+        b.iter(|| black_box(black_box(&torus).intersect(&plane, tol)))
     });
     let sphere = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 1.2).unwrap();
     group.bench_function("sphere_torus", |b| {
-        b.iter(|| black_box(marching_intersection(black_box(&sphere), &torus, tol)))
+        b.iter(|| black_box(black_box(&sphere).intersect(&torus, tol)))
     });
     let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
     let wall = extruded_wall();
     group.bench_function("cylinder_extruded_wall", |b| {
-        b.iter(|| black_box(marching_intersection(black_box(&cylinder), &wall, tol)))
+        b.iter(|| black_box(black_box(&cylinder).intersect(&wall, tol)))
     });
     let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.3, 1.0).unwrap();
     let generator = Vector3D::new(0.3f64.sin(), 0.0, 0.3f64.cos());
     let along_generator = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), generator, 0.5).unwrap();
     group.bench_function("cone_cylinder_unbounded", |b| {
-        b.iter(|| {
-            black_box(marching_intersection(
-                black_box(&cone),
-                &along_generator,
-                tol,
-            ))
-        })
+        b.iter(|| black_box(black_box(&cone).intersect(&along_generator, tol)))
     });
     group.finish();
 }

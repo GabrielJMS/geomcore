@@ -80,17 +80,7 @@ use crate::{Bound3D, BoundingBox3D, Point3D, Tolerance, Vector3D};
 /// fixed number of seeding iso-curves or grid samples (a loop that no
 /// seeding iso-curve crosses, or that leaves no distance minimum on either
 /// grid, is missed) — v1 heuristics, documented so callers can judge fit.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{Plane, Point3D, Tolerance, Vector3D, marching_intersection};
-/// let xy = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
-/// let zy = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-/// let curves = marching_intersection(&xy, &zy, Tolerance::DEFAULT);
-/// assert_eq!(curves.len(), 1);
-/// ```
-pub fn marching_intersection<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<BSplineCurve3D>
+pub(crate) fn marching_intersection<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<BSplineCurve3D>
 where
     A: ParametricSurface,
     B: ParametricSurface,

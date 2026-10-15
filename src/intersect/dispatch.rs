@@ -1160,12 +1160,13 @@ mod tests {
     use super::*;
 
     use crate::curves::{Curve3D, ParametricCurve3D, PointExtrema3D};
+    use crate::intersect::marching::marching_intersection;
     use crate::surfaces::{ElementarySurface, ParametricSurface};
 
     use crate::{
         Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D, Plane,
-        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, marching_intersection,
-        search_curve_curve, search_curve_surface,
+        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, search_curve_curve,
+        search_curve_surface,
     };
 
     const TOL: Tolerance = Tolerance::DEFAULT;

@@ -17,7 +17,6 @@ use geomcore::curves::{
     Parabola3D, ParametricCurve3D, PointExtrema2D, PointExtrema3D, PointParametrization,
     TrimmedCurve2D, TrimmedCurve3D,
 };
-use geomcore::marching_intersection;
 use geomcore::parametrize_numeric;
 use geomcore::surfaces::{
     BSplineSurface, Cone, Cylinder, ParametricSurface, Plane, Sphere, Surface, Torus,
@@ -3144,11 +3143,12 @@ fn circle_surface_to_py(
     }
 }
 
-/// Marching surface-surface intersection of any two surfaces.
+/// Surface-surface intersection of any two surfaces, through the routed
+/// Rust `intersect`.
 ///
-/// Traces the meeting curves numerically and fits B-spline approximants.
-/// Returns one `BSplineCurve3D` per traced loop or arc (empty when the
-/// surfaces miss).
+/// Returns one curve per meeting curve (empty when the surfaces miss):
+/// a line, circle, ellipse, parabola or hyperbola where a closed form
+/// exists, a `BSplineCurve3D` fitted by marching otherwise.
 #[pyfunction]
 #[pyo3(name = "intersect_marching", signature = (surface_a, surface_b, tol = None))]
 fn py_intersect_marching(
@@ -3160,11 +3160,11 @@ fn py_intersect_marching(
     let tol = tol.map(|t| t.0).unwrap_or_default();
     let a = extract_surface(surface_a)?;
     let b = extract_surface(surface_b)?;
-    let mut out = Vec::new();
-    for c in marching_intersection(&a, &b, tol) {
-        out.push(PyBSplineCurve3D(c).into_pyobject(py)?.into_any().unbind());
-    }
-    Ok(out)
+    a.intersect(&b, tol)
+        .curves()
+        .iter()
+        .map(|piece| curve3d_to_py(py, piece.curve.clone()))
+        .collect()
 }
 
 /// A discretized 3D curve: points on the curve in order of parameter,

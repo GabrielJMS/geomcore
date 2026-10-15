@@ -383,8 +383,8 @@ cargo bench --bench intersect_curve_curve
 
 # Marching intersection
 
-`benches/marching_intersection.rs` times `marching_intersection` on two
-bicubic B-spline surfaces (6×6 poles over `[0, 5]^2`, knots `[0, 1, 2,
+`benches/marching_intersection.rs` times the routed `intersect` of two
+surfaces on two bicubic B-spline surfaces (6×6 poles over `[0, 5]^2`, knots `[0, 1, 2,
 3]` with multiplicities `[4, 1, 1, 4]`), with heights `sin(0.7 i j)` and
 `0.5 cos(1.3 i) cos(1.1 j)` at their poles `(i, j)`. They cross in six
 curves: five open across the footprint and one closed loop.
@@ -455,7 +455,7 @@ along the extrusion.
 Measured outside the bench (best of five calls, release), pairs without
 a closed form: the cone pairs through the routed `intersect` on
 `Surface`, the tori (radii 3 and 1, and 3 and 0.8 tilted and shifted)
-through `marching_intersection`:
+through the same routed `intersect`:
 
 | pair | grid | first round | current |
 |---|---|---|---|

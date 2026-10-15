@@ -115,8 +115,8 @@ the parameter regions where hits may be missing otherwise.
 
 ## Numeric: marching surfaces
 
-`marching_intersection` (or `Surface::intersect_marching`) seeds from
-the two surfaces, traces with curvature-following steps corrected by
+The routed `intersect` of two surfaces, for a pair without a closed
+form, seeds from the two surfaces, traces with curvature-following steps corrected by
 Newton on both surfaces, and fits each loop or arc as a
 `BSplineCurve3D`. Two B-spline surfaces additionally seed from
 overlapping patch pairs, so isolated loops smaller than the seed grid
@@ -137,15 +137,16 @@ are found there.
     ```python
     from geomcore import intersect_marching
 
-    loops = intersect_marching(surface_a, surface_b)   # [BSplineCurve3D, ...]
+    curves = intersect_marching(surface_a, surface_b)   # routed intersect
     ```
 
 === "Rust"
 
     ```rust
-    use geomcore::marching_intersection;
+    use geomcore::Intersect;
 
-    let loops: Vec<BSplineCurve3D> = marching_intersection(&a, &b, tol);
+    let result = a.intersect(&b, tol);
+    let curves = result.curves();   // BSpline curves where marched
     ```
 
 Marching is approximate by design — fitted curves, no tangency

@@ -70,7 +70,6 @@ pub use dispatch::{
     ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
     InlineList, IntersectExact,
 };
-pub use marching::marching_intersection;
 pub(crate) use results::curve_surface_multiplicity;
 pub use results::{
     CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceIntersection,
