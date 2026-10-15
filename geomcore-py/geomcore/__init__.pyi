@@ -8,7 +8,7 @@ class GeomcoreError(ValueError):
     """Base class of every error raised by geomcore. Subclasses `ValueError`."""
 
 class ConstructionError(GeomcoreError):
-    """A geometric object could not be built from the given arguments (for example a zero radius or a degenerate direction)."""
+    """A geometric object could not be built from the given arguments (for example a negative radius or a zero-length direction)."""
 
 class FrameConstructionError(ConstructionError):
     """A frame could not be built, for example from parallel or zero directions."""

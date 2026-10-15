@@ -19,7 +19,7 @@ create_exception!(
     geomcore,
     ConstructionError,
     GeomcoreError,
-    "A geometric object could not be built from the given arguments (for example a zero radius or a degenerate direction)."
+    "A geometric object could not be built from the given arguments (for example a negative radius or a zero-length direction)."
 );
 create_exception!(
     geomcore,
