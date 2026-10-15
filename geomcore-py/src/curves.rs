@@ -7,6 +7,7 @@ use geomcore::curves::{
 };
 
 use crate::numeric::*;
+use crate::results::*;
 use crate::surfaces::*;
 use crate::values::*;
 use crate::{check_curve_order, parse_parametrization, tolerance, val_err};
@@ -107,23 +108,33 @@ impl PyLine3D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -304,23 +315,33 @@ impl PyCircle3D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -502,35 +523,49 @@ impl PyEllipse3D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// All stationary points of the distance from `point` to the ellipse,
-    /// as `(parameter, distance)` tuples ordered by ascending distance.
+    /// All stationary points of the distance from `point` to the ellipse, as
+    /// `CurveProjection` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let tol = tolerance(tol);
-        self.0
-            .extrema(point.0, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.extrema(point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the ellipse, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
-    /// Projects each point in `points` onto the ellipse, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// Projects each point in `points` onto the curve, returning a
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -656,35 +691,49 @@ impl PyParabola3D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// All stationary points of the distance from `point` to the parabola,
-    /// as `(parameter, distance)` tuples ordered by ascending distance.
+    /// All stationary points of the distance from `point` to the parabola, as
+    /// `CurveProjection` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let tol = tolerance(tol);
-        self.0
-            .extrema(point.0, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.extrema(point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the parabola, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
-    /// Projects each point in `points` onto the parabola, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// Projects each point in `points` onto the curve, returning a
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -839,34 +888,48 @@ impl PyHyperbola3D {
     }
 
     /// All stationary points of the distance from `point` to the hyperbola,
-    /// as `(parameter, distance)` tuples ordered by ascending distance.
+    /// as `CurveProjection` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let tol = tolerance(tol);
-        self.0
-            .extrema(point.0, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.extrema(point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the hyperbola, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
-    /// Projects each point in `points` onto the hyperbola, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// Projects each point in `points` onto the curve, returning a
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -1137,36 +1200,50 @@ impl PyBSplineCurve3D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// The local minima of the distance from `point` to the curve (plus
-    /// the interval ends of an open curve), as `(parameter, distance)`
-    /// tuples ordered by ascending distance.
+    /// The local minima of the distance from `point` to the curve (plus the
+    /// interval ends of an open curve), as `CurveProjection` objects ordered
+    /// by ascending distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let tol = tolerance(tol);
-        self.0
-            .extrema(point.0, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.extrema(point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -1291,23 +1368,33 @@ impl PyLine2D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection2D`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint2D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection2D {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection2D::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// `CurveProjection2D` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint2D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint2D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection2D> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection2D::new(projection, slf, point))
             .collect()
     }
 
@@ -1406,23 +1493,33 @@ impl PyCircle2D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the curve, returning `(parameter, distance)`.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection2D`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint2D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection2D {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection2D::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// `CurveProjection2D` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint2D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint2D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection2D> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection2D::new(projection, slf, point))
             .collect()
     }
 
@@ -1593,37 +1690,49 @@ impl PyTrimmedCurve3D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// The basis's distance extrema from `point` inside the range, plus
-    /// the two ends, as `(parameter, distance)` tuples ordered by
-    /// ascending distance.
+    /// The basis's distance extrema from `point` inside the range, plus the
+    /// two ends, as `CurveProjection` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let tol = tolerance(tol);
-        PointExtrema3D::extrema(&self.0, point.0, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = PointExtrema3D::extrema(&slf.borrow().0, point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the trimmed curve, returning
-    /// `(parameter, distance)`: the closest basis extremum inside the
-    /// range, or the nearer end.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection::new(projection, slf, point.0)
     }
 
-    /// Projects each point in `points` onto the trimmed curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// Projects each point in `points` onto the curve, returning a
+    /// `CurveProjection` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint3D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint3D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -1756,37 +1865,50 @@ impl PyTrimmedCurve2D {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// The basis's distance extrema from `point` inside the range, plus
-    /// the two ends, as `(parameter, distance)` tuples ordered by
-    /// ascending distance.
+    /// The basis's distance extrema from `point` inside the range, plus the
+    /// two ends, as `CurveProjection2D` objects ordered by ascending
+    /// distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint2D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection2D> {
         let tol = tolerance(tol);
-        PointExtrema2D::extrema(&self.0, point.0, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = PointExtrema2D::extrema(&slf.borrow().0, point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PyCurveProjection2D::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the trimmed curve, returning
-    /// `(parameter, distance)`: the closest basis extremum inside the
-    /// range, or the nearer end.
+    /// Projects `point` onto the curve: the closest point, as a
+    /// `CurveProjection2D`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint2D, tol: Option<PyTolerance>) -> (f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.parameter, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint2D,
+        tol: Option<PyTolerance>,
+    ) -> PyCurveProjection2D {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PyCurveProjection2D::new(projection, slf, point.0)
     }
 
-    /// Projects each point in `points` onto the trimmed curve, returning a
-    /// `(parameter, distance)` tuple per point.
+    /// Projects each point in `points` onto the curve, returning a
+    /// `CurveProjection2D` per point.
     #[pyo3(signature = (points, tol = None))]
-    fn project_points(&self, points: Vec<PyPoint2D>, tol: Option<PyTolerance>) -> Vec<(f64, f64)> {
+    fn project_points(
+        slf: &Bound<'_, Self>,
+        points: Vec<PyPoint2D>,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PyCurveProjection2D> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.parameter, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PyCurveProjection2D::new(projection, slf, point))
             .collect()
     }
 

@@ -11,6 +11,10 @@ the Python distribution are versioned in lockstep.
 
 ### Added
 
+- Python `project_point`, `project_points` and `extrema` return
+  `CurveProjection`, `CurveProjection2D` and `SurfaceProjection` objects with
+  `parameter` (or `u`, `v`), `point` and `distance`, plus the `target` they
+  were computed on and the `query_point`, instead of tuples.
 - `Intersect` for two surfaces (plane, cylinder, cone, sphere, torus,
   `BSplineSurface`, `Surface`, `ElementarySurface`, in every combination):
   exact when a closed form exists, marching otherwise, returned as a

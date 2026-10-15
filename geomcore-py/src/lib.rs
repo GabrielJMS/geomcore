@@ -74,9 +74,10 @@ use numeric::{py_curve_curve_extrema, py_parametrize_numeric};
 use results::{
     PyCompleteness, PyCompletenessStatus, PyCurveCurveExtrema, PyCurveCurveExtremum,
     PyCurveCurveHit, PyCurveCurveHit2D, PyCurveCurveIntersection, PyCurveCurveIntersection2D,
-    PyCurveCurveOverlap, PyCurveCurveRegion, PyCurveSurfaceHit, PyCurveSurfaceIntersection,
-    PyCurveSurfaceRegion, PyIncompleteReason, PyIntersectionCurve, PyIntersectionMethod,
-    PySurfaceSurfaceIntersection, PySurfaceSurfaceRegion,
+    PyCurveCurveOverlap, PyCurveCurveRegion, PyCurveProjection, PyCurveProjection2D,
+    PyCurveSurfaceHit, PyCurveSurfaceIntersection, PyCurveSurfaceRegion, PyIncompleteReason,
+    PyIntersectionCurve, PyIntersectionMethod, PySurfaceProjection, PySurfaceSurfaceIntersection,
+    PySurfaceSurfaceRegion,
 };
 use surfaces::{PyBSplineSurface, PyCone, PyCylinder, PyPlane, PySphere, PyTorus};
 use values::{
@@ -120,6 +121,9 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCurveCurveIntersection2D>()?;
     m.add_class::<PyCurveSurfaceIntersection>()?;
     m.add_class::<PySurfaceSurfaceIntersection>()?;
+    m.add_class::<PyCurveProjection>()?;
+    m.add_class::<PyCurveProjection2D>()?;
+    m.add_class::<PySurfaceProjection>()?;
     m.add_class::<PyCurveCurveExtremum>()?;
     m.add_class::<PyCurveCurveExtrema>()?;
 

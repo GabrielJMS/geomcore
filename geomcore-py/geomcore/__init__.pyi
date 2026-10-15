@@ -377,6 +377,50 @@ class SurfaceSurfaceIntersection:
     def __bool__(self) -> bool: ...
 
 @final
+class CurveProjection:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
+    @property
+    def parameter(self) -> float: ...
+    @property
+    def point(self) -> Point3D: ...
+    @property
+    def distance(self) -> float: ...
+    @property
+    def target(self) -> Any: ...
+    @property
+    def query_point(self) -> Point3D: ...
+
+@final
+class CurveProjection2D:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
+    @property
+    def parameter(self) -> float: ...
+    @property
+    def point(self) -> Point2D: ...
+    @property
+    def distance(self) -> float: ...
+    @property
+    def target(self) -> Any: ...
+    @property
+    def query_point(self) -> Point2D: ...
+
+@final
+class SurfaceProjection:
+    __hash__: ClassVar[None]  # type: ignore[assignment]
+    @property
+    def u(self) -> float: ...
+    @property
+    def v(self) -> float: ...
+    @property
+    def point(self) -> Point3D: ...
+    @property
+    def distance(self) -> float: ...
+    @property
+    def target(self) -> Any: ...
+    @property
+    def query_point(self) -> Point3D: ...
+
+@final
 class CurveCurveExtremum:
     __hash__: ClassVar[None]  # type: ignore[assignment]
     @property
@@ -420,6 +464,8 @@ __all__ = [
     "CurveCurveIntersection2D",
     "CurveCurveOverlap",
     "CurveCurveRegion",
+    "CurveProjection",
+    "CurveProjection2D",
     "CurveSurfaceHit",
     "CurveSurfaceIntersection",
     "CurveSurfaceRegion",
@@ -431,6 +477,7 @@ __all__ = [
     "IntersectionMethod",
     "Point2D",
     "Point3D",
+    "SurfaceProjection",
     "SurfaceSurfaceIntersection",
     "SurfaceSurfaceRegion",
     "Tolerance",

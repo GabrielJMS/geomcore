@@ -1,9 +1,10 @@
-//! Intersection and extrema results, mirroring the Rust result types.
+//! Intersection, projection and extrema results, mirroring the Rust result types.
 //!
 //! Every class is frozen. Its fields are read-only properties named as in
 //! Rust, compared by value. The intersection results and the curve–curve
 //! extrema also hold the operands they were computed from, as `first` and
-//! `second`: the exact objects passed, shared rather than copied.
+//! `second`, and the projections hold the object they project onto, as
+//! `target`: the exact objects passed, shared rather than copied.
 
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -11,9 +12,9 @@ use pyo3::types::PyList;
 use geomcore::{
     Completeness, CurveCurveExtrema, CurveCurveExtremum, CurveCurveHit, CurveCurveHit2D,
     CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap, CurveCurveRegion,
-    CurveSurfaceHit, CurveSurfaceIntersection, CurveSurfaceRegion, IncompleteReason,
-    IntersectionCurve, IntersectionMethod, Point2D, Point3D, SurfaceSurfaceIntersection,
-    SurfaceSurfaceRegion,
+    CurveProjection, CurveProjection2D, CurveSurfaceHit, CurveSurfaceIntersection,
+    CurveSurfaceRegion, IncompleteReason, IntersectionCurve, IntersectionMethod, Point2D, Point3D,
+    SurfaceProjection, SurfaceSurfaceIntersection, SurfaceSurfaceRegion,
 };
 
 use crate::numeric::curve3d_to_py;
@@ -1108,6 +1109,242 @@ impl PySurfaceSurfaceIntersection {
             &self.completeness(),
             &content,
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Projections
+// ---------------------------------------------------------------------------
+
+/// Where a 3D curve is closest to a point.
+///
+/// `target` is the curve that was projected onto, as the exact object the
+/// method was called on, and `query_point` is the point that was projected.
+#[pyclass(name = "CurveProjection", module = "geomcore", frozen)]
+pub(crate) struct PyCurveProjection {
+    pub(crate) result: CurveProjection,
+    pub(crate) target: Py<PyAny>,
+    pub(crate) query_point: Point3D,
+}
+
+impl PyCurveProjection {
+    pub(crate) fn new(
+        result: CurveProjection,
+        target: &Bound<'_, impl pyo3::PyClass>,
+        query_point: Point3D,
+    ) -> Self {
+        PyCurveProjection {
+            result,
+            target: target.clone().into_any().unbind(),
+            query_point,
+        }
+    }
+}
+
+#[pymethods]
+impl PyCurveProjection {
+    /// The parameter of the closest point.
+    #[getter]
+    fn parameter(&self) -> f64 {
+        self.result.parameter
+    }
+
+    /// The closest point: the curve evaluated at `parameter`.
+    #[getter]
+    fn point(&self) -> PyPoint3D {
+        PyPoint3D(self.result.point)
+    }
+
+    /// The distance from `query_point` to the curve.
+    #[getter]
+    fn distance(&self) -> f64 {
+        self.result.distance
+    }
+
+    /// The curve that was projected onto.
+    #[getter]
+    fn target(&self, py: Python<'_>) -> Py<PyAny> {
+        self.target.clone_ref(py)
+    }
+
+    /// The point that was projected.
+    #[getter]
+    fn query_point(&self) -> PyPoint3D {
+        PyPoint3D(self.query_point)
+    }
+
+    fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
+        Ok(self.result == other.result
+            && self.query_point == other.query_point
+            && same_operand(py, &self.target, &other.target)?)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "CurveProjection(target={}, query_point={}, parameter={}, point={}, distance={})",
+            self.target.bind(py).get_type().name()?,
+            point3_repr(self.query_point),
+            float_repr(self.result.parameter),
+            point3_repr(self.result.point),
+            float_repr(self.result.distance),
+        ))
+    }
+}
+
+/// Where a 2D curve is closest to a point.
+///
+/// `target` is the curve that was projected onto, as the exact object the
+/// method was called on, and `query_point` is the point that was projected.
+#[pyclass(name = "CurveProjection2D", module = "geomcore", frozen)]
+pub(crate) struct PyCurveProjection2D {
+    pub(crate) result: CurveProjection2D,
+    pub(crate) target: Py<PyAny>,
+    pub(crate) query_point: Point2D,
+}
+
+impl PyCurveProjection2D {
+    pub(crate) fn new(
+        result: CurveProjection2D,
+        target: &Bound<'_, impl pyo3::PyClass>,
+        query_point: Point2D,
+    ) -> Self {
+        PyCurveProjection2D {
+            result,
+            target: target.clone().into_any().unbind(),
+            query_point,
+        }
+    }
+}
+
+#[pymethods]
+impl PyCurveProjection2D {
+    /// The parameter of the closest point.
+    #[getter]
+    fn parameter(&self) -> f64 {
+        self.result.parameter
+    }
+
+    /// The closest point: the curve evaluated at `parameter`.
+    #[getter]
+    fn point(&self) -> PyPoint2D {
+        PyPoint2D(self.result.point)
+    }
+
+    /// The distance from `query_point` to the curve.
+    #[getter]
+    fn distance(&self) -> f64 {
+        self.result.distance
+    }
+
+    /// The curve that was projected onto.
+    #[getter]
+    fn target(&self, py: Python<'_>) -> Py<PyAny> {
+        self.target.clone_ref(py)
+    }
+
+    /// The point that was projected.
+    #[getter]
+    fn query_point(&self) -> PyPoint2D {
+        PyPoint2D(self.query_point)
+    }
+
+    fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
+        Ok(self.result == other.result
+            && self.query_point == other.query_point
+            && same_operand(py, &self.target, &other.target)?)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "CurveProjection2D(target={}, query_point={}, parameter={}, point={}, distance={})",
+            self.target.bind(py).get_type().name()?,
+            point2_repr(self.query_point),
+            float_repr(self.result.parameter),
+            point2_repr(self.result.point),
+            float_repr(self.result.distance),
+        ))
+    }
+}
+
+/// Where a surface is closest to a point.
+///
+/// `target` is the surface that was projected onto, as the exact object the
+/// method was called on, and `query_point` is the point that was projected.
+#[pyclass(name = "SurfaceProjection", module = "geomcore", frozen)]
+pub(crate) struct PySurfaceProjection {
+    pub(crate) result: SurfaceProjection,
+    pub(crate) target: Py<PyAny>,
+    pub(crate) query_point: Point3D,
+}
+
+impl PySurfaceProjection {
+    pub(crate) fn new(
+        result: SurfaceProjection,
+        target: &Bound<'_, impl pyo3::PyClass>,
+        query_point: Point3D,
+    ) -> Self {
+        PySurfaceProjection {
+            result,
+            target: target.clone().into_any().unbind(),
+            query_point,
+        }
+    }
+}
+
+#[pymethods]
+impl PySurfaceProjection {
+    /// The `u` parameter of the closest point.
+    #[getter]
+    fn u(&self) -> f64 {
+        self.result.u
+    }
+
+    /// The `v` parameter of the closest point.
+    #[getter]
+    fn v(&self) -> f64 {
+        self.result.v
+    }
+
+    /// The closest point: the surface evaluated at `(u, v)`.
+    #[getter]
+    fn point(&self) -> PyPoint3D {
+        PyPoint3D(self.result.point)
+    }
+
+    /// The distance from `query_point` to the surface.
+    #[getter]
+    fn distance(&self) -> f64 {
+        self.result.distance
+    }
+
+    /// The surface that was projected onto.
+    #[getter]
+    fn target(&self, py: Python<'_>) -> Py<PyAny> {
+        self.target.clone_ref(py)
+    }
+
+    /// The point that was projected.
+    #[getter]
+    fn query_point(&self) -> PyPoint3D {
+        PyPoint3D(self.query_point)
+    }
+
+    fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
+        Ok(self.result == other.result
+            && self.query_point == other.query_point
+            && same_operand(py, &self.target, &other.target)?)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "SurfaceProjection(target={}, query_point={}, u={}, v={}, point={}, distance={})",
+            self.target.bind(py).get_type().name()?,
+            point3_repr(self.query_point),
+            float_repr(self.result.u),
+            float_repr(self.result.v),
+            point3_repr(self.result.point),
+            float_repr(self.result.distance),
+        ))
     }
 }
 

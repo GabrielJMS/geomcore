@@ -7,6 +7,7 @@ use geomcore::surfaces::{
 };
 
 use crate::curves::*;
+use crate::results::*;
 use crate::values::*;
 use crate::{check_surface_order, parse_parametrization, tolerance, val_err};
 
@@ -142,27 +143,33 @@ impl PyPlane {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    /// Projects `point` onto the surface: the closest point, as a
+    /// `SurfaceProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.u, proj.v, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PySurfaceProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PySurfaceProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the surface, returning a
-    /// `(u, v, distance)` tuple per point.
+    /// `SurfaceProjection` per point.
     #[pyo3(signature = (points, tol = None))]
     fn project_points(
-        &self,
+        slf: &Bound<'_, Self>,
         points: Vec<PyPoint3D>,
         tol: Option<PyTolerance>,
-    ) -> Vec<(f64, f64, f64)> {
+    ) -> Vec<PySurfaceProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PySurfaceProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -321,27 +328,33 @@ impl PyCylinder {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    /// Projects `point` onto the surface: the closest point, as a
+    /// `SurfaceProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.u, proj.v, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PySurfaceProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PySurfaceProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the surface, returning a
-    /// `(u, v, distance)` tuple per point.
+    /// `SurfaceProjection` per point.
     #[pyo3(signature = (points, tol = None))]
     fn project_points(
-        &self,
+        slf: &Bound<'_, Self>,
         points: Vec<PyPoint3D>,
         tol: Option<PyTolerance>,
-    ) -> Vec<(f64, f64, f64)> {
+    ) -> Vec<PySurfaceProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PySurfaceProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -507,27 +520,33 @@ impl PyCone {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    /// Projects `point` onto the surface: the closest point, as a
+    /// `SurfaceProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.u, proj.v, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PySurfaceProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PySurfaceProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the surface, returning a
-    /// `(u, v, distance)` tuple per point.
+    /// `SurfaceProjection` per point.
     #[pyo3(signature = (points, tol = None))]
     fn project_points(
-        &self,
+        slf: &Bound<'_, Self>,
         points: Vec<PyPoint3D>,
         tol: Option<PyTolerance>,
-    ) -> Vec<(f64, f64, f64)> {
+    ) -> Vec<PySurfaceProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PySurfaceProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -685,27 +704,33 @@ impl PySphere {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    /// Projects `point` onto the surface: the closest point, as a
+    /// `SurfaceProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.u, proj.v, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PySurfaceProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PySurfaceProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the surface, returning a
-    /// `(u, v, distance)` tuple per point.
+    /// `SurfaceProjection` per point.
     #[pyo3(signature = (points, tol = None))]
     fn project_points(
-        &self,
+        slf: &Bound<'_, Self>,
         points: Vec<PyPoint3D>,
         tol: Option<PyTolerance>,
-    ) -> Vec<(f64, f64, f64)> {
+    ) -> Vec<PySurfaceProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PySurfaceProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -862,27 +887,33 @@ impl PyTorus {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    /// Projects `point` onto the surface: the closest point, as a
+    /// `SurfaceProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.u, proj.v, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PySurfaceProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PySurfaceProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the surface, returning a
-    /// `(u, v, distance)` tuple per point.
+    /// `SurfaceProjection` per point.
     #[pyo3(signature = (points, tol = None))]
     fn project_points(
-        &self,
+        slf: &Bound<'_, Self>,
         points: Vec<PyPoint3D>,
         tol: Option<PyTolerance>,
-    ) -> Vec<(f64, f64, f64)> {
+    ) -> Vec<PySurfaceProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PySurfaceProjection::new(projection, slf, point))
             .collect()
     }
 
@@ -1316,39 +1347,49 @@ impl PyBSplineSurface {
         self.0.contains(point.0, tolerance(tol))
     }
 
-    /// The local minima of the distance from `point` to the surface,
-    /// as `(u, v, distance)` tuples ordered by ascending distance.
+    /// The local minima of the distance from `point` to the surface, as
+    /// `SurfaceProjection` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
-    fn extrema(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> Vec<(f64, f64, f64)> {
+    fn extrema(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> Vec<PySurfaceProjection> {
         let tol = tolerance(tol);
-        self.0
-            .extrema(point.0, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.extrema(point.0, tol);
+        projections
+            .into_iter()
+            .map(|projection| PySurfaceProjection::new(projection, slf, point.0))
             .collect()
     }
 
-    /// Projects `point` onto the surface, returning `(u, v, distance)`.
+    /// Projects `point` onto the surface: the closest point, as a
+    /// `SurfaceProjection`.
     #[pyo3(signature = (point, tol = None))]
-    fn project_point(&self, point: PyPoint3D, tol: Option<PyTolerance>) -> (f64, f64, f64) {
-        let proj = self.0.project_point(point.0, tolerance(tol));
-        (proj.u, proj.v, proj.distance)
+    fn project_point(
+        slf: &Bound<'_, Self>,
+        point: PyPoint3D,
+        tol: Option<PyTolerance>,
+    ) -> PySurfaceProjection {
+        let projection = slf.borrow().0.project_point(point.0, tolerance(tol));
+        PySurfaceProjection::new(projection, slf, point.0)
     }
 
     /// Projects each point in `points` onto the surface, returning a
-    /// `(u, v, distance)` tuple per point.
+    /// `SurfaceProjection` per point.
     #[pyo3(signature = (points, tol = None))]
     fn project_points(
-        &self,
+        slf: &Bound<'_, Self>,
         points: Vec<PyPoint3D>,
         tol: Option<PyTolerance>,
-    ) -> Vec<(f64, f64, f64)> {
+    ) -> Vec<PySurfaceProjection> {
         let points = points.into_iter().map(|p| p.0).collect::<Vec<_>>();
         let tol = tolerance(tol);
-        self.0
-            .project_points(&points, tol)
-            .iter()
-            .map(|p| (p.u, p.v, p.distance))
+        let projections = slf.borrow().0.project_points(&points, tol);
+        projections
+            .into_iter()
+            .zip(points)
+            .map(|(projection, point)| PySurfaceProjection::new(projection, slf, point))
             .collect()
     }
 

@@ -317,27 +317,30 @@ def test_contains_surface():
 
 def test_project_point_curve():
     circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
-    u, dist = circle.project_point(Point3D(3.0, 0.0, 0.0))
+    projection = circle.project_point(Point3D(3.0, 0.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert u == pytest.approx(0.0)
     assert dist == pytest.approx(1.0)
-    u, dist = circle.project_point(Point3D(2.0, 0.0, 0.0))
+    projection = circle.project_point(Point3D(2.0, 0.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert dist == 0.0
     # Batch variant agrees with scalar calls.
     batch = circle.project_points([Point3D(3.0, 0.0, 0.0), Point3D(2.0, 0.0, 0.0)])
-    assert batch[0] == pytest.approx((0.0, 1.0))
-    assert batch[1][1] == 0.0
+    assert (batch[0].parameter, batch[0].distance) == pytest.approx((0.0, 1.0))
+    assert batch[1].distance == 0.0
 
 
 def test_project_point_surface():
     from geomcore.surfaces import Plane
 
     plane = Plane(Point3D.origin(), Vector3D.z())
-    u, v, dist = plane.project_point(Point3D(1.0, 2.0, 3.0))
+    projection = plane.project_point(Point3D(1.0, 2.0, 3.0))
+    u, v, dist = projection.u, projection.v, projection.distance
     assert (u, v) == pytest.approx((1.0, 2.0))
     assert dist == pytest.approx(3.0)
     batch = plane.project_points([Point3D.origin(), Point3D(0.0, 0.0, 2.0)])
-    assert batch[0][2] == 0.0
-    assert batch[1][2] == pytest.approx(2.0)
+    assert batch[0].distance == 0.0
+    assert batch[1].distance == pytest.approx(2.0)
 
 
 def _curves(result):
@@ -767,14 +770,15 @@ def _bilinear_patch():
 
 def test_bspline_surface_projection():
     surface = _bilinear_patch()
-    u, v, dist = surface.project_point(Point3D(1.0, 1.0, 1.0))
+    projection = surface.project_point(Point3D(1.0, 1.0, 1.0))
+    u, v, dist = projection.u, projection.v, projection.distance
     assert (u, v) == pytest.approx((0.5, 0.5))
     assert dist == pytest.approx(1.0)
     assert surface.contains(Point3D(1.0, 1.0, 0.0))
     assert not surface.contains(Point3D(1.0, 1.0, 1.0))
     ext = surface.extrema(Point3D(1.0, 1.0, 1.0))
     assert len(ext) >= 1
-    assert ext[0][2] == pytest.approx(1.0)
+    assert ext[0].distance == pytest.approx(1.0)
 
 
 def test_bspline_curve_projection():
@@ -785,18 +789,20 @@ def test_bspline_curve_projection():
         [2, 2],
         False,
     )
-    u, dist = curve.project_point(Point3D(1.0, 1.0, 0.0))
+    projection = curve.project_point(Point3D(1.0, 1.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert u == pytest.approx(0.5)
     assert dist == pytest.approx(1.0)
     assert curve.contains(Point3D(1.0, 0.0, 0.0))
     assert not curve.contains(Point3D(1.0, 1.0, 0.0))
     # Beyond the end: the endpoint wins.
-    u, dist = curve.project_point(Point3D(5.0, 0.0, 0.0))
+    projection = curve.project_point(Point3D(5.0, 0.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert u == pytest.approx(1.0)
     assert dist == pytest.approx(3.0)
     ext = curve.extrema(Point3D(1.0, 1.0, 0.0))
     assert len(ext) >= 1
-    assert ext[0][1] == pytest.approx(1.0)
+    assert ext[0].distance == pytest.approx(1.0)
 
 
 def test_conic_extrema_and_projection():
@@ -805,17 +811,20 @@ def test_conic_extrema_and_projection():
     ellipse = Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 3.0, 1.5)
     ext = ellipse.extrema(Point3D(4.0, 0.0, 0.0))
     assert len(ext) >= 2
-    assert ext[0][1] == pytest.approx(1.0)
-    u, dist = ellipse.project_point(Point3D(0.0, 3.0, 0.0))
+    assert ext[0].distance == pytest.approx(1.0)
+    projection = ellipse.project_point(Point3D(0.0, 3.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert dist == pytest.approx(1.5)
 
     parabola = Parabola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 1.0)
-    u, dist = parabola.project_point(Point3D(1.0, 2.0, 0.0))
+    projection = parabola.project_point(Point3D(1.0, 2.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert u == pytest.approx(2.0)
     assert dist == 0.0
 
     hyperbola = Hyperbola3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 1.0)
-    u, dist = hyperbola.project_point(Point3D(3.0, 0.0, 0.0))
+    projection = hyperbola.project_point(Point3D(3.0, 0.0, 0.0))
+    u, dist = projection.parameter, projection.distance
     assert dist == pytest.approx(math.sqrt(0.8))
 
 
@@ -902,7 +911,8 @@ def test_line_torus_intersections():
     for hit in hits:
         assert hit.multiplicity == 1
         assert torus.contains(hit.point)
-        uu, vv, dist = torus.project_point(hit.point)
+        projection = torus.project_point(hit.point)
+        uu, vv, dist = projection.u, projection.v, projection.distance
         assert dist == pytest.approx(0.0)
         if hit.surface_parameters is not None:
             assert hit.surface_parameters == pytest.approx((uu, vv))
@@ -1067,7 +1077,8 @@ def test_conic_projection_of_non_finite_point_is_nan():
     o, z, x = Point3D.origin(), Vector3D.z(), Vector3D.x()
     for curve in [Ellipse3D(o, z, x, 3.0, 2.0), Hyperbola3D(o, z, x, 3.0, 2.0), Parabola3D(o, z, x, 1.0)]:
         for p in [Point3D(math.nan, 0.0, 0.0), Point3D(math.inf, 0.0, 0.0)]:
-            u, d = curve.project_point(p)
+            projection = curve.project_point(p)
+            u, d = projection.parameter, projection.distance
             assert math.isnan(u) and math.isnan(d)
             assert curve.extrema(p) == []
 
@@ -1080,7 +1091,8 @@ def test_trimmed_curve_segment_and_arc():
     assert isinstance(segment.basis(), Line3D)
     assert segment.end_point().y == pytest.approx(4.0)
     # Beyond the end: the projection clamps to it.
-    u, d = segment.project_point(Point3D(6.0, 8.0, 0.0))
+    projection = segment.project_point(Point3D(6.0, 8.0, 0.0))
+    u, d = projection.parameter, projection.distance
     assert u == pytest.approx(5.0)
     assert d == pytest.approx(5.0)
     assert not segment.contains(Point3D(6.0, 8.0, 0.0))
@@ -1089,14 +1101,16 @@ def test_trimmed_curve_segment_and_arc():
     circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
     arc = TrimmedCurve3D(circle, 1.5 * math.pi, 2.5 * math.pi)
     assert isinstance(arc.basis(), Circle3D)
-    u, d = arc.project_point(Point3D(3.0, 0.0, 0.0))
+    projection = arc.project_point(Point3D(3.0, 0.0, 0.0))
+    u, d = projection.parameter, projection.distance
     assert u == pytest.approx(2.0 * math.pi)
     assert d == pytest.approx(2.0)
-    u, _ = arc.project_point(Point3D(-3.0, 0.1, 0.0))
+    projection = arc.project_point(Point3D(-3.0, 0.1, 0.0))
+    u, _ = projection.parameter, projection.distance
     assert u == pytest.approx(2.5 * math.pi)
     assert arc.contains(Point3D(0.0, 1.0, 0.0))
     assert not arc.contains(Point3D(-1.0, 0.0, 0.0))
-    assert [e[0] for e in arc.extrema(Point3D(3.0, 0.0, 0.0))][0] == pytest.approx(2.0 * math.pi)
+    assert [e.parameter for e in arc.extrema(Point3D(3.0, 0.0, 0.0))][0] == pytest.approx(2.0 * math.pi)
 
 
 def test_trimmed_curve_rejects_bad_ranges():
@@ -1143,9 +1157,11 @@ def test_trimmed_curve_2d():
 
     arc = TrimmedCurve2D(Circle2D(Point2D.origin(), 2.0), 0.0, math.pi / 2)
     assert isinstance(arc.basis(), Circle2D)
-    u, _ = arc.project_point(Point2D(1.0, 1.0))
+    projection = arc.project_point(Point2D(1.0, 1.0))
+    u, _ = projection.parameter, projection.distance
     assert u == pytest.approx(math.pi / 4)
-    u, _ = arc.project_point(Point2D(-1.0, -5.0))
+    projection = arc.project_point(Point2D(-1.0, -5.0))
+    u, _ = projection.parameter, projection.distance
     assert u == 0.0
     assert arc.contains(Point2D(0.0, 2.0))
     assert not arc.contains(Point2D(-2.0, 0.0))

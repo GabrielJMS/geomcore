@@ -96,11 +96,12 @@ def projection_scene() -> None:
     q = Point3D(0.5, 0.2, 0)
     feet = e.extrema(q)
     print(
-        f"projection: {len(feet)} feet: {[(round(t, 4), round(d, 4)) for t, d in feet]}"
+        f"projection: {len(feet)} feet: "
+        f"{[(round(f.parameter, 4), round(f.distance, 4)) for f in feet]}"
     )
     view.add(e, label="E")
     view.add(q, label="Q")
-    view.add([e.eval_point(t) for t, _ in feet], label="foot")
+    view.add([foot.point for foot in feet], label="foot")
     save(view, "projection-feet.json")
 
 
