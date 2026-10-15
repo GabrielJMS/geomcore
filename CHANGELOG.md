@@ -70,16 +70,18 @@ Python:
   (`IntersectionMethod::Exact` or `Numeric`), `completeness()`,
   `is_complete()` and `is_empty()`; the curve results have `hits()` and
   `overlaps()`, the surface result `curves()`, `contact_points()` and
-  `is_coincident()`. An exact result is always complete. Exact hits are
-  stored inline, so an exact routed call does not allocate for its hits.
+  `is_coincident()`. An exact result is always complete. The curve results store up to
+  four hits inline (two in 2D) and spill to the heap beyond; the exact
+  line–torus and conic–surface solvers still allocate.
 - `CurveCurveHit2D`, `CurveCurveOverlap` (a parameter range on each
   curve plus `same_direction`; a coincidence that crosses either curve's
   seam is split there, so each range increases in its own curve's
   parameter), `IntersectionCurve` (a `Curve3D` plus a `tangent` flag)
   and `SurfaceSurfaceRegion`. `CurveSurfaceIntersection::overlaps()`
   gives the curve's parameter ranges that lie on the surface.
-- `CurveSurfaceHit::multiplicity`: 1 where the curve crosses the
-  surface, 2 or more where it is tangent.
+- `CurveSurfaceHit::multiplicity` (breaking for code that builds the
+  struct with a literal): 1 where the curve crosses the surface, 2 or
+  more where it is tangent.
 - A trimmed curve is intersected as its basis, then its range applies:
   a hit is kept when it lies within `tol.confusion` in space of the
   range (the parameter excess beyond an end times the curve's speed
@@ -88,11 +90,14 @@ Python:
   to the range, and a clipped piece no longer than `tol.confusion` in
   space is reported as a hit where the curves touch.
 - The closest point on every projection: `CurveProjection::point` and
-  `SurfaceProjection::point`, and `CurveProjection2D` (with a `Point2D`)
+  `SurfaceProjection::point` (breaking for code that builds these
+  structs with a literal), and `CurveProjection2D` (with a `Point2D`)
   for 2D curves.
-- `project_point` and `project_points` on `Curve3D`, `ElementaryCurve`,
-  `Curve2D`, `Surface` and `ElementarySurface`; `PointExtrema3D` for
-  `ElementaryCurve`.
+- `project_point` and `project_points` as inherent methods on
+  `Curve3D`, `ElementaryCurve`, `Curve2D`, `Surface` and
+  `ElementarySurface`, so no trait import is needed (`Surface` and
+  `ElementarySurface` had them through `ParametricSurface` before; the
+  curve enums did not); `PointExtrema3D` for `ElementaryCurve`.
 - `parameter_of` on `Curve3D`, `Curve2D` and `ElementaryCurve`, and
   `parameters_of` on `Surface` and `ElementarySurface`: the parameters
   of a point on a curve or surface held as an enum, by the closed form
