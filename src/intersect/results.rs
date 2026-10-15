@@ -246,6 +246,10 @@ impl CurveCurveIntersection {
     /// along the overlap; with opposite directions, `first_range.0` pairs
     /// with `second_range.1`.
     ///
+    /// Two pieces of one curve that share no more than `tol.parametric` of
+    /// range, such as consecutive segments of a line, do not overlap: they
+    /// meet at a hit, with multiplicity 1.
+    ///
     /// # Examples
     ///
     /// ```
@@ -418,8 +422,9 @@ impl CurveCurveIntersection2D {
     /// The ranges over which the curves coincide, with the same rules as
     /// [`CurveCurveIntersection::overlaps`]: sorted by the start of the
     /// first range, each range increasing and inside its curve's own range,
-    /// two pieces when an overlap crosses a closed curve's seam, and
-    /// `same_direction` telling whether the curves run the same way.
+    /// two pieces when an overlap crosses a closed curve's seam,
+    /// `same_direction` telling whether the curves run the same way, and
+    /// pieces that only touch reported as a hit instead.
     ///
     /// # Examples
     ///

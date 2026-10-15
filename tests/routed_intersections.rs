@@ -472,3 +472,107 @@ fn test_2d_coincident_circles_in_opposite_directions() {
     assert!(close(o.first_range, a.bounds()));
     assert!((o.second_range.1 - o.second_range.0 - TAU).abs() < 1e-9);
 }
+
+#[test]
+fn test_consecutive_segments_meet_at_their_shared_end() {
+    let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    let a = TrimmedCurve3D::new(line, 0.0, 1.0).unwrap();
+    let b = TrimmedCurve3D::new(line, 1.0, 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert_eq!(r.method(), IntersectionMethod::Exact);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - 1.0).abs() < 1e-12);
+    assert!((hit.second_parameter - 1.0).abs() < 1e-12);
+    assert_eq!(hit.multiplicity, 1);
+    assert!(hit.point.distance(Point3D::new(1.0, 0.0, 0.0)) < 1e-12);
+}
+
+#[test]
+fn test_consecutive_arcs_meet_at_their_shared_end() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let a = TrimmedCurve3D::new(circle, 0.0, PI / 2.0).unwrap();
+    let b = TrimmedCurve3D::new(circle, PI / 2.0, PI).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - PI / 2.0).abs() < 1e-12);
+    assert!((hit.second_parameter - PI / 2.0).abs() < 1e-12);
+    assert!(hit.point.distance(Point3D::new(0.0, 1.0, 0.0)) < 1e-12);
+}
+
+#[test]
+fn test_consecutive_arcs_meet_at_the_seam() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let a = TrimmedCurve3D::new(circle, 1.5 * PI, TAU).unwrap();
+    let b = TrimmedCurve3D::new(circle, 0.0, PI / 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - TAU).abs() < 1e-12);
+    assert!(hit.second_parameter.abs() < 1e-12);
+    assert!(hit.point.distance(Point3D::new(1.0, 0.0, 0.0)) < 1e-12);
+    // Read from the other side, the seam is the start of the receiver.
+    let reverse = b.intersect(&a, TOL);
+    assert_eq!(reverse.hits().len(), 1);
+    assert!(reverse.hits()[0].first_parameter.abs() < 1e-12);
+    assert!((reverse.hits()[0].second_parameter - TAU).abs() < 1e-12);
+}
+
+#[test]
+fn test_arcs_overlapping_on_a_span_report_no_extra_hit() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let a = TrimmedCurve3D::new(circle, 0.0, PI).unwrap();
+    let b = TrimmedCurve3D::new(circle, PI / 2.0, 1.5 * PI).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.hits().is_empty());
+    assert_eq!(r.overlaps().len(), 1);
+    assert!(close(r.overlaps()[0].first_range, (PI / 2.0, PI)));
+    // An arc against its full circle overlaps it without a hit at the seam.
+    let arc = TrimmedCurve3D::new(circle, 0.0, 1.0).unwrap();
+    let r = arc.intersect(&circle, TOL);
+    assert!(r.hits().is_empty());
+    assert_eq!(r.overlaps().len(), 1);
+}
+
+#[test]
+fn test_2d_consecutive_segments_meet_at_their_shared_end() {
+    let line = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    let a = TrimmedCurve2D::new(line, 0.0, 1.0).unwrap();
+    let b = TrimmedCurve2D::new(line, 1.0, 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - 1.0).abs() < 1e-12);
+    assert!((hit.second_parameter - 1.0).abs() < 1e-12);
+    assert_eq!(hit.multiplicity, 1);
+    assert!(hit.point.distance(Point2D::new(1.0, 0.0)) < 1e-12);
+}
+
+#[test]
+fn test_2d_consecutive_arcs_meet_at_their_shared_end() {
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let a = TrimmedCurve2D::new(circle, 0.0, PI / 2.0).unwrap();
+    let b = TrimmedCurve2D::new(circle, PI / 2.0, PI).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - PI / 2.0).abs() < 1e-12);
+    assert!((hit.second_parameter - PI / 2.0).abs() < 1e-12);
+    assert!(hit.point.distance(Point2D::new(0.0, 1.0)) < 1e-12);
+}
+
+#[test]
+fn test_2d_arcs_overlapping_on_a_span_report_no_extra_hit() {
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let a = TrimmedCurve2D::new(circle, 0.0, PI).unwrap();
+    let b = TrimmedCurve2D::new(circle, PI / 2.0, 1.5 * PI).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.hits().is_empty());
+    assert_eq!(r.overlaps().len(), 1);
+}

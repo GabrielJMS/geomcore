@@ -157,12 +157,17 @@ fn representative_in(
 /// Clips an overlap `(a, b)` to `range`, shifting by periods like
 /// [`in_range`].
 ///
-/// Returns the pieces of the overlap that lie in the range beyond
-/// `tol.parametric`, ordered by start, each expressed in the range's
-/// representation: none, one, or two when the overlap meets the range on
-/// both sides of the seam of a periodic curve. An overlap covering the
-/// whole period returns the range as one piece. The three slots hold the
-/// three shifted copies the search tries, so the list never fills up.
+/// Returns the pieces of the overlap that lie in the range, ordered by
+/// start, each expressed in the range's representation: none, one, or two
+/// when the overlap meets the range on both sides of the seam of a periodic
+/// curve. An overlap covering the whole period returns the range as one
+/// piece. The three slots hold the three shifted copies the search tries,
+/// so the list never fills up.
+///
+/// A piece no longer than `tol.parametric` is kept as a single point (see
+/// [`is_single_point`]): the overlap only touches the range there. Such a
+/// point is dropped when it is, up to a period, the end of another piece,
+/// so a touch is never reported twice.
 pub(crate) fn clip_range(
     overlap: (f64, f64),
     range: (f64, f64),
@@ -171,7 +176,7 @@ pub(crate) fn clip_range(
 ) -> InlineList<(f64, f64), 3> {
     let clip = |(low, high): (f64, f64)| {
         let clipped = (low.max(range.0), high.min(range.1));
-        (clipped.1 - clipped.0 > tol.parametric).then_some(clipped)
+        (clipped.1 - clipped.0 >= -tol.parametric).then_some(clipped)
     };
     let mut pieces = InlineList::new();
     let Some(period) = period else {
@@ -185,14 +190,37 @@ pub(crate) fn clip_range(
         return pieces;
     }
     let first_copy = ((range.0 - overlap.1) / period).floor();
+    let mut copies = InlineList::<(f64, f64), 3>::new();
     for step in 0..3 {
         let shift = (first_copy + f64::from(step)) * period;
         if let Some(piece) = clip((overlap.0 + shift, overlap.1 + shift)) {
+            copies.push(piece);
+        }
+    }
+    let same_point = |a: f64, b: f64| {
+        let gap = (a - b).rem_euclid(period);
+        gap.min(period - gap) <= tol.parametric
+    };
+    for (index, &piece) in copies.iter().enumerate() {
+        let repeated = is_single_point(piece, tol)
+            && copies.iter().enumerate().any(|(other_index, &other)| {
+                let earlier_point = is_single_point(other, tol) && other_index < index;
+                let longer = !is_single_point(other, tol);
+                (earlier_point || longer)
+                    && (same_point(piece.0, other.0) || same_point(piece.0, other.1))
+            });
+        if !repeated {
             pieces.push(piece);
         }
     }
     pieces.sort_by(|a, b| a.0.total_cmp(&b.0));
     pieces
+}
+
+/// Whether a piece clipped by [`clip_range`] is no longer than
+/// `tol.parametric`: a single point where the overlap touches the range.
+pub(crate) fn is_single_point(piece: (f64, f64), tol: Tolerance) -> bool {
+    piece.1 - piece.0 <= tol.parametric
 }
 
 /// Intersects a curve with a surface: the exact path when the curve has an
@@ -393,8 +421,17 @@ fn from_exact_curve_curve(
         ExactCurveCurveIntersection::Coincident => {
             let first_range = first_range.unwrap_or(first.bounds());
             let second_range = second_range.unwrap_or(second.bounds());
-            let overlaps = coincident_overlaps((&first, first_range), (&second, second_range), tol);
-            CurveCurveIntersection::exact(CurveCurveHitList::new(), overlaps)
+            let shared = coincident_overlaps((&first, first_range), (&second, second_range), tol);
+            let hits = shared
+                .touches
+                .iter()
+                .map(|&(first_parameter, second_parameter)| CurveCurveHit {
+                    first_parameter,
+                    second_parameter,
+                    point: first.eval_point(first_parameter),
+                    multiplicity: 1,
+                });
+            CurveCurveIntersection::exact(hits.collect(), shared.overlaps)
         }
         ExactCurveCurveIntersection::Empty => {
             CurveCurveIntersection::exact(CurveCurveHitList::new(), CurveCurveOverlapList::new())
@@ -413,15 +450,30 @@ fn from_exact_curve_curve(
 /// pieces when it crosses the first curve's seam), then each piece is
 /// mapped back onto the second curve and split where it crosses the
 /// second curve's seam.
+///
+/// A piece no longer than `tol.parametric`, where the ranges only touch
+/// (two consecutive pieces of one line or circle), is not an overlap: it
+/// comes back in [`CoincidentPieces::touches`] as a parameter pair, each
+/// parameter the point's representative in its range.
 fn coincident_overlaps<C: CoincidentCurve>(
     (first, first_range): (&C, (f64, f64)),
     (second, second_range): (&C, (f64, f64)),
     tol: Tolerance,
-) -> CurveCurveOverlapList {
+) -> CoincidentPieces {
     let same_direction = runs_along(second, second_range, first);
     let on_first = mapped_range(second, second_range, first, same_direction, tol);
     let mut overlaps = CurveCurveOverlapList::new();
+    let mut touches = InlineList::new();
     for &piece in clip_range(on_first, first_range, first.cycle_length(), tol).iter() {
+        if is_single_point(piece, tol) {
+            let first_parameter = (0.5 * (piece.0 + piece.1)).clamp(first_range.0, first_range.1);
+            let found = second.parameter_of_image(first, first_parameter);
+            let second_parameter = in_range(found, second_range, second.cycle_length(), tol)
+                .unwrap_or(found)
+                .clamp(second_range.0, second_range.1);
+            touches.push((first_parameter, second_parameter));
+            continue;
+        }
         let on_second = mapped_range(first, piece, second, same_direction, tol);
         let pieces_on_second = clip_range(on_second, second_range, second.cycle_length(), tol);
         if let [single] = pieces_on_second[..] {
@@ -450,7 +502,17 @@ fn coincident_overlaps<C: CoincidentCurve>(
         }
     }
     overlaps.sort_by(|p, q| p.first_range.0.total_cmp(&q.first_range.0));
-    overlaps
+    CoincidentPieces { overlaps, touches }
+}
+
+/// What two coincident curves restricted to parameter ranges share.
+struct CoincidentPieces {
+    /// The overlaps, ordered by start on the first curve.
+    overlaps: CurveCurveOverlapList,
+    /// The `(first, second)` parameters of the points where the ranges
+    /// only touch, ordered by first parameter. At most one per clipped
+    /// piece, so three slots never fill up.
+    touches: InlineList<(f64, f64), 3>,
 }
 
 /// What the overlap mapping needs from a curve, in 2D or 3D, to relate it
@@ -745,8 +807,17 @@ fn coincidence_2d(
 ) -> CurveCurveIntersection2D {
     let first_range = first_range.unwrap_or(first.bounds());
     let second_range = second_range.unwrap_or(second.bounds());
-    let overlaps = coincident_overlaps((&first, first_range), (&second, second_range), tol);
-    CurveCurveIntersection2D::exact([], overlaps)
+    let shared = coincident_overlaps((&first, first_range), (&second, second_range), tol);
+    let hits = shared
+        .touches
+        .iter()
+        .map(|&(first_parameter, second_parameter)| CurveCurveHit2D {
+            first_parameter,
+            second_parameter,
+            point: first.eval_point(first_parameter),
+            multiplicity: 1,
+        });
+    CurveCurveIntersection2D::exact(hits, shared.overlaps)
 }
 
 /// Implements [`Intersect`] for every 2D curve of the list with every one
@@ -868,6 +939,24 @@ mod tests {
         assert_eq!(pieces.len(), 2);
         assert!((pieces[0].0 - 0.0).abs() < 1e-15 && (pieces[0].1 - (7.0 - TAU)).abs() < 1e-15);
         assert_eq!(pieces[1], (4.0, 5.0));
+    }
+
+    #[test]
+    fn test_clip_range_keeps_a_touch_as_a_single_point() {
+        assert_eq!(*clip_range((1.0, 2.0), (0.0, 1.0), None, TOL), [(1.0, 1.0)]);
+        let seam = clip_range((0.0, 1.0), (5.0, TAU), Some(TAU), TOL);
+        assert_eq!(*seam, [(TAU, TAU)]);
+        assert!(is_single_point(seam[0], TOL));
+    }
+
+    #[test]
+    fn test_clip_range_drops_a_touch_repeating_the_end_of_a_piece() {
+        // The copy shifted by a period touches the full range at TAU, the
+        // same point as the start of the real piece.
+        assert_eq!(
+            *clip_range((0.0, 1.0), (0.0, TAU), Some(TAU), TOL),
+            [(0.0, 1.0)]
+        );
     }
 
     #[test]
