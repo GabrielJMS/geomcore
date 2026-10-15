@@ -71,8 +71,13 @@
 //! let result = line.intersect(&sphere, tol);
 //! assert_eq!(result.method(), IntersectionMethod::Exact);
 //! assert_eq!(result.completeness(), &Completeness::Complete);
-//! let parameters: Vec<f64> = result.hits().iter().map(|h| h.curve_parameter).collect();
-//! assert_eq!(parameters, [3.0, 7.0]);
+//! let parameters: Vec<Option<f64>> = result.hits().iter().map(|h| h.curve_parameter).collect();
+//! assert_eq!(parameters, [Some(3.0), Some(7.0)]);
+//! // A parameter the solver did not compute is `None`: the caller reads it
+//! // from the point, here the sphere's.
+//! assert_eq!(result.hits()[0].surface_parameters, None);
+//! let (_, latitude) = sphere.parameters_of(result.hits()[0].point);
+//! assert!((latitude + std::f64::consts::FRAC_PI_2).abs() < 1e-12);
 //!
 //! // A segment keeps only the hits in its range.
 //! let segment = TrimmedCurve3D::new(line, 0.0, 5.0).unwrap();

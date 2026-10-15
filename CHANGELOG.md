@@ -26,6 +26,23 @@ the Python distribution are versioned in lockstep.
 - `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the
   frame's z direction on every call (it is unit by construction): about
   13 ns faster per call, and the parameters may differ in the last bits.
+- Hit parameters are optional (breaking): `CurveCurveHit::first_parameter`
+  / `second_parameter`, the same on `CurveCurveHit2D`, and
+  `CurveSurfaceHit::curve_parameter` / `surface_parameters` are `Option`s,
+  `Some` only when the solver computed the value on its way to the point
+  (the numeric search computes them all). Recover a `None` with the
+  operand's `parameter_of(hit.point)` (curves) or
+  `parameters_of(hit.point)` (surfaces). Hits are sorted by parameter
+  when every hit has one, and otherwise keep the solver's order. The
+  routed call no longer recovers parameters nobody asked for: routed
+  circle–circle drops from about 145 to 76 ns per pair, 2D circle–circle
+  from 111 to 35 ns, line–cylinder from 184 to 127 ns.
+- `ConicConicIntersection::Hits` stores only the parameter on the conic
+  the solver substituted (plus the other one where a tangency test
+  computed it); the other parameter is `None`.
+- In Python, the parameters in the tuples of `intersect_curve_curve` and
+  `intersect_curve_surface`, and in conic–conic hits, may be `None`;
+  recover them with `parameter_of` / `parameters_of`.
 
 ### Removed
 

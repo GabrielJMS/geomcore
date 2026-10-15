@@ -14,20 +14,27 @@ fn assert_hits_lie_on<C: ParametricCurve3D, S: ParametricSurface>(
     s: &S,
 ) {
     for h in r.hits() {
-        assert!(
-            c.eval_point(h.curve_parameter).distance(h.point) <= 1e-7,
-            "curve parameter does not give the point"
-        );
-        let (u, v) = h.surface_parameters;
-        assert!(
-            s.eval_point(u, v).distance(h.point) <= 1e-7,
-            "surface parameters do not give the point"
-        );
+        if r.method() == IntersectionMethod::Numeric {
+            // The numeric search computes every parameter.
+            assert!(h.curve_parameter.is_some() && h.surface_parameters.is_some());
+        }
+        if let Some(t) = h.curve_parameter {
+            assert!(
+                c.eval_point(t).distance(h.point) <= 1e-7,
+                "curve parameter does not give the point"
+            );
+        }
+        if let Some((u, v)) = h.surface_parameters {
+            assert!(
+                s.eval_point(u, v).distance(h.point) <= 1e-7,
+                "surface parameters do not give the point"
+            );
+        }
     }
 }
 
 #[test]
-fn test_line_sphere_routes_exact_with_surface_parameters() {
+fn test_line_sphere_routes_exact_and_leaves_surface_parameters_to_the_caller() {
     let line = Line3D::new(Point3D::new(0.0, 0.0, -5.0), Vector3D::Z).unwrap();
     let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     let r = line.intersect(&sphere, TOL);
@@ -35,6 +42,13 @@ fn test_line_sphere_routes_exact_with_surface_parameters() {
     assert!(r.is_complete());
     assert_eq!(r.hits().len(), 2); // through both poles
     assert_hits_lie_on(&r, &line, &sphere);
+    for h in r.hits() {
+        // The line parameter comes out of the solve; the sphere's do not.
+        assert!(h.curve_parameter.is_some());
+        assert_eq!(h.surface_parameters, None);
+        let (u, v) = sphere.parameters_of(h.point);
+        assert!(sphere.eval_point(u, v).distance(h.point) <= 1e-7);
+    }
 }
 
 #[test]
@@ -57,8 +71,9 @@ fn test_routed_matches_exact_hits() {
     else {
         panic!("expected points")
     };
-    let routed_parameters: Vec<f64> = routed.hits().iter().map(|h| h.curve_parameter).collect();
-    let exact_parameters: Vec<f64> = exact.iter().map(|h| h.parameter).collect();
+    let routed_parameters: Vec<Option<f64>> =
+        routed.hits().iter().map(|h| h.curve_parameter).collect();
+    let exact_parameters: Vec<Option<f64>> = exact.iter().map(|h| Some(h.parameter)).collect();
     assert_eq!(routed_parameters, exact_parameters);
 }
 
@@ -108,7 +123,8 @@ fn test_trimmed_arc_across_the_seam_keeps_only_its_hits() {
     let plane = Plane::new(Point3D::new(0.3f64.cos(), 0.0, 0.0), Vector3D::X).unwrap();
     let arc = TrimmedCurve3D::new(circle, -1.0, 1.0).unwrap();
     let r = arc.intersect(&plane, TOL);
-    let mut parameters: Vec<f64> = r.hits().iter().map(|h| h.curve_parameter).collect();
+    // The arc's range test needs the curve parameter, so it is stored.
+    let mut parameters: Vec<f64> = r.hits().iter().filter_map(|h| h.curve_parameter).collect();
     parameters.sort_by(f64::total_cmp);
     assert_eq!(parameters.len(), 2);
     assert!((parameters[0] + 0.3).abs() < 1e-9 && (parameters[1] - 0.3).abs() < 1e-9);
@@ -131,8 +147,12 @@ fn assert_curve_hits_lie_on<A: ParametricCurve3D, B: ParametricCurve3D>(
     b: &B,
 ) {
     for h in r.hits() {
-        assert!(a.eval_point(h.first_parameter).distance(h.point) <= 1e-7);
-        assert!(b.eval_point(h.second_parameter).distance(h.point) <= 1e-7);
+        if let Some(t) = h.first_parameter {
+            assert!(a.eval_point(t).distance(h.point) <= 1e-7);
+        }
+        if let Some(t) = h.second_parameter {
+            assert!(b.eval_point(t).distance(h.point) <= 1e-7);
+        }
     }
 }
 
@@ -291,14 +311,22 @@ fn test_trimmed_curves_keep_only_their_hits() {
     let arc = TrimmedCurve3D::new(circle, -1.0, 1.0).unwrap();
     let r = line.intersect(&arc, TOL);
     assert_eq!(r.hits().len(), 1);
-    assert!((r.hits()[0].first_parameter - 7.0).abs() < 1e-12);
-    assert!(r.hits()[0].second_parameter.abs() < 1e-12);
+    assert!((r.hits()[0].first_parameter.unwrap() - 7.0).abs() < 1e-12);
+    // The trimmed arc stores its angle, which agrees with the circle's own.
+    let angle = r.hits()[0].second_parameter.unwrap();
+    assert!(angle.abs() < 1e-12);
+    assert!((angle - circle.parameter_of(r.hits()[0].point)).abs() < 1e-12);
     assert_curve_hits_lie_on(&r, &line, &arc);
     // A segment that stops before the circle meets it once, at PI.
     let segment = TrimmedCurve3D::new(line, 0.0, 5.0).unwrap();
     let r = circle.intersect(&segment, TOL);
     assert_eq!(r.hits().len(), 1);
-    assert!((r.hits()[0].first_parameter - PI).abs() < 1e-12);
+    // The full circle's angle is not computed; the segment's range test
+    // computed the line parameter.
+    let hit = r.hits()[0];
+    assert_eq!(hit.first_parameter, None);
+    assert!((circle.parameter_of(hit.point) - PI).abs() < 1e-12);
+    assert!((hit.second_parameter.unwrap() - 3.0).abs() < 1e-12);
     assert_curve_hits_lie_on(&r, &circle, &segment);
 }
 
@@ -338,8 +366,12 @@ fn assert_hits_2d_lie_on<A: ParametricCurve2D, B: ParametricCurve2D>(
     second: &B,
 ) {
     for h in r.hits() {
-        assert!(first.eval_point(h.first_parameter).distance(h.point) <= 1e-7);
-        assert!(second.eval_point(h.second_parameter).distance(h.point) <= 1e-7);
+        if let Some(t) = h.first_parameter {
+            assert!(first.eval_point(t).distance(h.point) <= 1e-7);
+        }
+        if let Some(t) = h.second_parameter {
+            assert!(second.eval_point(t).distance(h.point) <= 1e-7);
+        }
     }
 }
 
@@ -354,7 +386,7 @@ fn test_2d_line_circle_hits() {
     let from_line = line.intersect(&circle, TOL);
     assert_eq!(from_line.hits().len(), 2);
     assert_hits_2d_lie_on(&from_line, &line, &circle);
-    assert!((from_line.hits()[0].first_parameter - 3.0).abs() < 1e-9);
+    assert!((from_line.hits()[0].first_parameter.unwrap() - 3.0).abs() < 1e-9);
 }
 
 #[test]
@@ -391,8 +423,8 @@ fn test_2d_lines_cross_and_parallels_are_empty() {
     let b = Line2D::new(Point2D::new(1.0, -1.0), Vector2D::Y).unwrap();
     let r = a.intersect(&b, TOL);
     assert_eq!(r.hits().len(), 1);
-    assert!((r.hits()[0].first_parameter - 1.0).abs() < 1e-12);
-    assert!((r.hits()[0].second_parameter - 1.0).abs() < 1e-12);
+    assert!((r.hits()[0].first_parameter.unwrap() - 1.0).abs() < 1e-12);
+    assert!((r.hits()[0].second_parameter.unwrap() - 1.0).abs() < 1e-12);
     let parallel = Line2D::new(Point2D::new(0.0, 1.0), Vector2D::X).unwrap();
     let r = a.intersect(&parallel, TOL);
     assert!(r.is_empty() && r.is_complete());
@@ -407,9 +439,9 @@ fn test_2d_routed_hits_equal_exact_hits() {
     else {
         panic!("expected two hits");
     };
-    assert_eq!(routed.hits()[0].first_parameter, t1);
+    assert_eq!(routed.hits()[0].first_parameter, Some(t1));
     assert_eq!(routed.hits()[0].point, p1);
-    assert_eq!(routed.hits()[1].first_parameter, t2);
+    assert_eq!(routed.hits()[1].first_parameter, Some(t2));
     assert_eq!(routed.hits()[1].point, p2);
 }
 
@@ -421,8 +453,8 @@ fn test_2d_trimmed_arc_keeps_only_its_hits() {
     let arc = TrimmedCurve2D::new(circle, -1.0, 1.0).unwrap();
     let r = arc.intersect(&line, TOL);
     assert_eq!(r.hits().len(), 1);
-    assert!(r.hits()[0].first_parameter.abs() < 1e-12);
-    assert!((r.hits()[0].second_parameter - 7.0).abs() < 1e-12);
+    assert!(r.hits()[0].first_parameter.unwrap().abs() < 1e-12);
+    assert!((r.hits()[0].second_parameter.unwrap() - 7.0).abs() < 1e-12);
 }
 
 #[test]
@@ -483,8 +515,8 @@ fn test_consecutive_segments_meet_at_their_shared_end() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - 1.0).abs() < 1e-12);
-    assert!((hit.second_parameter - 1.0).abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - 1.0).abs() < 1e-12);
+    assert!((hit.second_parameter.unwrap() - 1.0).abs() < 1e-12);
     assert_eq!(hit.multiplicity, 1);
     assert!(hit.point.distance(Point3D::new(1.0, 0.0, 0.0)) < 1e-12);
 }
@@ -498,8 +530,8 @@ fn test_consecutive_arcs_meet_at_their_shared_end() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - PI / 2.0).abs() < 1e-12);
-    assert!((hit.second_parameter - PI / 2.0).abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - PI / 2.0).abs() < 1e-12);
+    assert!((hit.second_parameter.unwrap() - PI / 2.0).abs() < 1e-12);
     assert!(hit.point.distance(Point3D::new(0.0, 1.0, 0.0)) < 1e-12);
 }
 
@@ -512,14 +544,14 @@ fn test_consecutive_arcs_meet_at_the_seam() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - TAU).abs() < 1e-12);
-    assert!(hit.second_parameter.abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - TAU).abs() < 1e-12);
+    assert!(hit.second_parameter.unwrap().abs() < 1e-12);
     assert!(hit.point.distance(Point3D::new(1.0, 0.0, 0.0)) < 1e-12);
     // Read from the other side, the seam is the start of the receiver.
     let reverse = b.intersect(&a, TOL);
     assert_eq!(reverse.hits().len(), 1);
-    assert!(reverse.hits()[0].first_parameter.abs() < 1e-12);
-    assert!((reverse.hits()[0].second_parameter - TAU).abs() < 1e-12);
+    assert!(reverse.hits()[0].first_parameter.unwrap().abs() < 1e-12);
+    assert!((reverse.hits()[0].second_parameter.unwrap() - TAU).abs() < 1e-12);
 }
 
 #[test]
@@ -547,8 +579,8 @@ fn test_2d_consecutive_segments_meet_at_their_shared_end() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - 1.0).abs() < 1e-12);
-    assert!((hit.second_parameter - 1.0).abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - 1.0).abs() < 1e-12);
+    assert!((hit.second_parameter.unwrap() - 1.0).abs() < 1e-12);
     assert_eq!(hit.multiplicity, 1);
     assert!(hit.point.distance(Point2D::new(1.0, 0.0)) < 1e-12);
 }
@@ -562,8 +594,8 @@ fn test_2d_consecutive_arcs_meet_at_their_shared_end() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - PI / 2.0).abs() < 1e-12);
-    assert!((hit.second_parameter - PI / 2.0).abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - PI / 2.0).abs() < 1e-12);
+    assert!((hit.second_parameter.unwrap() - PI / 2.0).abs() < 1e-12);
     assert!(hit.point.distance(Point2D::new(0.0, 1.0)) < 1e-12);
 }
 
@@ -578,23 +610,27 @@ fn test_2d_arcs_overlapping_on_a_span_report_no_extra_hit() {
 }
 
 #[test]
-fn test_2d_hit_just_below_the_seam_reports_the_start_like_3d() {
-    // The line crosses the circle a hair below angle 0.
+fn test_hit_just_below_the_seam_leaves_the_angle_to_the_caller() {
+    // The line crosses the circle a hair below angle 0. The circle's angle
+    // is not computed: the caller reads it from the point, near the seam.
+    let near_seam = |angle: f64| angle.min(TAU - angle) < 1e-9;
     let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
     let line = Line2D::new(Point2D::new(-5.0, -1e-11), Vector2D::X).unwrap();
     let r = circle.intersect(&line, TOL);
     assert_eq!(r.hits().len(), 2);
-    assert_eq!(r.hits()[0].first_parameter, 0.0);
-    assert!((r.hits()[1].first_parameter - PI).abs() < 1e-9);
+    assert!(r.hits().iter().all(|h| h.first_parameter.is_none()));
+    let seam_hit = r.hits().iter().find(|h| h.point.x > 0.0).unwrap();
+    assert!(near_seam(circle.parameter_of(seam_hit.point)));
     let circle_3d = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
     let line_3d = Line3D::new(Point3D::new(-5.0, -1e-11, 0.0), Vector3D::X).unwrap();
     let r_3d = circle_3d.intersect(&line_3d, TOL);
-    assert_eq!(r_3d.hits()[0].first_parameter, 0.0);
+    assert!(r_3d.hits().iter().all(|h| h.first_parameter.is_none()));
     // Two circles meeting a hair below the seam of the first.
     let other = Circle2D::new(Point2D::new(2.0, -2e-11), 1.0).unwrap();
     let r = circle.intersect(&other, TOL);
-    assert!(!r.hits().is_empty());
-    assert_eq!(r.hits()[0].first_parameter, 0.0);
+    assert_eq!(r.hits().len(), 1);
+    assert_eq!(r.hits()[0].first_parameter, None);
+    assert!(near_seam(circle.parameter_of(r.hits()[0].point)));
 }
 
 #[test]
@@ -672,7 +708,11 @@ fn test_caller_defined_curve_intersects_through_the_public_numeric_functions() {
     let line = Line3D::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::Z).unwrap();
     let r = intersect_curve_curve(&Helix, &line, TOL);
     assert_eq!(r.method(), IntersectionMethod::Numeric);
-    let parameters: Vec<f64> = r.hits().iter().map(|h| h.first_parameter).collect();
+    let parameters: Vec<f64> = r
+        .hits()
+        .iter()
+        .map(|h| h.first_parameter.unwrap())
+        .collect();
     assert_eq!(parameters.len(), 3);
     for (turn, parameter) in parameters.iter().enumerate() {
         assert!((parameter - (PI / 2.0 + turn as f64 * TAU)).abs() < 1e-9);
@@ -711,8 +751,8 @@ fn test_2d_consecutive_arcs_meet_at_the_seam() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - TAU).abs() < 1e-12);
-    assert!(hit.second_parameter.abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - TAU).abs() < 1e-12);
+    assert!(hit.second_parameter.unwrap().abs() < 1e-12);
     assert!(hit.point.distance(Point2D::new(1.0, 0.0)) < 1e-12);
 }
 
@@ -732,8 +772,8 @@ fn test_touch_between_coincident_curves_running_opposite_ways() {
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
     let hit = r.hits()[0];
-    assert!((hit.first_parameter - PI / 2.0).abs() < 1e-12);
-    assert!((hit.second_parameter - 1.5 * PI).abs() < 1e-12);
+    assert!((hit.first_parameter.unwrap() - PI / 2.0).abs() < 1e-12);
+    assert!((hit.second_parameter.unwrap() - 1.5 * PI).abs() < 1e-12);
     assert!(hit.point.distance(Point3D::new(0.0, 1.0, 0.0)) < 1e-12);
 
     // A segment of the line running the other way: x in [1, 2].
@@ -744,8 +784,8 @@ fn test_touch_between_coincident_curves_running_opposite_ways() {
     let r = a.intersect(&b, TOL);
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 1);
-    assert!((r.hits()[0].first_parameter - 1.0).abs() < 1e-12);
-    assert!((r.hits()[0].second_parameter + 1.0).abs() < 1e-12);
+    assert!((r.hits()[0].first_parameter.unwrap() - 1.0).abs() < 1e-12);
+    assert!((r.hits()[0].second_parameter.unwrap() + 1.0).abs() < 1e-12);
 }
 
 #[test]
@@ -758,7 +798,7 @@ fn test_arcs_making_up_the_whole_circle_touch_twice() {
     let pairs: Vec<(f64, f64)> = r
         .hits()
         .iter()
-        .map(|h| (h.first_parameter, h.second_parameter))
+        .map(|h| (h.first_parameter.unwrap(), h.second_parameter.unwrap()))
         .collect();
     assert_eq!(pairs.len(), 2);
     assert!(close(pairs[0], (0.0, TAU)));
@@ -770,4 +810,63 @@ fn test_arcs_making_up_the_whole_circle_touch_twice() {
     let r = a.intersect(&b, TOL);
     assert!(r.overlaps().is_empty());
     assert_eq!(r.hits().len(), 2);
+}
+
+#[test]
+fn test_routed_circle_circle_leaves_both_angles_to_the_caller() {
+    let first = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    let second = Circle3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+    let r = first.intersect(&second, TOL);
+    assert_eq!(r.method(), IntersectionMethod::Exact);
+    assert_eq!(r.hits().len(), 2);
+    for h in r.hits() {
+        assert_eq!((h.first_parameter, h.second_parameter), (None, None));
+        let (a, b) = (first.parameter_of(h.point), second.parameter_of(h.point));
+        assert!(first.eval_point(a).distance(h.point) < 1e-12);
+        assert!(second.eval_point(b).distance(h.point) < 1e-12);
+    }
+}
+
+#[test]
+fn test_trimmed_operands_store_their_parameter_within_range() {
+    let first = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    let second = Circle3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+    // An arc across the seam of the first circle holds both hits.
+    let arc = TrimmedCurve3D::new(first, -PI / 2.0, PI / 2.0).unwrap();
+    let r = arc.intersect(&second, TOL);
+    assert_eq!(r.hits().len(), 2);
+    for h in r.hits() {
+        let angle = h.first_parameter.unwrap();
+        assert!((-PI / 2.0..=PI / 2.0).contains(&angle));
+        // The stored angle is the circle's own, up to a whole turn.
+        let own = first.parameter_of(h.point);
+        assert!(((angle - own).rem_euclid(TAU) + 1e-12) % TAU < 1e-9);
+        // The untrimmed side is left to the caller.
+        assert_eq!(h.second_parameter, None);
+    }
+    // Every hit has a first parameter, so the hits are sorted by it.
+    assert!(r.hits()[0].first_parameter < r.hits()[1].first_parameter);
+}
+
+#[test]
+fn test_numeric_path_stores_every_parameter() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    let other = Circle3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+    let r = circle.intersect(&other.to_bspline(), TOL);
+    assert_eq!(r.method(), IntersectionMethod::Numeric);
+    assert_eq!(r.hits().len(), 2);
+    assert!(
+        r.hits()
+            .iter()
+            .all(|h| h.first_parameter.is_some() && h.second_parameter.is_some())
+    );
+    assert_curve_hits_lie_on(&r, &circle, &other.to_bspline());
+    let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+    let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 5.0, 1.0).unwrap();
+    let r = ellipse.intersect(&torus, TOL);
+    assert!(
+        r.hits()
+            .iter()
+            .all(|h| h.curve_parameter.is_some() && h.surface_parameters.is_some())
+    );
 }

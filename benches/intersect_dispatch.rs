@@ -13,10 +13,7 @@ use std::hint::black_box;
 
 use geomcore::curves::{Circle2D, Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Line3D};
 use geomcore::surfaces::{Cone, Cylinder, ElementarySurface, Plane, Sphere, Surface, Torus};
-use geomcore::{
-    CircleCircle2DIntersection, CircleCircle3DIntersection, Intersect, IntersectExact,
-    LineQuadricIntersection, Point2D, Point3D, Tolerance, Vector3D,
-};
+use geomcore::{Intersect, IntersectExact, Point2D, Point3D, Tolerance, Vector3D};
 
 const BATCH: usize = 1024;
 
@@ -200,13 +197,11 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
     );
 }
 
-/// Times the routed call against the typed exact call over one batch,
-/// and against the typed exact call followed by the caller recovering the
-/// parameters the routed result reports (`$with_parameters`, a closure
-/// over one pair): the typed result carries points only, so that is the
-/// fair baseline.
+/// Times the routed call against the typed exact call over one batch. The
+/// routed result stores only the parameters the solver computed, so the
+/// typed call is the fair baseline: the gap is building the result.
 macro_rules! bench_routed {
-    ($c:expr, $name:literal, $pairs:expr, $with_parameters:expr) => {{
+    ($c:expr, $name:literal, $pairs:expr) => {{
         let pairs = $pairs;
         let tol = Tolerance::default();
         let mut group = $c.benchmark_group(concat!("intersect_routed/", $name));
@@ -215,14 +210,6 @@ macro_rules! bench_routed {
             b.iter(|| {
                 for (x, y) in black_box(&pairs) {
                     black_box(x.intersect_exact(y, tol));
-                }
-            })
-        });
-        let with_parameters = $with_parameters;
-        group.bench_function("exact_with_parameters", |b| {
-            b.iter(|| {
-                for (x, y) in black_box(&pairs) {
-                    black_box(with_parameters(x, y, tol));
                 }
             })
         });
@@ -247,25 +234,7 @@ fn bench_intersect_routed(c: &mut Criterion) {
             (line.unwrap(), cylinder.unwrap())
         })
         .collect();
-    bench_routed!(
-        c,
-        "line_cylinder",
-        line_cylinder,
-        |line: &Line3D, cylinder: &Cylinder, tol| {
-            // The line parameter comes with each hit; the surface ones do not.
-            let with_surface = |(t, p): (f64, Point3D)| (t, cylinder.parameters_of(p), p);
-            match line.intersect_exact(cylinder, tol) {
-                LineQuadricIntersection::TwoPoints(first, second) => {
-                    [Some(with_surface(first)), Some(with_surface(second))]
-                }
-                LineQuadricIntersection::OnePoint(t, p)
-                | LineQuadricIntersection::Tangent(t, p) => [Some(with_surface((t, p))), None],
-                LineQuadricIntersection::Empty | LineQuadricIntersection::Coincident => {
-                    [None, None]
-                }
-            }
-        }
-    );
+    bench_routed!(c, "line_cylinder", line_cylinder);
 
     // Coplanar circles of radius 2 and 1.5 with centres 1 to 2 apart: two hits each.
     let circle_circle: Vec<(Circle3D, Circle3D)> = (0..BATCH)
@@ -277,19 +246,7 @@ fn bench_intersect_routed(c: &mut Criterion) {
             (a, Circle3D::new(center, Vector3D::Z, 1.5).unwrap())
         })
         .collect();
-    bench_routed!(
-        c,
-        "circle_circle",
-        circle_circle.clone(),
-        |a: &Circle3D, b: &Circle3D, tol| {
-            let both = |p: Point3D| (a.parameter_of(p), b.parameter_of(p), p);
-            match a.intersect_exact(b, tol) {
-                CircleCircle3DIntersection::Points(p, q) => [Some(both(p)), Some(both(q))],
-                CircleCircle3DIntersection::Tangent(p) => [Some(both(p)), None],
-                _ => [None, None],
-            }
-        }
-    );
+    bench_routed!(c, "circle_circle", circle_circle.clone());
 
     // The same circles in the plane.
     let circle_circle_2d: Vec<(Circle2D, Circle2D)> = circle_circle
@@ -300,19 +257,7 @@ fn bench_intersect_routed(c: &mut Criterion) {
             (a, Circle2D::new(center(b), b.radius()).unwrap())
         })
         .collect();
-    bench_routed!(
-        c,
-        "circle_circle_2d",
-        circle_circle_2d,
-        |a: &Circle2D, b: &Circle2D, tol| {
-            let both = |p: Point2D| (a.parameter_of(p), b.parameter_of(p), p);
-            match a.intersect_exact(b, tol) {
-                CircleCircle2DIntersection::Points(p, q) => [Some(both(p)), Some(both(q))],
-                CircleCircle2DIntersection::Tangent(p) => [Some(both(p)), None],
-                _ => [None, None],
-            }
-        }
-    );
+    bench_routed!(c, "circle_circle_2d", circle_circle_2d);
 }
 
 criterion_group!(benches, bench_intersect_dispatch, bench_intersect_routed);

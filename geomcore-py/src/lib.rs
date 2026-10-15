@@ -2832,7 +2832,12 @@ fn extract_curve2d(obj: &Bound<'_, PyAny>) -> PyResult<Curve2D> {
 }
 
 /// A generic intersection hit: `(curve parameter, (u, v), point)`.
-type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
+type CurveHitPy = (Option<f64>, Option<(f64, f64)>, Py<PyAny>);
+
+/// A curve-curve hit as Python sees it: `(first_parameter, Point3D,
+/// second_parameter)`, a parameter `None` when the solver did not compute
+/// it.
+type CurveCurveHitPy = (Option<f64>, Py<PyAny>, Option<f64>);
 
 /// Closest-point enumeration between any two 3D curves.
 ///
@@ -2861,9 +2866,11 @@ fn py_curve_curve_extrema(
 /// Generic 3D curve-curve intersection through the routed `intersect`:
 /// exact when the pair has a closed form, numeric otherwise.
 ///
-/// Returns `(first_parameter, Point3D, second_parameter)` tuples ordered by
-/// first-curve parameter. Ranges where the curves coincide are not hits
-/// and are not returned.
+/// Returns `(first_parameter, Point3D, second_parameter)` tuples. A
+/// parameter is `None` when the solver did not compute it; recover it with
+/// the curve's `parameter_of(point)`. The tuples are ordered by first-curve
+/// parameter when every hit has one, and in the solver's order otherwise.
+/// Ranges where the curves coincide are not hits and are not returned.
 #[pyfunction]
 #[pyo3(name = "intersect_curve_curve", signature = (curve_a, curve_b, tol = None))]
 fn py_intersect_curve_curve(
@@ -2871,7 +2878,7 @@ fn py_intersect_curve_curve(
     curve_a: &Bound<'_, PyAny>,
     curve_b: &Bound<'_, PyAny>,
     tol: Option<PyTolerance>,
-) -> PyResult<Vec<(f64, Py<PyAny>, f64)>> {
+) -> PyResult<Vec<CurveCurveHitPy>> {
     let tol = tol.map(|t| t.0).unwrap_or_default();
     let a = extract_curve_arg(curve_a)?;
     let b = extract_curve_arg(curve_b)?;
@@ -2889,9 +2896,12 @@ fn py_intersect_curve_curve(
 /// the routed `intersect`: exact when the pair has a closed form, numeric
 /// otherwise.
 ///
-/// Returns a `(curve_parameter, (u, v), Point3D)` tuple per hit, ordered
-/// by curve parameter. Ranges where the curve lies on the surface are not
-/// hits and are not returned.
+/// Returns a `(curve_parameter, (u, v), Point3D)` tuple per hit. A
+/// parameter is `None` when the solver did not compute it (the exact path
+/// never computes `(u, v)`); recover it with the curve's
+/// `parameter_of(point)` or the surface's `parameters_of(point)`. The
+/// tuples are ordered by curve parameter when every hit has one. Ranges
+/// where the curve lies on the surface are not hits and are not returned.
 #[pyfunction]
 #[pyo3(name = "intersect_curve_surface", signature = (curve, surface, tol = None))]
 fn py_intersect_curve_surface(

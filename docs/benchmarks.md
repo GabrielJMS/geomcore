@@ -101,8 +101,9 @@ cylinder of radius 1.5 about the vertical axis at two points, coplanar
 circles of radius 2 and 1.5 with centres 1 to 2 apart, crossing at two
 points, and the same circles in the plane (2D).
 
-Each pair has three lines, so the routed call is read against two
-baselines:
+The tables below up to "Parameters on demand" are history: then, the
+routed call reported the parameters on both operands, so it was read
+against two baselines:
 
 - **exact**: the typed exact call alone. It returns points (and, for a
   line, its own parameter), not the parameters on both operands.
@@ -178,8 +179,45 @@ routed call barely moved: line–cylinder 184 → 183 ns, circle–circle
 1549, 1599 → 1582 and 1181 → 1184 instructions per pair. The gain is
 in memory: a caller keeping many results stores up to a third less.
 
-The four `parameter_of` calls of a circle–circle pair are each needed
-(two hits on two circles), and each is computed once.
+The four `parameter_of` calls of a circle–circle pair were each needed
+(two hits on two circles), and each was computed once.
+
+### Parameters on demand
+
+A hit parameter is now an `Option`: the routed result stores a
+parameter only when the solver computed it on its way to the point (the
+line of a line–cylinder pair, the substituted conic of a conic pair),
+and leaves the rest `None`. A caller who needs one calls the operand's
+`parameter_of` / `parameters_of` on the hit point. The routed call no
+longer recovers parameters nobody asked for, so it is read against the
+typed exact call alone: the difference is routing plus building the
+result. A trimmed operand still computes its parameter, to clip the hit
+to its range, and stores it.
+
+Same machine, loaded (load average 8–10). Times are the fastest of
+30 timings of 100 batches, in three interleaved runs per build; the
+criterion median after the change is in brackets.
+
+| pair | exact | routed before | routed after |
+|---|---|---|---|
+| line–cylinder | 73 ns (77) | 184 ns | 127 ns (139) |
+| circle–circle (coplanar) | 31 ns (32) | 145 ns | 76 ns (79) |
+| 2D circle–circle | 8 ns (7.5) | 111 ns | 35 ns (35) |
+
+Callgrind instructions per pair:
+
+| pair | exact | routed before | routed after |
+|---|---|---|---|
+| line–cylinder | 714 | 1545 | 1161 |
+| circle–circle (coplanar) | 352 | 1567 | 759 |
+| 2D circle–circle | 79 | 1188 | 321 |
+
+The `Option` fields make each hit 16 bytes larger (a curve–curve hit 48
+→ 64 bytes, a 2D hit 40 → 56, a curve–surface hit 56 → 72), and the
+results with inline hits grow with them: 296 → 360 bytes for
+curve–surface, 264 → 328 for curve–curve and 144 → 176 in 2D. What is
+left over the exact call is mostly moving that result (memcpy is 13–15%
+of the routed instructions) and converting the solver's hits into it.
 
 Reproduce with:
 

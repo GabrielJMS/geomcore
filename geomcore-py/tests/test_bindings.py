@@ -896,8 +896,11 @@ def test_circle_conic_intersections():
         assert mult == 1
         assert circle.contains(p)
         assert ellipse.contains(p)
+        # Only the circle is solved for: the ellipse's parameter is left to
+        # the caller.
+        assert u is None
         _assert_same_point(circle.eval_point(s), p)
-        _assert_same_point(ellipse.eval_point(u), p)
+        _assert_same_point(ellipse.eval_point(ellipse.parameter_of(p)), p)
 
     assert circle.intersect(
         Ellipse3D(Point3D.origin(), Vector3D.z(), Vector3D.x(), 2.0, 2.0)
@@ -1002,12 +1005,16 @@ def test_conic_conic_intersections():
         kind, hits = a.intersect(b)
         assert kind == "hits" and hits, (a, b)
         for s, p, t, _ in hits:
-            _assert_same_point(a.eval_point(s), p)
-            _assert_same_point(b.eval_point(t), p)
+            # One conic is solved for; a parameter not computed is None.
+            assert s is not None or t is not None
+            _assert_same_point(a.eval_point(_or_recovered(s, a, p)), p)
+            _assert_same_point(b.eval_point(_or_recovered(t, b, p)), p)
         # The receiver's parameter comes first.
         kind, back = b.intersect(a)
-        assert sorted(t for _, _, t, _ in hits) == pytest.approx(sorted(t for t, _, _, _ in back))
-        assert sorted(s for s, _, _, _ in hits) == pytest.approx(sorted(s for _, _, s, _ in back))
+        on_b = sorted(_or_recovered(t, b, p) for _, p, t, _ in hits)
+        assert on_b == pytest.approx(sorted(_or_recovered(t, b, p) for t, p, _, _ in back))
+        on_a = sorted(_or_recovered(s, a, p) for s, p, _, _ in hits)
+        assert on_a == pytest.approx(sorted(_or_recovered(s, a, p) for _, p, s, _ in back))
     assert parabola.intersect(parabola) == ("coincident", None)
     lifted = Parabola3D(Point3D(0.0, 0.0, 1.0), z, x, 1.0)
     assert parabola.intersect(lifted) == ("empty", None)
@@ -1016,6 +1023,12 @@ def test_conic_conic_intersections():
 def _rigid_motion():
     axis = Axis3D(Point3D(0.5, -1.0, 0.0), Vector3D(1.0, 2.0, 2.0))
     return Transform.translation(Vector3D(3.0, -1.0, 2.0)).then(Transform.rotation(axis, 0.7))
+
+
+def _or_recovered(parameter, curve, point):
+    """The stored parameter, or the curve's parameter of the point when the
+    solver did not compute it."""
+    return curve.parameter_of(point) if parameter is None else parameter
 
 
 def _assert_same_point(a, b):
@@ -1254,15 +1267,24 @@ def _rounded(p):
     return (round(p.x, 9), round(p.y, 9), round(p.z, 9))
 
 
-def _receiver_swapped(result, swap=True):
-    """Conic-conic hits as `(other, point, receiver, mult)`, sorted."""
+def _on_a_and_b(result, a, b, a_first=True):
+    """Conic-conic hits as `(parameter on a, point, parameter on b, mult)`,
+    sorted, each parameter the solver did not compute recovered from the
+    point. `a_first` says whether `a` was the receiver."""
     kind, hits = result
     if kind != "hits":
         return result
+    if not a_first:
+        hits = [(t, p, s, m) for s, p, t, m in hits]
     return (
         kind,
         sorted(
-            (round(t if swap else s, 9), _rounded(p), round(s if swap else t, 9), m)
+            (
+                round(_or_recovered(s, a, p), 9),
+                _rounded(p),
+                round(_or_recovered(t, b, p), 9),
+                m,
+            )
             for s, p, t, m in hits
         ),
     )
@@ -1283,8 +1305,8 @@ def test_intersect_matches_per_pair_methods_in_both_orders():
             assert _comparable(a.intersect(b)) == expected, (a, b)
             if _is_conic_pair(a, b):
                 # The receiver's parameter comes first.
-                assert _receiver_swapped(b.intersect(a)) == _receiver_swapped(
-                    a.intersect(b), swap=False
+                assert _on_a_and_b(b.intersect(a), a, b, a_first=False) == _on_a_and_b(
+                    a.intersect(b), a, b
                 ), (b, a)
             else:
                 assert _comparable(b.intersect(a)) == expected, (b, a)

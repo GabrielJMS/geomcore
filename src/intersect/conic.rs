@@ -21,6 +21,7 @@
 //! planes cross: the hits of one conic on the other's plane, kept when
 //! they lie on the other conic.
 
+use super::results::sort_by_known_parameter;
 use super::{
     ConicConicIntersection, ConicSurfaceHit, ConicSurfaceIntersection, CurveCurveHit, ImplicitConic,
 };
@@ -433,9 +434,10 @@ pub(crate) fn intersect_conic_quadric<C: Conic, S: Quadric>(
 }
 
 /// Intersects two conics: [`ConicConicIntersection::Coincident`] when
-/// they are the same curve, else their hits ordered by the first conic's
-/// parameter. The conic of lower [`ConicShape::rank`] substitutes into
-/// the other's equation; the hits come back in the callers' order.
+/// they are the same curve, else their hits, ordered by the first conic's
+/// parameter when every hit has one. The conic of lower
+/// [`ConicShape::rank`] substitutes into the other's equation, so only its
+/// parameter is computed; the hits come back in the callers' order.
 pub(crate) fn intersect_conic_conic<A: Conic, B: Conic>(
     first: &A,
     second: &B,
@@ -458,12 +460,13 @@ pub(crate) fn intersect_conic_conic<A: Conic, B: Conic>(
     if hits.is_empty() {
         return ConicConicIntersection::Empty;
     }
-    hits.sort_unstable_by(|x, y| x.first_parameter.total_cmp(&y.first_parameter));
+    sort_by_known_parameter(&mut hits, |hit| hit.first_parameter);
     ConicConicIntersection::Hits(hits.to_vec())
 }
 
 /// The hits of `conic` on `other`, with `conic`'s parameter first, or
-/// `None` when they are the same curve.
+/// `None` when they are the same curve. The solve yields `conic`'s
+/// parameter; `other`'s is stored only where the tangency test needed it.
 fn conic_conic_hits<A: Conic, B: Conic>(
     conic: &A,
     other: &B,
@@ -472,12 +475,10 @@ fn conic_conic_hits<A: Conic, B: Conic>(
     let mut hits = InlineList::new();
     let (frame, other_frame) = (conic.frame(), other.frame());
     let normal = frame.z_direction();
-    // Both parameters come from the point, so a closed conic's lies in its
-    // own bounds whichever conic was solved for.
-    let hit = |p: Point3D, multiplicity: u32| CurveCurveHit {
-        first_parameter: conic.parameter_in_bounds(conic.parameter_of(p), tol),
+    let hit = |t: f64, p: Point3D, multiplicity: u32| CurveCurveHit {
+        first_parameter: Some(conic.parameter_in_bounds(t, tol)),
         point: p,
-        second_parameter: other.parameter_in_bounds(other.parameter_of(p), tol),
+        second_parameter: None,
         multiplicity,
     };
     // Coplanar when either conic lies in the other's plane: solving in
@@ -499,14 +500,18 @@ fn conic_conic_hits<A: Conic, B: Conic>(
         {
             for h in on_plane {
                 if other.contains(h.point, point_tolerance(h.point, tol)) {
-                    let mut h = hit(h.point, h.multiplicity);
-                    let along = other.eval_derivative(h.second_parameter, 1);
-                    if h.multiplicity < 2
-                        || along.dot(normal).abs() > along_tolerance * along.magnitude()
-                    {
-                        h.multiplicity = 1;
+                    let mut found = hit(h.parameter, h.point, 1);
+                    if h.multiplicity >= 2 {
+                        // The tangency test needs the other conic's
+                        // parameter, so it is kept.
+                        let second = other.parameter_in_bounds(other.parameter_of(h.point), tol);
+                        found.second_parameter = Some(second);
+                        let along = other.eval_derivative(second, 1);
+                        if along.dot(normal).abs() <= along_tolerance * along.magnitude() {
+                            found.multiplicity = h.multiplicity;
+                        }
                     }
-                    hits.push(h);
+                    hits.push(found);
                 }
             }
         }
@@ -529,7 +534,7 @@ fn conic_conic_hits<A: Conic, B: Conic>(
     for &(t, multiplicity) in &candidates {
         let p = conic.eval_point(t);
         if other.contains(p, point_tolerance(p, tol)) {
-            hits.push(hit(p, multiplicity));
+            hits.push(hit(t, p, multiplicity));
         }
     }
     Some(hits)
@@ -832,9 +837,9 @@ mod tests {
         });
     }
 
-    /// The hits of `first` on `second`, each checked to sit at both its
-    /// parameters, and the same hits with the parameters swapped when the
-    /// order is reversed.
+    /// The hits of `first` on `second`, each checked to sit at the
+    /// parameters it stores, and the same hits with the parameters swapped
+    /// when the order is reversed.
     fn conic_hits<A, B>(first: &A, second: &B) -> Vec<CurveCurveHit>
     where
         A: Conic + IntersectExact<B, Output = ConicConicIntersection>,
@@ -844,17 +849,41 @@ mod tests {
         let ConicConicIntersection::Hits(hits) = first.intersect_exact(second, tol) else {
             panic!("expected hits");
         };
-        let ConicConicIntersection::Hits(mut back) = second.intersect_exact(first, tol) else {
+        let ConicConicIntersection::Hits(back) = second.intersect_exact(first, tol) else {
             panic!("expected hits the other way round");
         };
-        back.sort_by(|p, q| p.second_parameter.total_cmp(&q.second_parameter));
         assert_eq!(hits.len(), back.len());
-        for (h, b) in hits.iter().zip(&back) {
-            assert!(first.eval_point(h.first_parameter).distance(h.point) < 1e-9);
-            assert!(second.eval_point(h.second_parameter).distance(h.point) < 1e-9);
+        // The substituted conic's parameter is always computed.
+        assert!(
+            hits.iter()
+                .all(|h| h.first_parameter.is_some() || h.second_parameter.is_some())
+        );
+        for h in &hits {
+            let b = back
+                .iter()
+                .min_by(|p, q| {
+                    p.point
+                        .distance(h.point)
+                        .total_cmp(&q.point.distance(h.point))
+                })
+                .unwrap();
+            if let Some(t) = h.first_parameter {
+                assert!(first.eval_point(t).distance(h.point) < 1e-9);
+            }
+            if let Some(t) = h.second_parameter {
+                assert!(second.eval_point(t).distance(h.point) < 1e-9);
+            }
             assert!(h.point.distance(b.point) < 1e-9);
-            assert!((h.first_parameter - b.second_parameter).abs() < 1e-9);
-            assert!((h.second_parameter - b.first_parameter).abs() < 1e-9);
+            // Equal ranks substitute the receiver, so each order may
+            // compute a different conic's parameter; stored ones agree.
+            for (x, y) in [
+                (h.first_parameter, b.second_parameter),
+                (h.second_parameter, b.first_parameter),
+            ] {
+                if let (Some(x), Some(y)) = (x, y) {
+                    assert!((x - y).abs() < 1e-9);
+                }
+            }
             assert_eq!(h.multiplicity, b.multiplicity);
         }
         hits

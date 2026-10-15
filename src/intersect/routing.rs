@@ -54,8 +54,8 @@ use crate::{Point2D, Point3D};
 /// let result = line.intersect(&sphere, Tolerance::DEFAULT);
 /// assert_eq!(result.method(), IntersectionMethod::Exact);
 /// assert!(result.is_complete());
-/// let parameters: Vec<f64> = result.hits().iter().map(|h| h.curve_parameter).collect();
-/// assert_eq!(parameters, [3.0, 7.0]);
+/// let parameters: Vec<Option<f64>> = result.hits().iter().map(|h| h.curve_parameter).collect();
+/// assert_eq!(parameters, [Some(3.0), Some(7.0)]);
 /// assert_eq!(sphere.intersect(&line, Tolerance::DEFAULT), result);
 /// ```
 pub trait Intersect<Rhs: ?Sized = Self> {
@@ -74,6 +74,10 @@ pub trait Intersect<Rhs: ?Sized = Self> {
 /// at compile time is solved without converting to the untyped
 /// [`ElementaryCurve`] or dispatching at run time; [`ElementaryCurve`] is
 /// the basis of the curves whose kind is only known at run time.
+///
+/// [`basis_parameter_of`](Self::basis_parameter_of) gives the parameter of
+/// a hit's point when the curve is restricted to a range and the solver
+/// did not compute it: the range test needs it.
 pub(crate) trait CurveBasis:
     ParametricCurve3D
     + Copy
@@ -91,34 +95,29 @@ pub(crate) trait CurveBasis:
     + ExactCurveCurve<Hyperbola3D>
     + ExactCurveCurve<ElementaryCurve>
 {
+    /// The parameter of `point`, a point on the curve.
+    fn basis_parameter_of(&self, point: Point3D) -> f64;
 }
 
-impl CurveBasis for Line3D {}
-impl CurveBasis for Circle3D {}
-impl CurveBasis for Ellipse3D {}
-impl CurveBasis for Parabola3D {}
-impl CurveBasis for Hyperbola3D {}
-impl CurveBasis for ElementaryCurve {}
-
-/// An elementary surface as the router sees it: the surface parameters of
-/// a hit's point.
-pub(crate) trait SurfaceBasis: Copy {
-    /// The `(u, v)` parameters of `point`, a point on the surface.
-    fn surface_parameters_of(&self, point: Point3D) -> (f64, f64);
-}
-
-macro_rules! surface_basis {
-    ($($surface:ty),*) => {$(
-        impl SurfaceBasis for $surface {
+macro_rules! curve_basis {
+    ($($curve:ty),*) => {$(
+        impl CurveBasis for $curve {
             #[inline]
-            fn surface_parameters_of(&self, point: Point3D) -> (f64, f64) {
-                self.parameters_of(point)
+            fn basis_parameter_of(&self, point: Point3D) -> f64 {
+                self.parameter_of(point)
             }
         }
     )*};
 }
 
-surface_basis!(Plane, Cylinder, Cone, Sphere, Torus, ElementarySurface);
+curve_basis!(
+    Line3D,
+    Circle3D,
+    Ellipse3D,
+    Parabola3D,
+    Hyperbola3D,
+    ElementaryCurve
+);
 
 /// How a curve enters the router: its elementary basis (when it has one)
 /// and the parameter range it is restricted to (`None` = the basis's own
@@ -189,7 +188,7 @@ impl<C: CurveOperand> CurveOperand for TrimmedCurve3D<C> {
 pub(crate) trait SurfaceOperand: ParametricSurface {
     /// The basis type: the surface's own type when it is a concrete
     /// elementary surface, so the pair is solved by its typed solver.
-    type Basis: SurfaceBasis;
+    type Basis: Copy;
 
     /// The elementary basis, or `None` when the surface has none.
     fn surface_basis(&self) -> Option<Self::Basis>;
@@ -251,17 +250,25 @@ pub(crate) fn in_range(
     (just_below >= range.0 - tol.parametric).then_some(just_below)
 }
 
-/// The representative of `parameter` in `range`, when the curve is
-/// restricted to one (see [`in_range`]); the parameter itself when it is not.
-fn representative_in(
-    parameter: f64,
+/// The parameter a hit keeps on one curve, or `None` when the hit lies
+/// outside the curve's range.
+///
+/// On a curve restricted to `range` the range test needs the parameter:
+/// the `stored` one, or the one `recover` computes from the point when the
+/// solver did not, and the hit keeps its representative in the range (see
+/// [`in_range`]). On an unrestricted curve the hit keeps what the solver
+/// stored, computed or not.
+#[inline]
+fn kept_parameter(
+    stored: Option<f64>,
     range: Option<(f64, f64)>,
     period: Option<f64>,
+    recover: impl FnOnce() -> f64,
     tol: Tolerance,
-) -> Option<f64> {
+) -> Option<Option<f64>> {
     match range {
-        Some(range) => in_range(parameter, range, period, tol),
-        None => Some(parameter),
+        Some(range) => in_range(stored.unwrap_or_else(recover), range, period, tol).map(Some),
+        None => Some(stored),
     }
 }
 
@@ -363,7 +370,7 @@ where
     {
         let exact = basis.exact_curve_surface(&elementary, tol);
         if !matches!(exact, ExactCurveSurfaceIntersection::NotAnalytic) {
-            return from_exact_curve_surface(exact, &basis, range, &elementary, tol);
+            return from_exact_curve_surface(exact, &basis, range, tol);
         }
     }
     // A trimmed curve is searched over its own range only: no clipping.
@@ -372,14 +379,13 @@ where
 
 /// Turns the exact intersection of the curve's elementary `basis` with the
 /// surface into the routed result: hits outside `range` dropped, the kept
-/// ones carrying their representative in `range` and the surface
-/// parameters of their point.
+/// ones carrying their representative in `range`. The surface parameters
+/// are not computed: the caller recovers them from the point if needed.
 #[inline]
 fn from_exact_curve_surface(
     exact: ExactCurveSurfaceIntersection,
     basis: &impl ParametricCurve3D,
     range: Option<(f64, f64)>,
-    elementary: &impl SurfaceBasis,
     tol: Tolerance,
 ) -> CurveSurfaceIntersection {
     match exact {
@@ -390,8 +396,8 @@ fn from_exact_curve_surface(
                     None => hit.parameter,
                 };
                 Some(CurveSurfaceHit {
-                    curve_parameter,
-                    surface_parameters: elementary.surface_parameters_of(hit.point),
+                    curve_parameter: Some(curve_parameter),
+                    surface_parameters: None,
                     point: hit.point,
                     multiplicity: hit.multiplicity,
                 })
@@ -511,7 +517,8 @@ type Operand<C> = (C, Option<(f64, f64)>);
 
 /// Turns the exact intersection of two elementary bases into the routed
 /// result: hits outside either range dropped, the kept ones carrying their
-/// representative in each range, and a coincidence clipped to both ranges.
+/// representative in each range (see [`kept_parameter`]), and a
+/// coincidence clipped to both ranges.
 #[inline]
 fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
     exact: ExactCurveCurveIntersection,
@@ -521,7 +528,7 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
 ) -> CurveCurveIntersection {
     match exact {
         // Neither basis is restricted: the solver's list is kept as it is,
-        // already ordered by first parameter.
+        // already ordered by first parameter when every hit has one.
         ExactCurveCurveIntersection::Points(list)
             if first_range.is_none() && second_range.is_none() =>
         {
@@ -533,16 +540,18 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
         ExactCurveCurveIntersection::Points(list) => {
             let hits = list.iter().filter_map(|hit| {
                 Some(CurveCurveHit {
-                    first_parameter: representative_in(
+                    first_parameter: kept_parameter(
                         hit.first_parameter,
                         first_range,
                         first.period(),
+                        || first.basis_parameter_of(hit.point),
                         tol,
                     )?,
-                    second_parameter: representative_in(
+                    second_parameter: kept_parameter(
                         hit.second_parameter,
                         second_range,
                         second.period(),
+                        || second.basis_parameter_of(hit.point),
                         tol,
                     )?,
                     ..*hit
@@ -561,8 +570,8 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
                 .touches
                 .iter()
                 .map(|&(first_parameter, second_parameter)| CurveCurveHit {
-                    first_parameter,
-                    second_parameter,
+                    first_parameter: Some(first_parameter),
+                    second_parameter: Some(second_parameter),
                     point: first.eval_point(first_parameter),
                     multiplicity: 1,
                 });
@@ -875,17 +884,19 @@ pub(crate) enum ExactCurveCurve2DIntersection {
 }
 
 /// The exact intersection of a 2D curve with a 2D curve of type `B`, solved
-/// by the pair's typed solver, the parameters on both curves recovered once.
+/// by the pair's typed solver. A hit stores the parameters the solver
+/// computed (a line's) and leaves the others `None`.
 pub(crate) trait ExactCurveCurve2D<B> {
     /// Intersects `self` with `other`, deciding tangency and coincidence
     /// with `tol`.
     fn exact_curve_curve_2d(&self, other: &B, tol: Tolerance) -> ExactCurveCurve2DIntersection;
 }
 
-/// A hit read from the first curve, with the given parameters.
+/// A hit read from the first curve, with the parameters the solver
+/// computed.
 fn hit_2d(
-    first_parameter: f64,
-    second_parameter: f64,
+    first_parameter: Option<f64>,
+    second_parameter: Option<f64>,
     point: Point2D,
     multiplicity: u32,
 ) -> Option<CurveCurveHit2D> {
@@ -897,13 +908,6 @@ fn hit_2d(
     })
 }
 
-/// The parameter of `point` on `circle`, snapped to the start of the bounds
-/// at the seam.
-#[inline]
-fn on_circle(circle: &Circle2D, point: Point2D, tol: Tolerance) -> f64 {
-    circle.parameter_in_bounds(circle.parameter_of(point), tol)
-}
-
 impl ExactCurveCurve2D<Line2D> for Line2D {
     #[inline]
     fn exact_curve_curve_2d(
@@ -913,7 +917,7 @@ impl ExactCurveCurve2D<Line2D> for Line2D {
     ) -> ExactCurveCurve2DIntersection {
         match self.intersect_exact(other, tol) {
             LineLine2DIntersection::Point(t, point, s) => {
-                ExactCurveCurve2DIntersection::Hits([hit_2d(t, s, point, 1), None])
+                ExactCurveCurve2DIntersection::Hits([hit_2d(Some(t), Some(s), point, 1), None])
             }
             LineLine2DIntersection::Parallel => ExactCurveCurve2DIntersection::Hits([None, None]),
             LineLine2DIntersection::Coincident => ExactCurveCurve2DIntersection::Coincident,
@@ -928,8 +932,7 @@ impl ExactCurveCurve2D<Circle2D> for Line2D {
         circle: &Circle2D,
         tol: Tolerance,
     ) -> ExactCurveCurve2DIntersection {
-        let at =
-            |t, point, multiplicity| hit_2d(t, on_circle(circle, point, tol), point, multiplicity);
+        let at = |t, point, multiplicity| hit_2d(Some(t), None, point, multiplicity);
         ExactCurveCurve2DIntersection::Hits(match self.intersect_exact(circle, tol) {
             LineCircle2DIntersection::Points((t, p), (u, q)) => [at(t, p, 1), at(u, q, 1)],
             LineCircle2DIntersection::Tangent(t, p) => [at(t, p, 2), None],
@@ -941,8 +944,7 @@ impl ExactCurveCurve2D<Circle2D> for Line2D {
 impl ExactCurveCurve2D<Line2D> for Circle2D {
     #[inline]
     fn exact_curve_curve_2d(&self, line: &Line2D, tol: Tolerance) -> ExactCurveCurve2DIntersection {
-        let at =
-            |t, point, multiplicity| hit_2d(on_circle(self, point, tol), t, point, multiplicity);
+        let at = |t, point, multiplicity| hit_2d(None, Some(t), point, multiplicity);
         ExactCurveCurve2DIntersection::Hits(match line.intersect_exact(self, tol) {
             LineCircle2DIntersection::Points((t, p), (u, q)) => [at(t, p, 1), at(u, q, 1)],
             LineCircle2DIntersection::Tangent(t, p) => [at(t, p, 2), None],
@@ -958,14 +960,7 @@ impl ExactCurveCurve2D<Circle2D> for Circle2D {
         other: &Circle2D,
         tol: Tolerance,
     ) -> ExactCurveCurve2DIntersection {
-        let at = |point, multiplicity| {
-            hit_2d(
-                on_circle(self, point, tol),
-                on_circle(other, point, tol),
-                point,
-                multiplicity,
-            )
-        };
+        let at = |point, multiplicity| hit_2d(None, None, point, multiplicity);
         ExactCurveCurve2DIntersection::Hits(match self.intersect_exact(other, tol) {
             CircleCircle2DIntersection::Points(p, q) => [at(p, 1), at(q, 1)],
             CircleCircle2DIntersection::Tangent(p) => [at(p, 2), None],
@@ -1039,11 +1034,34 @@ pub(crate) trait CurveBasis2D:
     + ExactCurveCurve2D<Circle2D>
     + ExactCurveCurve2D<Curve2D>
 {
+    /// The parameter of `point`, a point on the curve: the range test of a
+    /// restricted curve needs it when the solver did not compute it.
+    fn basis_parameter_of(&self, point: Point2D) -> f64;
 }
 
-impl CurveBasis2D for Line2D {}
-impl CurveBasis2D for Circle2D {}
-impl CurveBasis2D for Curve2D {}
+impl CurveBasis2D for Line2D {
+    #[inline]
+    fn basis_parameter_of(&self, point: Point2D) -> f64 {
+        self.parameter_of(point)
+    }
+}
+
+impl CurveBasis2D for Circle2D {
+    #[inline]
+    fn basis_parameter_of(&self, point: Point2D) -> f64 {
+        self.parameter_of(point)
+    }
+}
+
+impl CurveBasis2D for Curve2D {
+    #[inline]
+    fn basis_parameter_of(&self, point: Point2D) -> f64 {
+        match self {
+            Curve2D::Line(line) => line.parameter_of(point),
+            Curve2D::Circle(circle) => circle.parameter_of(point),
+        }
+    }
+}
 
 /// How a 2D curve enters the router: its basis and the parameter range it
 /// is restricted to (`None` = the basis's own bounds).
@@ -1103,16 +1121,18 @@ where
         ExactCurveCurve2DIntersection::Hits(hits) => {
             let kept = hits.into_iter().flatten().filter_map(|hit| {
                 Some(CurveCurveHit2D {
-                    first_parameter: representative_in(
+                    first_parameter: kept_parameter(
                         hit.first_parameter,
                         first_range,
                         first.period(),
+                        || first.basis_parameter_of(hit.point),
                         tol,
                     )?,
-                    second_parameter: representative_in(
+                    second_parameter: kept_parameter(
                         hit.second_parameter,
                         second_range,
                         second.period(),
+                        || second.basis_parameter_of(hit.point),
                         tol,
                     )?,
                     ..hit
@@ -1138,8 +1158,8 @@ fn coincidence_2d(
         .touches
         .iter()
         .map(|&(first_parameter, second_parameter)| CurveCurveHit2D {
-            first_parameter,
-            second_parameter,
+            first_parameter: Some(first_parameter),
+            second_parameter: Some(second_parameter),
             point: first.eval_point(first_parameter),
             multiplicity: 1,
         });

@@ -4,9 +4,11 @@
 //! when a closed form exists and runs a numeric search otherwise. Its
 //! family results ([`CurveCurveIntersection`],
 //! [`CurveCurveIntersection2D`], [`CurveSurfaceIntersection`]) carry the
-//! hits with the parameters on both shapes, the overlaps, the method that
-//! ran ([`IntersectionMethod`]) and whether every hit was found
-//! ([`Completeness`]).
+//! hits, the overlaps, the method that ran ([`IntersectionMethod`]) and
+//! whether every hit was found ([`Completeness`]). A hit stores the
+//! parameters the solver computed on its way to the point and leaves the
+//! others `None`, for the caller to recover with the operand's
+//! `parameter_of` or `parameters_of` when it needs them.
 //!
 //! ```
 //! use geomcore::{Circle3D, Completeness, Intersect, IntersectionMethod, Line3D, Point3D};
@@ -683,8 +685,9 @@ pub enum ConicSurfaceIntersection {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConicConicIntersection {
-    /// The hits, ordered by parameter on the first conic; a multiplicity
-    /// of 2 or more marks a tangency.
+    /// The hits, ordered by parameter on the first conic when every hit
+    /// stores one; a multiplicity of 2 or more marks a tangency. Only the
+    /// parameter of the conic that was solved for is stored.
     Hits(Vec<CurveCurveHit>),
     /// The two conics are the same curve.
     Coincident,
@@ -705,15 +708,36 @@ pub struct CurveCurveExtremum {
 }
 
 /// One meeting of two 3D curves.
+///
+/// A parameter is stored only when the solver computed it on its way to
+/// the point; the others are `None`, and the caller recovers one with the
+/// curve's `parameter_of(hit.point)` when it needs it.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Circle3D, Intersect, Point3D, Tolerance, Vector3D};
+///
+/// // Two coplanar circles: the solver finds the points, not the angles.
+/// let first = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+/// let second = Circle3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+/// let result = first.intersect(&second, Tolerance::DEFAULT);
+/// let hit = result.hits()[0];
+/// assert_eq!(hit.first_parameter, None);
+/// let angle = first.parameter_of(hit.point);
+/// assert!(first.eval_point(angle).distance(hit.point) < 1e-12);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
     /// Parameter on the first curve, within its bounds, give or take
     /// `tol.parametric` (on a circle or ellipse, a hit at the seam reports
-    /// the start of the bounds).
-    pub first_parameter: f64,
+    /// the start of the bounds). `None` when the solver did not compute
+    /// it; recover it with the curve's `parameter_of(hit.point)`.
+    pub first_parameter: Option<f64>,
     /// Parameter on the second curve, within its bounds, give or take
-    /// `tol.parametric`.
-    pub second_parameter: f64,
+    /// `tol.parametric`. `None` when the solver did not compute it;
+    /// recover it with the curve's `parameter_of(hit.point)`.
+    pub second_parameter: Option<f64>,
     /// The meeting point, within tolerance of both curves.
     pub point: Point3D,
     /// 1 where the curves cross, 2 or more where they are tangent.
@@ -722,13 +746,18 @@ pub struct CurveCurveHit {
 
 /// One meeting of two 2D curves.
 ///
+/// A parameter is stored only when the solver computed it on its way to
+/// the point (a line's, or a trimmed curve's for its range test); the
+/// others are `None`, and the caller recovers one with the curve's
+/// `parameter_of(hit.point)` when it needs it.
+///
 /// # Examples
 ///
 /// ```
 /// use geomcore::{CurveCurveHit2D, Point2D};
 /// let hit = CurveCurveHit2D {
-///     first_parameter: 1.0,
-///     second_parameter: 0.5,
+///     first_parameter: Some(1.0),
+///     second_parameter: None,
 ///     point: Point2D::new(1.0, 0.0),
 ///     multiplicity: 1,
 /// };
@@ -737,12 +766,13 @@ pub struct CurveCurveHit {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit2D {
     /// Parameter on the first curve, within its bounds, give or take
-    /// `tol.parametric` (on a circle, a hit at the seam reports the start
-    /// of the bounds).
-    pub first_parameter: f64,
+    /// `tol.parametric`. `None` when the solver did not compute it;
+    /// recover it with the curve's `parameter_of(hit.point)`.
+    pub first_parameter: Option<f64>,
     /// Parameter on the second curve, within its bounds, give or take
-    /// `tol.parametric`.
-    pub second_parameter: f64,
+    /// `tol.parametric`. `None` when the solver did not compute it;
+    /// recover it with the curve's `parameter_of(hit.point)`.
+    pub second_parameter: Option<f64>,
     /// The meeting point, within tolerance of both curves.
     pub point: Point2D,
     /// 1 where the curves cross, 2 or more where they are tangent.
@@ -751,25 +781,32 @@ pub struct CurveCurveHit2D {
 
 /// One meeting of a curve and a surface.
 ///
+/// The numeric search stores every parameter. An exact solver stores the
+/// curve parameter, which it solves for, and leaves the surface
+/// parameters `None`, for the caller to recover with the surface's
+/// `parameters_of(hit.point)` when it needs them.
+///
 /// # Examples
 ///
 /// ```
 /// use geomcore::{CurveSurfaceHit, Point3D};
 /// let hit = CurveSurfaceHit {
-///     curve_parameter: 2.0,
-///     surface_parameters: (0.0, 0.0),
+///     curve_parameter: Some(2.0),
+///     surface_parameters: None,
 ///     point: Point3D::new(2.0, 0.0, 0.0),
 ///     multiplicity: 1,
 /// };
-/// assert_eq!(hit.curve_parameter, 2.0);
+/// assert_eq!(hit.curve_parameter, Some(2.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
     /// Parameter on the curve, within its bounds, give or take
-    /// `tol.parametric`.
-    pub curve_parameter: f64,
-    /// Parameters on the surface.
-    pub surface_parameters: (f64, f64),
+    /// `tol.parametric`. `None` when the solver did not compute it;
+    /// recover it with the curve's `parameter_of(hit.point)`.
+    pub curve_parameter: Option<f64>,
+    /// Parameters on the surface. `None` when the solver did not compute
+    /// them; recover them with the surface's `parameters_of(hit.point)`.
+    pub surface_parameters: Option<(f64, f64)>,
     /// The meeting point (on the curve; within tolerance of the surface).
     pub point: Point3D,
     /// 1 where the curve crosses the surface, 2 or more where the curve is

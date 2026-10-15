@@ -662,17 +662,6 @@ impl Circle2D {
         analytic::circle2d_parameter(&self.frame, point)
     }
 
-    /// The parameter to report for a point found at parameter `u`: `u`
-    /// wrapped into [`bounds`](crate::curves::ParametricCurve2D::bounds),
-    /// and the start of the bounds when within `tol.confusion` of the seam
-    /// along the curve, so a point at the seam has one parameter, as on
-    /// [`Circle3D`].
-    pub(crate) fn parameter_in_bounds(&self, u: f64, tol: Tolerance) -> f64 {
-        let (first, last) = crate::curves::ParametricCurve2D::bounds(self);
-        // The speed is the radius everywhere.
-        analytic::seam_wrapped(u, first, last - first, self.radius, tol.confusion)
-    }
-
     /// Returns whether `point` lies on the circle: the inverse parameter is
     /// recovered with [`Circle2D::parameter_of`] and re-evaluated, and the
     /// point counts as contained when the re-evaluated point is within
@@ -1415,8 +1404,10 @@ mod tests {
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
                     assert!(ellipse.contains(h.point, tol));
-                    assert_eq!(h.first_parameter, circle.parameter_of(h.point));
-                    assert_eq!(h.second_parameter, ellipse.parameter_of(h.point));
+                    // The circle substitutes into the ellipse: only its angle is solved for.
+                    let angle = h.first_parameter.unwrap();
+                    assert!(circle.eval_point(angle).distance(h.point) < 1e-9);
+                    assert_eq!(h.second_parameter, None);
                 }
             }
             _ => panic!("expected four points"),
@@ -1485,7 +1476,12 @@ mod tests {
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
                     assert!(ellipse.contains(h.point, tol));
-                    assert!(circle.eval_point(h.first_parameter).distance(h.point) < 1e-12);
+                    assert!(
+                        circle
+                            .eval_point(h.first_parameter.unwrap())
+                            .distance(h.point)
+                            < 1e-12
+                    );
                 }
             }
             other => panic!("expected four points, got {other:?}"),

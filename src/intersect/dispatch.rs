@@ -6,6 +6,7 @@
 //! no intersection result allocates.
 
 use crate::curves::{Curve3D, ElementaryCurve};
+use crate::intersect::results::sort_by_known_parameter;
 use crate::intersect::{Conic, intersect_conic_conic};
 use crate::surfaces::{ElementarySurface, Surface};
 use crate::{
@@ -741,9 +742,14 @@ reversed!(
 /// let ExactCurveCurveIntersection::Points(hits) = line.intersect_exact(&circle, Tolerance::DEFAULT) else {
 ///     panic!("expected hits");
 /// };
-/// let on_line: Vec<f64> = hits.iter().map(|hit| hit.first_parameter).collect();
-/// assert_eq!(on_line, [-2.0, 2.0]);
+/// let on_line: Vec<Option<f64>> = hits.iter().map(|hit| hit.first_parameter).collect();
+/// assert_eq!(on_line, [Some(-2.0), Some(2.0)]);
+/// // The circle's angles are not computed.
+/// assert_eq!(hits[0].second_parameter, None);
 /// ```
+// The hits are stored inline so an exact result never allocates; boxing
+// them would allocate on every call.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExactCurveCurveIntersection {
     /// The curves do not meet.
@@ -754,13 +760,16 @@ pub enum ExactCurveCurveIntersection {
     /// is a B-spline. The caller decides whether to run a numeric
     /// intersection.
     NotAnalytic,
-    /// The hits, ordered by parameter on the first curve; a multiplicity
-    /// of 2 or more marks a tangency.
+    /// The hits, ordered by parameter on the first curve when every hit
+    /// stores one, in the solver's order otherwise; a multiplicity of 2 or
+    /// more marks a tangency. A parameter the solver did not compute is
+    /// `None`.
     Points(InlineList<CurveCurveHit, 4>),
 }
 
 impl ExactCurveCurveIntersection {
-    /// The hits ordered by first parameter, or `Empty` when there are none.
+    /// The hits ordered by first parameter when every hit has one (in the
+    /// solver's order otherwise), or `Empty` when there are none.
     fn points(hits: impl IntoIterator<Item = CurveCurveHit>) -> ExactCurveCurveIntersection {
         let mut list = InlineList::new();
         for hit in hits {
@@ -769,7 +778,7 @@ impl ExactCurveCurveIntersection {
         if list.is_empty() {
             return ExactCurveCurveIntersection::Empty;
         }
-        list.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
+        sort_by_known_parameter(&mut list, |hit| hit.first_parameter);
         ExactCurveCurveIntersection::Points(list)
     }
 
@@ -788,8 +797,14 @@ impl ExactCurveCurveIntersection {
     }
 }
 
-/// A hit at `first` on the first curve and `second` on the second.
-fn pair(first: f64, point: Point3D, second: f64, multiplicity: u32) -> CurveCurveHit {
+/// A hit at `first` on the first curve and `second` on the second, each
+/// `None` when the solver did not compute it.
+fn pair(
+    first: Option<f64>,
+    point: Point3D,
+    second: Option<f64>,
+    multiplicity: u32,
+) -> CurveCurveHit {
     CurveCurveHit {
         first_parameter: first,
         point,
@@ -801,7 +816,7 @@ fn pair(first: f64, point: Point3D, second: f64, multiplicity: u32) -> CurveCurv
 fn line_line(result: LineLine3DIntersection) -> ExactCurveCurveIntersection {
     match result {
         LineLine3DIntersection::Point(s, p, t) => {
-            ExactCurveCurveIntersection::points([pair(s, p, t, 1)])
+            ExactCurveCurveIntersection::points([pair(Some(s), p, Some(t), 1)])
         }
         LineLine3DIntersection::Parallel(_) | LineLine3DIntersection::Skew { .. } => {
             ExactCurveCurveIntersection::Empty
@@ -833,25 +848,18 @@ fn line_circle(
     circle: &Circle3D,
     tol: Tolerance,
 ) -> ExactCurveCurveIntersection {
-    let on_circle = |t: f64, p: Point3D| {
-        pair(
-            t,
-            p,
-            circle.parameter_in_bounds(circle.parameter_of(p), tol),
-            1,
-        )
-    };
     match result {
         LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => {
-            ExactCurveCurveIntersection::points([on_circle(t1, p1), on_circle(t2, p2)])
+            ExactCurveCurveIntersection::points([
+                pair(Some(t1), p1, None, 1),
+                pair(Some(t2), p2, None, 1),
+            ])
         }
+        // The tangency test needs the circle's parameter, so it is kept.
         LineCircle3DIntersection::Tangent(t, p) => {
-            let hit = on_circle(t, p);
-            let multiplicity = lone_hit_multiplicity(line, circle, hit.second_parameter, tol);
-            ExactCurveCurveIntersection::points([CurveCurveHit {
-                multiplicity,
-                ..hit
-            }])
+            let angle = circle.parameter_in_bounds(circle.parameter_of(p), tol);
+            let multiplicity = lone_hit_multiplicity(line, circle, angle, tol);
+            ExactCurveCurveIntersection::points([pair(Some(t), p, Some(angle), multiplicity)])
         }
         LineCircle3DIntersection::Empty => ExactCurveCurveIntersection::Empty,
     }
@@ -863,7 +871,8 @@ fn line_conic(
     conic: &impl Conic,
     tol: Tolerance,
 ) -> ExactCurveCurveIntersection {
-    let from = |h: LineConicHit, m: u32| pair(h.line_parameter, h.point, h.conic_parameter, m);
+    let from =
+        |h: LineConicHit, m: u32| pair(Some(h.line_parameter), h.point, Some(h.conic_parameter), m);
     match result {
         LineConic3DIntersection::Points(h1, h2) => {
             ExactCurveCurveIntersection::points([from(h1, 1), from(h2, 1)])
@@ -882,8 +891,8 @@ fn circle_circle(
     b: &Circle3D,
     tol: Tolerance,
 ) -> ExactCurveCurveIntersection {
-    let on = |c: &Circle3D, p: Point3D| c.parameter_in_bounds(c.parameter_of(p), tol);
-    let at = |p: Point3D, m: u32| pair(on(a, p), p, on(b, p), m);
+    // The solver finds the points only: the angles are left to the caller.
+    let at = |p: Point3D, m: u32| pair(None, p, None, m);
     match result {
         CircleCircle3DIntersection::Points(p, q) => {
             ExactCurveCurveIntersection::points([at(p, 1), at(q, 1)])
@@ -905,8 +914,9 @@ fn conic_conic(result: ConicConicIntersection) -> ExactCurveCurveIntersection {
 }
 
 /// The exact intersection of a curve with a curve of type `B` in the
-/// general form, solved by the pair's typed solver, the parameters on both
-/// curves recovered once.
+/// general form, solved by the pair's typed solver. A hit stores the
+/// parameters the solver computed and leaves the others `None`: no
+/// parameter is recovered from a point only to be reported.
 ///
 /// The router calls it on the concrete types of a pair, so a pair known at
 /// compile time skips the untyped enums and their dispatch. The untyped
@@ -1595,21 +1605,24 @@ mod tests {
         match result {
             ExactCurveCurveIntersection::Points(hits) => {
                 assert!(!hits.is_empty());
-                for pair in hits.windows(2) {
-                    assert!(
-                        pair[0].first_parameter <= pair[1].first_parameter,
-                        "{hits:?}"
-                    );
+                // Sorted by first parameter when every hit stores one.
+                if hits.iter().all(|h| h.first_parameter.is_some()) {
+                    for pair in hits.windows(2) {
+                        assert!(
+                            pair[0].first_parameter <= pair[1].first_parameter,
+                            "{hits:?}"
+                        );
+                    }
                 }
                 for hit in hits {
-                    assert!(
-                        near(a.eval_point(hit.first_parameter), hit.point),
-                        "{hit:?} off {a:?}"
-                    );
-                    assert!(
-                        near(b.eval_point(hit.second_parameter), hit.point),
-                        "{hit:?} off {b:?}"
-                    );
+                    if let Some(t) = hit.first_parameter {
+                        assert!(near(a.eval_point(t), hit.point), "{hit:?} off {a:?}");
+                    }
+                    if let Some(t) = hit.second_parameter {
+                        assert!(near(b.eval_point(t), hit.point), "{hit:?} off {b:?}");
+                    }
+                    assert!(near(a.eval_point(a.parameter_of(hit.point)), hit.point));
+                    assert!(near(b.eval_point(b.parameter_of(hit.point)), hit.point));
                     assert!(hit.multiplicity >= 1);
                 }
             }
@@ -1683,8 +1696,15 @@ mod tests {
                 }
                 for h in hits.iter().filter(|h| {
                     h.multiplicity == 1
-                        && window(a, h.first_parameter)
-                        && window(b, h.second_parameter)
+                        && window(
+                            a,
+                            h.first_parameter.unwrap_or_else(|| a.parameter_of(h.point)),
+                        )
+                        && window(
+                            b,
+                            h.second_parameter
+                                .unwrap_or_else(|| b.parameter_of(h.point)),
+                        )
                 }) {
                     assert!(
                         numeric.iter().any(|n| close(h.point, n.point)),
@@ -1988,12 +2008,14 @@ mod tests {
                             first.intersect_exact(second, TOL)
                         {
                             for h in list.iter() {
-                                let t = if swapped {
+                                let stored = if swapped {
                                     h.second_parameter
                                 } else {
                                     h.first_parameter
                                 };
-                                in_bounds(curve, t);
+                                if let Some(t) = stored {
+                                    in_bounds(curve, t);
+                                }
                                 hits += 1;
                             }
                         }

@@ -2,6 +2,7 @@
 //! curves: grid-seeded box minimisation of the distance between them.
 
 use super::curve_curve_hull::{CurveCurveExtrema, CurveCurveHits};
+use super::results::sort_by_known_parameter;
 use super::{CurveCurveExtremum, CurveCurveHit, CurveCurveIntersection, curve_surface_hull, mixed};
 use crate::curves::ParametricCurve3D;
 use crate::math::{newton_min_1d, newton_min_2d};
@@ -904,9 +905,9 @@ where
             let tb = b.eval_derivative(e.second_parameter, 1);
             let sin = ta.cross(tb).magnitude() / (ta.magnitude() * tb.magnitude());
             CurveCurveHit {
-                first_parameter: e.first_parameter,
+                first_parameter: Some(e.first_parameter),
                 point: a.eval_point(e.first_parameter),
-                second_parameter: e.second_parameter,
+                second_parameter: Some(e.second_parameter),
                 multiplicity: if sin <= tol.angular { 2 } else { 1 },
             }
         })
@@ -922,7 +923,7 @@ where
             merged.push(h);
         }
     }
-    merged.sort_by(|x, y| x.first_parameter.partial_cmp(&y.first_parameter).unwrap());
+    sort_by_known_parameter(&mut merged, |hit| hit.first_parameter);
     merged
 }
 
@@ -1218,13 +1219,13 @@ mod tests {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let hits = search_curve_curve(&line, &circle, tol);
         assert_eq!(hits.len(), 2);
-        assert!((hits[0].first_parameter + 2.0).abs() < 1e-9);
-        assert!((hits[1].first_parameter - 2.0).abs() < 1e-9);
+        assert!((hits[0].first_parameter.unwrap() + 2.0).abs() < 1e-9);
+        assert!((hits[1].first_parameter.unwrap() - 2.0).abs() < 1e-9);
         // Cross-check against the exact intersection.
         match line.intersect_exact(&circle, tol) {
             LineCircle3DIntersection::Points((t1, _), (t2, _)) => {
-                assert!((hits[0].first_parameter - t1).abs() < 1e-9);
-                assert!((hits[1].first_parameter - t2).abs() < 1e-9);
+                assert!((hits[0].first_parameter.unwrap() - t1).abs() < 1e-9);
+                assert!((hits[1].first_parameter.unwrap() - t2).abs() < 1e-9);
             }
             _ => panic!("exact intersection expected two points"),
         }

@@ -130,9 +130,24 @@ pub struct SurfaceSurfaceRegion {
     pub max_corner: Point3D,
 }
 
+/// Sorts `items` by `parameter` when every item has one, and leaves them
+/// in their order otherwise: a solver that does not compute a parameter
+/// reports its hits in its own order, and recovering the parameters only
+/// to sort would cost the work the solver skipped.
+#[inline]
+pub(crate) fn sort_by_known_parameter<T>(items: &mut [T], parameter: impl Fn(&T) -> Option<f64>) {
+    if items.iter().all(|item| parameter(item).is_some()) {
+        items.sort_by(|a, b| {
+            parameter(a)
+                .zip(parameter(b))
+                .map_or(std::cmp::Ordering::Equal, |(x, y)| x.total_cmp(&y))
+        });
+    }
+}
+
 #[inline]
 fn sorted_by_first(mut hits: CurveCurveHitList) -> CurveCurveHitList {
-    hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
+    sort_by_known_parameter(&mut hits, |hit| hit.first_parameter);
     hits
 }
 
@@ -178,8 +193,10 @@ pub(crate) fn curve_surface_multiplicity(
 /// let result = line.intersect(&circle, Tolerance::DEFAULT);
 /// assert_eq!(result.method(), IntersectionMethod::Exact);
 /// assert!(result.is_complete());
-/// let on_line: Vec<f64> = result.hits().iter().map(|h| h.first_parameter).collect();
-/// assert_eq!(on_line, [3.0, 7.0]);
+/// // The line's parameters come out of the solve; the circle's angles do not.
+/// let on_line: Vec<Option<f64>> = result.hits().iter().map(|h| h.first_parameter).collect();
+/// assert_eq!(on_line, [Some(3.0), Some(7.0)]);
+/// assert_eq!(result.hits()[0].second_parameter, None);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveCurveIntersection {
@@ -190,7 +207,8 @@ pub struct CurveCurveIntersection {
 }
 
 impl CurveCurveIntersection {
-    /// An exact, complete result; the hits are sorted by first parameter.
+    /// An exact, complete result; the hits are sorted by first parameter
+    /// when every hit has one.
     ///
     /// It takes a whole list: the router hands over the exact solver's
     /// own list unchanged when neither curve is trimmed, which measured
@@ -217,8 +235,14 @@ impl CurveCurveIntersection {
         }
     }
 
-    /// The isolated hits, sorted by first parameter. A hit outside a
-    /// trimmed curve's range is dropped.
+    /// The isolated hits. A hit outside a trimmed curve's range is dropped.
+    ///
+    /// A parameter is stored only where the solver computed it: always on
+    /// the numeric path, on a line against a conic for the line, and on a
+    /// trimmed curve, whose range test needs it. A missing one is `None`;
+    /// recover it with the curve's `parameter_of(hit.point)`. The hits are
+    /// sorted by first parameter when every hit has one, and come in the
+    /// solver's order otherwise.
     ///
     /// # Examples
     ///
@@ -233,7 +257,9 @@ impl CurveCurveIntersection {
     /// let result = arc.intersect(&line, Tolerance::DEFAULT);
     /// let hit = result.hits()[0];
     /// assert_eq!(result.hits().len(), 1);
-    /// assert_eq!(hit.second_parameter, 7.0);
+    /// // The arc's range test computed its angle; the line's comes from the solve.
+    /// assert_eq!(hit.first_parameter, Some(0.0));
+    /// assert_eq!(hit.second_parameter, Some(7.0));
     /// assert!(hit.point.distance(Point3D::new(2.0, 0.0, 0.0)) < 1e-12);
     /// ```
     pub fn hits(&self) -> &[CurveCurveHit] {
@@ -362,9 +388,12 @@ impl CurveCurveIntersection {
 /// let line = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::X).unwrap();
 /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
 /// let result = circle.intersect(&line, Tolerance::DEFAULT);
-/// // Hits come sorted by the circle's angle: x = 2 (angle 0) first, then x = -2.
-/// let along_line: Vec<f64> = result.hits().iter().map(|hit| hit.second_parameter).collect();
-/// assert!((along_line[0] - 7.0).abs() < 1e-9 && (along_line[1] - 3.0).abs() < 1e-9);
+/// // The circle's angles are not computed, so the hits keep the solver's
+/// // order, along the line: x = -2 first, then x = 2.
+/// let along_line: Vec<f64> = result.hits().iter().filter_map(|hit| hit.second_parameter).collect();
+/// assert!((along_line[0] - 3.0).abs() < 1e-9 && (along_line[1] - 7.0).abs() < 1e-9);
+/// let angle = circle.parameter_of(result.hits()[1].point);
+/// assert!(angle.abs() < 1e-9);
 /// assert_eq!(result.method(), IntersectionMethod::Exact);
 /// assert!(result.is_complete());
 /// ```
@@ -376,7 +405,8 @@ pub struct CurveCurveIntersection2D {
 }
 
 impl CurveCurveIntersection2D {
-    /// An exact, complete result; the hits are sorted by first parameter.
+    /// An exact, complete result; the hits are sorted by first parameter
+    /// when every hit has one.
     ///
     /// The hits are pushed into the result itself: the result is about
     /// 200 to 300 bytes, and collecting the hits first, then moving the
@@ -394,14 +424,17 @@ impl CurveCurveIntersection2D {
         for hit in hits {
             result.hits.push(hit);
         }
-        result
-            .hits
-            .sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
+        sort_by_known_parameter(&mut result.hits, |hit| hit.first_parameter);
         result
     }
 
-    /// The isolated hits, sorted by first parameter. A hit outside a
-    /// trimmed curve's range is dropped.
+    /// The isolated hits. A hit outside a trimmed curve's range is dropped.
+    ///
+    /// A parameter is stored only where the solver computed it: a line's
+    /// parameter, and a trimmed curve's, whose range test needs it. A
+    /// missing one is `None`; recover it with the curve's
+    /// `parameter_of(hit.point)`. The hits are sorted by first parameter
+    /// when every hit has one, and come in the solver's order otherwise.
     ///
     /// # Examples
     ///
@@ -415,7 +448,8 @@ impl CurveCurveIntersection2D {
     /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
     /// let result = segment.intersect(&circle, Tolerance::DEFAULT);
     /// assert_eq!(result.hits().len(), 1);
-    /// assert!((result.hits()[0].first_parameter - 3.0).abs() < 1e-9);
+    /// let on_segment = result.hits()[0].first_parameter.unwrap();
+    /// assert!((on_segment - 3.0).abs() < 1e-9);
     /// ```
     pub fn hits(&self) -> &[CurveCurveHit2D] {
         &self.hits
@@ -526,8 +560,11 @@ impl CurveCurveIntersection2D {
 /// let result = line.intersect(&cylinder, Tolerance::DEFAULT);
 /// assert_eq!(result.method(), IntersectionMethod::Exact);
 /// assert!(result.is_complete());
-/// let parameters: Vec<f64> = result.hits().iter().map(|h| h.curve_parameter).collect();
-/// assert_eq!(parameters, [4.0, 6.0]);
+/// let parameters: Vec<Option<f64>> = result.hits().iter().map(|h| h.curve_parameter).collect();
+/// assert_eq!(parameters, [Some(4.0), Some(6.0)]);
+/// // The surface parameters are left to the caller.
+/// let (angle, height) = cylinder.parameters_of(result.hits()[0].point);
+/// assert!((angle - std::f64::consts::PI).abs() < 1e-12 && height.abs() < 1e-12);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveSurfaceIntersection {
@@ -538,7 +575,8 @@ pub struct CurveSurfaceIntersection {
 }
 
 impl CurveSurfaceIntersection {
-    /// An exact, complete result; the hits are sorted by curve parameter.
+    /// An exact, complete result; the hits are sorted by curve parameter
+    /// when every hit has one.
     ///
     /// Like [`CurveCurveIntersection2D::exact`], it pushes the hits into
     /// the result itself.
@@ -556,9 +594,7 @@ impl CurveSurfaceIntersection {
         for hit in hits {
             result.hits.push(hit);
         }
-        result
-            .hits
-            .sort_by(|a, b| a.curve_parameter.total_cmp(&b.curve_parameter));
+        sort_by_known_parameter(&mut result.hits, |hit| hit.curve_parameter);
         result
     }
 
@@ -575,8 +611,14 @@ impl CurveSurfaceIntersection {
         }
     }
 
-    /// The isolated hits, sorted by curve parameter. A hit outside a
-    /// trimmed curve's range is dropped.
+    /// The isolated hits. A hit outside a trimmed curve's range is dropped.
+    ///
+    /// The curve parameter is stored where the solver computed it: always
+    /// on the numeric path and for every exact pair. The surface parameters
+    /// are stored on the numeric path only, and are `None` on the exact
+    /// one; recover them with the surface's `parameters_of(hit.point)`. The
+    /// hits are sorted by curve parameter when every hit has one, and come
+    /// in the solver's order otherwise.
     ///
     /// # Examples
     ///
@@ -587,7 +629,8 @@ impl CurveSurfaceIntersection {
     /// let plane = Plane::new(Point3D::new(0.0, 0.0, 2.0), Vector3D::Z).unwrap();
     /// let result = line.intersect(&plane, Tolerance::DEFAULT);
     /// let hit = result.hits()[0];
-    /// assert_eq!(hit.curve_parameter, 2.0);
+    /// assert_eq!(hit.curve_parameter, Some(2.0));
+    /// assert_eq!(hit.surface_parameters, None);
     /// assert_eq!(hit.point, Point3D::new(0.0, 0.0, 2.0));
     /// assert_eq!(hit.multiplicity, 1);
     /// ```
@@ -682,7 +725,7 @@ impl CurveSurfaceIntersection {
 
 #[inline]
 fn sorted_by_curve_parameter(mut hits: CurveSurfaceHitList) -> CurveSurfaceHitList {
-    hits.sort_by(|a, b| a.curve_parameter.total_cmp(&b.curve_parameter));
+    sort_by_known_parameter(&mut hits, |hit| hit.curve_parameter);
     hits
 }
 
@@ -780,8 +823,8 @@ mod tests {
 
     fn hit(first: f64, second: f64) -> CurveCurveHit {
         CurveCurveHit {
-            first_parameter: first,
-            second_parameter: second,
+            first_parameter: Some(first),
+            second_parameter: Some(second),
             point: Point3D::ORIGIN,
             multiplicity: 1,
         }
@@ -795,7 +838,7 @@ mod tests {
         );
         assert_eq!(r.method(), IntersectionMethod::Exact);
         assert!(r.is_complete());
-        assert_eq!(r.hits()[0].first_parameter, 1.0);
+        assert_eq!(r.hits()[0].first_parameter, Some(1.0));
         assert!(!r.is_empty());
     }
 
