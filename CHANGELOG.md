@@ -255,6 +255,8 @@ Python:
   `cos(pi / 2)` no longer clutters them.
 - The Python type stubs no longer import `typing_extensions`, and CI
   checks them against the module with `mypy.stubtest`.
+- CI runs the Python tests on Python 3.9, the floor of the wheel, as
+  well as 3.12.
 
 ### Removed
 

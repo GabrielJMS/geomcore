@@ -2,8 +2,11 @@
 //!
 //! [`IntersectExact`] is the zero-cost typed path, implemented once per exact pair, in both argument
 //! orders, with the pair's own result type as its output. The general
-//! results of the untyped path hold their pieces in an [`InlineList`], so
-//! no intersection result allocates.
+//! results of the untyped path hold their hits in an [`InlineList`], so
+//! a result made of hits does not allocate. The results that hold curves
+//! or a variable number of hits do: [`LineTorusIntersection`],
+//! [`TorusConeIntersection::Rings`], [`CircleSurfaceIntersection`] and
+//! [`ConicConicIntersection`] hold a `Vec`.
 
 use crate::curves::{Curve3D, ElementaryCurve};
 use crate::intersect::results::sort_by_known_parameter;

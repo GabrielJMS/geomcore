@@ -123,7 +123,7 @@ impl HullCurve<'_> {
     }
 
     /// The curve's own parameter at the B-spline's `t`, within the range.
-    fn param(&self, t: f64) -> f64 {
+    fn parameter(&self, t: f64) -> f64 {
         match self.source {
             None => t,
             Some(_) => settle(self.range, self.carried(t)),
@@ -287,7 +287,7 @@ impl HullSurface {
                 let (h0, h1) = reach(cover, frame.origin(), frame.z_direction());
                 let (sin, cos) = c.semi_angle().sin_cos();
                 let (v0, v1) = (h0 / cos, h1 / cos);
-                // Each nappe ends on the apex as a collapsed edge.
+                // Each nappe ends on the apex as a collapsed boundary.
                 let apex = -c.ref_radius() / sin;
                 let nappes = if v0 < apex && apex < v1 {
                     vec![(v0, apex), (apex, v1)]
@@ -396,7 +396,7 @@ where
                 bspline_curve_surface(&hull.bspline, range, hull.range.periodic, patches, tol);
             for hit in &mut hits.hits {
                 if let Some(parameter) = hit.curve_parameter {
-                    let parameter = hull.param(parameter);
+                    let parameter = hull.parameter(parameter);
                     hit.curve_parameter = Some(parameter);
                     hit.point = curve.eval_point(parameter);
                 }
@@ -492,7 +492,10 @@ where
     let mut found: Vec<CurveCurveExtremum> = found
         .into_iter()
         .map(|e| {
-            let (s, t) = (ha.param(e.first_parameter), hb.param(e.second_parameter));
+            let (s, t) = (
+                ha.parameter(e.first_parameter),
+                hb.parameter(e.second_parameter),
+            );
             CurveCurveExtremum {
                 first_parameter: s,
                 second_parameter: t,
@@ -540,7 +543,7 @@ where
     let (seeds, completeness) = bspline_minima(&ha.bspline, ha.range, &hb.bspline, hb.range, tol);
     let seeds = seeds
         .into_iter()
-        .map(|[s, t]| [ha.param(s), hb.param(t)])
+        .map(|[s, t]| [ha.parameter(s), hb.parameter(t)])
         .collect();
     Some((seeds, carried(completeness, &ha, &hb)))
 }

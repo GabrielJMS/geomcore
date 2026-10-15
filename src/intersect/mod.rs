@@ -5,7 +5,9 @@
 //! family results ([`CurveCurveIntersection`],
 //! [`CurveCurveIntersection2D`], [`CurveSurfaceIntersection`]) carry the
 //! hits, the overlaps, the method that ran ([`IntersectionMethod`]) and
-//! whether every hit was found ([`Completeness`]). A hit stores the
+//! whether every hit was found ([`Completeness`]); for two surfaces,
+//! [`SurfaceSurfaceIntersection`] carries the curves, the contact points
+//! and whether the surfaces coincide. A hit stores the
 //! parameters the solver computed on its way to the point and leaves the
 //! others `None`, for the caller to recover with the operand's
 //! `parameter_of` or `parameters_of` when it needs them.
@@ -482,9 +484,13 @@ pub enum LineCircle3DIntersection {
 
 /// Result of intersecting two 3D circles.
 ///
-/// Only coplanar pairs admit a closed form (via 2D images in the shared
+/// This typed solver handles coplanar pairs (via 2D images in the shared
 /// plane). Distinct parallel planes are [`CircleCircle3DIntersection::Empty`];
-/// crossing planes report [`CircleCircle3DIntersection::NotAnalytic`].
+/// crossing planes report [`CircleCircle3DIntersection::NotAnalytic`]: they
+/// meet in up to two points, one of which may be a lone crossing, which the
+/// variants here cannot hold. The routed
+/// [`Intersect::intersect`](crate::Intersect::intersect) solves them exactly
+/// as conics, on the line the planes share.
 /// Parameters are omitted (no natural primary curve); recover them with
 /// [`Circle3D::parameter_of`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -497,7 +503,8 @@ pub enum CircleCircle3DIntersection {
     Empty,
     /// Same center, radius, and plane within tolerance.
     Coincident,
-    /// No closed form: the circle planes cross.
+    /// The circle planes cross: no closed form in this typed solver (the
+    /// routed `intersect` solves the pair exactly as conics).
     NotAnalytic,
 }
 

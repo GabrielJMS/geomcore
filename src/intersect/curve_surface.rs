@@ -90,7 +90,7 @@ where
 /// distance to the surface, the distance from `C(t)` to the surface is
 /// minimized over `t` alone between the neighbouring samples. That finds
 /// hits at singular points of the surface parametrization (a sphere
-/// pole, a cone apex, a collapsed B-spline edge), where the Newton system
+/// pole, a cone apex, a collapsed B-spline boundary), where the Newton system
 /// is singular; their `surface_parameters` are the projection's.
 /// Unbounded curves seed `[-10, 10]`. Overlapping pairs yield dense hit
 /// sets along the overlap; the routed [`Intersect`](crate::Intersect)

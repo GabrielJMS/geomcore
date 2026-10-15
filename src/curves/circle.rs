@@ -846,7 +846,7 @@ impl IntersectExact<Circle3D> for Circle3D {
 
     /// Intersects this circle with another 3D circle.
     ///
-    /// Only coplanar pairs admit a closed form. They are coplanar when one
+    /// This typed solver handles coplanar pairs. They are coplanar when one
     /// circle lies in the other's plane: turning it onto that plane moves
     /// it by at most `tol.confusion` (an angle below
     /// [`tol.angular_for_extent`](Tolerance::angular_for_extent) of its
@@ -1352,7 +1352,7 @@ mod tests {
             }
             _ => panic!("expected two points"),
         }
-        // Tilted partner: no closed form.
+        // Tilted partner: not solved by this typed solver.
         let tilted = Circle3D::new(Point3D::ORIGIN, Vector3D::X, 2.0).unwrap();
         assert_eq!(
             c1.intersect_exact(&tilted, tol),

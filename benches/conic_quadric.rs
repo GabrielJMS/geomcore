@@ -1,6 +1,6 @@
 //! Cost of the exact conic–quadric intersections.
 //!
-//! Times a batch of typed `IntersectExact::intersect` calls for each of the 16
+//! Times a batch of typed `IntersectExact::intersect_exact` calls for each of the 16
 //! pairs of a conic (circle, ellipse, parabola, hyperbola) and a quadric
 //! (plane, sphere, cylinder, cone). The conics are placed at random near
 //! the quadrics, so each batch mixes crossings, tangencies and misses.

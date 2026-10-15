@@ -60,7 +60,7 @@ Which solver produced an intersection result: exact (a closed form, always compl
 _Avoid_: route, path, strategy
 
 **Not analytic**:
-An outcome of `intersect_exact` only: the pair or configuration has no closed form. `intersect` never reports it; it runs a numeric intersection instead.
+An outcome of `intersect_exact` only: the typed solver for the pair has no closed form for this configuration. `intersect` never reports it: it runs a numeric intersection instead, or a closed form the typed solver lacks (two circles in crossing planes are solved exactly as conics, on the line the planes share).
 
 **Completeness**:
 Whether a numeric intersection's hits, or the distance minima of numeric curve–curve extrema, are all of them. Complete: the search proved that no other hit exists. Incomplete: it did not settle everywhere, and says why (its budget ran out, or pieces never separated at a tangent contact or an overlap) and the regions where hits may be missing. Sampled: the hits were found from samples, so nothing is proven.

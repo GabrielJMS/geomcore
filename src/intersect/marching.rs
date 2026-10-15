@@ -946,12 +946,12 @@ where
             // plane normal to it; halve the step until the result stays on
             // this branch with a small chord deviation.
             let mut step = None;
-            let mut edge = None;
+            let mut boundary_point = None;
             while h >= tol.confusion {
                 let target = p + t * h;
                 let guess = predict(a, b, x, t * h);
                 if let Some((pin, bound)) = leaving(a, b, x, guess) {
-                    // The step leaves a parameter domain: end on its edge.
+                    // The step leaves a parameter domain: end on its boundary.
                     if let Some(y) = land(a, b, guess, pin, bound, tol) {
                         let q = a.eval_point(y[0], y[1]);
                         if (q - p).dot(t) >= 0.0
@@ -959,7 +959,7 @@ where
                             && crosses_one_knot_at_most(a, b, x, y, tol)
                             && !bulges(a, b, (x, p), (y, q), chord_deviation, touching, tol)
                         {
-                            edge = Some(q);
+                            boundary_point = Some(q);
                             break;
                         }
                     }
@@ -991,10 +991,10 @@ where
                 }
                 h *= 0.5;
             }
-            if let Some(q) = edge {
+            if let Some(q) = boundary_point {
                 if q.distance(p) > tol.confusion.max(crate::tol::CONFUSION) {
                     // A last step much shorter than the one before makes
-                    // the fitted curve overshoot the edge: the edge point
+                    // the fitted curve overshoot the boundary: the boundary point
                     // then replaces the last point.
                     let before = half.len().checked_sub(2).map_or(start, |i| half[i]);
                     if !half.is_empty() && q.distance(p) < 0.25 * p.distance(before) {
