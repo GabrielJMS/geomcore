@@ -729,16 +729,16 @@ pub struct CurveCurveExtremum {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
-    /// Parameter on the first curve, within its bounds or the trimmed
-    /// curve's range, give or take `tol.parametric`: the hit's
-    /// representative there (a hit within `tol.confusion` of a circle's
-    /// seam reports the seam's representative in the range). `None` when
-    /// the solver did not compute it; recover it with the curve's
-    /// `parameter_of(hit.point)`.
+    /// Parameter on the first curve, in its bounds or the trimmed curve's
+    /// range: the hit lies within `tol.confusion` in space of the range,
+    /// and a hit just beyond an end (the seam included) reports that end.
+    /// `None` when the solver did not compute it; recover it with the
+    /// curve's `parameter_of(hit.point)`.
     pub first_parameter: Option<f64>,
-    /// Parameter on the second curve, within its bounds, give or take
-    /// `tol.parametric`. `None` when the solver did not compute it;
-    /// recover it with the curve's `parameter_of(hit.point)`.
+    /// Parameter on the second curve, in its bounds or the trimmed curve's
+    /// range, within `tol.confusion` in space of the range (a hit just
+    /// beyond an end reports that end). `None` when the solver did not
+    /// compute it; recover it with the curve's `parameter_of(hit.point)`.
     pub second_parameter: Option<f64>,
     /// The meeting point, within tolerance of both curves.
     pub point: Point3D,
@@ -767,13 +767,15 @@ pub struct CurveCurveHit {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit2D {
-    /// Parameter on the first curve, within its bounds, give or take
-    /// `tol.parametric`. `None` when the solver did not compute it;
-    /// recover it with the curve's `parameter_of(hit.point)`.
+    /// Parameter on the first curve, in its bounds or the trimmed curve's
+    /// range, within `tol.confusion` in space of the range (a hit just
+    /// beyond an end reports that end). `None` when the solver did not
+    /// compute it; recover it with the curve's `parameter_of(hit.point)`.
     pub first_parameter: Option<f64>,
-    /// Parameter on the second curve, within its bounds, give or take
-    /// `tol.parametric`. `None` when the solver did not compute it;
-    /// recover it with the curve's `parameter_of(hit.point)`.
+    /// Parameter on the second curve, in its bounds or the trimmed curve's
+    /// range, within `tol.confusion` in space of the range (a hit just
+    /// beyond an end reports that end). `None` when the solver did not
+    /// compute it; recover it with the curve's `parameter_of(hit.point)`.
     pub second_parameter: Option<f64>,
     /// The meeting point, within tolerance of both curves.
     pub point: Point2D,
@@ -802,8 +804,9 @@ pub struct CurveCurveHit2D {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
-    /// Parameter on the curve, within its bounds, give or take
-    /// `tol.parametric`. `None` when the solver did not compute it;
+    /// Parameter on the curve, in its bounds or the trimmed curve's range,
+    /// within `tol.confusion` in space of the range (a hit just beyond an
+    /// end reports that end). `None` when the solver did not compute it;
     /// recover it with the curve's `parameter_of(hit.point)`.
     pub curve_parameter: Option<f64>,
     /// Parameters on the surface. `None` when the solver did not compute

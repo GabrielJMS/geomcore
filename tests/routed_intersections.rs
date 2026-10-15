@@ -1127,3 +1127,109 @@ fn test_caller_defined_surface_intersects_through_the_public_numeric_function() 
         assert!((h.point.z - 1.0).abs() < 1e-9);
     }
 }
+
+/// Hits of the arc `[0, PI]` of a circle of `radius` in the xy plane with
+/// a line, a plane and (2D) a line, all through the point at angle
+/// `PI + excess`, a hair past the arc's end; their other hit on the circle
+/// falls outside the arc. Returns the stored arc parameters, `None` for a
+/// dropped hit.
+fn hits_past_the_end_of_an_arc(radius: f64, excess: f64) -> Vec<Option<f64>> {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, radius).unwrap();
+    let arc = TrimmedCurve3D::new(circle, 0.0, PI).unwrap();
+    let hit = circle.eval_point(PI + excess);
+    let (sin, cos) = (-PI / 3.0).sin_cos();
+    let line = Line3D::new(hit, Vector3D::new(cos, sin, 0.0)).unwrap();
+    let plane = Plane::new(hit, Vector3D::new(-sin, cos, 0.0)).unwrap();
+    let circle_2d = Circle2D::new(Point2D::ORIGIN, radius).unwrap();
+    let arc_2d = TrimmedCurve2D::new(circle_2d, 0.0, PI).unwrap();
+    let line_2d = Line2D::new(Point2D::new(hit.x, hit.y), Vector2D::new(cos, sin)).unwrap();
+    let only = |parameters: Vec<Option<f64>>| {
+        assert!(parameters.len() <= 1, "radius {radius}, excess {excess}");
+        parameters.first().copied().flatten()
+    };
+    vec![
+        only(
+            arc.intersect(&line, TOL)
+                .hits()
+                .iter()
+                .map(|h| h.first_parameter)
+                .collect(),
+        ),
+        only(
+            line.intersect(&arc, TOL)
+                .hits()
+                .iter()
+                .map(|h| h.second_parameter)
+                .collect(),
+        ),
+        only(
+            arc.intersect(&plane, TOL)
+                .hits()
+                .iter()
+                .map(|h| h.curve_parameter)
+                .collect(),
+        ),
+        only(
+            arc_2d
+                .intersect(&line_2d, TOL)
+                .hits()
+                .iter()
+                .map(|h| h.first_parameter)
+                .collect(),
+        ),
+        only(
+            line_2d
+                .intersect(&arc_2d, TOL)
+                .hits()
+                .iter()
+                .map(|h| h.second_parameter)
+                .collect(),
+        ),
+    ]
+}
+
+#[test]
+fn test_hit_a_hair_past_a_plain_end_of_an_arc_is_kept_at_the_end() {
+    for parameter in hits_past_the_end_of_an_arc(1.0, 5e-9) {
+        assert_eq!(parameter, Some(PI));
+    }
+    for parameter in hits_past_the_end_of_an_arc(1.0, 1e-6) {
+        assert_eq!(parameter, None);
+    }
+}
+
+#[test]
+fn test_excess_past_a_range_end_is_measured_in_space() {
+    // 5e-8 in space is kept, 2e-7 is not, whatever the radius.
+    for radius in [10.0, 0.01] {
+        for parameter in hits_past_the_end_of_an_arc(radius, 5e-8 / radius) {
+            assert_eq!(parameter, Some(PI), "radius {radius}");
+        }
+        for parameter in hits_past_the_end_of_an_arc(radius, 2e-7 / radius) {
+            assert_eq!(parameter, None, "radius {radius}");
+        }
+    }
+    // A segment: 5e-8 past its end in space (fifty times `tol.parametric`)
+    // is kept at the end; 2e-7 is not.
+    let segment =
+        TrimmedCurve3D::new(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap(), 0.0, 1.0).unwrap();
+    for (excess, expected) in [(5e-8, Some(1.0)), (2e-7, None)] {
+        let crossing = Line3D::new(Point3D::new(1.0 + excess, -1.0, 0.0), Vector3D::Y).unwrap();
+        let r = segment.intersect(&crossing, TOL);
+        assert_eq!(
+            r.hits().first().map(|h| h.first_parameter.unwrap()),
+            expected
+        );
+        let r = crossing.intersect(&segment, TOL);
+        assert_eq!(
+            r.hits().first().map(|h| h.second_parameter.unwrap()),
+            expected
+        );
+        let wall = Plane::new(Point3D::new(1.0 + excess, 0.0, 0.0), Vector3D::X).unwrap();
+        let r = segment.intersect(&wall, TOL);
+        assert_eq!(
+            r.hits().first().map(|h| h.curve_parameter.unwrap()),
+            expected
+        );
+    }
+}

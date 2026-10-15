@@ -226,70 +226,47 @@ impl SurfaceOperand for Surface {
     }
 }
 
-/// Whether `parameter` lies in `range` within `tol.parametric`, and its
-/// representative in the range.
+/// The representative in `range` of a point at `parameter`, or `None`
+/// when the point lies farther than `tol.confusion` in space beyond the
+/// range.
 ///
-/// On a periodic curve the parameter is shifted by whole periods into
-/// `[range.0, range.0 + period)`. A parameter within `tol.parametric`
-/// below `range.0` is accepted as it is, not shifted.
+/// On a periodic curve the parameter is first shifted by whole periods
+/// into `[range.0, range.0 + period)`. A parameter inside the range is
+/// returned as it is. One beyond an end is measured in space: the
+/// parameter excess times `speed` at that end (the line direction's
+/// length, the circle's radius, the derivative's length on other curves).
+/// Within `tol.confusion` the point is kept, snapped to that end. On a
+/// periodic curve the end measured is the nearer one modulo the period,
+/// so a range starting or ending at the seam keeps a point a hair on the
+/// other side of it. `speed` is only called for a point outside the range.
 pub(crate) fn in_range(
     parameter: f64,
     range: (f64, f64),
     period: Option<f64>,
+    speed: impl FnOnce(f64) -> f64,
     tol: Tolerance,
 ) -> Option<f64> {
-    let Some(period) = period else {
-        let inside = parameter >= range.0 - tol.parametric && parameter <= range.1 + tol.parametric;
-        return inside.then_some(parameter);
+    let (before_start, past_end) = match period {
+        None => {
+            if parameter >= range.0 && parameter <= range.1 {
+                return Some(parameter);
+            }
+            (range.0 - parameter, parameter - range.1)
+        }
+        Some(period) => {
+            let shifted = parameter - period * ((parameter - range.0) / period).floor();
+            if shifted <= range.1 {
+                return Some(shifted);
+            }
+            (range.0 + period - shifted, shifted - range.1)
+        }
     };
-    let shifted = parameter - period * ((parameter - range.0) / period).floor();
-    if shifted <= range.1 + tol.parametric {
-        return Some(shifted);
-    }
-    let just_below = shifted - period;
-    (just_below >= range.0 - tol.parametric).then_some(just_below)
-}
-
-/// [`in_range`], with the seam of a periodic curve measured in space.
-///
-/// A point within `tol.confusion` in space of the seam (the start of the
-/// curve's bounds, up to a period) counts as the seam itself: its angle can
-/// come out on either side (just below 2π for a point a hair below the
-/// x axis of a circle), so a range starting or ending at the seam keeps it,
-/// with the seam's representative in the range. `seam` gives the seam's
-/// parameter and the curve's speed there; it is only called when the
-/// parametric test fails.
-#[inline]
-fn in_range_or_at_seam(
-    parameter: f64,
-    range: (f64, f64),
-    period: Option<f64>,
-    seam: impl FnOnce() -> (f64, f64),
-    tol: Tolerance,
-) -> Option<f64> {
-    if let Some(kept) = in_range(parameter, range, period, tol) {
-        return Some(kept);
-    }
-    let period = period?;
-    let (seam, speed) = seam();
-    let past_seam = (parameter - seam).rem_euclid(period);
-    let off_seam = past_seam.min(period - past_seam);
-    if off_seam * speed > tol.confusion {
-        return None;
-    }
-    in_range(seam, range, Some(period), tol)
-}
-
-/// The seam of a 3D curve: the start of its bounds and its speed there.
-fn seam_3d(curve: &impl ParametricCurve3D) -> (f64, f64) {
-    let seam = curve.bounds().0;
-    (seam, curve.eval_derivative(seam, 1).magnitude())
-}
-
-/// The seam of a 2D curve: the start of its bounds and its speed there.
-fn seam_2d(curve: &impl ParametricCurve2D) -> (f64, f64) {
-    let seam = curve.bounds().0;
-    (seam, curve.eval_derivative(seam, 1).magnitude())
+    let (end, excess) = if past_end > 0.0 && (before_start <= 0.0 || past_end <= before_start) {
+        (range.1, past_end)
+    } else {
+        (range.0, before_start)
+    };
+    (excess * speed(end) <= tol.confusion).then_some(end)
 }
 
 /// The end of `range` nearest `parameter`, measured modulo `period` on a
@@ -317,20 +294,20 @@ fn nearest_end(parameter: f64, range: (f64, f64), period: Option<f64>) -> f64 {
 /// On a curve restricted to `range` the range test needs the parameter:
 /// the `stored` one, or the one `recover` computes from the point when the
 /// solver did not, and the hit keeps its representative in the range (see
-/// [`in_range_or_at_seam`]). On an unrestricted curve the hit keeps what
-/// the solver stored, computed or not.
+/// [`in_range`]). On an unrestricted curve the hit keeps what the solver
+/// stored, computed or not.
 #[inline]
 fn kept_parameter(
     stored: Option<f64>,
     range: Option<(f64, f64)>,
     period: Option<f64>,
     recover: impl FnOnce() -> f64,
-    seam: impl FnOnce() -> (f64, f64),
+    speed: impl FnOnce(f64) -> f64,
     tol: Tolerance,
 ) -> Option<Option<f64>> {
     match range {
         Some(range) => {
-            in_range_or_at_seam(stored.unwrap_or_else(recover), range, period, seam, tol).map(Some)
+            in_range(stored.unwrap_or_else(recover), range, period, speed, tol).map(Some)
         }
         None => Some(stored),
     }
@@ -456,11 +433,11 @@ fn from_exact_curve_surface(
         ExactCurveSurfaceIntersection::Points(list) => {
             let hits = list.iter().filter_map(|hit| {
                 let curve_parameter = match range {
-                    Some(range) => in_range_or_at_seam(
+                    Some(range) => in_range(
                         hit.parameter,
                         range,
                         basis.period(),
-                        || seam_3d(basis),
+                        |parameter| basis.eval_derivative(parameter, 1).magnitude(),
                         tol,
                     )?,
                     None => hit.parameter,
@@ -615,7 +592,7 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
                         first_range,
                         first.period(),
                         || first.basis_parameter_of(hit.point),
-                        || seam_3d(&first),
+                        |parameter| first.eval_derivative(parameter, 1).magnitude(),
                         tol,
                     )?,
                     second_parameter: kept_parameter(
@@ -623,7 +600,7 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
                         second_range,
                         second.period(),
                         || second.basis_parameter_of(hit.point),
-                        || seam_3d(&second),
+                        |parameter| second.eval_derivative(parameter, 1).magnitude(),
                         tol,
                     )?,
                     ..*hit
@@ -694,7 +671,7 @@ fn coincident_overlaps<C: CoincidentCurve>(
             let first_parameter = (0.5 * (piece.0 + piece.1)).clamp(first_range.0, first_range.1);
             let found = second.parameter_of_image(first, first_parameter);
             let period = second.cycle_length();
-            let second_parameter = in_range(found, second_range, period, tol)
+            let second_parameter = in_range(found, second_range, period, |t| second.speed(t), tol)
                 .unwrap_or_else(|| nearest_end(found, second_range, period));
             touches.push((first_parameter, second_parameter));
             continue;
@@ -721,7 +698,7 @@ fn coincident_overlaps<C: CoincidentCurve>(
             let end = |parameter: f64| {
                 let found = first.parameter_of_image(second, parameter);
                 let period = first.cycle_length();
-                in_range(found, piece, period, tol)
+                in_range(found, piece, period, |t| first.speed(t), tol)
                     .unwrap_or_else(|| nearest_end(found, piece, period))
             };
             let (start, finish) = (end(part.0), end(part.1));
@@ -1208,7 +1185,7 @@ where
                         first_range,
                         first.period(),
                         || first.basis_parameter_of(hit.point),
-                        || seam_2d(&first),
+                        |parameter| first.eval_derivative(parameter, 1).magnitude(),
                         tol,
                     )?,
                     second_parameter: kept_parameter(
@@ -1216,7 +1193,7 @@ where
                         second_range,
                         second.period(),
                         || second.basis_parameter_of(hit.point),
-                        || seam_2d(&second),
+                        |parameter| second.eval_derivative(parameter, 1).magnitude(),
                         tol,
                     )?,
                     ..hit
@@ -1317,32 +1294,63 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f64::consts::TAU;
+    use std::f64::consts::{PI, TAU};
     const TOL: Tolerance = Tolerance::DEFAULT;
+
+    /// The speed of a unit-speed line or of a circle of radius 1.
+    fn unit_speed(_: f64) -> f64 {
+        1.0
+    }
 
     #[test]
     fn test_in_range_plain() {
-        assert_eq!(in_range(0.5, (0.0, 1.0), None, TOL), Some(0.5));
-        assert_eq!(in_range(1.5, (0.0, 1.0), None, TOL), None);
+        assert_eq!(in_range(0.5, (0.0, 1.0), None, unit_speed, TOL), Some(0.5));
+        assert_eq!(in_range(1.5, (0.0, 1.0), None, unit_speed, TOL), None);
         assert_eq!(
-            in_range(1.0 + 1e-12, (0.0, 1.0), None, TOL),
-            Some(1.0 + 1e-12)
+            in_range(1.0 + 1e-12, (0.0, 1.0), None, unit_speed, TOL),
+            Some(1.0)
         );
-        assert_eq!(in_range(-1e-12, (0.0, 1.0), None, TOL), Some(-1e-12));
+        assert_eq!(
+            in_range(-1e-12, (0.0, 1.0), None, unit_speed, TOL),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn test_in_range_measures_the_excess_in_space() {
+        let fast = |_: f64| 10.0;
+        assert_eq!(in_range(1.0 + 5e-9, (0.0, 1.0), None, fast, TOL), Some(1.0));
+        assert_eq!(in_range(1.0 + 2e-8, (0.0, 1.0), None, fast, TOL), None);
+        assert_eq!(
+            in_range(1.0 + 5e-8, (0.0, 1.0), None, unit_speed, TOL),
+            Some(1.0)
+        );
     }
 
     #[test]
     fn test_in_range_wraps_across_the_seam() {
-        let shifted = in_range(6.0, (-1.0, 1.0), Some(TAU), TOL).unwrap();
+        let shifted = in_range(6.0, (-1.0, 1.0), Some(TAU), unit_speed, TOL).unwrap();
         assert!((shifted - (6.0 - TAU)).abs() < 1e-15);
-        assert_eq!(in_range(3.0, (-1.0, 1.0), Some(TAU), TOL), None);
+        assert_eq!(in_range(3.0, (-1.0, 1.0), Some(TAU), unit_speed, TOL), None);
+        // Just past 2π against a range ending there: the end, not the start.
+        assert_eq!(
+            in_range(5e-8, (PI, TAU), Some(TAU), unit_speed, TOL),
+            Some(TAU)
+        );
+        assert_eq!(
+            in_range(TAU - 5e-8, (0.0, PI), Some(TAU), unit_speed, TOL),
+            Some(0.0)
+        );
     }
 
     #[test]
     fn test_in_range_accepts_just_below_the_start_on_a_periodic_curve() {
-        let found = in_range(-1.0 - 1e-12, (-1.0, 1.0), Some(TAU), TOL).unwrap();
-        assert!((found - (-1.0 - 1e-12)).abs() < 1e-12);
-        assert_eq!(in_range(-1.0 - 1e-3, (-1.0, 1.0), Some(TAU), TOL), None);
+        let found = in_range(-1.0 - 1e-12, (-1.0, 1.0), Some(TAU), unit_speed, TOL).unwrap();
+        assert_eq!(found, -1.0);
+        assert_eq!(
+            in_range(-1.0 - 1e-3, (-1.0, 1.0), Some(TAU), unit_speed, TOL),
+            None
+        );
     }
 
     /// The speed of a unit-speed line or of a circle of radius 1.

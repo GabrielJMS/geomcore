@@ -50,6 +50,13 @@ the Python distribution are versioned in lockstep.
 - In Python, the parameters in the tuples of `intersect_curve_curve` and
   `intersect_curve_surface`, and in conic–conic hits, may be `None`;
   recover them with `parameter_of` / `parameters_of`.
+- A hit on a trimmed curve is kept when it lies within `tol.confusion` in
+  space of the curve's range: a hit beyond an end is measured as the
+  parameter excess times the curve's speed there, and reports that end as
+  its parameter. This replaces the widening of the range by
+  `tol.parametric` and holds at every end, the seam of a circle or ellipse
+  included, for curve–curve (3D and 2D) and curve–surface routing. Hits up
+  to `tol.confusion` beyond an end, dropped before, are now reported.
 
 ### Removed
 
