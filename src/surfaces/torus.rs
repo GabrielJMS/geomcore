@@ -155,6 +155,62 @@ impl Torus {
         self.frame
     }
 
+    /// Returns the torus running in the opposite angular direction: the
+    /// same point set with the frame's y direction negated, so the frame
+    /// turns indirect and the normal reverses.
+    /// `reversed_u().eval_point(u, v)` is `eval_point(-u, v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let reversed = torus.reversed_u();
+    /// assert!(!reversed.frame().is_direct());
+    /// assert_eq!(reversed.eval_point(1.0, 0.5), torus.eval_point(-1.0, 0.5));
+    /// ```
+    pub fn reversed_u(&self) -> Torus {
+        Torus {
+            frame: self.frame.flipped_y(),
+            major_radius: self.major_radius,
+            minor_radius: self.minor_radius,
+        }
+    }
+
+    /// Returns the torus running in the opposite tube direction: the same
+    /// point set with the frame's z direction negated.
+    /// `reversed_v().eval_point(u, v)` is `eval_point(u, -v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let reversed = torus.reversed_v();
+    /// assert_eq!(reversed.eval_point(1.0, 0.5), torus.eval_point(1.0, -0.5));
+    /// ```
+    pub fn reversed_v(&self) -> Torus {
+        Torus {
+            frame: self.frame.flipped_z(),
+            major_radius: self.major_radius,
+            minor_radius: self.minor_radius,
+        }
+    }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) torus: the
+    /// parameter of the same point there (`period − u`).
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        use std::f64::consts::TAU;
+        TAU - u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) torus: the
+    /// parameter of the same point there (`period − v`).
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        use std::f64::consts::TAU;
+        TAU - v
+    }
+
     /// Returns the torus's major radius (the distance from the center to
     /// the tube's centerline circle).
     ///
@@ -1299,5 +1355,22 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(torus.eval_point(u, v)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), torus);
+    }
+
+    #[test]
+    fn test_reversed_tori_share_point_set() {
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3), (5.0, 2.0)] {
+            let ru = torus.reversed_u();
+            assert!(!ru.frame().is_direct());
+            assert!((ru.eval_point(u, v) - torus.eval_point(-u, v)).magnitude() < 1e-11);
+            assert!((ru.u_reversed_parameter(torus.u_reversed_parameter(u)) - u).abs() < 1e-12);
+            let rv = torus.reversed_v();
+            assert!(!rv.frame().is_direct());
+            assert!((rv.eval_point(u, v) - torus.eval_point(u, -v)).magnitude() < 1e-11);
+            assert!((rv.v_reversed_parameter(torus.v_reversed_parameter(v)) - v).abs() < 1e-12);
+        }
+        assert_eq!(torus.reversed_u().reversed_u(), torus);
+        assert_eq!(torus.reversed_v().reversed_v(), torus);
     }
 }

@@ -9,6 +9,15 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Surface reversal, part 1 (#71): `reversed_u()` / `reversed_v()` on
+  every elementary surface plus `Surface`, with `u/v_reversed_parameter`
+  mapping parameters onto the reversed shape. Reversal flips one frame
+  axis (frames may now be indirect: `Frame3D::from_axes`,
+  `Frame3D::is_direct`, `flipped_x/y/z`). Sided evaluation at seams
+  follows separately.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added

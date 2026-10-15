@@ -508,6 +508,51 @@ impl Surface {
             Surface::BSpline(s) => Curve3D::BSpline(s.v_iso(v)?),
         })
     }
+
+    /// The surface running in the opposite `u` direction: the same point
+    /// set with a flipped frame axis, so the normal reverses. See each
+    /// type's `reversed_u`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Surface, Vector3D};
+    /// let cylinder = Surface::from(Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
+    /// let reversed = cylinder.reversed_u();
+    /// assert_eq!(reversed.eval_point(1.0, 3.0), cylinder.eval_point(-1.0, 3.0));
+    /// ```
+    pub fn reversed_u(&self) -> Surface {
+        match self {
+            Surface::Plane(s) => Surface::Plane(s.reversed_u()),
+            Surface::Cylinder(s) => Surface::Cylinder(s.reversed_u()),
+            Surface::Cone(s) => Surface::Cone(s.reversed_u()),
+            Surface::Sphere(s) => Surface::Sphere(s.reversed_u()),
+            Surface::Torus(s) => Surface::Torus(s.reversed_u()),
+            Surface::BSpline(s) => Surface::BSpline(s.reversed_u()),
+        }
+    }
+
+    /// The surface running in the opposite `v` direction, as
+    /// [`reversed_u`](Self::reversed_u) for `u`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Surface, Vector3D};
+    /// let plane = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let reversed = plane.reversed_v();
+    /// assert_eq!(reversed.eval_point(1.0, 2.0), plane.eval_point(1.0, -2.0));
+    /// ```
+    pub fn reversed_v(&self) -> Surface {
+        match self {
+            Surface::Plane(s) => Surface::Plane(s.reversed_v()),
+            Surface::Cylinder(s) => Surface::Cylinder(s.reversed_v()),
+            Surface::Cone(s) => Surface::Cone(s.reversed_v()),
+            Surface::Sphere(s) => Surface::Sphere(s.reversed_v()),
+            Surface::Torus(s) => Surface::Torus(s.reversed_v()),
+            Surface::BSpline(s) => Surface::BSpline(s.reversed_v()),
+        }
+    }
 }
 
 impl ParametricSurface for Surface {
