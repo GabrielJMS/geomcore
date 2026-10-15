@@ -404,6 +404,57 @@ impl BSplineCurve3D {
         self.knots.is_periodic()
     }
 
+    /// Continuity order `C^n` at parameter `u` (`u32::MAX` = smooth):
+    /// `degree − multiplicity` at a knot, smooth elsewhere and at the
+    /// bounds, where the curve meets itself from the inside.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Tolerance};
+    /// let poles = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0)];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+    /// assert_eq!(curve.continuity(0.5, Tolerance::DEFAULT), u32::MAX);
+    /// ```
+    pub fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        math::continuity_at(
+            self.degree(),
+            self.knots(),
+            self.multiplicities(),
+            self.bounds(),
+            self.is_periodic(),
+            u,
+            tol,
+        )
+    }
+
+    /// Minimum continuity order over the domain: the worst interior knot
+    /// (`u32::MAX` = smooth everywhere).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    /// let poles = vec![
+    ///     Point3D::ORIGIN,
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(2.0, 0.0, 0.0),
+    ///     Point3D::new(3.0, 0.0, 0.0),
+    ///     Point3D::new(4.0, 0.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(2, poles, vec![0.0, 0.5, 1.0], vec![3, 2, 3], false).unwrap();
+    /// assert_eq!(curve.min_continuity(), 0);
+    /// ```
+    pub fn min_continuity(&self) -> u32 {
+        math::min_continuity(
+            self.degree(),
+            self.knots(),
+            self.multiplicities(),
+            self.bounds(),
+            self.is_periodic(),
+        )
+    }
+
     /// Returns whether the curve is rational (has per-pole weights).
     ///
     /// # Examples

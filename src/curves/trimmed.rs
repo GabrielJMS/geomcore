@@ -206,6 +206,29 @@ impl<C: ParametricCurve3D> TrimmedCurve3D<C> {
         self.basis.eval_point(self.last)
     }
 
+    /// Continuity order `C^n` at parameter `u`: the basis continuity
+    /// there (trimming never breaks continuity).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve3D;
+    /// use geomcore::{Circle3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// let arc = TrimmedCurve3D::new(circle, 0.0, 1.0).unwrap();
+    /// assert_eq!(arc.continuity(0.5, Tolerance::DEFAULT), u32::MAX);
+    /// ```
+    pub fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        self.basis.continuity(u, tol)
+    }
+
+    /// Minimum continuity order over the piece's range: the basis minimum
+    /// (a conservative floor — the piece may avoid the worst knot).
+    pub fn min_continuity(&self) -> u32 {
+        self.basis.min_continuity()
+    }
+
     /// Evaluates the basis point at parameter `u`.
     pub fn eval_point(&self, u: f64) -> Point3D {
         self.basis.eval_point(u)
@@ -357,6 +380,14 @@ impl<C: ParametricCurve3D> ParametricCurve3D for TrimmedCurve3D<C> {
 
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         self.basis.eval_points(us)
+    }
+
+    fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        self.basis.continuity(u, tol)
+    }
+
+    fn min_continuity(&self) -> u32 {
+        self.basis.min_continuity()
     }
 
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {

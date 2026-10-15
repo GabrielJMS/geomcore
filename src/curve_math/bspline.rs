@@ -20,7 +20,7 @@
 use std::sync::OnceLock;
 
 use super::analytic::in_period;
-use crate::{Point3D, Vector3D};
+use crate::{Point3D, Tolerance, Vector3D};
 
 /// Maximum supported B-spline degree.
 pub(crate) const MAX_DEGREE: usize = 25;
@@ -1182,6 +1182,52 @@ pub(crate) fn validate_direction(
         return Err(BSplineConstructionError::PoleCountMismatch);
     }
     Ok(())
+}
+
+/// Continuity order `C^n` at parameter `u` for one knot direction:
+/// `degree − multiplicity` at a knot (validation caps interior
+/// multiplicities at `degree`, so this never underflows), smooth
+/// (`u32::MAX`) at the bounds of a non-periodic direction — where the
+/// shape meets itself from the inside — and everywhere else.
+pub(crate) fn continuity_at(
+    degree: usize,
+    knots: &[f64],
+    mults: &[u32],
+    bounds: (f64, f64),
+    periodic: bool,
+    u: f64,
+    tol: Tolerance,
+) -> u32 {
+    let (lo, hi) = bounds;
+    for (&k, &m) in knots.iter().zip(mults) {
+        if (u - k).abs() <= tol.parametric {
+            if !periodic && (k == lo || k == hi) {
+                return u32::MAX;
+            }
+            return (degree as u32).saturating_sub(m);
+        }
+    }
+    u32::MAX
+}
+
+/// Minimum continuity order over the domain: the worst interior knot.
+/// Bound knots are skipped on a non-periodic direction (smooth from the
+/// inside); on a periodic one every knot counts, seam included.
+pub(crate) fn min_continuity(
+    degree: usize,
+    knots: &[f64],
+    mults: &[u32],
+    bounds: (f64, f64),
+    periodic: bool,
+) -> u32 {
+    let at_bound = |k: f64| k == bounds.0 || k == bounds.1;
+    knots
+        .iter()
+        .zip(mults)
+        .filter(|pair| periodic || !at_bound(*pair.0))
+        .map(|pair| (degree as u32).saturating_sub(*pair.1))
+        .min()
+        .unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]

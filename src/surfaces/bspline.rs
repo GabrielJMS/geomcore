@@ -398,6 +398,72 @@ impl BSplineSurface {
         self.v_knots.is_periodic()
     }
 
+    /// Continuity order `C^n` in `u` at parameter `u` (`u32::MAX` =
+    /// smooth): `u_degree − multiplicity` at a `u` knot, smooth elsewhere
+    /// and at the bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::{Point3D, Tolerance};
+    /// # let poles = vec![
+    /// #     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)],
+    /// #     vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 1.0)],
+    /// # ];
+    /// # let surface = BSplineSurface::new(1, 1, poles, vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert_eq!(surface.continuity_u(0.5, Tolerance::DEFAULT), u32::MAX);
+    /// ```
+    pub fn continuity_u(&self, u: f64, tol: Tolerance) -> u32 {
+        curve::continuity_at(
+            self.u_degree(),
+            self.u_knots(),
+            self.u_multiplicities(),
+            self.u_param_range(),
+            self.is_u_periodic(),
+            u,
+            tol,
+        )
+    }
+
+    /// Continuity order `C^n` in `v` at parameter `v`, as
+    /// [`continuity_u`](Self::continuity_u) for `u`.
+    pub fn continuity_v(&self, v: f64, tol: Tolerance) -> u32 {
+        curve::continuity_at(
+            self.v_degree(),
+            self.v_knots(),
+            self.v_multiplicities(),
+            self.v_param_range(),
+            self.is_v_periodic(),
+            v,
+            tol,
+        )
+    }
+
+    /// Minimum continuity order in `u` over the domain: the worst
+    /// interior `u` knot (`u32::MAX` = smooth everywhere).
+    pub fn min_continuity_u(&self) -> u32 {
+        curve::min_continuity(
+            self.u_degree(),
+            self.u_knots(),
+            self.u_multiplicities(),
+            self.u_param_range(),
+            self.is_u_periodic(),
+        )
+    }
+
+    /// Minimum continuity order in `v` over the domain, as
+    /// [`min_continuity_u`](Self::min_continuity_u) for `u`.
+    pub fn min_continuity_v(&self) -> u32 {
+        curve::min_continuity(
+            self.v_degree(),
+            self.v_knots(),
+            self.v_multiplicities(),
+            self.v_param_range(),
+            self.is_v_periodic(),
+        )
+    }
+
     /// Returns whether the surface is rational (has per-pole weights).
     ///
     /// # Examples
@@ -2085,6 +2151,22 @@ impl ParametricSurface for BSplineSurface {
 
     fn v_period(&self) -> Option<f64> {
         self.v_knots.period()
+    }
+
+    fn continuity_u(&self, u: f64, tol: Tolerance) -> u32 {
+        BSplineSurface::continuity_u(self, u, tol)
+    }
+
+    fn continuity_v(&self, v: f64, tol: Tolerance) -> u32 {
+        BSplineSurface::continuity_v(self, v, tol)
+    }
+
+    fn min_continuity_u(&self) -> u32 {
+        BSplineSurface::min_continuity_u(self)
+    }
+
+    fn min_continuity_v(&self) -> u32 {
+        BSplineSurface::min_continuity_v(self)
     }
 
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {

@@ -25,6 +25,10 @@ _Avoid_: inside (reserved for polygons), containment for anything other than thi
 **B-spline**:
 A curve or surface defined by poles, knots and optional weights. Every curve or surface is either elementary or a B-spline.
 
+**Continuity**:
+The order `C^n` to which derivatives agree at a parameter: `degree − multiplicity` at a B-spline knot, smooth everywhere else and on elementary shapes.
+_Avoid_: smoothness as a boolean, continuity across a trim (trimming never breaks it)
+
 **Bounding box**:
 The axis-aligned box around a curve or surface, used to cull pairs before intersecting them. An elementary shape's box is the tightest, touching the shape on every side; a B-spline's comes from its control points, holding the shape but possibly loose. An unbounded shape has none. A box encloses a point and overlaps another box.
 _Avoid_: AABB, bbox, extent, contains or inside (reserved) for a point in a box

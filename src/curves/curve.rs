@@ -123,6 +123,32 @@ pub trait ParametricCurve3D {
         self.period().is_some()
     }
 
+    /// Continuity order `C^n` at parameter `u` (`u32::MAX` = smooth).
+    ///
+    /// Elementary shapes are smooth everywhere; a B-spline reports
+    /// `degree − multiplicity` at a knot (within `tol.parametric`) and
+    /// smooth elsewhere. Default implementation: smooth.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// assert_eq!(ParametricCurve3D::continuity(&circle, 0.5, Tolerance::DEFAULT), u32::MAX);
+    /// ```
+    fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        let _ = (u, tol);
+        u32::MAX
+    }
+
+    /// Minimum continuity order over the domain (`u32::MAX` = smooth
+    /// everywhere). Default implementation: smooth.
+    fn min_continuity(&self) -> u32 {
+        u32::MAX
+    }
+
     /// The B-spline this curve evaluates: the curve itself, or the basis
     /// of a trimmed B-spline, of which the curve is the piece over
     /// [`bounds`](Self::bounds). `None` for any other curve.
@@ -465,6 +491,14 @@ impl ParametricCurve3D for BSplineCurve3D {
         BSplineCurve3D::eval_points(self, us)
     }
 
+    fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        BSplineCurve3D::continuity(self, u, tol)
+    }
+
+    fn min_continuity(&self) -> u32 {
+        BSplineCurve3D::min_continuity(self)
+    }
+
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
         Some(self)
     }
@@ -583,6 +617,28 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Parabola(c) => c.eval_points(us),
             Curve3D::Hyperbola(c) => c.eval_points(us),
             Curve3D::BSpline(c) => c.eval_points(us),
+        }
+    }
+
+    fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        match self {
+            Curve3D::Line(c) => ParametricCurve3D::continuity(c, u, tol),
+            Curve3D::Circle(c) => ParametricCurve3D::continuity(c, u, tol),
+            Curve3D::Ellipse(c) => ParametricCurve3D::continuity(c, u, tol),
+            Curve3D::Parabola(c) => ParametricCurve3D::continuity(c, u, tol),
+            Curve3D::Hyperbola(c) => ParametricCurve3D::continuity(c, u, tol),
+            Curve3D::BSpline(c) => c.continuity(u, tol),
+        }
+    }
+
+    fn min_continuity(&self) -> u32 {
+        match self {
+            Curve3D::Line(c) => ParametricCurve3D::min_continuity(c),
+            Curve3D::Circle(c) => ParametricCurve3D::min_continuity(c),
+            Curve3D::Ellipse(c) => ParametricCurve3D::min_continuity(c),
+            Curve3D::Parabola(c) => ParametricCurve3D::min_continuity(c),
+            Curve3D::Hyperbola(c) => ParametricCurve3D::min_continuity(c),
+            Curve3D::BSpline(c) => c.min_continuity(),
         }
     }
 
@@ -1175,5 +1231,84 @@ mod tests {
     #[test]
     fn test_bspline_curve_is_not_elementary() {
         assert_eq!(Curve3D::from(bspline()).as_elementary(), None);
+    }
+
+    // ---- continuity: degree minus multiplicity, smooth elsewhere ----
+
+    fn kinked() -> BSplineCurve3D {
+        // Degree 2 with a double interior knot: C0 at u = 0.5.
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(2.0, 1.0, 0.0),
+            Point3D::new(3.0, 1.0, 0.0),
+            Point3D::new(4.0, 0.0, 0.0),
+        ];
+        BSplineCurve3D::new(2, poles, vec![0.0, 0.5, 1.0], vec![3, 2, 3], false).unwrap()
+    }
+
+    #[test]
+    fn test_elementary_curves_are_smooth_everywhere() {
+        let tol = Tolerance::DEFAULT;
+        for curve in [
+            Curve3D::from(line()),
+            Curve3D::from(circle()),
+            Curve3D::from(ellipse()),
+            Curve3D::from(parabola()),
+            Curve3D::from(hyperbola()),
+        ] {
+            assert_eq!(curve.continuity(0.5, tol), u32::MAX);
+            assert_eq!(curve.min_continuity(), u32::MAX);
+        }
+    }
+
+    #[test]
+    fn test_bspline_continuity_drops_at_repeated_knots() {
+        let tol = Tolerance::DEFAULT;
+        let c = kinked();
+        assert_eq!(ParametricCurve3D::continuity(&c, 0.5, tol), 0);
+        assert_eq!(c.continuity(0.5, tol), 0);
+        assert_eq!(ParametricCurve3D::continuity(&c, 0.25, tol), u32::MAX);
+        assert_eq!(ParametricCurve3D::continuity(&c, 0.0, tol), u32::MAX);
+        assert_eq!(ParametricCurve3D::continuity(&c, 1.0, tol), u32::MAX);
+        assert_eq!(c.min_continuity(), 0);
+        assert_eq!(ParametricCurve3D::min_continuity(&c), 0);
+        assert_eq!(bspline().min_continuity(), u32::MAX);
+    }
+
+    #[test]
+    fn test_trimmed_curve_inherits_basis_continuity() {
+        use crate::curves::TrimmedCurve3D;
+
+        let tol = Tolerance::DEFAULT;
+        let piece = TrimmedCurve3D::new(kinked(), 0.25, 0.75).unwrap();
+        assert_eq!(piece.continuity(0.5, tol), 0);
+        assert_eq!(ParametricCurve3D::continuity(&piece, 0.5, tol), 0);
+        assert_eq!(piece.min_continuity(), 0);
+    }
+
+    #[test]
+    fn test_curve3d_enum_continuity_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let curves: Vec<Curve3D> = vec![
+            line().into(),
+            circle().into(),
+            ellipse().into(),
+            parabola().into(),
+            hyperbola().into(),
+            bspline().into(),
+            kinked().into(),
+        ];
+        for curve in &curves {
+            let expected = match curve {
+                Curve3D::Line(c) => ParametricCurve3D::continuity(c, 0.5, tol),
+                Curve3D::Circle(c) => ParametricCurve3D::continuity(c, 0.5, tol),
+                Curve3D::Ellipse(c) => ParametricCurve3D::continuity(c, 0.5, tol),
+                Curve3D::Parabola(c) => ParametricCurve3D::continuity(c, 0.5, tol),
+                Curve3D::Hyperbola(c) => ParametricCurve3D::continuity(c, 0.5, tol),
+                Curve3D::BSpline(c) => c.continuity(0.5, tol),
+            };
+            assert_eq!(curve.continuity(0.5, tol), expected);
+        }
     }
 }

@@ -9,6 +9,13 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Continuity order queries (#72): `continuity(u, tol)` on curves and
+  `continuity_u/v` on surfaces report `C^n` (`u32::MAX` = smooth),
+  with `min_continuity` summaries. Elementary shapes are smooth
+  everywhere; B-splines report `degree − multiplicity` at knots.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added
