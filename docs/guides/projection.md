@@ -114,7 +114,7 @@ queries and trimmed-arc handling.
     from geomcore import curve_curve_extrema
 
     minima = curve_curve_extrema(line, circle).minima
-    closest = [m.distance for m in minima]
+    distances = [m.distance for m in minima]
     ```
 
 === "Rust"

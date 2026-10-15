@@ -21,6 +21,14 @@ pub(crate) struct PyPlane(pub(crate) Plane);
 
 #[pymethods]
 impl PyPlane {
+    fn __repr__(&self) -> String {
+        format!(
+            "Plane(origin={}, normal={})",
+            crate::values::coordinates(self.0.frame().origin()),
+            crate::values::coordinates(self.0.normal())
+        )
+    }
+
     #[new]
     /// Build a plane from a point and a normal direction.
     fn py_new(point: PyPoint3D, normal: PyVector3D) -> PyResult<Self> {
@@ -186,6 +194,15 @@ pub(crate) struct PyCylinder(pub(crate) Cylinder);
 
 #[pymethods]
 impl PyCylinder {
+    fn __repr__(&self) -> String {
+        format!(
+            "Cylinder(origin={}, axis={}, radius={})",
+            crate::values::coordinates(self.0.frame().origin()),
+            crate::values::coordinates(self.0.frame().z_direction()),
+            self.0.radius()
+        )
+    }
+
     #[new]
     /// Build a cylinder from a point on its axis, the axis direction and a radius.
     fn py_new(center: PyPoint3D, axis_direction: PyVector3D, radius: f64) -> PyResult<Self> {
@@ -356,6 +373,16 @@ pub(crate) struct PyCone(pub(crate) Cone);
 
 #[pymethods]
 impl PyCone {
+    fn __repr__(&self) -> String {
+        format!(
+            "Cone(origin={}, axis={}, reference_radius={}, semi_angle={})",
+            crate::values::coordinates(self.0.frame().origin()),
+            crate::values::coordinates(self.0.frame().z_direction()),
+            self.0.ref_radius(),
+            self.0.semi_angle()
+        )
+    }
+
     #[new]
     /// Build a cone from a reference-circle center, axis direction, half-angle and reference radius.
     fn py_new(
@@ -531,6 +558,14 @@ pub(crate) struct PySphere(pub(crate) Sphere);
 
 #[pymethods]
 impl PySphere {
+    fn __repr__(&self) -> String {
+        format!(
+            "Sphere(center={}, radius={})",
+            crate::values::coordinates(self.0.center()),
+            self.0.radius()
+        )
+    }
+
     #[new]
     /// Build a sphere from its center and radius (world-aligned frame).
     fn py_new(center: PyPoint3D, radius: f64) -> PyResult<Self> {
@@ -701,6 +736,16 @@ pub(crate) struct PyTorus(pub(crate) Torus);
 
 #[pymethods]
 impl PyTorus {
+    fn __repr__(&self) -> String {
+        format!(
+            "Torus(center={}, axis={}, major_radius={}, minor_radius={})",
+            crate::values::coordinates(self.0.center()),
+            crate::values::coordinates(self.0.frame().z_direction()),
+            self.0.major_radius(),
+            self.0.minor_radius()
+        )
+    }
+
     #[new]
     /// Build a torus from its center, main-axis direction and the two radii.
     fn py_new(
@@ -868,6 +913,17 @@ pub(crate) struct PyBSplineSurface(pub(crate) BSplineSurface);
 
 #[pymethods]
 impl PyBSplineSurface {
+    fn __repr__(&self) -> String {
+        format!(
+            "BSplineSurface(u_degree={}, v_degree={}, pole_count=({}, {}), rational={})",
+            self.0.u_degree(),
+            self.0.v_degree(),
+            self.0.u_pole_count(),
+            self.0.v_pole_count(),
+            crate::values::py_bool(self.0.is_rational())
+        )
+    }
+
     #[new]
     #[allow(clippy::too_many_arguments)]
     /// Build a non-rational B-spline surface from a rectangular pole grid.

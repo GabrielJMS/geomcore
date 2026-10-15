@@ -626,7 +626,7 @@ def test_approximate_curve():
         BSplineCurve3D.approximate(pts, 3, 20)
 
 
-def test_intersect_curve_surface_any_pair():
+def test_curve_surface_intersect_any_pair():
     from geomcore import IntersectionMethod
     from geomcore.curves import Line3D
 

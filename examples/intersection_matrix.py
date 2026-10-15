@@ -121,9 +121,8 @@ def main() -> int:
                          color=SURFACE_COLORS[index], opacity=SURFACE_OPACITY, u=(u0, u1), v=(v0, v1))
             curves = [piece.curve for piece in result.curves]
             if curves:
-                method = repr(result.method).split(".")[-1]
                 view.add(*[c.transformed(move) for c in curves],
-                         label=f"{tag} {method}", group=tag, color=CURVE_COLOR)
+                         label=f"{tag} {result.method.name}", group=tag, color=CURVE_COLOR)
                 with_curve.append(f"({row},{col})")
             else:
                 empty.append(f"({row},{col})")

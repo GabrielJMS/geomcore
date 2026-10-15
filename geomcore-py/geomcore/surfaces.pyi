@@ -29,6 +29,7 @@ _Surface = Union[Plane, Cylinder, Cone, Sphere, Torus, BSplineSurface]
 
 @final
 class Plane:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, point: Point3D, normal: Vector3D) -> Plane: ...
     @staticmethod
@@ -69,6 +70,7 @@ class Plane:
 
 @final
 class Cylinder:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point3D, axis_direction: Vector3D, radius: float) -> Cylinder: ...
     @staticmethod
@@ -109,6 +111,7 @@ class Cylinder:
 
 @final
 class Cone:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, center: Point3D, axis_direction: Vector3D, semi_angle: float, ref_radius: float
@@ -153,6 +156,7 @@ class Cone:
 
 @final
 class Sphere:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point3D, radius: float) -> Sphere: ...
     @staticmethod
@@ -193,6 +197,7 @@ class Sphere:
 
 @final
 class Torus:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, center: Point3D, normal: Vector3D, major_radius: float, minor_radius: float
@@ -233,6 +238,7 @@ class Torus:
 
 @final
 class BSplineSurface:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,

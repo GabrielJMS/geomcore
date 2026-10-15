@@ -27,6 +27,7 @@ _Surface = Union[Plane, Cylinder, Cone, Sphere, Torus, BSplineSurface]
 
 @final
 class Line3D:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, origin: Point3D, direction: Vector3D) -> Line3D: ...
     @staticmethod
@@ -61,6 +62,7 @@ class Line3D:
 
 @final
 class Circle3D:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(cls, center: Point3D, normal: Vector3D, radius: float) -> Circle3D: ...
     @staticmethod
@@ -104,6 +106,7 @@ class Circle3D:
 
 @final
 class Ellipse3D:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,
@@ -154,6 +157,7 @@ class Ellipse3D:
 
 @final
 class Parabola3D:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls, apex: Point3D, normal: Vector3D, x_direction: Vector3D, focal: float
@@ -190,6 +194,7 @@ class Parabola3D:
 
 @final
 class Hyperbola3D:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,
@@ -235,6 +240,7 @@ class Hyperbola3D:
 
 @final
 class BSplineCurve3D:
+    def __repr__(self) -> str: ...
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __new__(
         cls,

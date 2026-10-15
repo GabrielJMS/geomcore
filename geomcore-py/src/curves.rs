@@ -22,6 +22,14 @@ pub(crate) struct PyLine3D(pub(crate) Line3D);
 
 #[pymethods]
 impl PyLine3D {
+    fn __repr__(&self) -> String {
+        format!(
+            "Line3D(origin={}, direction={})",
+            crate::values::coordinates(self.0.origin()),
+            crate::values::coordinates(self.0.direction())
+        )
+    }
+
     #[new]
     /// Build a line from an origin and a direction (normalized internally).
     fn py_new(origin: PyPoint3D, direction: PyVector3D) -> PyResult<Self> {
@@ -163,6 +171,15 @@ pub(crate) struct PyCircle3D(pub(crate) Circle3D);
 
 #[pymethods]
 impl PyCircle3D {
+    fn __repr__(&self) -> String {
+        format!(
+            "Circle3D(center={}, normal={}, radius={})",
+            crate::values::coordinates(self.0.center()),
+            crate::values::coordinates(self.0.normal()),
+            self.0.radius()
+        )
+    }
+
     #[new]
     /// Build a circle from its center, plane normal and radius.
     fn py_new(center: PyPoint3D, normal: PyVector3D, radius: f64) -> PyResult<Self> {
@@ -351,6 +368,16 @@ pub(crate) struct PyEllipse3D(pub(crate) Ellipse3D);
 
 #[pymethods]
 impl PyEllipse3D {
+    fn __repr__(&self) -> String {
+        format!(
+            "Ellipse3D(center={}, normal={}, major_radius={}, minor_radius={})",
+            crate::values::coordinates(self.0.center()),
+            crate::values::coordinates(self.0.frame().z_direction()),
+            self.0.major_radius(),
+            self.0.minor_radius()
+        )
+    }
+
     #[new]
     /// Build an ellipse from center, normal, major-axis direction and radii.
     fn py_new(
@@ -547,6 +574,15 @@ pub(crate) struct PyParabola3D(pub(crate) Parabola3D);
 
 #[pymethods]
 impl PyParabola3D {
+    fn __repr__(&self) -> String {
+        format!(
+            "Parabola3D(apex={}, normal={}, focal={})",
+            crate::values::coordinates(self.0.apex()),
+            crate::values::coordinates(self.0.frame().z_direction()),
+            self.0.focal()
+        )
+    }
+
     #[new]
     /// Build a parabola from apex, plane normal, axis direction and focal distance.
     fn py_new(
@@ -692,6 +728,16 @@ pub(crate) struct PyHyperbola3D(pub(crate) Hyperbola3D);
 
 #[pymethods]
 impl PyHyperbola3D {
+    fn __repr__(&self) -> String {
+        format!(
+            "Hyperbola3D(center={}, normal={}, major_radius={}, minor_radius={})",
+            crate::values::coordinates(self.0.center()),
+            crate::values::coordinates(self.0.frame().z_direction()),
+            self.0.major_radius(),
+            self.0.minor_radius()
+        )
+    }
+
     #[new]
     /// Build a hyperbola from center, normal, major-axis direction and radii.
     fn py_new(
@@ -864,6 +910,16 @@ pub(crate) struct PyBSplineCurve3D(pub(crate) BSplineCurve3D);
 
 #[pymethods]
 impl PyBSplineCurve3D {
+    fn __repr__(&self) -> String {
+        format!(
+            "BSplineCurve3D(degree={}, pole_count={}, rational={}, periodic={})",
+            self.0.degree(),
+            self.0.poles().len(),
+            crate::values::py_bool(self.0.is_rational()),
+            crate::values::py_bool(self.0.is_periodic())
+        )
+    }
+
     #[new]
     /// Build a non-rational B-spline curve.
     fn py_new(

@@ -610,3 +610,31 @@ pub(crate) fn discretize_2d(
     let criteria = discretization_criteria(max_chord_deviation, max_angle_deviation)?;
     Ok(PyDiscretization2D(curve.discretize(criteria)))
 }
+
+/// Something with three coordinates, as `(x, y, z)` in a `__repr__`.
+pub(crate) trait Coordinates {
+    fn xyz(&self) -> (f64, f64, f64);
+}
+
+impl Coordinates for Point3D {
+    fn xyz(&self) -> (f64, f64, f64) {
+        (self.x, self.y, self.z)
+    }
+}
+
+impl Coordinates for Vector3D {
+    fn xyz(&self) -> (f64, f64, f64) {
+        (self.x, self.y, self.z)
+    }
+}
+
+/// `(x, y, z)` as written in a `__repr__`.
+pub(crate) fn coordinates(value: impl Coordinates) -> String {
+    let (x, y, z) = value.xyz();
+    format!("({x}, {y}, {z})")
+}
+
+/// A Rust `bool` as Python writes it.
+pub(crate) fn py_bool(value: bool) -> &'static str {
+    if value { "True" } else { "False" }
+}

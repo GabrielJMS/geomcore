@@ -111,10 +111,7 @@ def test_tangent_curve_surface_contact_is_incomplete_with_a_region():
     assert isinstance(completeness, Completeness)
     assert completeness.status == CompletenessStatus.INCOMPLETE
     assert not completeness.is_complete()
-    assert completeness.reason in (
-        IncompleteReason.UNSEPARATED,
-        IncompleteReason.BUDGET_EXHAUSTED,
-    )
+    assert completeness.reason == IncompleteReason.UNSEPARATED
     (region,) = completeness.regions
     assert isinstance(region, CurveSurfaceRegion)
     t0, t1 = region.curve_range
@@ -367,3 +364,101 @@ def test_results_compare_by_value():
     assert line.intersect(sphere) != line.intersect(Sphere(Point3D.origin(), 3.0))
     frame = Frame3D.world()
     assert line.intersect(sphere) != frame
+
+
+# ------------------------------------------------------- swapped, numeric
+
+
+def test_swapped_numeric_curve_curve_order_swaps_both_parameters():
+    spline = BSplineCurve3D(
+        2,
+        [Point3D(0.0, -1.0, 0.0), Point3D(1.0, 2.0, 0.0), Point3D(2.0, -1.0, 0.0)],
+        [0.0, 1.0],
+        [3, 3],
+        False,
+    )
+    line = Line3D(Point3D(-1.0, 0.0, 0.0), Vector3D.x())
+    forward, backward = spline.intersect(line), line.intersect(spline)
+    assert forward.method == backward.method == IntersectionMethod.NUMERIC
+    assert len(forward.hits) == len(backward.hits) == 2
+    for hit in forward.hits:
+        assert hit.first_parameter is not None and hit.second_parameter is not None
+        match = [h for h in backward.hits if h.point.distance(hit.point) < 1e-9]
+        assert len(match) == 1
+        assert match[0].first_parameter == pytest.approx(hit.second_parameter)
+        assert match[0].second_parameter == pytest.approx(hit.first_parameter)
+
+
+# ------------------------------------------------------------------- 2D
+
+
+def test_swapped_2d_order_gives_the_same_points():
+    circle = Circle2D(Point2D(0.0, 0.0), 1.0)
+    line = Line2D(Point2D(-2.0, 0.5), Vector2D(1.0, 0.0))
+    forward, backward = circle.intersect(line), line.intersect(circle)
+    assert backward.first is line and backward.second is circle
+    assert len(forward.hits) == len(backward.hits) == 2
+    for hit in forward.hits:
+        assert any(h.point.distance(hit.point) < 1e-9 for h in backward.hits)
+
+
+def test_coincident_2d_circles_are_an_overlap():
+    circle = Circle2D(Point2D(1.0, 2.0), 1.0)
+    result = circle.intersect(Circle2D(Point2D(1.0, 2.0), 1.0))
+    (overlap,) = result.overlaps
+    assert overlap.first_range == pytest.approx((0.0, TAU))
+    assert overlap.same_direction is True
+    assert result.hits == []
+
+
+def test_collinear_opposite_2d_lines_overlap_in_opposite_directions():
+    line = Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0))
+    opposite = Line2D(Point2D(3.0, 0.0), Vector2D(-1.0, 0.0))
+    (overlap,) = line.intersect(opposite).overlaps
+    assert overlap.first_range == (-math.inf, math.inf)
+    assert overlap.same_direction is False
+
+
+# ---------------------------------------------------- python conventions
+
+
+def test_enums_are_hashable_and_named():
+    assert IntersectionMethod.EXACT.name == "EXACT"
+    assert CompletenessStatus.SAMPLED.name == "SAMPLED"
+    assert IncompleteReason.UNSEPARATED.name == "UNSEPARATED"
+    counts = {IntersectionMethod.EXACT: 1, IntersectionMethod.NUMERIC: 2}
+    assert counts[IntersectionMethod.NUMERIC] == 2
+    assert len({CompletenessStatus.COMPLETE, CompletenessStatus.COMPLETE}) == 1
+    assert hash(IncompleteReason.BUDGET_EXHAUSTED) == hash(IncompleteReason.BUDGET_EXHAUSTED)
+
+
+def test_empty_results_are_falsy():
+    sphere = Sphere(Point3D.origin(), 1.0)
+    assert Line3D(Point3D.origin(), Vector3D.x()).intersect(sphere)
+    assert not Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.x()).intersect(sphere)
+    assert sphere.intersect(Plane(Point3D.origin(), Vector3D.z()))
+    assert not sphere.intersect(Plane(Point3D(0.0, 0.0, 5.0), Vector3D.z()))
+    circle = Circle3D(Point3D.origin(), Vector3D.z(), 1.0)
+    assert circle.intersect(Line3D(Point3D.origin(), Vector3D.x()))
+    assert not circle.intersect(Line3D(Point3D(0.0, 0.0, 5.0), Vector3D.x()))
+    circle_2d = Circle2D(Point2D(0.0, 0.0), 1.0)
+    assert circle_2d.intersect(Line2D(Point2D(0.0, 0.0), Vector2D(1.0, 0.0)))
+    assert not circle_2d.intersect(Line2D(Point2D(0.0, 5.0), Vector2D(1.0, 0.0)))
+
+
+def test_extrema_length_is_the_number_of_minima():
+    a = _segment(Point3D.origin(), Point3D(1.0, 0.0, 0.0))
+    b = _segment(Point3D(0.0, 1.0, 0.0), Point3D(1.0, 2.0, 0.0))
+    extrema = curve_curve_extrema(a, b)
+    assert len(extrema) == len(extrema.minima) >= 1
+    assert extrema
+
+
+def test_curves_and_surfaces_have_deterministic_reprs():
+    circle = Circle3D(Point3D(1.0, 0.0, 0.0), Vector3D.z(), 2.5)
+    assert repr(circle) == "Circle3D(center=(1, 0, 0), normal=(0, 0, 1), radius=2.5)"
+    assert repr(Sphere(Point3D.origin(), 3.0)) == "Sphere(center=(0, 0, 0), radius=3)"
+    assert repr(Plane(Point3D.origin(), Vector3D.z())) == "Plane(origin=(0, 0, 0), normal=(0, 0, 1))"
+    result = Plane(Point3D.origin(), Vector3D.z()).intersect(Sphere(Point3D.origin(), 3.0))
+    assert "Circle3D(center=(0, 0, 0), normal=(0, 0, 1), radius=3)" in repr(result)
+    assert " at 0x" not in repr(result)

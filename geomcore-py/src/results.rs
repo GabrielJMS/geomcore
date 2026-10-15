@@ -76,8 +76,15 @@ fn same_operand(py: Python<'_>, a: &Py<PyAny>, b: &Py<PyAny>) -> PyResult<bool> 
 ///
 /// `EXACT` is a closed form, always complete. `NUMERIC` is a search, whose
 /// `completeness` tells whether it proved that nothing was missed.
-#[pyclass(name = "IntersectionMethod", module = "geomcore", eq, eq_int, frozen)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[pyclass(
+    name = "IntersectionMethod",
+    module = "geomcore",
+    eq,
+    eq_int,
+    frozen,
+    hash
+)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PyIntersectionMethod {
     #[pyo3(name = "EXACT")]
     Exact,
@@ -91,6 +98,15 @@ impl From<IntersectionMethod> for PyIntersectionMethod {
             IntersectionMethod::Exact => PyIntersectionMethod::Exact,
             IntersectionMethod::Numeric => PyIntersectionMethod::Numeric,
         }
+    }
+}
+
+#[pymethods]
+impl PyIntersectionMethod {
+    /// The member's name, as written after the dot.
+    #[getter]
+    fn name(&self) -> &'static str {
+        self.repr().split_once('.').map_or("", |(_, name)| name)
     }
 }
 
@@ -109,8 +125,15 @@ impl PyIntersectionMethod {
 /// - `INCOMPLETE`: the search may have missed something inside its
 ///   `regions`, and found everything outside them.
 /// - `SAMPLED`: the result comes from samples; nothing is proved.
-#[pyclass(name = "CompletenessStatus", module = "geomcore", eq, eq_int, frozen)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[pyclass(
+    name = "CompletenessStatus",
+    module = "geomcore",
+    eq,
+    eq_int,
+    frozen,
+    hash
+)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PyCompletenessStatus {
     #[pyo3(name = "COMPLETE")]
     Complete,
@@ -118,6 +141,15 @@ pub(crate) enum PyCompletenessStatus {
     Incomplete,
     #[pyo3(name = "SAMPLED")]
     Sampled,
+}
+
+#[pymethods]
+impl PyCompletenessStatus {
+    /// The member's name, as written after the dot.
+    #[getter]
+    fn name(&self) -> &'static str {
+        self.repr().split_once('.').map_or("", |(_, name)| name)
+    }
 }
 
 impl PyCompletenessStatus {
@@ -135,8 +167,15 @@ impl PyCompletenessStatus {
 /// - `BUDGET_EXHAUSTED`: it ran out of subdivisions.
 /// - `UNSEPARATED`: pieces of the operands stayed within tolerance of each
 ///   other down to the smallest piece, as at a tangent contact.
-#[pyclass(name = "IncompleteReason", module = "geomcore", eq, eq_int, frozen)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[pyclass(
+    name = "IncompleteReason",
+    module = "geomcore",
+    eq,
+    eq_int,
+    frozen,
+    hash
+)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PyIncompleteReason {
     #[pyo3(name = "BUDGET_EXHAUSTED")]
     BudgetExhausted,
@@ -150,6 +189,15 @@ impl From<IncompleteReason> for PyIncompleteReason {
             IncompleteReason::BudgetExhausted => PyIncompleteReason::BudgetExhausted,
             IncompleteReason::Unseparated => PyIncompleteReason::Unseparated,
         }
+    }
+}
+
+#[pymethods]
+impl PyIncompleteReason {
+    /// The member's name, as written after the dot.
+    #[getter]
+    fn name(&self) -> &'static str {
+        self.repr().split_once('.').map_or("", |(_, name)| name)
     }
 }
 
@@ -735,6 +783,11 @@ impl PyCurveCurveIntersection {
         self.result.is_empty()
     }
 
+    /// False when empty, so `if a.intersect(b):` reads as "they meet".
+    fn __bool__(&self) -> bool {
+        !self.result.is_empty()
+    }
+
     fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
         Ok(self.result == other.result
             && same_operand(py, &self.first, &other.first)?
@@ -826,6 +879,11 @@ impl PyCurveCurveIntersection2D {
         self.result.is_empty()
     }
 
+    /// False when empty, so `if a.intersect(b):` reads as "they meet".
+    fn __bool__(&self) -> bool {
+        !self.result.is_empty()
+    }
+
     fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
         Ok(self.result == other.result
             && same_operand(py, &self.first, &other.first)?
@@ -913,6 +971,11 @@ impl PyCurveSurfaceIntersection {
     /// complete means "found nothing, may have missed something".
     fn is_empty(&self) -> bool {
         self.result.is_empty()
+    }
+
+    /// False when empty, so `if a.intersect(b):` reads as "they meet".
+    fn __bool__(&self) -> bool {
+        !self.result.is_empty()
     }
 
     fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
@@ -1014,6 +1077,11 @@ impl PySurfaceSurfaceIntersection {
         self.result.is_empty()
     }
 
+    /// False when empty, so `if a.intersect(b):` reads as "they meet".
+    fn __bool__(&self) -> bool {
+        !self.result.is_empty()
+    }
+
     fn __eq__(&self, py: Python<'_>, other: PyRef<'_, Self>) -> PyResult<bool> {
         Ok(self.result == other.result
             && same_operand(py, &self.first, &other.first)?
@@ -1095,6 +1163,11 @@ pub(crate) struct PyCurveCurveExtrema {
 
 #[pymethods]
 impl PyCurveCurveExtrema {
+    /// The number of minima; an extrema result is falsy when there is none.
+    fn __len__(&self) -> usize {
+        self.result.minima().len()
+    }
+
     /// The minima, closest first.
     #[getter]
     fn minima<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
