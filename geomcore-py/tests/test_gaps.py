@@ -16,6 +16,7 @@ from geomcore import (
     Vector3D,
 )
 from geomcore.curves import (
+    BSplineCurve3D,
     Circle2D,
     Circle3D,
     Ellipse3D,
@@ -23,8 +24,10 @@ from geomcore.curves import (
     Line2D,
     Line3D,
     Parabola3D,
+    TrimmedCurve2D,
+    TrimmedCurve3D,
 )
-from geomcore.surfaces import Cone, Cylinder, Plane, Sphere, Torus
+from geomcore.surfaces import BSplineSurface, Cone, Cylinder, Plane, Sphere, Torus
 
 Z = Vector3D(0.0, 0.0, 1.0)
 
@@ -107,8 +110,6 @@ def test_center_on_torus_and_apex_on_parabola():
 # Group 2: period, eval_d1/eval_d2, 2D bounds, from_two_points, extrema
 # ---------------------------------------------------------------------------
 
-from geomcore.curves import BSplineCurve3D, TrimmedCurve2D, TrimmedCurve3D
-from geomcore.surfaces import BSplineSurface
 
 
 def curves_3d():
@@ -411,3 +412,41 @@ def test_repr_snaps_rounding_noise_to_zero():
     assert repr(circle).startswith("Circle3D(center=(0.0, 0.0, 0.0)")
     # A tolerance is not geometry: tiny values are kept.
     assert "angular=1e-12" in repr(geomcore.Tolerance())
+
+
+def test_eval_d1_matches_finite_differences():
+    step = 1e-6
+    circle = Circle3D(Point3D(0.0, 0.0, 0.0), Z, 2.0)
+    _, tangent = circle.eval_d1(0.5)
+    ahead, behind = circle.eval_point(0.5 + step), circle.eval_point(0.5 - step)
+    estimate = (ahead - behind) * (0.5 / step)
+    assert (estimate - tangent).magnitude() < 1e-6
+
+    circle_2d = Circle2D(Point2D(0.0, 0.0), 2.0)
+    _, tangent_2d = circle_2d.eval_d1(0.5)
+    estimate_2d = (circle_2d.eval_point(0.5 + step) - circle_2d.eval_point(0.5 - step)) * (
+        0.5 / step
+    )
+    assert (estimate_2d - tangent_2d).magnitude() < 1e-6
+
+    sphere = Sphere(Point3D(0.0, 0.0, 0.0), 2.0)
+    _, (du, dv) = sphere.eval_d1(0.4, 0.3)
+    estimate_u = (sphere.eval_point(0.4 + step, 0.3) - sphere.eval_point(0.4 - step, 0.3)) * (
+        0.5 / step
+    )
+    estimate_v = (sphere.eval_point(0.4, 0.3 + step) - sphere.eval_point(0.4, 0.3 - step)) * (
+        0.5 / step
+    )
+    assert (estimate_u - du).magnitude() < 1e-6
+    assert (estimate_v - dv).magnitude() < 1e-6
+
+
+def test_operator_type_errors():
+    p = Point3D(1.0, 2.0, 3.0)
+    v = Vector3D(1.0, 2.0, 3.0)
+    with pytest.raises(TypeError):
+        p - 1.0
+    with pytest.raises(TypeError):
+        p * 2
+    with pytest.raises(TypeError):
+        v * p

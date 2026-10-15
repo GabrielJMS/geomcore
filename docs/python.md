@@ -30,6 +30,10 @@ API.
     let point = circle.eval_point(std::f64::consts::FRAC_PI_4);
     ```
 
+Reprs print floats as Python does and show coordinates below `1e-15` as
+`0.0`, so rounding noise such as `cos(pi / 2)` does not clutter them. A repr is
+therefore for reading, not an exact round trip of such tiny coordinates.
+
 A Python API reference generated from docstrings, and tutorials, are on
 the roadmap. Until then, the Rust items on
 [docs.rs](https://docs.rs/geomcore) mirror the Python surface one-to-one.

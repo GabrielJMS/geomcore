@@ -955,6 +955,11 @@ impl Coordinates for Vector3D {
     }
 }
 
+/// Something with two coordinates, as `(x, y)` in a `__repr__`.
+pub(crate) trait Coordinates2D {
+    fn xy(&self) -> (f64, f64);
+}
+
 impl Coordinates2D for Point2D {
     fn xy(&self) -> (f64, f64) {
         (self.x, self.y)
@@ -965,11 +970,6 @@ impl Coordinates2D for Vector2D {
     fn xy(&self) -> (f64, f64) {
         (self.x, self.y)
     }
-}
-
-/// Something with two coordinates, as `(x, y)` in a `__repr__`.
-pub(crate) trait Coordinates2D {
-    fn xy(&self) -> (f64, f64);
 }
 
 /// `(x, y)` as written in a `__repr__`.
@@ -991,6 +991,8 @@ const REPR_NOISE: f64 = 1e-15;
 
 /// A float as a `__repr__` writes it: as Python's `repr` (shortest text that
 /// reads back to the same number), with magnitudes below `1e-15` as `0.0`.
+/// The snap is for readability, so a repr is not an exact round trip of
+/// coordinates that small.
 pub(crate) fn float_repr(value: f64) -> String {
     if value.abs() < REPR_NOISE {
         return "0.0".to_string();
