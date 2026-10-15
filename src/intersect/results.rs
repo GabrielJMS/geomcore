@@ -6,9 +6,6 @@
 //! ([`Completeness`]). The fields are private and read through accessors,
 //! so the storage can change without breaking callers.
 
-// The crate-private builders are consumed by the routing that follows.
-#![allow(dead_code)]
-
 use super::{
     Completeness, CurveCurveHit, CurveCurveHit2D, CurveCurveRegion, CurveSurfaceHit,
     CurveSurfaceRegion,
@@ -102,11 +99,15 @@ pub struct SurfaceSurfaceRegion {
     pub max_corner: Point3D,
 }
 
+// Consumed by the curve-curve routing (Task 6).
+#[allow(dead_code)]
 fn sorted_by_first(mut hits: Vec<CurveCurveHit>) -> Vec<CurveCurveHit> {
     hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
     hits
 }
 
+// Consumed by the curve-curve routing (Tasks 6 and 7).
+#[allow(dead_code)]
 fn swapped_overlaps(overlaps: Vec<CurveCurveOverlap>) -> Vec<CurveCurveOverlap> {
     overlaps
         .into_iter()
@@ -156,6 +157,7 @@ pub struct CurveCurveIntersection {
 
 impl CurveCurveIntersection {
     /// An exact, complete result; the hits are sorted by first parameter.
+    #[allow(dead_code)] // Consumed by the routing of Task 6.
     pub(crate) fn exact(hits: Vec<CurveCurveHit>, overlaps: Vec<CurveCurveOverlap>) -> Self {
         CurveCurveIntersection {
             hits: sorted_by_first(hits),
@@ -166,6 +168,7 @@ impl CurveCurveIntersection {
     }
 
     /// A numeric result with the status of its search.
+    #[allow(dead_code)] // Consumed by the routing of Task 6.
     pub(crate) fn numeric(
         hits: Vec<CurveCurveHit>,
         completeness: Completeness<CurveCurveRegion>,
@@ -180,6 +183,7 @@ impl CurveCurveIntersection {
 
     /// The same result read from the other curve's side: `first_*` and
     /// `second_*` exchanged, the hits re-sorted by the new first parameter.
+    #[allow(dead_code)] // Consumed by the routing of Task 6.
     pub(crate) fn swapped(self) -> Self {
         let hits = self
             .hits
@@ -245,6 +249,7 @@ pub struct CurveCurveIntersection2D {
 
 impl CurveCurveIntersection2D {
     /// An exact, complete result; the hits are sorted by first parameter.
+    #[allow(dead_code)] // Consumed by the routing of Task 7.
     pub(crate) fn exact(mut hits: Vec<CurveCurveHit2D>, overlaps: Vec<CurveCurveOverlap>) -> Self {
         hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
         CurveCurveIntersection2D {
@@ -255,6 +260,7 @@ impl CurveCurveIntersection2D {
     }
 
     /// The same result read from the other curve's side.
+    #[allow(dead_code)] // Consumed by the routing of Task 7.
     pub(crate) fn swapped(self) -> Self {
         let hits = self
             .hits
@@ -305,7 +311,23 @@ impl CurveCurveIntersection2D {
 /// curve's parameter ranges that lie on the surface),
 /// [`method`](Self::method), [`completeness`](Self::completeness),
 /// [`is_complete`](Self::is_complete) and [`is_empty`](Self::is_empty).
-/// `Intersect::intersect` returns it.
+/// [`Intersect::intersect`](crate::Intersect::intersect) returns it, with
+/// the curve and the surface in either order.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Cylinder, Intersect, IntersectionMethod, Line3D, Point3D, Tolerance, Vector3D};
+///
+/// // A line across a unit cylinder enters and leaves it.
+/// let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
+/// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+/// let result = line.intersect(&cylinder, Tolerance::DEFAULT);
+/// assert_eq!(result.method(), IntersectionMethod::Exact);
+/// assert!(result.is_complete());
+/// let parameters: Vec<f64> = result.hits().iter().map(|h| h.curve_parameter).collect();
+/// assert_eq!(parameters, [4.0, 6.0]);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveSurfaceIntersection {
     hits: Vec<CurveSurfaceHit>,
@@ -339,32 +361,104 @@ impl CurveSurfaceIntersection {
     }
 
     /// The isolated hits, sorted by curve parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Line3D, Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 2.0), Vector3D::Z).unwrap();
+    /// let result = line.intersect(&plane, Tolerance::DEFAULT);
+    /// let hit = result.hits()[0];
+    /// assert_eq!(hit.curve_parameter, 2.0);
+    /// assert_eq!(hit.point, Point3D::new(0.0, 0.0, 2.0));
+    /// assert_eq!(hit.multiplicity, 1);
+    /// ```
     pub fn hits(&self) -> &[CurveSurfaceHit] {
         &self.hits
     }
 
     /// The curve's parameter ranges that lie on the surface.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Line3D, Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// // A line lying in the plane: the whole, unbounded line is an overlap.
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let result = line.intersect(&plane, Tolerance::DEFAULT);
+    /// assert!(result.hits().is_empty());
+    /// assert_eq!(result.overlaps(), &[(f64::NEG_INFINITY, f64::INFINITY)]);
+    /// ```
     pub fn overlaps(&self) -> &[(f64, f64)] {
         &self.overlaps
     }
 
     /// Whether the result came from a closed form or a numeric search.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Frame3D, Intersect, IntersectionMethod, Point3D, Tolerance, Torus, Vector3D};
+    ///
+    /// // An ellipse and a torus have no closed form: the numeric search runs.
+    /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 5.0, 1.0).unwrap();
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+    /// let result = ellipse.intersect(&torus, Tolerance::DEFAULT);
+    /// assert_eq!(result.method(), IntersectionMethod::Numeric);
+    /// ```
     pub fn method(&self) -> IntersectionMethod {
         self.method
     }
 
     /// Whether every hit was found, and where hits may be missing if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Completeness, Intersect, Line3D, Point3D, Sphere, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+    /// let result = line.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert_eq!(result.completeness(), &Completeness::Complete);
+    /// ```
     pub fn completeness(&self) -> &Completeness<CurveSurfaceRegion> {
         &self.completeness
     }
 
     /// Whether every hit was found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Line3D, Point3D, Sphere, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+    /// assert!(sphere.intersect(&line, Tolerance::DEFAULT).is_complete());
+    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
 
     /// Whether no hit and no overlap was found. With an incomplete result
     /// this means "found nothing", not "nothing exists".
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Line3D, Point3D, Sphere, Tolerance, Vector3D};
+    ///
+    /// // An exact empty result proves the line misses the sphere.
+    /// let line = Line3D::new(Point3D::new(0.0, 5.0, 0.0), Vector3D::X).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 1.0).unwrap();
+    /// let result = line.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert!(result.is_empty() && result.is_complete());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.hits.is_empty() && self.overlaps.is_empty()
     }
@@ -394,6 +488,7 @@ pub struct SurfaceSurfaceIntersection {
 
 impl SurfaceSurfaceIntersection {
     /// An exact, complete result.
+    #[allow(dead_code)] // Consumed by the routing of Task 9.
     pub(crate) fn exact(
         curves: Vec<IntersectionCurve>,
         contact_points: Vec<Point3D>,
@@ -409,6 +504,7 @@ impl SurfaceSurfaceIntersection {
     }
 
     /// A numeric result with the status of its search.
+    #[allow(dead_code)] // Consumed by the routing of Task 9.
     pub(crate) fn numeric(
         curves: Vec<IntersectionCurve>,
         completeness: Completeness<SurfaceSurfaceRegion>,

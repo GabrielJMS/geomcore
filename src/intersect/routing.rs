@@ -11,16 +11,19 @@
 //! parameter-range clipping that turns an exact intersection of the basis
 //! into the intersection of the trimmed curve.
 
-// The helpers are consumed by the pair implementations that follow.
-#![allow(dead_code)]
-
 use crate::Tolerance;
 use crate::curves::{
     BSplineCurve3D, Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Hyperbola3D, Line3D, Parabola3D,
     ParametricCurve3D, TrimmedCurve3D,
 };
-#[cfg(doc)]
-use crate::intersect::IntersectExact;
+use crate::intersect::{
+    CurveSurfaceHit, CurveSurfaceIntersection, ExactCurveSurfaceIntersection, IntersectExact,
+    intersect_curve_surface,
+};
+use crate::surfaces::{
+    BSplineSurface, Cone, Cylinder, ElementarySurface, ParametricSurface, Plane, Sphere, Surface,
+    Torus,
+};
 
 /// Routed intersection: exact when a closed form exists, numeric otherwise.
 ///
@@ -28,14 +31,23 @@ use crate::intersect::IntersectExact;
 /// work, `intersect` works for every supported pair, and its result says which
 /// method ran (`method()`) and whether it is complete.
 ///
-/// ```ignore
-/// // Becomes a real doctest once the pair implementations land.
-/// use geomcore::{Intersect, Line3D, Plane, Point3D, Tolerance, Vector3D};
+/// The operands may come in either order; a curve-surface result always
+/// reads the curve parameter first.
 ///
-/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
-/// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
-/// let result = line.intersect(&plane, Tolerance::DEFAULT);
+/// # Examples
+///
+/// ```
+/// use geomcore::{Intersect, IntersectionMethod, Line3D, Point3D, Sphere, Tolerance, Vector3D};
+///
+/// // A line along z through a sphere of radius 2 crosses it at both poles.
+/// let line = Line3D::new(Point3D::new(0.0, 0.0, -5.0), Vector3D::Z).unwrap();
+/// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+/// let result = line.intersect(&sphere, Tolerance::DEFAULT);
+/// assert_eq!(result.method(), IntersectionMethod::Exact);
 /// assert!(result.is_complete());
+/// let parameters: Vec<f64> = result.hits().iter().map(|h| h.curve_parameter).collect();
+/// assert_eq!(parameters, [3.0, 7.0]);
+/// assert_eq!(sphere.intersect(&line, Tolerance::DEFAULT), result);
 /// ```
 pub trait Intersect<Rhs: ?Sized = Self> {
     /// The result of intersecting `Self` with `Rhs`.
@@ -128,6 +140,9 @@ pub(crate) fn in_range(
 /// representation: none, one, or two when the overlap meets the range on
 /// both sides of the seam of a periodic curve. An overlap covering the
 /// whole period returns the range as one piece.
+// Consumed by the curve-curve routing (Task 6), where a coincidence of two
+// curves is clipped to each curve's range.
+#[allow(dead_code)]
 pub(crate) fn clip_range(
     overlap: (f64, f64),
     range: (f64, f64),
@@ -154,6 +169,141 @@ pub(crate) fn clip_range(
     pieces.sort_by(|a, b| a.0.total_cmp(&b.0));
     pieces
 }
+
+/// Intersects a curve with a surface: the exact path when the curve has an
+/// elementary basis, the surface is elementary and the pair has a closed
+/// form; the numeric search otherwise.
+#[inline]
+pub(crate) fn route_curve_surface<C: CurveOperand, S: ParametricSurface>(
+    curve: &C,
+    surface: &S,
+    tol: Tolerance,
+) -> CurveSurfaceIntersection {
+    if let (Some((basis, range)), Some(elementary)) =
+        (curve.elementary_basis(), surface.as_elementary())
+    {
+        let exact = basis.intersect_exact(&elementary, tol);
+        if !matches!(exact, ExactCurveSurfaceIntersection::NotAnalytic) {
+            return from_exact_curve_surface(exact, &basis, range, &elementary, tol);
+        }
+    }
+    // A trimmed curve is searched over its own range only: no clipping.
+    let hits = intersect_curve_surface(curve, surface, tol);
+    let completeness = hits.completeness().clone();
+    CurveSurfaceIntersection::numeric(hits.into_hits(), completeness)
+}
+
+/// Turns the exact intersection of the curve's elementary `basis` with the
+/// surface into the routed result: hits outside `range` dropped, the kept
+/// ones carrying their representative in `range` and the surface
+/// parameters of their point.
+fn from_exact_curve_surface(
+    exact: ExactCurveSurfaceIntersection,
+    basis: &ElementaryCurve,
+    range: Option<(f64, f64)>,
+    elementary: &ElementarySurface,
+    tol: Tolerance,
+) -> CurveSurfaceIntersection {
+    match exact {
+        ExactCurveSurfaceIntersection::Points(list) => {
+            let hits = list
+                .iter()
+                .filter_map(|hit| {
+                    let curve_parameter = match range {
+                        Some(range) => in_range(hit.parameter, range, basis.period(), tol)?,
+                        None => hit.parameter,
+                    };
+                    Some(CurveSurfaceHit {
+                        curve_parameter,
+                        surface_parameters: elementary.parameters_of(hit.point),
+                        point: hit.point,
+                        multiplicity: hit.multiplicity,
+                    })
+                })
+                .collect();
+            CurveSurfaceIntersection::exact(hits, Vec::new())
+        }
+        // The whole curve lies on the surface: a trimmed curve over its
+        // range, the basis over its bounds (infinite for a line).
+        ExactCurveSurfaceIntersection::Coincident => {
+            CurveSurfaceIntersection::exact(Vec::new(), vec![range.unwrap_or(basis.bounds())])
+        }
+        ExactCurveSurfaceIntersection::Empty => {
+            CurveSurfaceIntersection::exact(Vec::new(), Vec::new())
+        }
+        ExactCurveSurfaceIntersection::NotAnalytic => {
+            unreachable!("the router sends a pair with no closed form to the numeric search")
+        }
+    }
+}
+
+/// Implements [`Intersect`] for every curve of the first list with every
+/// surface of the second, in both orders. The surface-first order returns
+/// the same result as the curve-first one.
+macro_rules! curve_surface {
+    (@pairs $curve:ty; [$($surface:ty),*]) => {$(
+        impl Intersect<$surface> for $curve {
+            type Output = CurveSurfaceIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &$surface, tol: Tolerance) -> CurveSurfaceIntersection {
+                route_curve_surface(self, other, tol)
+            }
+        }
+
+        impl Intersect<$curve> for $surface {
+            type Output = CurveSurfaceIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &$curve, tol: Tolerance) -> CurveSurfaceIntersection {
+                route_curve_surface(other, self, tol)
+            }
+        }
+    )*};
+    ($($curve:ty),*; $surfaces:tt) => {$(
+        curve_surface!(@pairs $curve; $surfaces);
+    )*};
+}
+
+curve_surface!(
+    Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D, BSplineCurve3D, Curve3D, ElementaryCurve;
+    [Plane, Cylinder, Cone, Sphere, Torus, BSplineSurface, Surface, ElementarySurface]
+);
+
+/// Implements [`Intersect`] between a trimmed curve over any curve operand
+/// and each surface, in both orders.
+macro_rules! trimmed_curve_surface {
+    ($($surface:ty),*) => {$(
+        impl<X: CurveOperand> Intersect<$surface> for TrimmedCurve3D<X> {
+            type Output = CurveSurfaceIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &$surface, tol: Tolerance) -> CurveSurfaceIntersection {
+                route_curve_surface(self, other, tol)
+            }
+        }
+
+        impl<X: CurveOperand> Intersect<TrimmedCurve3D<X>> for $surface {
+            type Output = CurveSurfaceIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &TrimmedCurve3D<X>, tol: Tolerance) -> CurveSurfaceIntersection {
+                route_curve_surface(other, self, tol)
+            }
+        }
+    )*};
+}
+
+trimmed_curve_surface!(
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+    BSplineSurface,
+    Surface,
+    ElementarySurface
+);
 
 #[cfg(test)]
 mod tests {
