@@ -516,6 +516,7 @@ impl Surface {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::surfaces::ParametricSurface;
     /// use geomcore::{Cylinder, Point3D, Surface, Vector3D};
     /// let cylinder = Surface::from(Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
     /// let reversed = cylinder.reversed_u();
@@ -538,6 +539,7 @@ impl Surface {
     /// # Examples
     ///
     /// ```
+    /// use geomcore::surfaces::ParametricSurface;
     /// use geomcore::{Plane, Point3D, Surface, Vector3D};
     /// let plane = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
     /// let reversed = plane.reversed_v();
