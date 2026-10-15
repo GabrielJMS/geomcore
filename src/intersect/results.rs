@@ -227,11 +227,12 @@ impl CurveCurveIntersection {
     /// A numeric result with the status of its search.
     pub(crate) fn numeric(
         hits: Vec<CurveCurveHit>,
+        overlaps: CurveCurveOverlapList,
         completeness: Completeness<CurveCurveRegion>,
     ) -> Self {
         CurveCurveIntersection {
             hits: sorted_by_first(hits.into()),
-            overlaps: CurveCurveOverlapList::new(),
+            overlaps,
             method: IntersectionMethod::Numeric,
             completeness,
         }
@@ -279,6 +280,13 @@ impl CurveCurveIntersection {
     /// in space, or stand apart by at most that, such as consecutive
     /// segments of a line, do not overlap: they meet at a hit, with
     /// multiplicity 1.
+    ///
+    /// On the numeric path an overlap is joined from the hits and regions
+    /// the search left where the curves never separated, and its ends lie
+    /// within `tol.confusion` in space of the true ones; the result stays
+    /// incomplete, with an `Unseparated` region over it. An overlap whose
+    /// range on the second curve would cross that curve's seam is not
+    /// joined there: its hits and region stay.
     ///
     /// # Examples
     ///
@@ -603,11 +611,12 @@ impl CurveSurfaceIntersection {
     /// A numeric result with the status of its search.
     pub(crate) fn numeric(
         hits: Vec<CurveSurfaceHit>,
+        overlaps: CurveSurfaceOverlapList,
         completeness: Completeness<CurveSurfaceRegion>,
     ) -> Self {
         CurveSurfaceIntersection {
             hits: sorted_by_curve_parameter(hits.into()),
-            overlaps: CurveSurfaceOverlapList::new(),
+            overlaps,
             method: IntersectionMethod::Numeric,
             completeness,
         }
@@ -640,7 +649,12 @@ impl CurveSurfaceIntersection {
         &self.hits
     }
 
-    /// The curve's parameter ranges that lie on the surface.
+    /// The curve's parameter ranges that lie on the surface, sorted.
+    ///
+    /// On the numeric path an overlap is joined from the hits and regions
+    /// the search left where the curve and surface never separated, and
+    /// its ends lie within `tol.confusion` in space of the true ones; the
+    /// result stays incomplete, with an `Unseparated` region over it.
     ///
     /// # Examples
     ///
@@ -960,7 +974,7 @@ mod tests {
 
     #[test]
     fn test_empty_incomplete_is_empty_but_not_complete() {
-        let r = CurveCurveIntersection::numeric(vec![], Completeness::Sampled);
+        let r = CurveCurveIntersection::numeric(vec![], Vec::new(), Completeness::Sampled);
         assert!(r.is_empty());
         assert!(!r.is_complete());
         assert_eq!(r.method(), IntersectionMethod::Numeric);

@@ -4,7 +4,9 @@
 
 use super::curve_surface_hull::CurveSurfaceHits;
 use super::results::sort_by_known_parameter;
-use super::{CurveSurfaceHit, CurveSurfaceIntersection, curve_surface_multiplicity, mixed};
+use super::{
+    CurveSurfaceHit, CurveSurfaceIntersection, curve_surface_multiplicity, mixed, overlap_runs,
+};
 use crate::curves::ParametricCurve3D;
 use crate::math::{brent_minimum, newton_3d};
 use crate::surfaces::ParametricSurface;
@@ -20,8 +22,11 @@ use crate::{Point3D, Tolerance};
 /// result's [`method`](CurveSurfaceIntersection::method) is
 /// [`Numeric`](crate::IntersectionMethod::Numeric), its
 /// [`completeness`](CurveSurfaceIntersection::completeness) says whether
-/// every hit was found, and it reports no overlaps: a curve lying on the
-/// surface yields hits along it.
+/// every hit was found. Where the curve lies on the surface, the hits and
+/// regions the search leaves along it are joined into an overlap, and the
+/// result stays [`Incomplete`](crate::Completeness::Incomplete) with an
+/// `Unseparated` region over it (see
+/// [`CurveSurfaceIntersection::overlaps`]).
 ///
 /// # Examples
 ///
@@ -71,7 +76,9 @@ where
 {
     let hits = search_curve_surface(curve, surface, tol);
     let completeness = hits.completeness().clone();
-    CurveSurfaceIntersection::numeric(hits.into_hits(), completeness)
+    let (hits, overlaps, completeness) =
+        overlap_runs::curve_surface_overlaps(curve, surface, hits.into_hits(), completeness, tol);
+    CurveSurfaceIntersection::numeric(hits, overlaps, completeness)
 }
 
 /// Generic curve-surface intersection for any parametric curve and surface.

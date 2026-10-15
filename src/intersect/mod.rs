@@ -51,6 +51,7 @@ mod dispatch;
 mod inline_or_heap_list;
 mod marching;
 mod mixed;
+mod overlap_runs;
 mod pieces;
 mod results;
 mod routing;

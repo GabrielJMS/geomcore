@@ -103,6 +103,20 @@ pair holds at most one hit, then Newton solves it — crossings a grid
 would miss between samples are found, and tangencies/overlaps fall
 back to the sampled search instead of burning the budget.
 
+Where a curve lies on the other operand (a planar B-spline in a plane, a
+straight B-spline on a line, two B-splines along one line, a circle and
+its own `to_bspline()`), the pieces never separate. The hits and regions
+left along the curve are then joined into an **overlap** wherever the
+curve stays on the other operand between them (samples within
+`tol.confusion`, tangents along it), extended by halving to where the
+curve leaves it, within `tol.confusion` in space of the true end. The
+hits inside drop out, and the result stays `Incomplete`, with an
+`Unseparated` region over the overlap: samples found it, not a proof. A
+stretch where the operands only touch (they part as the square of the
+distance from the contact) stays a hit; an overlap between curves whose
+range on the second curve would cross that curve's seam is not joined,
+and keeps its hits and region.
+
 The search reports whether it finished: the result's `method()` is
 `Numeric`, and its `completeness()` is `Complete` when every piece pair
 was proven apart or isolated, `Incomplete` with the parameter regions

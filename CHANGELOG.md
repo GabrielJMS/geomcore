@@ -79,6 +79,12 @@ Python:
   parameter), `IntersectionCurve` (a `Curve3D` plus a `tangent` flag)
   and `SurfaceSurfaceRegion`. `CurveSurfaceIntersection::overlaps()`
   gives the curve's parameter ranges that lie on the surface.
+- The numeric curve–curve and curve–surface search reports overlaps:
+  where a curve lies on the other operand (a planar B-spline in a plane,
+  a straight B-spline on a line, two B-splines along one line), the hits
+  and regions left along it are joined into an overlap instead of a
+  string of hits, its ends found within `tol.confusion`; the result
+  stays `Incomplete`, with an `Unseparated` region over the overlap.
 - `CurveSurfaceHit::multiplicity` (breaking for code that builds the
   struct with a literal): 1 where the curve crosses the surface, 2 or
   more where it is tangent.

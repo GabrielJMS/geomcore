@@ -3,7 +3,10 @@
 
 use super::curve_curve_hull::{CurveCurveExtrema, CurveCurveHits};
 use super::results::sort_by_known_parameter;
-use super::{CurveCurveExtremum, CurveCurveHit, CurveCurveIntersection, curve_surface_hull, mixed};
+use super::{
+    CurveCurveExtremum, CurveCurveHit, CurveCurveIntersection, curve_surface_hull, mixed,
+    overlap_runs,
+};
 use crate::curves::ParametricCurve3D;
 use crate::math::{newton_min_1d, newton_min_2d};
 use crate::{Point3D, Tolerance, Vector3D};
@@ -773,8 +776,12 @@ fn merge_valleys(
 /// result's [`method`](CurveCurveIntersection::method) is
 /// [`Numeric`](crate::IntersectionMethod::Numeric), its
 /// [`completeness`](CurveCurveIntersection::completeness) says whether
-/// every hit was found, and it reports no overlaps: coincident curves
-/// yield a representative hit.
+/// every hit was found. Where the B-spline search leaves the curves
+/// unseparated along a stretch on which they coincide, its hits and
+/// regions are joined into an overlap, and the result stays
+/// [`Incomplete`](crate::Completeness::Incomplete) with an `Unseparated`
+/// region over it (see [`CurveCurveIntersection::overlaps`]); sampled
+/// coincident curves yield a representative hit.
 ///
 /// # Examples
 ///
@@ -820,7 +827,9 @@ where
 {
     let hits = search_curve_curve(a, b, tol);
     let completeness = hits.completeness().clone();
-    CurveCurveIntersection::numeric(hits.into_hits(), completeness)
+    let (hits, overlaps, completeness) =
+        overlap_runs::curve_curve_overlaps(a, b, hits.into_hits(), completeness, tol);
+    CurveCurveIntersection::numeric(hits, overlaps, completeness)
 }
 
 /// Generic 3D curve-curve intersection: [`curve_curve_extrema`] filtered

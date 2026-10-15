@@ -133,7 +133,7 @@ pub(super) fn box_union(
 
 /// `regions` with every group of touching ones merged into one, ordered
 /// by the start of their first parameter ranges.
-fn merged<R: Region>(mut regions: Vec<R>) -> Vec<R> {
+pub(super) fn merged<R: Region>(mut regions: Vec<R>) -> Vec<R> {
     let mut out: Vec<R> = Vec::new();
     while let Some(mut region) = regions.pop() {
         loop {
