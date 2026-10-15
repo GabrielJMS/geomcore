@@ -24,14 +24,13 @@ use crate::{
 };
 use std::ops::{Deref, DerefMut};
 
-/// Exact intersection of two shapes.
+/// Exact intersection of two shapes: the typed, stack-only path.
 ///
 /// Each implementation returns the result type of its pair, so the
 /// compiler knows which outcomes a pair can produce, and dispatch is
-/// static. A configuration with no closed form reports "not analytic":
-/// no implementation falls back to a numeric intersection on its own.
-/// `Intersect::intersect` routes to this trait, and to a numeric
-/// intersection when there is no closed form.
+/// static. A configuration with no closed form reports "not analytic";
+/// this trait never runs a numeric intersection. To get an answer for
+/// every pair, with the method that produced it, use [`Intersect`](crate::intersect::Intersect).
 pub trait IntersectExact<Rhs: ?Sized = Self> {
     /// The result of intersecting `Self` with `Rhs`.
     type Output;

@@ -28,6 +28,7 @@ mod marching;
 mod mixed;
 mod pieces;
 mod results;
+mod routing;
 pub use completeness::{Completeness, IncompleteReason};
 mod surface_surface;
 pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
@@ -45,6 +46,7 @@ pub use results::{
     CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceIntersection,
     IntersectionCurve, IntersectionMethod, SurfaceSurfaceIntersection, SurfaceSurfaceRegion,
 };
+pub use routing::Intersect;
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]

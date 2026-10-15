@@ -160,7 +160,7 @@ pub use intersect::{
 };
 pub use intersect::{
     ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
-    InlineList, IntersectExact,
+    InlineList, Intersect, IntersectExact,
 };
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};

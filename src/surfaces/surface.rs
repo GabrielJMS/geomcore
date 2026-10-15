@@ -799,6 +799,30 @@ impl Surface {
 }
 
 impl ElementarySurface {
+    /// The surface parameters `(u, v)` of the point of the surface closest
+    /// to `point`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ElementarySurface;
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let surface = ElementarySurface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let (u, v) = surface.parameters_of(Point3D::new(1.0, 2.0, 0.0));
+    /// let back = geomcore::ParametricSurface::eval_point(&surface, u, v);
+    /// assert!(back.distance(Point3D::new(1.0, 2.0, 0.0)) < 1e-12);
+    /// ```
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
+        match self {
+            ElementarySurface::Plane(s) => s.parameters_of(point),
+            ElementarySurface::Cylinder(s) => s.parameters_of(point),
+            ElementarySurface::Cone(s) => s.parameters_of(point),
+            ElementarySurface::Sphere(s) => s.parameters_of(point),
+            ElementarySurface::Torus(s) => s.parameters_of(point),
+        }
+    }
+
     /// Projects `point` onto the surface: the closest parameters, the closest
     /// point and the distance. Distances within `tol.confusion` snap to
     /// `0.0`.

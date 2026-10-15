@@ -729,6 +729,27 @@ impl Curve3D {
 }
 
 impl ElementaryCurve {
+    /// The parameter of the point of the curve closest to `point`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ElementaryCurve;
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    ///
+    /// let curve = ElementaryCurve::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+    /// assert_eq!(curve.parameter_of(Point3D::new(2.0, 0.0, 0.0)), 2.0);
+    /// ```
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
+        match self {
+            ElementaryCurve::Line(c) => c.parameter_of(point),
+            ElementaryCurve::Circle(c) => c.parameter_of(point),
+            ElementaryCurve::Ellipse(c) => c.parameter_of(point),
+            ElementaryCurve::Parabola(c) => c.parameter_of(point),
+            ElementaryCurve::Hyperbola(c) => c.parameter_of(point),
+        }
+    }
+
     /// Projects `point` onto the curve: the closest parameter, the closest
     /// point and the distance. Distances within `tol.confusion` snap to
     /// `0.0`.
