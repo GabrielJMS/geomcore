@@ -123,33 +123,36 @@ pub(crate) fn in_range(
 /// Clips an overlap `(a, b)` to `range`, shifting by periods like
 /// [`in_range`].
 ///
-/// Returns `None` when they do not intersect beyond `tol.parametric`. On a
-/// periodic curve an overlap covering the whole period returns `range`;
-/// when the overlap meets the range in two pieces across the seam, the
-/// longer one is returned.
+/// Returns the pieces of the overlap that lie in the range beyond
+/// `tol.parametric`, ordered by start, each expressed in the range's
+/// representation: none, one, or two when the overlap meets the range on
+/// both sides of the seam of a periodic curve. An overlap covering the
+/// whole period returns the range as one piece.
 pub(crate) fn clip_range(
     overlap: (f64, f64),
     range: (f64, f64),
     period: Option<f64>,
     tol: Tolerance,
-) -> Option<(f64, f64)> {
+) -> Vec<(f64, f64)> {
     let clip = |(low, high): (f64, f64)| {
         let clipped = (low.max(range.0), high.min(range.1));
         (clipped.1 - clipped.0 > tol.parametric).then_some(clipped)
     };
     let Some(period) = period else {
-        return clip(overlap);
+        return clip(overlap).into_iter().collect();
     };
     if overlap.1 - overlap.0 >= period - tol.parametric {
-        return Some(range);
+        return vec![range];
     }
     let first_copy = ((range.0 - overlap.1) / period).floor();
-    (0..3)
+    let mut pieces: Vec<(f64, f64)> = (0..3)
         .filter_map(|step| {
             let shift = (first_copy + f64::from(step)) * period;
             clip((overlap.0 + shift, overlap.1 + shift))
         })
-        .max_by(|a, b| (a.1 - a.0).total_cmp(&(b.1 - b.0)))
+        .collect();
+    pieces.sort_by(|a, b| a.0.total_cmp(&b.0));
+    pieces
 }
 
 #[cfg(test)]
@@ -187,21 +190,32 @@ mod tests {
     fn test_clip_range() {
         assert_eq!(
             clip_range((f64::NEG_INFINITY, f64::INFINITY), (2.0, 3.0), None, TOL),
-            Some((2.0, 3.0))
+            vec![(2.0, 3.0)]
         );
         assert_eq!(
             clip_range((0.0, TAU), (-1.0, 1.0), Some(TAU), TOL),
-            Some((-1.0, 1.0))
+            vec![(-1.0, 1.0)]
         );
-        assert_eq!(clip_range((0.0, 1.0), (2.0, 3.0), None, TOL), None);
+        assert_eq!(clip_range((0.0, 1.0), (2.0, 3.0), None, TOL), vec![]);
     }
 
     #[test]
     fn test_clip_range_shifts_a_partial_overlap_across_the_seam() {
-        let (low, high) = clip_range((6.0, 6.0 + 0.5), (-1.0, 1.0), Some(TAU), TOL).unwrap();
+        let pieces = clip_range((6.0, 6.0 + 0.5), (-1.0, 1.0), Some(TAU), TOL);
+        assert_eq!(pieces.len(), 1);
+        let (low, high) = pieces[0];
         assert!((low - (6.0 - TAU)).abs() < 1e-15);
         assert!((high - (6.5 - TAU)).abs() < 1e-15);
-        assert_eq!(clip_range((3.0, 4.0), (-1.0, 1.0), Some(TAU), TOL), None);
+        assert_eq!(clip_range((3.0, 4.0), (-1.0, 1.0), Some(TAU), TOL), vec![]);
+    }
+
+    #[test]
+    fn test_clip_range_returns_both_pieces_across_the_seam() {
+        // Arcs [0, 5] and [4, 7] of one circle share [4, 5] and [0, 7 - TAU].
+        let pieces = clip_range((4.0, 7.0), (0.0, 5.0), Some(TAU), TOL);
+        assert_eq!(pieces.len(), 2);
+        assert!((pieces[0].0 - 0.0).abs() < 1e-15 && (pieces[0].1 - (7.0 - TAU)).abs() < 1e-15);
+        assert_eq!(pieces[1], (4.0, 5.0));
     }
 
     #[test]
