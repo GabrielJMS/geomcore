@@ -33,8 +33,9 @@ per-pair method costs.
 === "Python"
 
     ```python
-    kind, payload = plane.intersect(sphere)   # ("circle", Circle3D)
-    kind, payload = line.intersect(sphere)    # ("hits", [(t, Point3D, multiplicity)])
+    result = plane.intersect(sphere)    # SurfaceSurfaceIntersection
+    circle = result.curves[0].curve     # Circle3D
+    hits = line.intersect(sphere).hits  # [CurveSurfaceHit], in either order
     ```
 
 === "Rust"
@@ -94,10 +95,11 @@ the parameter regions where hits may be missing otherwise.
 === "Python"
 
     ```python
-    from geomcore import intersect_curve_surface, intersect_curve_curve
-
-    hits = intersect_curve_surface(spline_curve, spline_surface)  # [(t, (u, v), Point3D)]
-    hits = intersect_curve_curve(curve_a, curve_b)                # [(s, Point3D, t)]
+    result = spline_curve.intersect(spline_surface)  # CurveSurfaceIntersection
+    for hit in result.hits:
+        hit.curve_parameter, hit.surface_parameters, hit.point
+    complete = result.is_complete()
+    meetings = curve_a.intersect(curve_b)            # CurveCurveIntersection
     ```
 
 === "Rust"
@@ -135,11 +137,10 @@ are found there.
 === "Python"
 
     ```python
-    from geomcore import intersect_marching
-
-    # The routed intersect: exact curves (Line3D, Circle3D, ...) where a
-    # closed form exists, BSplineCurve3D otherwise.
-    curves = intersect_marching(surface_a, surface_b)
+    # Exact curves (Line3D, Circle3D, ...) where a closed form exists,
+    # BSplineCurve3D where marched.
+    result = surface_a.intersect(surface_b)
+    curves = [piece.curve for piece in result.curves]
     ```
 
 === "Rust"

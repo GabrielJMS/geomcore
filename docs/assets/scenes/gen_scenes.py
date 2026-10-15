@@ -4,7 +4,7 @@ Uses the real kernel + the real viewer client, so every scene is computed,
 not drawn: exact intersections, marching loops, projection feet.
 
 Run:  python3 docs/assets/scenes/gen_scenes.py
-Needs the released packages: pip install "geomcore>=0.33" "geomcore-viewer>=0.2"
+Needs the released packages: pip install "geomcore>=0.36" "geomcore-viewer>=0.2"
 (the viewer only writes the JSON here; no server is started). A scene that
 shows an unreleased API needs this repo's geomcore-py build instead.
 """
@@ -38,6 +38,12 @@ def save(view: gv.Viewer, name: str) -> None:
     print(f"saved {path.name} ({n} objects)")
 
 
+def meeting(result):
+    """What a surface-surface intersection draws: its curves, then the
+    isolated points where the surfaces touch."""
+    return [piece.curve for piece in result.curves] + list(result.contact_points)
+
+
 def exact_scene() -> None:
     """Sphere cap cylinder: two exact latitude rings (plane page: no — intersection)."""
     t0 = time.perf_counter()
@@ -50,8 +56,8 @@ def exact_scene() -> None:
     for _ in range(200):
         res = s.intersect(y)
     dt = (time.perf_counter() - t0) / 200
-    view.add(res, label="rings", group="exact")
-    print(f"exact: {res[0]} in {dt * 1e6:.1f} us/call (200-call mean)")
+    view.add(*meeting(res), label="rings", group="exact")
+    print(f"exact: {len(res.curves)} ring(s) in {dt * 1e6:.1f} us/call (200-call mean)")
     save(view, "intersect-exact.json")
 
 
@@ -61,10 +67,8 @@ def marching_scene() -> None:
     grid = [[Point3D(x, y, 1.5 * math.sin(x) * math.cos(y)) for y in xs] for x in xs]
     patch = BSplineSurface.approximate(grid, 3, 3, 6, 6)
     s = Sphere(Point3D.origin(), 3.0)
-    from geomcore import intersect_marching
-
     t0 = time.perf_counter()
-    curves = intersect_marching(patch, s)
+    curves = meeting(patch.intersect(s))
     dt = time.perf_counter() - t0
     print(f"marching: {len(curves)} loop(s) in {dt * 1e3:.0f} ms")
 
@@ -285,13 +289,9 @@ def plane_sphere_scene() -> None:
             v=(-1.6, 1.6),
             group=what,
         )
-        view.add(
-            sphere.intersect(plane),
-            label=f"S ∩ P ({what})",
-            color=B,
-            width=3,
-            group=what,
-        )
+        parts = meeting(sphere.intersect(plane))
+        if parts:
+            view.add(*parts, label=f"S ∩ P ({what})", color=B, width=3, group=what)
     save(view, "plane-sphere.json")
 
 
