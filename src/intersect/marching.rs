@@ -284,17 +284,22 @@ where
 
 /// Whether `s` lies on `other`, from a grid of `COINCIDENCE_SAMPLES` by
 /// `COINCIDENCE_SAMPLES` samples over its whole parameter domain, bounds
-/// included: every sample projects onto `other` within `tol.confusion`,
-/// and the two normals there are parallel within `tol.angular` (where
+/// included, and the centres of the grid's cells: every sample projects
+/// onto `other` within `tol.confusion`, and the two normals there are
+/// parallel within the tilt that distance allows (see below; where
 /// neither degenerates, as at a sphere's pole). The ranges of `other`'s
 /// parameters at the projections when it does; `None` when it does not,
 /// or when a parameter of `s` is unbounded.
 ///
+/// The cell centres sit halfway between grid lines, so a surface that
+/// meets `other` only along those lines (as when they fall on knots)
+/// still leaves `other` at a centre.
+///
 /// The check stops at the first sample off `other`, so on crossing
 /// surfaces it costs one or two projections. A surface crossing `other`
 /// passes through isolated curves, and one touching it does so along
-/// curves or at points: neither holds every sample of a grid with the
-/// normals parallel there.
+/// curves or at points: neither holds every sample with the normals
+/// parallel there.
 fn lies_on<S, T>(s: &S, other: &T, tol: Tolerance) -> Option<((f64, f64), (f64, f64))>
 where
     S: ParametricSurface,
@@ -307,24 +312,50 @@ where
     {
         return None;
     }
-    let last = (COINCIDENCE_SAMPLES - 1) as f64;
-    let at = |(low, high): (f64, f64), i: usize| low + (high - low) * i as f64 / last;
-    let mut feet = Vec::with_capacity(COINCIDENCE_SAMPLES * COINCIDENCE_SAMPLES);
-    for i in 0..COINCIDENCE_SAMPLES {
-        for j in 0..COINCIDENCE_SAMPLES {
-            let (p, [su, sv]) = s.eval_d1(at(u_bounds, i), at(v_bounds, j));
-            let foot = other.project_point(p, tol);
-            if foot.distance > tol.confusion {
-                return None;
-            }
-            let (_, [ou, ov]) = other.eval_d1(foot.u, foot.v);
-            if let (Some(n), Some(m)) = (unit_normal(su, sv), unit_normal(ou, ov))
-                && n.cross(m).magnitude() > tol.angular
-            {
-                return None;
-            }
-            feet.push((foot.u, foot.v));
+    let cells = (COINCIDENCE_SAMPLES - 1) as f64;
+    // Grid lines at whole steps, cell centres at half steps.
+    let at = |(low, high): (f64, f64), half_steps: usize| {
+        low + (high - low) * half_steps as f64 / (2.0 * cells)
+    };
+    let half_step = |(low, high): (f64, f64)| (high - low) / (2.0 * cells);
+    let (u_half_step, v_half_step) = (half_step(u_bounds), half_step(v_bounds));
+    let lines = (0..COINCIDENCE_SAMPLES).map(|i| 2 * i);
+    let centres = (0..COINCIDENCE_SAMPLES - 1).map(|i| 2 * i + 1);
+    let samples = lines
+        .clone()
+        .flat_map(|i| lines.clone().map(move |j| (i, j)))
+        .chain(
+            centres
+                .clone()
+                .flat_map(|i| centres.clone().map(move |j| (i, j))),
+        );
+    let mut feet = Vec::with_capacity(
+        COINCIDENCE_SAMPLES * COINCIDENCE_SAMPLES
+            + (COINCIDENCE_SAMPLES - 1) * (COINCIDENCE_SAMPLES - 1),
+    );
+    for (i, j) in samples {
+        let (p, [su, sv]) = s.eval_d1(at(u_bounds, i), at(v_bounds, j));
+        let foot = other.project_point(p, tol);
+        if foot.distance > tol.confusion {
+            return None;
         }
+        // Two surfaces within a distance d of each other at samples a
+        // length h apart can tilt against each other by about 2d/h there:
+        // the gap between them changes by at most 2d over h, plus terms
+        // in h times the difference of their curvatures, which copies of
+        // one surface share. So a copy off by up to `tol.confusion` (a
+        // fit, or a shift) has normals off by up to that bound, which can
+        // exceed `tol.angular` by far; h is the distance to the nearest
+        // other sample, half a grid step.
+        let spacing = (su.magnitude() * u_half_step).min(sv.magnitude() * v_half_step);
+        let allowed_tilt = tol.angular.max(2.0 * tol.confusion / spacing);
+        let (_, [ou, ov]) = other.eval_d1(foot.u, foot.v);
+        if let (Some(n), Some(m)) = (unit_normal(su, sv), unit_normal(ou, ov))
+            && n.cross(m).magnitude() > allowed_tilt
+        {
+            return None;
+        }
+        feet.push((foot.u, foot.v));
     }
     Some((
         covering_range(feet.iter().map(|f| f.0), other.u_period(), other.u_bounds()),
@@ -1483,9 +1514,9 @@ where
         let mut improved = false;
         for _ in 0..12 {
             let trial = bounded([0, 1, 2, 3].map(|k| x[k] + scale * delta[k]));
-            let (tf, tr, tm) = residual(trial);
-            if tm < merit {
-                (x, f, r, merit) = (trial, tf, tr, tm);
+            let (trial_residual, trial_normal_residual, trial_merit) = residual(trial);
+            if trial_merit < merit {
+                (x, f, r, merit) = (trial, trial_residual, trial_normal_residual, trial_merit);
                 improved = true;
                 break;
             }
@@ -1572,9 +1603,9 @@ where
             }
             if let Some(delta) = solve_4x4(damped, gradient, 0.0) {
                 let trial = within_bounds(a, b, std::array::from_fn(|k| x[k] + delta[k]));
-                let (tf, tm) = residual(trial);
-                if tm < merit {
-                    (x, f, merit) = (trial, tf, tm);
+                let (trial_residual, trial_merit) = residual(trial);
+                if trial_merit < merit {
+                    (x, f, merit) = (trial, trial_residual, trial_merit);
                     damping = (damping * 0.1).max(1e-12);
                     improved = true;
                     break;
@@ -1671,9 +1702,9 @@ where
                 trial[k] += scale * delta[i];
             }
             let trial = within_bounds(a, b, trial);
-            let tf = residual(trial);
-            if tf.square_magnitude() < f.square_magnitude() {
-                (x, f) = (trial, tf);
+            let trial_residual = residual(trial);
+            if trial_residual.square_magnitude() < f.square_magnitude() {
+                (x, f) = (trial, trial_residual);
                 improved = true;
                 break;
             }
@@ -2582,5 +2613,130 @@ mod tests {
                     && region.first_u_range.1 >= 3.0 - 1e-6)
         );
         assert!(result.contact_points().is_empty());
+    }
+
+    /// `surface` moved by `offset`.
+    fn shifted(
+        surface: &crate::surfaces::BSplineSurface,
+        offset: Vector3D,
+    ) -> crate::surfaces::BSplineSurface {
+        surface.transformed(crate::Transform::translation(offset))
+    }
+
+    #[test]
+    fn test_near_copies_within_confusion_are_coincident() {
+        use crate::{Cylinder, Sphere};
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::new(0.3, 0.2, 0.5), 0.8).unwrap();
+        let copy = sphere.to_bspline();
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+        let patch = cylinder_patch((0.0, std::f64::consts::PI));
+        for shift in [3e-8, 1e-7] {
+            let offset = Vector3D::new(1.0, 0.5, 0.25).normalized().unwrap() * shift;
+            let moved = shifted(&copy, offset);
+            for result in [
+                marching_intersection(&sphere, &moved, tol),
+                marching_intersection(&moved, &sphere, tol),
+                marching_intersection(&copy, &moved, tol),
+            ] {
+                assert!(result.is_coincident(), "shift {shift}");
+                assert!(result.curves().is_empty());
+            }
+            let result = marching_intersection(&cylinder, &shifted(&patch, offset), tol);
+            assert!(!result.is_coincident() && result.curves().is_empty());
+            let region = only_region(&result);
+            assert!(region.first_u_range.0.abs() < 1e-6);
+            assert!((region.first_u_range.1 - std::f64::consts::PI).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_copies_apart_beyond_confusion_are_not_coincident() {
+        use crate::Sphere;
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::new(0.3, 0.2, 0.5), 0.8).unwrap();
+        let copy = sphere.to_bspline();
+        // Equal spheres 1e-5 apart cross in one great circle.
+        let offset = Vector3D::new(1.0, 0.5, 0.25).normalized().unwrap() * 1e-5;
+        let result = marching_intersection(&sphere, &shifted(&copy, offset), tol);
+        assert!(!result.is_coincident());
+        assert_eq!(result.completeness(), &Completeness::Sampled);
+        assert_eq!(result.curves().len(), 1);
+    }
+
+    /// A flat cubic patch over [0, 1] x [0, 1] in z = 0 with bumps of
+    /// `height`, alternately up and down, between the lines u = k / 6:
+    /// each bump is a single basis function of a uniform 24-span knot
+    /// vector, with zero value and slope on those lines.
+    fn bumpy_patch(height: f64) -> crate::surfaces::BSplineSurface {
+        // A uniform cubic basis function peaks at 2/3 of its pole.
+        let pole_height = 1.5 * height;
+        let poles = (0..27)
+            .map(|i| {
+                let x = if i == 0 {
+                    0.0
+                } else if i == 26 {
+                    1.0
+                } else {
+                    (i as f64 - 1.0) / 24.0
+                };
+                let z = if i % 4 == 3 && i <= 23 {
+                    if (i / 4) % 2 == 0 {
+                        pole_height
+                    } else {
+                        -pole_height
+                    }
+                } else {
+                    0.0
+                };
+                vec![Point3D::new(x, 0.0, z), Point3D::new(x, 1.0, z)]
+            })
+            .collect();
+        let knots = (0..=24).map(|k| k as f64 / 24.0).collect();
+        let mut multiplicities = vec![1; 25];
+        (multiplicities[0], multiplicities[24]) = (4, 4);
+        crate::surfaces::BSplineSurface::new(
+            3,
+            1,
+            poles,
+            knots,
+            multiplicities,
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_bumps_between_the_sample_lines_are_not_coincident() {
+        use crate::Plane;
+        let tol = Tolerance::DEFAULT;
+        let flat = Plane::new(Point3D::ORIGIN, Vector3D::Z)
+            .unwrap()
+            .to_bspline_patch((0.0, 1.0), (0.0, 1.0))
+            .unwrap();
+        for height in [0.1, 1e-3] {
+            let bumpy = bumpy_patch(height);
+            for k in 0..6 {
+                let peak = bumpy.eval_point((k as f64 + 0.5) / 6.0, 0.5);
+                assert!((peak.z.abs() - height).abs() < 1e-9, "{peak:?}");
+            }
+            for result in [
+                marching_intersection(&flat, &bumpy, tol),
+                marching_intersection(&bumpy, &flat, tol),
+            ] {
+                assert!(!result.is_coincident());
+                // The tall bumps touch the flat patch along the seven
+                // lines; the low ones lie flat enough along them that
+                // marching may leave part unseparated, but never takes
+                // the two for one surface.
+                if height == 0.1 {
+                    assert_eq!(result.curves().len(), 7);
+                    assert_eq!(result.completeness(), &Completeness::Sampled);
+                }
+            }
+        }
     }
 }

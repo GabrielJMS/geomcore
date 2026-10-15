@@ -191,8 +191,11 @@ smaller than the iso-curve spacing can be missed.
     ```
 
 Before seeding, a surface with bounded parameters is checked for lying
-on the other: a 7 × 7 grid of its points must lie within confusion of
-the other surface, with the normals parallel. Surfaces lying on each
+on the other: a 7 × 7 grid of its points, and the centres of the
+grid's cells, must lie within confusion of the other surface, with the
+normals parallel within the tilt that distance allows between samples
+(about twice the confusion over their spacing), so a fitted or slightly
+moved copy still counts. Surfaces lying on each
 other, such as a sphere and its own `to_bspline()`, come back coincident
 (`Sampled`, since samples found it). A patch lying on a larger or
 unbounded surface, such as a cylinder and its `to_bspline_patch`, comes
@@ -210,13 +213,12 @@ Marching is approximate by design. Its limits:
   two patches that overlap in part are marched; the seeds where they lie
   on each other make the result `Incomplete` with an `Unseparated`
   region around the overlap, but spurious curves may still cross it;
-- surfaces that coincide within confusion but whose normals differ by
-  more than the angular tolerance (a fitted copy rather than an exact
-  conversion) are marched as crossing surfaces;
 - where crossing curves touch each other, traces stop rather than turn
   onto the other branch;
 - a loop that no seeding iso-curve crosses and that leaves no distance
-  minimum on either grid is missed.
+  minimum on either grid is missed: a plane cutting a small circle
+  (radius 0.014) off a B-spline sphere of radius 1 near its equator or
+  pole comes back `Sampled` with no curves.
 
 A wavy B-spline patch through a sphere, marched live below — one fitted
 loop in ~8 ms on the same machine (the loop arrives in the viewer as

@@ -198,8 +198,10 @@ Python:
   result reports `Sampled`, or `Incomplete` where the surfaces lie on
   each other (below).
 - Before seeding, marching checks whether a bounded surface lies on the
-  other (a 7 × 7 grid of its points within confusion, normals parallel):
-  surfaces lying on each other, such as a sphere and its `to_bspline()`,
+  other (a 7 × 7 grid of its points and the centres of its cells within
+  confusion, normals parallel within the tilt that distance allows
+  between samples): surfaces lying on each other, such as a sphere and
+  its `to_bspline()` or that copy moved by up to the confusion,
   come back coincident; a patch lying on a larger surface comes back
   `Incomplete` with one `Unseparated` region over the patch. Where the
   surfaces touch along a curve, the curve is traced along the direction
