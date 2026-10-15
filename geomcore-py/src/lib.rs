@@ -17,7 +17,6 @@ use geomcore::curves::{
     Parabola3D, ParametricCurve3D, PointExtrema2D, PointExtrema3D, PointParametrization,
     TrimmedCurve2D, TrimmedCurve3D,
 };
-use geomcore::intersect_curve_surface;
 use geomcore::marching_intersection;
 use geomcore::parametrize_numeric;
 use geomcore::surfaces::{
@@ -36,8 +35,9 @@ use geomcore::{
     TorusTorusIntersection, Transform, Vector2D, Vector3D,
 };
 use geomcore::{
-    Bound3D, BoundingBox3D, Discretization2D, Discretization3D, DiscretizationCriteria,
-    Discretize2D, Discretize3D, curve_curve_extrema, intersect_curve_curve,
+    Bound3D, BoundingBox3D, CurveCurveIntersection, CurveSurfaceIntersection, Discretization2D,
+    Discretization3D, DiscretizationCriteria, Discretize2D, Discretize3D, Intersect,
+    curve_curve_extrema,
 };
 
 fn val_err<E: std::fmt::Display>(e: E) -> PyErr {
@@ -2858,10 +2858,12 @@ fn py_curve_curve_extrema(
         .collect())
 }
 
-/// Generic 3D curve-curve intersection: extrema within tolerance.
+/// Generic 3D curve-curve intersection through the routed `intersect`:
+/// exact when the pair has a closed form, numeric otherwise.
 ///
 /// Returns `(first_parameter, Point3D, second_parameter)` tuples ordered by
-/// first-curve parameter.
+/// first-curve parameter. Ranges where the curves coincide are not hits
+/// and are not returned.
 #[pyfunction]
 #[pyo3(name = "intersect_curve_curve", signature = (curve_a, curve_b, tol = None))]
 fn py_intersect_curve_curve(
@@ -2874,7 +2876,7 @@ fn py_intersect_curve_curve(
     let a = extract_curve_arg(curve_a)?;
     let b = extract_curve_arg(curve_b)?;
     let mut out = Vec::new();
-    for h in intersect_curve_curve(&a, &b, tol) {
+    for h in routed_curve_curve(&a, &b, tol).hits() {
         out.push((
             h.first_parameter,
             PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
@@ -2883,13 +2885,13 @@ fn py_intersect_curve_curve(
     }
     Ok(out)
 }
-/// Generic curve-surface intersection for any curve and surface.
+/// Generic curve-surface intersection for any curve and surface, through
+/// the routed `intersect`: exact when the pair has a closed form, numeric
+/// otherwise.
 ///
-/// Samples the curve, projects onto the surface for seeds, and refines
-/// with Newton on `C(t) - S(u, v) = 0`. Returns a
-/// `(curve_parameter, (u, v), Point3D)` tuple per transversal hit, ordered
-/// by curve parameter. Overlapping pairs yield dense hit sets; use the
-/// analytic `intersect_*` methods when classification matters.
+/// Returns a `(curve_parameter, (u, v), Point3D)` tuple per hit, ordered
+/// by curve parameter. Ranges where the curve lies on the surface are not
+/// hits and are not returned.
 #[pyfunction]
 #[pyo3(name = "intersect_curve_surface", signature = (curve, surface, tol = None))]
 fn py_intersect_curve_surface(
@@ -2902,7 +2904,7 @@ fn py_intersect_curve_surface(
     let c = extract_curve_arg(curve)?;
     let s = extract_surface(surface)?;
     let mut out = Vec::new();
-    for h in intersect_curve_surface(&c, &s, tol) {
+    for h in routed_curve_surface(&c, &s, tol).hits() {
         out.push((
             h.curve_parameter,
             h.surface_parameters,
@@ -2910,6 +2912,28 @@ fn py_intersect_curve_surface(
         ));
     }
     Ok(out)
+}
+
+/// The routed intersection of two curves passed from Python.
+fn routed_curve_curve(a: &CurveArg, b: &CurveArg, tol: Tolerance) -> CurveCurveIntersection {
+    match (a, b) {
+        (CurveArg::Whole(a), CurveArg::Whole(b)) => a.intersect(b, tol),
+        (CurveArg::Whole(a), CurveArg::Trimmed(b)) => a.intersect(b, tol),
+        (CurveArg::Trimmed(a), CurveArg::Whole(b)) => a.intersect(b, tol),
+        (CurveArg::Trimmed(a), CurveArg::Trimmed(b)) => a.intersect(b, tol),
+    }
+}
+
+/// The routed intersection of a curve and a surface passed from Python.
+fn routed_curve_surface(
+    curve: &CurveArg,
+    surface: &Surface,
+    tol: Tolerance,
+) -> CurveSurfaceIntersection {
+    match curve {
+        CurveArg::Whole(curve) => curve.intersect(surface, tol),
+        CurveArg::Trimmed(curve) => curve.intersect(surface, tol),
+    }
 }
 
 /// Numeric curve-on-surface parametrization for pairs without closed form.

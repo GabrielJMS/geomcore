@@ -21,9 +21,9 @@ use crate::{Point3D, Tolerance};
 /// pole, a cone apex, a collapsed B-spline edge), where the Newton system
 /// is singular; their `surface_parameters` are the projection's.
 /// Unbounded curves seed `[-10, 10]`. Overlapping pairs yield dense hit
-/// sets along the overlap — use the exact intersection
-/// ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact)) when
-/// classification (tangent, coincident) matters.
+/// sets along the overlap; the routed [`Intersect`](crate::Intersect)
+/// calls this search only for pairs without a closed form, and solves the
+/// others exactly, tangency and coincidence included.
 ///
 /// The hits are [`Completeness::Sampled`](crate::Completeness::Sampled):
 /// a hit between samples, or whose Newton iteration strays, can be
@@ -53,28 +53,11 @@ use crate::{Point3D, Tolerance};
 /// the reason and the regions where hits may be missing; the hits are
 /// then those found, together with the sampled search's hits that do not
 /// merge into them.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-/// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-/// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
-/// assert_eq!(hits.len(), 2);
-/// assert!((hits[0].curve_parameter + 2.0).abs() < 1e-9);
-/// assert!((hits[1].curve_parameter - 2.0).abs() < 1e-9);
-/// assert!(!hits.is_complete());
-///
-/// // A B-spline segment through the sphere: the search proves both hits.
-/// use geomcore::BSplineCurve3D;
-/// let poles = vec![Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)];
-/// let segment = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
-/// let hits = intersect_curve_surface(&segment, &sphere, Tolerance::DEFAULT);
-/// assert_eq!(hits.len(), 2);
-/// assert!(hits.is_complete());
-/// ```
-pub fn intersect_curve_surface<C, S>(curve: &C, surface: &S, tol: Tolerance) -> CurveSurfaceHits
+pub(crate) fn intersect_curve_surface<C, S>(
+    curve: &C,
+    surface: &S,
+    tol: Tolerance,
+) -> CurveSurfaceHits
 where
     C: ParametricCurve3D,
     S: ParametricSurface,

@@ -9,6 +9,20 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Removed
+
+- The numeric free functions `intersect_curve_surface` and
+  `intersect_curve_curve`, and their results `CurveSurfaceHits` and
+  `CurveCurveHits`, are no longer public (breaking). The routed
+  `a.intersect(&b, tol)` replaces them: it runs the same numeric search
+  for pairs without a closed form, solves the others exactly, and its
+  result carries the same `completeness()`. `ConicSurfaceHit` stays
+  public, as the exact results carry it. In Python,
+  `geomcore.intersect_curve_surface` and `geomcore.intersect_curve_curve`
+  keep their signatures and now call the routed `intersect`, so a pair
+  with a closed form is solved exactly; ranges where the shapes coincide
+  are no longer returned as dense hits.
+
 ## [0.35.0] - 2026-10-13
 
 ### Added

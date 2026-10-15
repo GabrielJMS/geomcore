@@ -127,8 +127,8 @@ pub trait ParametricCurve3D {
     /// of a trimmed B-spline, of which the curve is the piece over
     /// [`bounds`](Self::bounds). `None` for any other curve.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to work on the B-spline's polynomial pieces. Default
     /// implementation: `None`.
     ///
@@ -154,8 +154,8 @@ pub trait ParametricCurve3D {
     /// basis of a trimmed elementary curve, of which the curve is the
     /// piece over [`bounds`](Self::bounds). `None` for any other curve.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to convert the curve to an exact B-spline when the other shape is
     /// one. Default implementation: `None`.
     ///

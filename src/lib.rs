@@ -69,8 +69,8 @@
 //! Between [`surfaces::Surface`] or [`curves::Curve3D`] values it returns
 //! a general result such as [`ExactSurfaceIntersection`], which reports
 //! `NotAnalytic` for a B-spline or a pair without a closed form; the
-//! numeric functions ([`marching_intersection`],
-//! [`intersect_curve_surface`], [`intersect_curve_curve`]) cover those.
+//! routed [`Intersect::intersect`] and [`marching_intersection`] cover
+//! those.
 //!
 //! # Extending the kernel
 //!
@@ -135,7 +135,7 @@ pub use discretization::{
     Discretize2D, Discretize3D,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
-pub use intersect::intersect_curve_surface;
+pub use intersect::curve_curve_extrema;
 pub use intersect::marching_intersection;
 pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
@@ -150,8 +150,7 @@ pub use intersect::{
     TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection,
 };
 pub use intersect::{
-    Completeness, CurveCurveExtrema, CurveCurveHits, CurveCurveRegion, CurveSurfaceHits,
-    CurveSurfaceRegion, IncompleteReason,
+    Completeness, CurveCurveExtrema, CurveCurveRegion, CurveSurfaceRegion, IncompleteReason,
 };
 pub use intersect::{
     CurveCurveHit2D, CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap,
@@ -162,7 +161,8 @@ pub use intersect::{
     ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
     InlineList, Intersect, IntersectExact,
 };
-pub use intersect::{curve_curve_extrema, intersect_curve_curve};
+#[cfg(test)]
+pub(crate) use intersect::{intersect_curve_curve, intersect_curve_surface};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, CurveProjection2D, SurfaceProjection};
 pub use surfaces::{

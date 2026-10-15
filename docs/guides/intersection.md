@@ -72,16 +72,16 @@ Two more landmarks, as figures:
 
 ## Numeric: curves
 
-`intersect_curve_curve` and `intersect_curve_surface` work over the
-`ParametricCurve3D` × `ParametricSurface` traits, so custom types and
-trimmed pieces work too. On B-splines there is no sampling grid:
+The routed `a.intersect(&b, tol)` takes the numeric search for pairs
+without a closed form (a B-spline, or an ellipse against a torus), and
+trimmed pieces are searched over their own range. On B-splines there is no sampling grid:
 Bézier pieces subdivide where their control boxes overlap until each
 pair holds at most one hit, then Newton solves it — crossings a grid
 would miss between samples are found, and tangencies/overlaps fall
 back to the sampled search instead of burning the budget.
 
-The search reports whether it finished: the return values read as
-their hit slices (`.hits()`) and carry a `Completeness` — `Complete`
+The search reports whether it finished: the result's `method()` is
+`Numeric`, and its `completeness()` is `Complete`
 when every piece pair was proven apart or isolated, `Incomplete` with
 the parameter regions where hits may be missing otherwise.
 
@@ -97,13 +97,14 @@ the parameter regions where hits may be missing otherwise.
 === "Rust"
 
     ```rust
-    use geomcore::{intersect_curve_curve, intersect_curve_surface};
+    use geomcore::Intersect;
 
-    let hits = intersect_curve_surface(&spline, &surface, tol);
-    for h in hits.hits() {
-        let _ = (h.curve_parameter, h.point);
+    let result = spline.intersect(&surface, tol);
+    for h in result.hits() {
+        let _ = (h.curve_parameter, h.surface_parameters, h.point);
     }
-    let meetings = intersect_curve_curve(&a, &b, tol);
+    let complete = result.is_complete();
+    let meetings = a.intersect(&b, tol);
     ```
 
 ## Numeric: marching surfaces

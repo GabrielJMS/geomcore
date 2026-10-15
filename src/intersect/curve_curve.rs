@@ -794,26 +794,7 @@ fn merge_valleys(
 /// those found, together with the hits of the grid-seeded extrema that do
 /// not merge into them.
 /// Parameters are reported on the curves themselves.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{BSplineCurve3D, Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-/// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-/// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
-/// assert_eq!(hits.len(), 2);
-/// assert!(!hits.is_complete());
-///
-/// // A B-spline chord across the circle: the search proves both hits.
-/// let poles = vec![Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)];
-/// let chord = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
-/// let hits = intersect_curve_curve(&circle, &chord, Tolerance::DEFAULT);
-/// assert_eq!(hits.len(), 2);
-/// assert!(hits.is_complete());
-/// assert!(hits[0].first_parameter.abs() < 1e-9); // the circle's own angle
-/// ```
-pub fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
+pub(crate) fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
 where
     A: ParametricCurve3D,
     B: ParametricCurve3D,

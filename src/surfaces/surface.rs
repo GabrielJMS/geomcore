@@ -130,8 +130,8 @@ pub trait ParametricSurface {
 
     /// The surface as a B-spline, or `None` for any other surface.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to work on the B-spline's polynomial patches. Default
     /// implementation: `None`.
     ///
@@ -162,8 +162,8 @@ pub trait ParametricSurface {
     /// The surface as an elementary surface, or `None` for any other
     /// surface.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to convert the surface to an exact B-spline when the curve is one.
     /// Default implementation: `None`.
     ///

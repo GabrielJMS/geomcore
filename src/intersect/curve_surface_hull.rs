@@ -22,33 +22,8 @@ use std::ops::Deref;
 /// [`intersect_curve_surface`](crate::intersect_curve_surface)).
 ///
 /// It reads as the slice of its hits.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{BSplineCurve3D, BSplineSurface, Point3D, Tolerance, intersect_curve_surface};
-/// let poles = vec![
-///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
-///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
-/// ];
-/// let (knots, mults) = (vec![0.0, 1.0], vec![2, 2]);
-/// let square = BSplineSurface::new(
-///     1, 1, poles, knots.clone(), mults.clone(), knots.clone(), mults.clone(), false, false,
-/// )
-/// .unwrap();
-/// let ends = vec![Point3D::new(0.5, 1.0, -1.0), Point3D::new(1.5, 1.0, 1.0)];
-/// let segment = BSplineCurve3D::new(1, ends, knots, mults, false).unwrap();
-/// let hits = intersect_curve_surface(&segment, &square, Tolerance::DEFAULT);
-/// // Both are B-splines: the search proves there is no other hit.
-/// assert!(hits.is_complete());
-/// assert_eq!(hits.len(), 1);
-/// assert!(hits[0].point.distance(Point3D::new(1.0, 1.0, 0.0)) < 1e-12);
-/// for hit in &hits {
-///     assert!((hit.curve_parameter - 0.5).abs() < 1e-12);
-/// }
-/// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveSurfaceHits {
+pub(crate) struct CurveSurfaceHits {
     pub(super) hits: Vec<CurveSurfaceHit>,
     pub(super) completeness: Completeness<CurveSurfaceRegion>,
 }
@@ -99,63 +74,18 @@ impl CurveSurfaceHits {
             .sort_by(|a, b| a.curve_parameter.total_cmp(&b.curve_parameter));
     }
 
-    /// The hits, ordered by curve parameter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
-    /// assert_eq!(hits.hits().len(), 2);
-    /// ```
-    pub fn hits(&self) -> &[CurveSurfaceHit] {
-        &self.hits
-    }
-
     /// The hits, ordered by curve parameter, without the completeness.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// let hits: Vec<_> = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT).into_hits();
-    /// assert!(hits[0].curve_parameter < hits[1].curve_parameter);
-    /// ```
     pub fn into_hits(self) -> Vec<CurveSurfaceHit> {
         self.hits
     }
 
     /// Whether the hits are all of them, and if not, why and where hits
     /// may be missing.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Completeness, Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
-    /// assert_eq!(hits.completeness(), &Completeness::Sampled);
-    /// ```
     pub fn completeness(&self) -> &Completeness<CurveSurfaceRegion> {
         &self.completeness
     }
 
     /// Whether the hits are all of them ([`Completeness::Complete`]).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// // Sampled hits are not proven complete.
-    /// assert!(!intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT).is_complete());
-    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
@@ -197,7 +127,7 @@ impl<'a> IntoIterator for &'a CurveSurfaceHits {
 ///
 /// ```
 /// use geomcore::{
-///     BSplineCurve3D, BSplineSurface, Completeness, Point3D, Tolerance, intersect_curve_surface,
+///     BSplineCurve3D, BSplineSurface, Completeness, Intersect, Point3D, Tolerance,
 /// };
 /// let poles = vec![
 ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
@@ -215,8 +145,8 @@ impl<'a> IntoIterator for &'a CurveSurfaceHits {
 ///     Point3D::new(1.5, 1.0, 1.0),
 /// ];
 /// let parabola = BSplineCurve3D::new(2, poles, knots, vec![3, 3], false).unwrap();
-/// let hits = intersect_curve_surface(&parabola, &square, Tolerance::DEFAULT);
-/// let Completeness::Incomplete { regions, .. } = hits.completeness() else {
+/// let result = parabola.intersect(&square, Tolerance::DEFAULT);
+/// let Completeness::Incomplete { regions, .. } = result.completeness() else {
 ///     panic!("a tangent contact never separates");
 /// };
 /// assert_eq!(regions.len(), 1);

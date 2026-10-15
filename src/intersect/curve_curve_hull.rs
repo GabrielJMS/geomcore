@@ -23,27 +23,8 @@ use std::ops::Deref;
 /// [`intersect_curve_curve`](crate::intersect_curve_curve)).
 ///
 /// It reads as the slice of its hits.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{BSplineCurve3D, Point3D, Tolerance, intersect_curve_curve};
-/// let segment = |from: Point3D, to: Point3D| {
-///     BSplineCurve3D::new(1, vec![from, to], vec![0.0, 1.0], vec![2, 2], false).unwrap()
-/// };
-/// let up = segment(Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0));
-/// let down = segment(Point3D::new(0.0, 2.0, 0.0), Point3D::new(2.0, 0.0, 0.0));
-/// let hits = intersect_curve_curve(&up, &down, Tolerance::DEFAULT);
-/// // Both are B-splines: the search proves there is no other hit.
-/// assert!(hits.is_complete());
-/// assert_eq!(hits.len(), 1);
-/// assert!(hits[0].point.distance(Point3D::new(1.0, 1.0, 0.0)) < 1e-12);
-/// for hit in &hits {
-///     assert!((hit.first_parameter - 0.5).abs() < 1e-12);
-/// }
-/// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveCurveHits {
+pub(crate) struct CurveCurveHits {
     hits: Vec<CurveCurveHit>,
     completeness: Completeness<CurveCurveRegion>,
 }
@@ -80,64 +61,19 @@ impl CurveCurveHits {
             .sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
     }
 
-    /// The hits, ordered by first-curve parameter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
-    /// assert_eq!(hits.hits().len(), 2);
-    /// ```
-    pub fn hits(&self) -> &[CurveCurveHit] {
-        &self.hits
-    }
-
     /// The hits, ordered by first-curve parameter, without the
     /// completeness.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let hits: Vec<_> = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT).into_hits();
-    /// assert!(hits[0].first_parameter < hits[1].first_parameter);
-    /// ```
     pub fn into_hits(self) -> Vec<CurveCurveHit> {
         self.hits
     }
 
     /// Whether the hits are all of them, and if not, why and where hits
     /// may be missing.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Completeness, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
-    /// assert_eq!(hits.completeness(), &Completeness::Sampled);
-    /// ```
     pub fn completeness(&self) -> &Completeness<CurveCurveRegion> {
         &self.completeness
     }
 
     /// Whether the hits are all of them ([`Completeness::Complete`]).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// // Sampled hits are not proven complete.
-    /// assert!(!intersect_curve_curve(&line, &circle, Tolerance::DEFAULT).is_complete());
-    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
@@ -318,7 +254,7 @@ impl<'a> IntoIterator for &'a CurveCurveExtrema {
 /// # Examples
 ///
 /// ```
-/// use geomcore::{BSplineCurve3D, Completeness, Point3D, Tolerance, intersect_curve_curve};
+/// use geomcore::{BSplineCurve3D, Completeness, Intersect, Point3D, Tolerance};
 /// // A parabola touching the segment at (2, 0, 0), at s = 0.5.
 /// let poles = vec![
 ///     Point3D::new(0.0, 1.0, 0.0),
@@ -328,8 +264,8 @@ impl<'a> IntoIterator for &'a CurveCurveExtrema {
 /// let parabola = BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap();
 /// let ends = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(4.0, 0.0, 0.0)];
 /// let segment = BSplineCurve3D::new(1, ends, vec![0.0, 1.0], vec![2, 2], false).unwrap();
-/// let hits = intersect_curve_curve(&parabola, &segment, Tolerance::DEFAULT);
-/// let Completeness::Incomplete { regions, .. } = hits.completeness() else {
+/// let result = parabola.intersect(&segment, Tolerance::DEFAULT);
+/// let Completeness::Incomplete { regions, .. } = result.completeness() else {
 ///     panic!("a tangent contact never separates");
 /// };
 /// assert_eq!(regions.len(), 1);
@@ -337,7 +273,7 @@ impl<'a> IntoIterator for &'a CurveCurveExtrema {
 /// assert!(s0 <= 0.5 && 0.5 <= s1 && s1 - s0 < 1e-2);
 /// assert!(regions[0].min_corner.x <= 2.0 && 2.0 <= regions[0].max_corner.x);
 /// // The sampled search, run as well, finds the contact.
-/// assert_eq!(hits.len(), 1);
+/// assert_eq!(result.hits().len(), 1);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveRegion {

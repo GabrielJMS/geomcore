@@ -222,11 +222,14 @@ cargo bench --bench discretization
 
 # Curve–surface intersection on B-splines
 
-`benches/intersect_curve_surface.rs` times `intersect_curve_surface` for 64
-cubic B-spline curves against one bicubic B-spline surface (6×6 poles
+`benches/intersect_curve_surface.rs` times the numeric curve–surface
+search for 64 cubic B-spline curves against one bicubic B-spline surface (6×6 poles
 `(i, j, sin(0.7 i j))`, knots `[0, 1, 2, 3]` with multiplicities
 `[4, 1, 1, 4]`). Each curve rises from `z = -2` to `z = 2` along a wavy
-path over the surface, so most cross it once.
+path over the surface, so most cross it once. Since 0.36 the bench calls
+the routed `intersect`, which sends these pairs to the numeric search; the
+tables below name that search after the free function
+`intersect_curve_surface` it was called through before, now crate-private.
 
 Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
 --measurement-time 3` (2026-10-12). Times are per curve.
@@ -251,8 +254,9 @@ cargo bench --bench intersect_curve_surface
 
 # Curve–curve intersection and extrema on B-splines
 
-`benches/intersect_curve_curve.rs` times `intersect_curve_curve` on 64
-pairs of cubic B-spline curves in one plane, one crossing the square
+`benches/intersect_curve_curve.rs` times the numeric curve–curve search
+(through the routed `intersect` since 0.36, through the free function
+`intersect_curve_curve`, now crate-private, before) on 64 pairs of cubic B-spline curves in one plane, one crossing the square
 `[0, 5]^2` from left to right and the other from bottom to top along wavy
 paths, so that every pair crosses at least once; and `curve_curve_extrema`
 on 64 pairs of skew cubic B-spline curves, wavy in all three directions,

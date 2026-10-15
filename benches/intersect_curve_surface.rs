@@ -1,6 +1,7 @@
 //! Cost of the numeric curve–surface intersection on B-splines.
 //!
-//! Times `intersect_curve_surface` for 64 cubic B-spline curves against one
+//! Times the routed `intersect`, which takes the numeric path for these
+//! pairs, for 64 cubic B-spline curves against one
 //! bicubic B-spline surface. The surface is a 6×6 net over `[0, 5]^2`
 //! with gentle height variation; each curve interpolates six points rising
 //! from `z = -2` to `z = 2` along a wavy path between two random points of
@@ -15,9 +16,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::surfaces::BSplineSurface;
-use geomcore::{
-    BSplineCurve3D, Circle3D, Cylinder, Point3D, Tolerance, Vector3D, intersect_curve_surface,
-};
+use geomcore::{BSplineCurve3D, Circle3D, Cylinder, Intersect, Point3D, Tolerance, Vector3D};
 
 const CURVES: usize = 64;
 
@@ -102,7 +101,7 @@ fn bench_intersect_curve_surface(c: &mut Criterion) {
     group.bench_function("bspline_curve_bspline_surface", |b| {
         b.iter(|| {
             for curve in black_box(&curves) {
-                black_box(intersect_curve_surface(curve, &surface, tol));
+                black_box(curve.intersect(&surface, tol));
             }
         })
     });
@@ -110,7 +109,7 @@ fn bench_intersect_curve_surface(c: &mut Criterion) {
     group.bench_function("bspline_curve_cylinder", |b| {
         b.iter(|| {
             for curve in black_box(&curves) {
-                black_box(intersect_curve_surface(curve, &cylinder, tol));
+                black_box(curve.intersect(&cylinder, tol));
             }
         })
     });
@@ -118,7 +117,7 @@ fn bench_intersect_curve_surface(c: &mut Criterion) {
     group.bench_function("circle_bspline_surface", |b| {
         b.iter(|| {
             for circle in black_box(&circles) {
-                black_box(intersect_curve_surface(circle, &surface, tol));
+                black_box(circle.intersect(&surface, tol));
             }
         })
     });
