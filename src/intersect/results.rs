@@ -22,19 +22,19 @@ pub(crate) type CurveCurveHitList = InlineOrHeapList<CurveCurveHit, 4>;
 /// twice.
 pub(crate) type CurveCurveHitList2D = InlineOrHeapList<CurveCurveHit2D, 2>;
 
-/// The overlaps of a curve-curve result: a coincidence restricted to two
-/// parameter ranges gives one piece, or two when it crosses a seam; a rare
-/// third piece moves the list to the heap.
-pub(crate) type CurveCurveOverlapList = InlineOrHeapList<CurveCurveOverlap, 2>;
+/// The overlaps of a curve-curve result. Overlaps come only from
+/// coincident curves, a rare case, and an empty `Vec` does not allocate,
+/// so a plain `Vec` keeps the result small for the common case.
+pub(crate) type CurveCurveOverlapList = Vec<CurveCurveOverlap>;
 
 /// The hits of a curve-surface result. The inline capacity is the most
 /// hits an exact pair yields (a line or conic meets a quadric or torus at
 /// most 4 times).
 pub(crate) type CurveSurfaceHitList = InlineOrHeapList<CurveSurfaceHit, 4>;
 
-/// The overlaps of a curve-surface result: an exact coincidence is one
-/// parameter range.
-pub(crate) type CurveSurfaceOverlapList = InlineOrHeapList<(f64, f64), 1>;
+/// The overlaps of a curve-surface result: a plain `Vec`, for the same
+/// reason as [`CurveCurveOverlapList`].
+pub(crate) type CurveSurfaceOverlapList = Vec<(f64, f64)>;
 
 /// How an intersection was computed.
 ///

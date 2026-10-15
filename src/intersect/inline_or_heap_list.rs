@@ -1,7 +1,7 @@
 //! A list that keeps up to `N` items inline and moves them to the heap
 //! only when it grows past `N`.
 //!
-//! The routed results store their hits and overlaps in it: an exact pair
+//! The routed results store their hits in it: an exact pair
 //! never produces more than the capacity, so it never allocates, while a
 //! numeric search, whose hit count has no bound, keeps its `Vec`.
 

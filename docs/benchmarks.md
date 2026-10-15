@@ -151,11 +151,11 @@ before (the baseline itself got faster). Counted under callgrind, the
 routed call runs about 370 more instructions per pair than the fair
 baseline in 3D and 330 in 2D:
 
-- **Moving the result.** A routed result is about 300 bytes (304 for
-  curve–surface, 328 for curve–curve, 208 in 2D), since it keeps up to 4
-  hits inline to avoid allocating; the baseline returns about 100.
-  Copying it is about 125 instructions per circle–circle pair and 60 per
-  2D pair.
+- **Moving the result.** A routed result was 304 bytes for
+  curve–surface, 328 for curve–curve and 208 in 2D, since it kept up to
+  4 hits and 2 overlaps inline to avoid allocating; the baseline returns
+  about 100. Copying it was about 125 instructions per circle–circle pair
+  and 60 per 2D pair.
 - **Building the result.** Converting the solver's hits into the routed
   hits, clipping them to the parameter ranges, and sorting them: about
   150 instructions per circle–circle pair.
@@ -168,6 +168,15 @@ lists (one allocation per exact routed call, two for a 2D pair): the
 routed time moved from about 192 to 189 ns for line–cylinder, 179 to
 167 ns for circle–circle, and not at all in 2D, since the larger result
 costs part of the allocation back in copies.
+
+Overlaps come only from coincident curves, and an empty `Vec` does not
+allocate, so the overlaps went back to a plain `Vec` while the hits stay
+inline. The results shrank to 296, 264 and 144 bytes. Timed the same way
+(the median of five interleaved runs, each the fastest of 30 timings) the
+routed call barely moved: line–cylinder 184 → 183 ns, circle–circle
+147 → 143 ns, 2D circle–circle 108 → 109 ns; callgrind counts 1547 →
+1549, 1599 → 1582 and 1181 → 1184 instructions per pair. The gain is
+in memory: a caller keeping many results stores up to a third less.
 
 The four `parameter_of` calls of a circle–circle pair are each needed
 (two hits on two circles), and each is computed once.
