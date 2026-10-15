@@ -21,6 +21,12 @@ the Python distribution are versioned in lockstep.
   held as the enum, by the closed form of an elementary variant; a
   B-spline projects the point with `Tolerance::DEFAULT`.
 
+### Removed
+
+- `marching_intersection` and `Surface::intersect_marching` are no longer
+  public (breaking): use the routed `intersect`, which marches the pairs
+  without a closed form.
+
 ### Changed
 
 - `intersect_curve_surface` and `intersect_curve_curve` return the
@@ -31,12 +37,15 @@ the Python distribution are versioned in lockstep.
   curve and surface types defined outside the crate. For the crate's own
   types, the routed `a.intersect(&b, tol)` solves the pairs with a closed
   form exactly and runs the same search for the others.
+- In Python, `geomcore.intersect_marching` now calls the routed
+  `intersect` and returns a list of curves of any type: exact curves
+  where a closed form exists, `BSplineCurve3D` otherwise.
 - In Python, `geomcore.intersect_curve_surface` and
   `geomcore.intersect_curve_curve` keep their signatures and now call the
   routed `intersect`, so a pair with a closed form is solved exactly;
   ranges where the shapes coincide are no longer returned as dense hits.
-- `marching_intersection`, and the routed `intersect` of two surfaces
-  without a closed form, seed from the points where the iso-curves of an
+- Marching, run by the routed `intersect` of two surfaces without a
+  closed form, seed from the points where the iso-curves of an
   elementary surface meet the other surface: rulings and circles of a
   cylinder or cone, circles of a sphere or torus (not against a torus),
   lines of a plane across the other surface's bounding box. A B-spline

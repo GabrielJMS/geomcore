@@ -1,6 +1,6 @@
 //! Cost of the marching intersection.
 //!
-//! Times the routed `intersect` of two surfaces, which marches pairs without a closed form, on two bicubic 6×6 B-spline surfaces over
+//! Times the routed `intersect` on two bicubic 6×6 B-spline surfaces over
 //! `[0, 5]^2`, with heights `sin(0.7 i j)` and `0.5 cos(1.3 i) cos(1.1 j)`
 //! at their poles `(i, j)`. They cross in six curves: five open across the
 //! footprint and one closed loop. Also times elementary pairs:
@@ -13,13 +13,17 @@
 //! - a cone of semi-angle 0.3 against a cylinder whose axis is parallel to
 //!   one of its generators (two curves running to the model-size cube).
 //!
-//! Informational only, like `eval_throughput`; not a correctness gate.
+//! Every pair has no closed form, so `intersect` marches; the bench asserts
+//! it. Informational only, like `eval_throughput`; not a correctness gate.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::surfaces::BSplineSurface;
-use geomcore::{Cone, Cylinder, Intersect, Plane, Point3D, Sphere, Tolerance, Torus, Vector3D};
+use geomcore::{
+    Cone, Cylinder, Intersect, IntersectionMethod, Plane, Point3D, Sphere,
+    SurfaceSurfaceIntersection, Tolerance, Torus, Vector3D,
+};
 
 fn surface(height: impl Fn(f64, f64) -> f64) -> BSplineSurface {
     let poles = (0..6)
@@ -71,11 +75,23 @@ fn extruded_wall() -> BSplineSurface {
     .unwrap()
 }
 
+fn assert_marched<A, B>(first: &A, second: &B, tol: Tolerance)
+where
+    A: Intersect<B, Output = SurfaceSurfaceIntersection>,
+{
+    assert_eq!(
+        first.intersect(second, tol).method(),
+        IntersectionMethod::Numeric,
+        "a closed form now exists: the bench no longer measures marching"
+    );
+}
+
 fn bench_marching_intersection(c: &mut Criterion) {
     let wavy = surface(|x, y| (0.7 * x * y).sin());
     let bumpy = surface(|x, y| 0.5 * (1.3 * x).cos() * (1.1 * y).cos());
     let tol = Tolerance::default();
     let mut group = c.benchmark_group("marching_intersection");
+    assert_marched(&wavy, &bumpy, tol);
     group.bench_function("bspline_surface_pair", |b| {
         b.iter(|| black_box(black_box(&wavy).intersect(&bumpy, tol)))
     });
@@ -86,21 +102,25 @@ fn bench_marching_intersection(c: &mut Criterion) {
         Vector3D::new(-tilt.sin(), 0.0, tilt.cos()),
     )
     .unwrap();
+    assert_marched(&torus, &plane, tol);
     group.bench_function("torus_plane_oblique", |b| {
         b.iter(|| black_box(black_box(&torus).intersect(&plane, tol)))
     });
     let sphere = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 1.2).unwrap();
+    assert_marched(&sphere, &torus, tol);
     group.bench_function("sphere_torus", |b| {
         b.iter(|| black_box(black_box(&sphere).intersect(&torus, tol)))
     });
     let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
     let wall = extruded_wall();
+    assert_marched(&cylinder, &wall, tol);
     group.bench_function("cylinder_extruded_wall", |b| {
         b.iter(|| black_box(black_box(&cylinder).intersect(&wall, tol)))
     });
     let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.3, 1.0).unwrap();
     let generator = Vector3D::new(0.3f64.sin(), 0.0, 0.3f64.cos());
     let along_generator = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), generator, 0.5).unwrap();
+    assert_marched(&cone, &along_generator, tol);
     group.bench_function("cone_cylinder_unbounded", |b| {
         b.iter(|| black_box(black_box(&cone).intersect(&along_generator, tol)))
     });
