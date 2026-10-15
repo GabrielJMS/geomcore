@@ -712,6 +712,24 @@ pub(crate) fn discretize_2d(
     Ok(PyDiscretization2D(curve.discretize(criteria)))
 }
 
+pub(crate) fn point_count_3d(
+    curve: &impl Discretize3D,
+    max_chord_deviation: f64,
+    max_angle_deviation: Option<f64>,
+) -> PyResult<usize> {
+    let criteria = discretization_criteria(max_chord_deviation, max_angle_deviation)?;
+    Ok(curve.point_count(criteria))
+}
+
+pub(crate) fn point_count_2d(
+    curve: &impl Discretize2D,
+    max_chord_deviation: f64,
+    max_angle_deviation: Option<f64>,
+) -> PyResult<usize> {
+    let criteria = discretization_criteria(max_chord_deviation, max_angle_deviation)?;
+    Ok(curve.point_count(criteria))
+}
+
 /// Something with three coordinates, as `(x, y, z)` in a `__repr__`.
 pub(crate) trait Coordinates {
     fn xyz(&self) -> (f64, f64, f64);

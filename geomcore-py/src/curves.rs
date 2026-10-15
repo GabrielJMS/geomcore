@@ -226,6 +226,17 @@ pub(crate) struct PyCircle3D(pub(crate) Circle3D);
 
 #[pymethods]
 impl PyCircle3D {
+    /// How many points `discretize` returns for the same arguments, without
+    /// computing them.
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn point_count(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<usize> {
+        point_count_3d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// All stationary points of the distance from `point` to the circle, as
     /// `CurveProjection` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
@@ -476,6 +487,17 @@ pub(crate) struct PyEllipse3D(pub(crate) Ellipse3D);
 
 #[pymethods]
 impl PyEllipse3D {
+    /// How many points `discretize` returns for the same arguments, without
+    /// computing them.
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn point_count(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<usize> {
+        point_count_3d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// The point and the first derivative at parameter `u`.
     fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
         let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
@@ -1147,6 +1169,17 @@ pub(crate) struct PyBSplineCurve3D(pub(crate) BSplineCurve3D);
 
 #[pymethods]
 impl PyBSplineCurve3D {
+    /// How many points `discretize` returns for the same arguments, without
+    /// computing them.
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn point_count(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<usize> {
+        point_count_3d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// The point and the first derivative at parameter `u`.
     fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
         let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
@@ -1689,6 +1722,17 @@ pub(crate) struct PyCircle2D(pub(crate) Circle2D);
 
 #[pymethods]
 impl PyCircle2D {
+    /// How many points `discretize` returns for the same arguments, without
+    /// computing them.
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn point_count(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<usize> {
+        point_count_2d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// All stationary points of the distance from `point` to the circle, as
     /// `CurveProjection2D` objects ordered by ascending distance.
     #[pyo3(signature = (point, tol = None))]
@@ -1880,6 +1924,17 @@ pub(crate) struct PyTrimmedCurve3D(pub(crate) TrimmedCurve3D);
 
 #[pymethods]
 impl PyTrimmedCurve3D {
+    /// How many points `discretize` returns for the same arguments, without
+    /// computing them.
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn point_count(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<usize> {
+        point_count_3d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// The point and the first derivative at parameter `u`.
     fn eval_d1(&self, u: f64) -> (PyPoint3D, PyVector3D) {
         let (point, first) = ParametricCurve3D::eval_d1(&self.0, u);
@@ -2106,6 +2161,17 @@ pub(crate) struct PyTrimmedCurve2D(pub(crate) TrimmedCurve2D);
 
 #[pymethods]
 impl PyTrimmedCurve2D {
+    /// How many points `discretize` returns for the same arguments, without
+    /// computing them.
+    #[pyo3(signature = (max_chord_deviation, max_angle_deviation = None))]
+    fn point_count(
+        &self,
+        max_chord_deviation: f64,
+        max_angle_deviation: Option<f64>,
+    ) -> PyResult<usize> {
+        point_count_2d(&self.0, max_chord_deviation, max_angle_deviation)
+    }
+
     /// The point and the first derivative at parameter `u`.
     fn eval_d1(&self, u: f64) -> (PyPoint2D, PyVector2D) {
         let (point, first) = ParametricCurve2D::eval_d1(&self.0, u);

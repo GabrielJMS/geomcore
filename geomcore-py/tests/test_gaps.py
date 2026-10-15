@@ -240,3 +240,57 @@ def test_extrema_on_lines_and_circles():
 
     circle_2d = Circle2D(Point2D(0.0, 0.0), 2.0)
     assert circle_2d.extrema(Point2D(3.0, 0.0))[0].distance == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Group 3: to_bspline, point_count
+# ---------------------------------------------------------------------------
+
+
+def test_to_bspline_on_elementary_curves_and_surfaces():
+    frame = Frame3D.from_z(Point3D(0.0, 0.0, 0.0), Z)
+    circle = Circle3D(Point3D(0.0, 0.0, 0.0), Z, 2.0)
+    ellipse = Ellipse3D.from_frame(frame, 3.0, 2.0)
+    for curve in (circle, ellipse):
+        spline = curve.to_bspline()
+        assert isinstance(spline, BSplineCurve3D)
+        first, last = spline.bounds()
+        middle = 0.5 * (first + last)
+        assert spline.eval_point(middle).distance(
+            curve.eval_point(curve.parameter_of(spline.eval_point(middle)))
+        ) == pytest.approx(0.0, abs=1e-9)
+    # Unbounded curves convert over a range, through a trimmed curve.
+    for curve in (
+        Line3D(Point3D(0.0, 0.0, 0.0), Vector3D(1.0, 0.0, 0.0)),
+        Parabola3D.from_frame(frame, 1.5),
+        Hyperbola3D.from_frame(frame, 3.0, 2.0),
+    ):
+        spline = TrimmedCurve3D(curve, 0.0, 1.0).to_bspline()
+        assert spline.eval_point(0.5).distance(curve.eval_point(0.5)) < 1e-9
+    assert isinstance(Sphere(Point3D(0.0, 0.0, 0.0), 1.0).to_bspline(), BSplineSurface)
+    assert isinstance(Torus.from_frame(frame, 3.0, 1.0).to_bspline(), BSplineSurface)
+    for surface in (
+        Plane.from_frame(frame),
+        Cylinder.from_frame(frame, 1.0),
+        Cone.from_frame(frame, 0.5, 1.0),
+    ):
+        patch = surface.to_bspline_patch((0.0, 1.0), (0.0, 1.0))
+        assert isinstance(patch, BSplineSurface)
+
+
+def test_point_count_matches_discretize():
+    circle = Circle3D(Point3D(0.0, 0.0, 0.0), Z, 2.0)
+    assert circle.point_count(0.01) == len(circle.discretize(0.01).points)
+    assert circle.point_count(0.01, 0.1) == len(circle.discretize(0.01, 0.1).points)
+    ellipse = Ellipse3D.from_frame(Frame3D.from_z(Point3D(0.0, 0.0, 0.0), Z), 3.0, 2.0)
+    assert ellipse.point_count(0.01) == len(ellipse.discretize(0.01).points)
+    spline = curves_3d()[5]
+    assert spline.point_count(0.01) == len(spline.discretize(0.01).points)
+    trimmed = TrimmedCurve3D(circle, 0.0, 1.0)
+    assert trimmed.point_count(0.01) == len(trimmed.discretize(0.01).points)
+    circle_2d = Circle2D(Point2D(0.0, 0.0), 2.0)
+    assert circle_2d.point_count(0.01) == len(circle_2d.discretize(0.01).points)
+    trimmed_2d = TrimmedCurve2D(circle_2d, 0.0, 1.0)
+    assert trimmed_2d.point_count(0.01) == len(trimmed_2d.discretize(0.01).points)
+    with pytest.raises(ValueError):
+        circle.point_count(0.0)
