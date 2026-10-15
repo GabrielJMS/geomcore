@@ -92,6 +92,34 @@ Reproduce with:
 cargo bench --bench intersect_dispatch
 ```
 
+## Routed against exact (0.36)
+
+The same bench times `Intersect::intersect` (routed) against
+`IntersectExact::intersect_exact` (typed exact) on batches of 1024 pairs
+of one kind, here with realistic crossings only: lines crossing a
+cylinder of radius 1.5 about the vertical axis at two points, and
+coplanar circles of radius 2 and 1.5 with centres 1 to 2 apart, crossing
+at two points.
+
+Machine: Linux 7.0, x86-64 desktop, single thread, default criterion
+settings (2026-10-15). Medians per pair; batch time divided by 1024.
+
+| pair | exact | routed | routed / exact |
+|---|---|---|---|
+| line–cylinder | ~82 ns | ~212 ns | ~2.6x |
+| circle–circle (coplanar) | ~40 ns | ~191 ns | ~4.8x |
+
+Both routed cases cost more than twice the exact call. Not optimized: the
+spec defers it. The routed call builds the family result (a struct with
+slice accessors) rather than the small typed enum, which accounts for the
+extra time on these closed-form pairs.
+
+Reproduce with:
+
+```sh
+cargo bench --bench intersect_dispatch -- intersect_routed
+```
+
 # Conic–quadric intersections
 
 `benches/conic_quadric.rs` times batches of 1024 typed `Intersect::intersect`

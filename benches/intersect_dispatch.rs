@@ -13,7 +13,7 @@ use std::hint::black_box;
 
 use geomcore::curves::{Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Line3D};
 use geomcore::surfaces::{Cone, Cylinder, ElementarySurface, Plane, Sphere, Surface, Torus};
-use geomcore::{IntersectExact, Point3D, Tolerance, Vector3D};
+use geomcore::{Intersect, IntersectExact, Point3D, Tolerance, Vector3D};
 
 const BATCH: usize = 1024;
 
@@ -197,5 +197,55 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, bench_intersect_dispatch);
+/// Times the routed call against the typed exact call over one batch.
+macro_rules! bench_routed {
+    ($c:expr, $name:literal, $pairs:expr) => {{
+        let pairs = $pairs;
+        let tol = Tolerance::default();
+        let mut group = $c.benchmark_group(concat!("intersect_routed/", $name));
+        group.throughput(Throughput::Elements(BATCH as u64));
+        group.bench_function("exact", |b| {
+            b.iter(|| {
+                for (x, y) in black_box(&pairs) {
+                    black_box(x.intersect_exact(y, tol));
+                }
+            })
+        });
+        group.bench_function("routed", |b| {
+            b.iter(|| {
+                for (x, y) in black_box(&pairs) {
+                    black_box(x.intersect(y, tol));
+                }
+            })
+        });
+        group.finish();
+    }};
+}
+
+fn bench_intersect_routed(c: &mut Criterion) {
+    // Lines through the axis region of a cylinder: two hits each.
+    let line_cylinder: Vec<(Line3D, Cylinder)> = (0..BATCH)
+        .map(|i| {
+            let origin = Point3D::new(-3.0, 0.5 * jitter(i, 14), 0.5 * jitter(i, 15));
+            let line = Line3D::new(origin, Vector3D::new(1.0, 0.2 * jitter(i, 16), 0.0));
+            let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.5);
+            (line.unwrap(), cylinder.unwrap())
+        })
+        .collect();
+    bench_routed!(c, "line_cylinder", line_cylinder);
+
+    // Coplanar circles of radius 2 and 1.5 with centres 1 to 2 apart: two hits each.
+    let circle_circle: Vec<(Circle3D, Circle3D)> = (0..BATCH)
+        .map(|i| {
+            let a = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+            let angle = 3.0 * jitter(i, 17);
+            let distance = 1.5 + 0.5 * jitter(i, 18);
+            let center = Point3D::new(distance * angle.cos(), distance * angle.sin(), 0.0);
+            (a, Circle3D::new(center, Vector3D::Z, 1.5).unwrap())
+        })
+        .collect();
+    bench_routed!(c, "circle_circle", circle_circle);
+}
+
+criterion_group!(benches, bench_intersect_dispatch, bench_intersect_routed);
 criterion_main!(benches);
