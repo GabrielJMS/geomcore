@@ -737,6 +737,23 @@ fn sorted_by_curve_parameter(mut hits: CurveSurfaceHitList) -> CurveSurfaceHitLi
 /// [`completeness`](Self::completeness),
 /// [`is_complete`](Self::is_complete) and [`is_empty`](Self::is_empty).
 /// [`Intersect::intersect`](crate::Intersect::intersect) returns it.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Intersect, IntersectionMethod, Plane, Point3D, Sphere, Tolerance, Vector3D};
+///
+/// // The plane z = 1 cuts a sphere of radius 2 in one circle.
+/// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+/// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+/// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+/// assert_eq!(result.method(), IntersectionMethod::Exact);
+/// assert!(result.is_complete() && !result.is_empty());
+/// assert_eq!(result.curves().len(), 1);
+/// assert!(!result.curves()[0].tangent);
+/// assert!(result.contact_points().is_empty());
+/// assert!(!result.is_coincident());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceSurfaceIntersection {
     curves: Vec<IntersectionCurve>,
@@ -748,7 +765,6 @@ pub struct SurfaceSurfaceIntersection {
 
 impl SurfaceSurfaceIntersection {
     /// An exact, complete result.
-    #[allow(dead_code)] // Consumed by the routing of Task 9.
     pub(crate) fn exact(
         curves: Vec<IntersectionCurve>,
         contact_points: Vec<Point3D>,
@@ -764,7 +780,6 @@ impl SurfaceSurfaceIntersection {
     }
 
     /// A numeric result with the status of its search.
-    #[allow(dead_code)] // Consumed by the routing of Task 9.
     pub(crate) fn numeric(
         curves: Vec<IntersectionCurve>,
         completeness: Completeness<SurfaceSurfaceRegion>,
@@ -779,31 +794,92 @@ impl SurfaceSurfaceIntersection {
     }
 
     /// The curves along which the surfaces meet.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert_eq!(result.curves().len(), 1);
+    /// ```
     pub fn curves(&self) -> &[IntersectionCurve] {
         &self.curves
     }
 
     /// The isolated points where the surfaces touch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 2.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// // Tangent at the north pole.
+    /// assert_eq!(result.contact_points().len(), 1);
+    /// ```
     pub fn contact_points(&self) -> &[Point3D] {
         &self.contact_points
     }
 
     /// Whether the surfaces are the same surface.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert!(!result.is_coincident());
+    /// ```
     pub fn is_coincident(&self) -> bool {
         self.coincident
     }
 
     /// Whether the result came from a closed form or a numeric search.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert_eq!(result.method(), geomcore::IntersectionMethod::Exact);
+    /// ```
     pub fn method(&self) -> IntersectionMethod {
         self.method
     }
 
     /// Whether every piece was found, and where some may be missing if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert_eq!(result.completeness(), &geomcore::Completeness::Complete);
+    /// ```
     pub fn completeness(&self) -> &Completeness<SurfaceSurfaceRegion> {
         &self.completeness
     }
 
     /// Whether every piece was found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert!(result.is_complete());
+    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
@@ -811,6 +887,16 @@ impl SurfaceSurfaceIntersection {
     /// Whether there is no curve, no contact point and no coincidence.
     /// With an incomplete result this means "found nothing", not "nothing
     /// exists".
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Plane, Point3D, Sphere, Tolerance, Vector3D};
+    /// let plane = Plane::new(Point3D::new(0.0, 0.0, 5.0), Vector3D::Z).unwrap();
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
+    /// assert!(result.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.curves.is_empty() && self.contact_points.is_empty() && !self.coincident
     }

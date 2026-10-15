@@ -258,6 +258,15 @@ fn bench_intersect_routed(c: &mut Criterion) {
         })
         .collect();
     bench_routed!(c, "circle_circle_2d", circle_circle_2d);
+
+    // Planes at heights across a unit sphere: a circle each.
+    let plane_sphere: Vec<(Plane, Sphere)> = (0..BATCH)
+        .map(|i| {
+            let plane = Plane::new(Point3D::new(0.0, 0.0, 0.9 * jitter(i, 19)), Vector3D::Z);
+            (plane.unwrap(), Sphere::new(Point3D::ORIGIN, 1.0).unwrap())
+        })
+        .collect();
+    bench_routed!(c, "plane_sphere", plane_sphere);
 }
 
 criterion_group!(benches, bench_intersect_dispatch, bench_intersect_routed);

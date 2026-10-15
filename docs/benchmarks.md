@@ -224,6 +224,18 @@ as the 3D one already did: 2D circle–circle routed 321 → 247
 instructions per pair, 35 → 25 ns. The other two pairs did not move
 (1161 and 759 instructions).
 
+### Surface–surface
+
+A plane at heights up to 0.9 across a unit sphere, one circle each. The
+typed exact call returns the plane–sphere result alone; the routed call
+builds the general result, with its curve in a `Curve3D` in a `Vec` (one
+allocation per pair). Criterion medians per pair of three runs, loaded
+machine (load average 5–8), batches of 1024:
+
+| pair | exact | routed |
+|---|---|---|
+| plane–sphere | 77–82 ns | 113–120 ns |
+
 Reproduce with:
 
 ```sh

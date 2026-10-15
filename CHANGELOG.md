@@ -11,6 +11,11 @@ the Python distribution are versioned in lockstep.
 
 ### Added
 
+- `Intersect` for two surfaces (plane, cylinder, cone, sphere, torus,
+  `BSplineSurface`, `Surface`, `ElementarySurface`, in every combination):
+  exact when a closed form exists, marching otherwise, returned as a
+  `SurfaceSurfaceIntersection` with curves, contact points, coincidence and
+  the method that ran. Marched curves are sampled, not complete.
 - `Curve3D::parameter_of`, `Curve2D::parameter_of` and
   `Surface::parameters_of`: the parameters of a point on a curve or surface
   held as the enum, by the closed form of an elementary variant; a

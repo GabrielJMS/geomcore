@@ -18,21 +18,23 @@ use crate::curves::{
     TrimmedCurve3D,
 };
 use crate::intersect::dispatch::{ExactCurveCurve, ExactCurveSurface};
+use crate::intersect::marching::marching_intersection;
 use crate::intersect::results::{
-    CurveCurveHitList, CurveCurveOverlapList, CurveSurfaceOverlapList,
+    CurveCurveHitList, CurveCurveOverlapList, CurveSurfaceOverlapList, IntersectionCurve,
+    SurfaceSurfaceIntersection,
 };
 use crate::intersect::{
     CircleCircle2DIntersection, CurveCurveHit, CurveCurveHit2D, CurveCurveIntersection,
     CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceHit, CurveSurfaceIntersection,
-    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, InlineList, IntersectExact,
-    LineCircle2DIntersection, LineLine2DIntersection, intersect_curve_curve,
-    intersect_curve_surface,
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
+    InlineList, IntersectExact, LineCircle2DIntersection, LineLine2DIntersection,
+    intersect_curve_curve, intersect_curve_surface,
 };
 use crate::surfaces::{
     BSplineSurface, Cone, Cylinder, ElementarySurface, ParametricSurface, Plane, Sphere, Surface,
     Torus,
 };
-use crate::{Point2D, Point3D};
+use crate::{Completeness, Point2D, Point3D};
 
 /// Routed intersection: exact when a closed form exists, numeric otherwise.
 ///
@@ -532,6 +534,137 @@ trimmed_curve_surface!(
     BSplineSurface,
     Surface,
     ElementarySurface
+);
+
+/// Exact intersection of two surface bases, whatever the shape of the
+/// pair's typed result: the general [`ExactSurfaceIntersection`].
+///
+/// A pair of concrete surfaces converts its own typed result (a small,
+/// stack-only value), so the pair is solved without dispatching at run
+/// time; only an enum operand goes through the enum's dispatch.
+pub(crate) trait ExactSurfaceSurface<B> {
+    /// Intersects `self` with `other`, deciding tangency and coincidence
+    /// with `tol`.
+    fn exact_surface_surface(&self, other: &B, tol: Tolerance) -> ExactSurfaceIntersection;
+}
+
+impl<A, B> ExactSurfaceSurface<B> for A
+where
+    A: IntersectExact<B>,
+    A::Output: Into<ExactSurfaceIntersection>,
+{
+    #[inline]
+    fn exact_surface_surface(&self, other: &B, tol: Tolerance) -> ExactSurfaceIntersection {
+        self.intersect_exact(other, tol).into()
+    }
+}
+
+/// Implements [`ExactSurfaceSurface`] between each concrete surface and
+/// the enum, in both orders, by wrapping the concrete one.
+macro_rules! exact_surface_surface_with_enum {
+    ($($surface:ty),*) => {$(
+        impl ExactSurfaceSurface<ElementarySurface> for $surface {
+            #[inline]
+            fn exact_surface_surface(
+                &self,
+                other: &ElementarySurface,
+                tol: Tolerance,
+            ) -> ExactSurfaceIntersection {
+                ElementarySurface::from(*self).intersect_exact(other, tol)
+            }
+        }
+
+        impl ExactSurfaceSurface<$surface> for ElementarySurface {
+            #[inline]
+            fn exact_surface_surface(
+                &self,
+                other: &$surface,
+                tol: Tolerance,
+            ) -> ExactSurfaceIntersection {
+                self.intersect_exact(&ElementarySurface::from(*other), tol)
+            }
+        }
+    )*};
+}
+
+exact_surface_surface_with_enum!(Plane, Cylinder, Cone, Sphere, Torus);
+
+/// Intersects two surfaces: the exact path when both have an elementary
+/// basis and the pair has a closed form; marching otherwise.
+#[inline]
+pub(crate) fn route_surface_surface<A: SurfaceOperand, B: SurfaceOperand>(
+    a: &A,
+    b: &B,
+    tol: Tolerance,
+) -> SurfaceSurfaceIntersection
+where
+    A::Basis: ExactSurfaceSurface<B::Basis>,
+{
+    if let (Some(first), Some(second)) = (a.surface_basis(), b.surface_basis()) {
+        let exact = first.exact_surface_surface(&second, tol);
+        if !matches!(exact, ExactSurfaceIntersection::NotAnalytic) {
+            return from_exact_surface_surface(exact);
+        }
+    }
+    let curves = marching_intersection(a, b, tol)
+        .into_iter()
+        .map(|curve| IntersectionCurve {
+            curve: Curve3D::BSpline(curve),
+            tangent: false,
+        })
+        .collect();
+    SurfaceSurfaceIntersection::numeric(curves, Completeness::Sampled)
+}
+
+/// Turns the exact intersection of two surface bases into the routed
+/// result.
+#[inline]
+fn from_exact_surface_surface(exact: ExactSurfaceIntersection) -> SurfaceSurfaceIntersection {
+    match exact {
+        ExactSurfaceIntersection::Meets { curves, points } => SurfaceSurfaceIntersection::exact(
+            curves
+                .iter()
+                .map(|&(curve, tangent)| IntersectionCurve {
+                    curve: Curve3D::from(curve),
+                    tangent,
+                })
+                .collect(),
+            points.iter().copied().collect(),
+            false,
+        ),
+        ExactSurfaceIntersection::Coincident => {
+            SurfaceSurfaceIntersection::exact(Vec::new(), Vec::new(), true)
+        }
+        ExactSurfaceIntersection::Empty => {
+            SurfaceSurfaceIntersection::exact(Vec::new(), Vec::new(), false)
+        }
+        ExactSurfaceIntersection::NotAnalytic => {
+            unreachable!("the router sends a pair with no closed form to marching")
+        }
+    }
+}
+
+/// Implements [`Intersect`] for every surface of the list with every
+/// surface of the list, in both orders (the full product).
+macro_rules! surface_surface {
+    (@pairs $first:ty; [$($second:ty),*]) => {$(
+        impl Intersect<$second> for $first {
+            type Output = SurfaceSurfaceIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &$second, tol: Tolerance) -> SurfaceSurfaceIntersection {
+                route_surface_surface(self, other, tol)
+            }
+        }
+    )*};
+    ($($first:ty),*; $seconds:tt) => {$(
+        surface_surface!(@pairs $first; $seconds);
+    )*};
+}
+
+surface_surface!(
+    Plane, Cylinder, Cone, Sphere, Torus, BSplineSurface, Surface, ElementarySurface;
+    [Plane, Cylinder, Cone, Sphere, Torus, BSplineSurface, Surface, ElementarySurface]
 );
 
 /// Intersects two curves: the exact path when both have an elementary
