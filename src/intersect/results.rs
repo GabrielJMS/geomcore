@@ -99,14 +99,12 @@ pub struct SurfaceSurfaceRegion {
     pub max_corner: Point3D,
 }
 
-// Consumed by the curve-curve routing (Task 6).
-#[allow(dead_code)]
 fn sorted_by_first(mut hits: Vec<CurveCurveHit>) -> Vec<CurveCurveHit> {
     hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
     hits
 }
 
-// Consumed by the curve-curve routing (Tasks 6 and 7).
+// Consumed by the 2D curve-curve routing (Task 7).
 #[allow(dead_code)]
 fn swapped_overlaps(overlaps: Vec<CurveCurveOverlap>) -> Vec<CurveCurveOverlap> {
     overlaps
@@ -145,8 +143,24 @@ pub(crate) fn curve_surface_multiplicity(
 /// Read it through [`hits`](Self::hits), [`overlaps`](Self::overlaps),
 /// [`method`](Self::method), [`completeness`](Self::completeness),
 /// [`is_complete`](Self::is_complete) and [`is_empty`](Self::is_empty).
-/// `Intersect::intersect` returns it; an exact result is always
+/// [`Intersect::intersect`](crate::Intersect::intersect) returns it,
+/// reading the receiver's parameters first; an exact result is always
 /// complete, so an empty one proves the curves do not meet.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Circle3D, Intersect, IntersectionMethod, Line3D, Point3D, Tolerance, Vector3D};
+///
+/// // A line through a circle of radius 2 crosses it twice.
+/// let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
+/// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+/// let result = line.intersect(&circle, Tolerance::DEFAULT);
+/// assert_eq!(result.method(), IntersectionMethod::Exact);
+/// assert!(result.is_complete());
+/// let on_line: Vec<f64> = result.hits().iter().map(|h| h.first_parameter).collect();
+/// assert_eq!(on_line, [3.0, 7.0]);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveCurveIntersection {
     hits: Vec<CurveCurveHit>,
@@ -157,7 +171,6 @@ pub struct CurveCurveIntersection {
 
 impl CurveCurveIntersection {
     /// An exact, complete result; the hits are sorted by first parameter.
-    #[allow(dead_code)] // Consumed by the routing of Task 6.
     pub(crate) fn exact(hits: Vec<CurveCurveHit>, overlaps: Vec<CurveCurveOverlap>) -> Self {
         CurveCurveIntersection {
             hits: sorted_by_first(hits),
@@ -168,7 +181,6 @@ impl CurveCurveIntersection {
     }
 
     /// A numeric result with the status of its search.
-    #[allow(dead_code)] // Consumed by the routing of Task 6.
     pub(crate) fn numeric(
         hits: Vec<CurveCurveHit>,
         completeness: Completeness<CurveCurveRegion>,
@@ -181,53 +193,117 @@ impl CurveCurveIntersection {
         }
     }
 
-    /// The same result read from the other curve's side: `first_*` and
-    /// `second_*` exchanged, the hits re-sorted by the new first parameter.
-    #[allow(dead_code)] // Consumed by the routing of Task 6.
-    pub(crate) fn swapped(self) -> Self {
-        let hits = self
-            .hits
-            .into_iter()
-            .map(|h| CurveCurveHit {
-                first_parameter: h.second_parameter,
-                second_parameter: h.first_parameter,
-                ..h
-            })
-            .collect();
-        CurveCurveIntersection {
-            hits: sorted_by_first(hits),
-            overlaps: swapped_overlaps(self.overlaps),
-            ..self
-        }
-    }
-
     /// The isolated hits, sorted by first parameter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve3D;
+    /// use geomcore::{Circle3D, Intersect, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// // An arc across the seam at angle 0 keeps only the hit at angle 0.
+    /// let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let arc = TrimmedCurve3D::new(circle, -1.0, 1.0).unwrap();
+    /// let result = arc.intersect(&line, Tolerance::DEFAULT);
+    /// let hit = result.hits()[0];
+    /// assert_eq!(result.hits().len(), 1);
+    /// assert_eq!(hit.second_parameter, 7.0);
+    /// assert!(hit.point.distance(Point3D::new(2.0, 0.0, 0.0)) < 1e-12);
+    /// ```
     pub fn hits(&self) -> &[CurveCurveHit] {
         &self.hits
     }
 
-    /// The ranges over which the curves coincide.
+    /// The ranges over which the curves coincide, sorted by the start of
+    /// the first range. Each range is increasing and lies in its curve's
+    /// own range; an overlap crossing a closed curve's seam comes in two
+    /// pieces.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve3D;
+    /// use geomcore::{CurveCurveOverlap, Intersect, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// // Two segments of one line share x in [1, 2].
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let first = TrimmedCurve3D::new(line, 0.0, 2.0).unwrap();
+    /// let second = TrimmedCurve3D::new(line, 1.0, 3.0).unwrap();
+    /// let result = first.intersect(&second, Tolerance::DEFAULT);
+    /// assert!(result.hits().is_empty());
+    /// assert_eq!(
+    ///     result.overlaps(),
+    ///     &[CurveCurveOverlap { first_range: (1.0, 2.0), second_range: (1.0, 2.0) }]
+    /// );
+    /// ```
     pub fn overlaps(&self) -> &[CurveCurveOverlap] {
         &self.overlaps
     }
 
     /// Whether the result came from a closed form or a numeric search.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Intersect, IntersectionMethod, Point3D, Tolerance, Vector3D};
+    ///
+    /// // A B-spline has no closed form: the numeric search runs.
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let other = Circle3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+    /// let result = circle.intersect(&other.to_bspline(), Tolerance::DEFAULT);
+    /// assert_eq!(result.method(), IntersectionMethod::Numeric);
+    /// assert_eq!(result.hits().len(), 2);
+    /// ```
     pub fn method(&self) -> IntersectionMethod {
         self.method
     }
 
     /// Whether every hit was found, and where hits may be missing if not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle3D, Completeness, Intersect, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// let result = circle.intersect(&line, Tolerance::DEFAULT);
+    /// assert_eq!(result.completeness(), &Completeness::Complete);
+    /// ```
     pub fn completeness(&self) -> &Completeness<CurveCurveRegion> {
         &self.completeness
     }
 
     /// Whether every hit was found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Ellipse3D, Frame3D, Intersect, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 1.0).unwrap();
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::Y).unwrap();
+    /// assert!(ellipse.intersect(&line, Tolerance::DEFAULT).is_complete());
+    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
 
     /// Whether no hit and no overlap was found. With an incomplete result
     /// this means "found nothing", not "nothing exists".
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// // An exact empty result proves the skew lines never meet.
+    /// let first = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// let second = Line3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Y).unwrap();
+    /// let result = first.intersect(&second, Tolerance::DEFAULT);
+    /// assert!(result.is_empty() && result.is_complete());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.hits.is_empty() && self.overlaps.is_empty()
     }
@@ -577,23 +653,6 @@ mod tests {
         assert!(r.is_complete());
         assert_eq!(r.hits()[0].first_parameter, 1.0);
         assert!(!r.is_empty());
-    }
-
-    #[test]
-    fn test_swapped_exchanges_parameters_and_resorts() {
-        let r = CurveCurveIntersection::exact(
-            vec![hit(1.0, 5.0), hit(2.0, 0.0)],
-            vec![CurveCurveOverlap {
-                first_range: (0.0, 1.0),
-                second_range: (3.0, 4.0),
-            }],
-        )
-        .swapped();
-        assert_eq!(
-            (r.hits()[0].first_parameter, r.hits()[0].second_parameter),
-            (0.0, 2.0)
-        );
-        assert_eq!(r.overlaps()[0].first_range, (3.0, 4.0));
     }
 
     #[test]

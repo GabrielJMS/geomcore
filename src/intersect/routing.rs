@@ -17,8 +17,9 @@ use crate::curves::{
     ParametricCurve3D, TrimmedCurve3D,
 };
 use crate::intersect::{
-    CurveSurfaceHit, CurveSurfaceIntersection, ExactCurveSurfaceIntersection, IntersectExact,
-    intersect_curve_surface,
+    CurveCurveHit, CurveCurveIntersection, CurveCurveOverlap, CurveSurfaceHit,
+    CurveSurfaceIntersection, ExactCurveCurveIntersection, ExactCurveSurfaceIntersection,
+    IntersectExact, intersect_curve_curve, intersect_curve_surface,
 };
 use crate::surfaces::{
     BSplineSurface, Cone, Cylinder, ElementarySurface, ParametricSurface, Plane, Sphere, Surface,
@@ -140,9 +141,6 @@ pub(crate) fn in_range(
 /// representation: none, one, or two when the overlap meets the range on
 /// both sides of the seam of a periodic curve. An overlap covering the
 /// whole period returns the range as one piece.
-// Consumed by the curve-curve routing (Task 6), where a coincidence of two
-// curves is clipped to each curve's range.
-#[allow(dead_code)]
 pub(crate) fn clip_range(
     overlap: (f64, f64),
     range: (f64, f64),
@@ -304,6 +302,248 @@ trimmed_curve_surface!(
     Surface,
     ElementarySurface
 );
+
+/// Intersects two curves: the exact path when both have an elementary
+/// basis, the numeric search otherwise.
+#[inline]
+pub(crate) fn route_curve_curve<A: CurveOperand, B: CurveOperand>(
+    a: &A,
+    b: &B,
+    tol: Tolerance,
+) -> CurveCurveIntersection {
+    if let (Some(first), Some(second)) = (a.elementary_basis(), b.elementary_basis()) {
+        let exact = first.0.intersect_exact(&second.0, tol);
+        debug_assert!(
+            !matches!(exact, ExactCurveCurveIntersection::NotAnalytic),
+            "every pair of elementary curves has a closed form"
+        );
+        if !matches!(exact, ExactCurveCurveIntersection::NotAnalytic) {
+            return from_exact_curve_curve(exact, first, second, tol);
+        }
+    }
+    // A trimmed curve is searched over its own range only: no clipping.
+    let hits = intersect_curve_curve(a, b, tol);
+    let completeness = hits.completeness().clone();
+    CurveCurveIntersection::numeric(hits.into_hits(), completeness)
+}
+
+/// An elementary basis and the parameter range restricting it.
+type Operand = (ElementaryCurve, Option<(f64, f64)>);
+
+/// Turns the exact intersection of two elementary bases into the routed
+/// result: hits outside either range dropped, the kept ones carrying their
+/// representative in each range, and a coincidence clipped to both ranges.
+fn from_exact_curve_curve(
+    exact: ExactCurveCurveIntersection,
+    (first, first_range): Operand,
+    (second, second_range): Operand,
+    tol: Tolerance,
+) -> CurveCurveIntersection {
+    let representative = |parameter, curve: &ElementaryCurve, range: Option<(f64, f64)>| match range
+    {
+        Some(range) => in_range(parameter, range, curve.period(), tol),
+        None => Some(parameter),
+    };
+    match exact {
+        ExactCurveCurveIntersection::Points(list) => {
+            let hits = list
+                .iter()
+                .filter_map(|hit| {
+                    Some(CurveCurveHit {
+                        first_parameter: representative(hit.first_parameter, &first, first_range)?,
+                        second_parameter: representative(
+                            hit.second_parameter,
+                            &second,
+                            second_range,
+                        )?,
+                        ..*hit
+                    })
+                })
+                .collect();
+            CurveCurveIntersection::exact(hits, Vec::new())
+        }
+        ExactCurveCurveIntersection::Coincident => {
+            let first_range = first_range.unwrap_or(first.bounds());
+            let second_range = second_range.unwrap_or(second.bounds());
+            let overlaps = coincident_overlaps((&first, first_range), (&second, second_range), tol);
+            CurveCurveIntersection::exact(Vec::new(), overlaps)
+        }
+        ExactCurveCurveIntersection::Empty => CurveCurveIntersection::exact(Vec::new(), Vec::new()),
+        ExactCurveCurveIntersection::NotAnalytic => {
+            unreachable!("the router sends a pair with no closed form to the numeric search")
+        }
+    }
+}
+
+/// The overlaps of two coincident curves restricted to `first_range` and
+/// `second_range`.
+///
+/// Each overlap holds a monotone range in each curve's own range: the
+/// second range is mapped onto the first curve and clipped there (two
+/// pieces when it crosses the first curve's seam), then each piece is
+/// mapped back onto the second curve and split where it crosses the
+/// second curve's seam.
+fn coincident_overlaps(
+    (first, first_range): (&ElementaryCurve, (f64, f64)),
+    (second, second_range): (&ElementaryCurve, (f64, f64)),
+    tol: Tolerance,
+) -> Vec<CurveCurveOverlap> {
+    let on_first = mapped_range(second, second_range, first, tol);
+    let mut overlaps = Vec::new();
+    for piece in clip_range(on_first, first_range, first.period(), tol) {
+        let on_second = mapped_range(first, piece, second, tol);
+        let pieces_on_second = clip_range(on_second, second_range, second.period(), tol);
+        if let [single] = pieces_on_second[..] {
+            overlaps.push(CurveCurveOverlap {
+                first_range: piece,
+                second_range: single,
+            });
+            continue;
+        }
+        // The piece crosses the second curve's seam: read the first curve's
+        // part of each side back from its end points.
+        for part in pieces_on_second {
+            let end = |parameter: f64| {
+                let found = first.parameter_of(second.eval_point(parameter));
+                in_range(found, piece, first.period(), tol)
+                    .unwrap_or(found)
+                    .clamp(piece.0, piece.1)
+            };
+            let (start, finish) = (end(part.0), end(part.1));
+            overlaps.push(CurveCurveOverlap {
+                first_range: (start.min(finish), start.max(finish)),
+                second_range: part,
+            });
+        }
+    }
+    overlaps.sort_by(|p, q| p.first_range.0.total_cmp(&q.first_range.0));
+    overlaps
+}
+
+/// The image of `range` of curve `from` on the coincident curve `to`, as a
+/// monotone interval that may lie outside `to`'s own representation.
+///
+/// An infinite end maps to the infinity its direction gives on `to`. On a
+/// periodic curve the image starts at the image of the range's start in
+/// the direction of travel, and a full period maps to a full period.
+fn mapped_range(
+    from: &ElementaryCurve,
+    range: (f64, f64),
+    to: &ElementaryCurve,
+    tol: Tolerance,
+) -> (f64, f64) {
+    let image = |parameter: f64| to.parameter_of(from.eval_point(parameter));
+    let sample = match (range.0.is_finite(), range.1.is_finite()) {
+        (true, true) => 0.5 * (range.0 + range.1),
+        (true, false) => range.0,
+        (false, true) => range.1,
+        (false, false) => 0.0,
+    };
+    let along = from
+        .eval_derivative(sample, 1)
+        .dot(to.eval_derivative(image(sample), 1))
+        >= 0.0;
+    let Some(period) = to.period() else {
+        let end = |parameter: f64| {
+            if parameter.is_finite() {
+                image(parameter)
+            } else if along {
+                parameter
+            } else {
+                -parameter
+            }
+        };
+        let (start, finish) = (end(range.0), end(range.1));
+        return (start.min(finish), start.max(finish));
+    };
+    let full_period = from.period().unwrap_or(period);
+    if range.1 - range.0 >= full_period - tol.parametric {
+        let start = image(range.0);
+        return (start, start + period);
+    }
+    let (start, finish) = if along {
+        (image(range.0), image(range.1))
+    } else {
+        (image(range.1), image(range.0))
+    };
+    (start, start + (finish - start).rem_euclid(period))
+}
+
+/// Implements [`Intersect`] for every curve of the list with every curve of
+/// the list, the receiver read first.
+macro_rules! curve_curve {
+    (@row $first:ty; [$($second:ty),*]) => {$(
+        impl Intersect<$second> for $first {
+            type Output = CurveCurveIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &$second, tol: Tolerance) -> CurveCurveIntersection {
+                route_curve_curve(self, other, tol)
+            }
+        }
+    )*};
+    ([$($first:ty),*]) => {
+        curve_curve!(@all [$($first),*]; [$($first),*]);
+    };
+    (@all [$($first:ty),*]; $seconds:tt) => {$(
+        curve_curve!(@row $first; $seconds);
+    )*};
+}
+
+curve_curve!([
+    Line3D,
+    Circle3D,
+    Ellipse3D,
+    Parabola3D,
+    Hyperbola3D,
+    BSplineCurve3D,
+    Curve3D,
+    ElementaryCurve
+]);
+
+/// Implements [`Intersect`] between a trimmed curve over any curve operand
+/// and each curve of the list, in both orders.
+macro_rules! trimmed_curve_curve {
+    ($($curve:ty),*) => {$(
+        impl<X: CurveOperand> Intersect<$curve> for TrimmedCurve3D<X> {
+            type Output = CurveCurveIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &$curve, tol: Tolerance) -> CurveCurveIntersection {
+                route_curve_curve(self, other, tol)
+            }
+        }
+
+        impl<X: CurveOperand> Intersect<TrimmedCurve3D<X>> for $curve {
+            type Output = CurveCurveIntersection;
+
+            #[inline]
+            fn intersect(&self, other: &TrimmedCurve3D<X>, tol: Tolerance) -> CurveCurveIntersection {
+                route_curve_curve(self, other, tol)
+            }
+        }
+    )*};
+}
+
+trimmed_curve_curve!(
+    Line3D,
+    Circle3D,
+    Ellipse3D,
+    Parabola3D,
+    Hyperbola3D,
+    BSplineCurve3D,
+    Curve3D,
+    ElementaryCurve
+);
+
+impl<X: CurveOperand, Y: CurveOperand> Intersect<TrimmedCurve3D<Y>> for TrimmedCurve3D<X> {
+    type Output = CurveCurveIntersection;
+
+    #[inline]
+    fn intersect(&self, other: &TrimmedCurve3D<Y>, tol: Tolerance) -> CurveCurveIntersection {
+        route_curve_curve(self, other, tol)
+    }
+}
 
 #[cfg(test)]
 mod tests {
