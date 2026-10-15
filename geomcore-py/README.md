@@ -31,12 +31,15 @@ Windows, for Python 3.9+ (abi3 — one wheel covers all versions).
   native call per batch.
 - Rigid transformations via a single `Transform` type, applied with
   `transformed`.
-- Containment, `project_point` and `extrema` on every curve and surface.
+- Containment on every curve and surface; `project_point` and `extrema`
+  return projection objects with the parameters, the closest point and
+  the distance.
 - Intersections with `a.intersect(b)` between any two curves or surfaces
   (B-splines and trimmed curves included), in either order. The result is
   an object: hits with their parameters, point and multiplicity, overlaps,
   curves and contact points, the `method` that ran (`EXACT` closed form or
-  `NUMERIC` search) and its `completeness`. Numeric `curve_curve_extrema`.
+  `NUMERIC` search) and its `completeness`. Numeric `curve_curve_extrema`
+  returns its distance minima and completeness.
 - Curve-on-surface parametrization: `parametrize_on` (analytic) and
   `parametrize_numeric`.
 - B-spline `interpolate` and least-squares `approximate`.

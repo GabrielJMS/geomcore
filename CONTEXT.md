@@ -52,11 +52,15 @@ An intersection computed in closed form between elementary shapes, whose result 
 _Avoid_: analytic intersection
 
 **Numeric intersection**:
-An intersection traced or refined iteratively, whose curves are fitted approximations. Never chosen implicitly in place of an exact intersection.
+An intersection traced or refined iteratively, whose curves are fitted approximations. `intersect` runs it only for a pair or configuration without a closed form, and the result says so (its intersection method).
 _Avoid_: fallback, approximate intersection
 
+**Intersection method**:
+Which solver produced an intersection result: exact (a closed form, always complete) or numeric (a search, with its own completeness). Every result of `intersect` states it.
+_Avoid_: route, path, strategy
+
 **Not analytic**:
-The outcome when an exact intersection has no closed form for the given configuration. The caller decides whether to run a numeric intersection.
+An outcome of `intersect_exact` only: the pair or configuration has no closed form. `intersect` never reports it; it runs a numeric intersection instead.
 
 **Completeness**:
 Whether a numeric intersection's hits, or the distance minima of numeric curve–curve extrema, are all of them. Complete: the search proved that no other hit exists. Incomplete: it did not settle everywhere, and says why (its budget ran out, or pieces never separated at a tangent contact or an overlap) and the regions where hits may be missing. Sampled: the hits were found from samples, so nothing is proven.
@@ -69,8 +73,12 @@ The outcome when two shapes overlap entirely, so their intersection is a whole s
 An isolated point where two surfaces meet, either tangentially or at a singular point such as a cone apex. It has a position but no surface parameters, which a singular point does not define.
 
 **Hit**:
-A point where a curve meets another curve or a surface, with its parameter on each curve and its multiplicity: 1 for a crossing, 2 or more for a tangency. Surface parameters are not part of a hit; the caller projects the point when it needs them.
+A point where a curve meets another curve or a surface, with its multiplicity (1 for a crossing, 2 or more for a tangency) and its parameters on both operands (each curve's parameter, the surface's `(u, v)`). The point is always present. A parameter is stored only when the solver computed it on its way to the point, and is otherwise absent (`None`): recover it with the operand's `parameter_of(hit.point)` or `parameters_of(hit.point)`.
 _Avoid_: intersection point, contact (reserved for surfaces)
+
+**Overlap**:
+A parameter range where a curve lies on another curve or on a surface, instead of meeting it at isolated hits. Between two curves it is a range on each curve, each increasing in its own curve's parameter (so a coincidence across a seam is split there), plus whether the two curves run the same way along it (`same_direction`); with opposite directions the start of one range meets the end of the other. On a surface it is a range on the curve.
+_Avoid_: coincidence (reserved for two shapes that overlap entirely), segment
 
 ## Discretization
 

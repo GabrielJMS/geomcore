@@ -1,20 +1,36 @@
 # Intersection
 
-One entry point, two routes. `a.intersect(&b, tol)` picks the exact
-closed form whenever the pair has one and reports `NotAnalytic` when it
-doesn't — never a silent miss. The numeric route (curve–curve,
-curve–surface, marching surface–surface) covers the rest and reports
-whether its search was complete. Adapted from
+One entry point, two methods. `a.intersect(&b, tol)` works for any two
+curves or surfaces, B-splines and trimmed curves included, in either
+order. It solves the pair exactly whenever a closed form exists, and
+runs a numeric search (curve–curve, curve–surface, marching
+surface–surface) otherwise. The result says which method ran and
+whether every hit was found, so a switch from nanoseconds to
+milliseconds is never hidden. Adapted from
 [Intersection](https://avenirgeometry.com/articles/intersection/).
 
 ## What an intersection returns
 
-Every result is one of four things: hits with parameters and a
-multiplicity (1 for a crossing, 2+ for a tangency), `Coincident` (the
-shapes overlap entirely), `Empty`, or `NotAnalytic` (no closed form —
-the caller decides whether to run the numeric path). Hits on circles
-and ellipses keep their parameters inside `bounds()` and sorted, and a
-tangency is decided by distance, not by root separation:
+One result per family: `CurveCurveIntersection` (and
+`CurveCurveIntersection2D`), `CurveSurfaceIntersection` and
+`SurfaceSurfaceIntersection`. Each one carries:
+
+- the **hits**: the point, the multiplicity (1 for a crossing, 2+ for a
+  tangency) and the parameters on both operands. A parameter is stored
+  when the solver computed it on its way to the point, and is `None`
+  otherwise; `operand.parameter_of(hit.point)` (or `parameters_of` on a
+  surface) recovers it in one call;
+- the **overlaps**, where a curve lies on the other shape: a parameter
+  range on each curve plus `same_direction`, or the curve's ranges on a
+  surface;
+- for two surfaces, the **curves** (each with a `tangent` flag), the
+  **contact points** and whether the surfaces are **coincident**;
+- the **method** (`Exact` or `Numeric`) and the **completeness**: an
+  exact result is always complete; a numeric one is complete, incomplete
+  (with the regions where hits may be missing) or sampled.
+
+Hits on circles and ellipses keep their parameters inside `bounds()`,
+and a tangency is decided by distance, not by root separation:
 
 <figure class="geom-fig">
 <img src="../../assets/figures/intersection/01-a-tangency-is-a-distance.svg" alt="Tangency decided by distance">
@@ -22,13 +38,6 @@ tangency is decided by distance, not by root separation:
 </figure>
 
 ## Exact: one call, either order
-
-Between two concrete types the call returns the pair's own result
-type; between run-time values (`Curve3D`, `Surface`,
-`ElementaryCurve`, `ElementarySurface`) it returns the general result
-(`CurveCurveIntersection`, `CurveSurfaceIntersection`,
-`SurfaceIntersection`). Dispatch is static — the call costs what the
-per-pair method costs.
 
 === "Python"
 
@@ -41,12 +50,21 @@ per-pair method costs.
 === "Rust"
 
     ```rust
-    use geomcore::{Intersect, Tolerance};
+    use geomcore::{Intersect, IntersectionMethod, Tolerance};
 
     let tol = Tolerance::DEFAULT;
     let result = plane.intersect(&sphere, tol);
+    assert_eq!(result.method(), IntersectionMethod::Exact);
     assert_eq!(sphere.intersect(&plane, tol), result);
     ```
+
+A pair of concrete types calls its exact solver directly, with no
+run-time dispatch; only `Curve3D`, `Surface`, `ElementaryCurve` or
+`ElementarySurface` operands pay for a `match`. For hot loops over
+elementary shapes, `a.intersect_exact(&b, tol)` (the `IntersectExact`
+trait) returns the pair's own enum, such as `PlaneSphereIntersection`,
+on the stack, recovers no parameter it does not need, and reports
+`NotAnalytic` where no closed form exists instead of searching.
 
 Covered pairs include plane/quadric/torus surfaces against each other
 in their symmetric configurations, lines/circles/conics against each
@@ -79,18 +97,18 @@ trimmed pieces are searched over their own range. A curve or surface
 type you define yourself, by implementing `ParametricCurve3D` or
 `ParametricSurface`, goes through `intersect_curve_curve(a, b, tol)` and
 `intersect_curve_surface(curve, surface, tol)`: they always run the
-numeric search and return the same result types as the routed call,
-solved numerically. On
-B-splines there is no sampling grid:
-Bézier pieces subdivide where their control boxes overlap until each
+numeric search and return the same result types as the routed call.
+On B-splines there is no sampling grid: Bézier pieces subdivide where their control boxes overlap until each
 pair holds at most one hit, then Newton solves it — crossings a grid
 would miss between samples are found, and tangencies/overlaps fall
 back to the sampled search instead of burning the budget.
 
 The search reports whether it finished: the result's `method()` is
-`Numeric`, and its `completeness()` is `Complete`
-when every piece pair was proven apart or isolated, `Incomplete` with
-the parameter regions where hits may be missing otherwise.
+`Numeric`, and its `completeness()` is `Complete` when every piece pair
+was proven apart or isolated, `Incomplete` with the parameter regions
+where hits may be missing otherwise, and `Sampled` when the hits come
+from samples (a pair without a B-spline, such as an ellipse against a
+torus).
 
 === "Python"
 
@@ -118,11 +136,17 @@ the parameter regions where hits may be missing otherwise.
 ## Numeric: marching surfaces
 
 For a pair without a closed form, the routed `intersect` of two
-surfaces seeds from the two surfaces, traces with curvature-following
-steps corrected by Newton on both surfaces, and fits each loop or arc as
-a `BSplineCurve3D`. Two B-spline surfaces additionally seed from
-overlapping patch pairs, so isolated loops smaller than the seed grid
-are found there.
+surfaces seeds from the points where iso-curves of an elementary side
+(rulings and circles of a cylinder or cone, circles of a sphere or
+torus, lines of a plane) meet the other surface exactly, so an
+unbounded surface is searched whole. A B-spline side adds its own
+seeds, and two bounded surfaces add a parameter grid. It then traces
+with curvature-following steps corrected by Newton on both surfaces,
+until the trace closes or leaves the model-size cube, and fits each
+loop or arc as a `BSplineCurve3D`. Two B-spline surfaces additionally
+seed from overlapping patch pairs, so isolated loops smaller than the
+seed spacing are found there. A marched result is `Sampled`: a loop
+smaller than the iso-curve spacing can be missed.
 
 <figure class="geom-fig">
 <img src="../../assets/figures/intersection/31-marching-round-a-cylinder-and-a-sphere.svg" alt="Marching round a cylinder and a sphere">

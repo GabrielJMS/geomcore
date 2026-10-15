@@ -77,9 +77,9 @@ typed results and never allocate (sizes from `std::mem::size_of`):
 
 | type | bytes |
 |---|---|
-| `SurfaceIntersection` | 624 |
-| `CurveCurveIntersection` | 200 |
-| `CurveSurfaceIntersection` | 168 |
+| `ExactSurfaceIntersection` | 624 |
+| `ExactCurveCurveIntersection` | 264 (200 before 0.36, whose hits had no optional parameters) |
+| `ExactCurveSurfaceIntersection` | 168 |
 | `ElementarySurface`, `ElementaryCurve` | 120 |
 | `PlaneConeIntersection` (largest typed surface result) | 232 |
 | `PlaneSphereIntersection` | 112 |
@@ -321,7 +321,8 @@ search for 64 cubic B-spline curves against one bicubic B-spline surface (6×6 p
 path over the surface, so most cross it once. Since 0.36 the bench calls
 the routed `intersect`, which sends these pairs to the numeric search; the
 tables below name that search after the free function
-`intersect_curve_surface` it was called through before, now crate-private.
+`intersect_curve_surface` it was called through before, which still runs
+it on any curve and surface.
 
 Machine: Linux 7.0, x86-64 desktop, single thread, `--warm-up-time 1
 --measurement-time 3` (2026-10-12). Times are per curve.
@@ -348,7 +349,7 @@ cargo bench --bench intersect_curve_surface
 
 `benches/intersect_curve_curve.rs` times the numeric curve–curve search
 (through the routed `intersect` since 0.36, through the free function
-`intersect_curve_curve`, now crate-private, before) on 64 pairs of cubic B-spline curves in one plane, one crossing the square
+`intersect_curve_curve`, which still runs it on any two curves, before) on 64 pairs of cubic B-spline curves in one plane, one crossing the square
 `[0, 5]^2` from left to right and the other from bottom to top along wavy
 paths, so that every pair crosses at least once; and `curve_curve_extrema`
 on 64 pairs of skew cubic B-spline curves, wavy in all three directions,

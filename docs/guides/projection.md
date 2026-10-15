@@ -80,6 +80,7 @@ it was computed on and the `query_point`. Batch variants
     ```rust
     let foot = circle.project_point(Point3D::new(3.0, 0.0, 0.0), tol);
     assert_eq!((foot.parameter, foot.distance), (0.0, 1.0));
+    assert_eq!(foot.point, Point3D::new(2.0, 0.0, 0.0));
 
     let sfoot = sphere.project_point(Point3D::new(0.0, 0.0, 5.0), tol);
     ```
