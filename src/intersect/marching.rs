@@ -29,14 +29,16 @@ use crate::{Bound3D, BoundingBox3D, Point3D, Tolerance, Vector3D};
 ///   cone), its two iso-lines through its origin.
 ///
 /// Circles are left out against a torus, which they meet only through a
-/// sampled search. Both sides seed when both are elementary, and a
-/// B-spline side adds its own parameter grid (below). A line is
+/// sampled search. Both sides seed when both are elementary. A B-spline
+/// side adds its own parameter grid (below), and so do both sides when
+/// both surfaces are bounded (spheres, tori, B-splines), where a small
+/// loop may lie between the iso-curves. A line is
 /// intersected whole, so an unbounded direction is searched whole: an
 /// intersection far from the parameter origin is found. Seeds landing on
 /// the same point (a sphere's pole, a cone's apex) are traced from once.
 ///
-/// Otherwise (a sphere or torus against a torus, or a surface defined
-/// outside the crate) seeds come from both parameter grids (unbounded
+/// Otherwise (a torus against a torus, or a surface defined outside the
+/// crate) seeds come from both parameter grids (unbounded
 /// directions sampled over `[-10, 10]`): the samples where the distance to
 /// the other surface is a local minimum are converged onto the
 /// intersection by Newton's method on `S1(u1, v1) = S2(u2, v2)`, so curves
@@ -45,9 +47,12 @@ use crate::{Bound3D, BoundingBox3D, Point3D, Tolerance, Vector3D};
 /// Each seed traces both ways along the `N1 x N2` tangent; every step is
 /// corrected by Newton's method on the same system plus the plane through
 /// the predicted point normal to the tangent. The step length follows the
-/// curvature (a chord deviation of about `1000 * confusion`), and is at
-/// most 0.1 or a tenth of the distance from the seed, whichever is
-/// longer. A trace ends when it closes a loop, stalls, reaches a parameter
+/// curvature (a chord deviation of about `1000 * confusion`), with no
+/// fixed cap. A step is halved when the intersection at its midpoint,
+/// converged onto both surfaces, strays from the chord by more than twice
+/// that deviation, or when it advances more than one knot span in a
+/// parameter of a B-spline side (within a span the control points bound
+/// the features). A trace ends when it closes a loop, stalls, reaches a parameter
 /// bound, or leaves the cube of side [`Tolerance::MODEL_SIZE`] centred on
 /// the origin, its last point then lying on the bound or the cube. Traces
 /// fit [`BSplineCurve3D`] interpolants (degree 3, closed loops by repeated
@@ -128,11 +133,10 @@ where
 /// - the points where the seeding iso-curves of an elementary side meet
 ///   the other side exactly or through the B-spline search (see
 ///   [`family_seeds`]);
-/// - a B-spline side's own parameter grid (see [`grid_seeds`]), bounded.
+/// - a B-spline side's own parameter grid (see [`grid_seeds`]), and both
+///   grids when both surfaces are bounded (spheres, tori, B-splines).
 ///
-/// `None` otherwise, or when no family meets the other side without the
-/// sampled search (a sphere or torus against a torus): the caller then
-/// seeds from both grids.
+/// `None` otherwise: the caller then seeds from both grids.
 fn pair_seeds<A, B>(a: &A, b: &B, tol: Tolerance) -> Option<Vec<[f64; 4]>>
 where
     A: ParametricSurface,
@@ -157,11 +161,15 @@ where
                 .filter_map(|x| meet(a, b, [x[2], x[3], x[0], x[1]], None, tol)),
         );
     }
-    if let SeedTarget::BSpline(_) = first {
+    // A B-spline side always seeds from its grid; so do both sides when
+    // both are bounded (a sphere, torus or B-spline), where the families
+    // alone may pass between small loops.
+    let both_bounded = first.bounding_box().is_some() && second.bounding_box().is_some();
+    if both_bounded || matches!(first, SeedTarget::BSpline(_)) {
         seeded = true;
         seeds.extend(grid_seeds(a, b, tol));
     }
-    if let SeedTarget::BSpline(_) = second {
+    if both_bounded || matches!(second, SeedTarget::BSpline(_)) {
         seeded = true;
         seeds.extend(
             grid_seeds(b, a, tol)
@@ -574,14 +582,13 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    // Chord deviation allowed per step. The longest step is `H_MAX`, or
-    // `RELATIVE_STEP` times the distance from the seed when that is longer,
-    // so a curve running far keeps a bounded number of steps (about 120 to
-    // the model-size cube from a unit distance) while the curvature still
-    // bounds every step through the chord deviation.
+    // Chord deviation allowed per step. The step follows the curvature of
+    // the last one (a chord deviation of `chord_deviation`), and a step
+    // whose corrected midpoint strays farther from its chord is halved, so
+    // a feature as wide as the step is not crossed. A B-spline side caps
+    // the step at one knot span (see `span_step`): within a span its
+    // control points bound the features.
     let chord_deviation = CHORD_DEVIATION * tol.confusion;
-    const H_MAX: f64 = 0.1;
-    const RELATIVE_STEP: f64 = 0.1;
     // A trace ends on closing its loop, on a parameter bound, or on the
     // model-size cube; this count only guards against a runaway trace (a
     // loop whose closure is missed). A curve of length `L` and curvature
@@ -605,7 +612,7 @@ where
             break;
         }
         let (mut x, mut p, mut t) = (seed, start, t0 * dir);
-        let mut h = (8.0 * chord_deviation).sqrt().min(H_MAX);
+        let mut h = (8.0 * chord_deviation).sqrt().min(span_step(a, b, x, t));
         // Curvature of the last accepted step (none before the first).
         let mut last_curvature = 0.0;
         for _ in 0..SAFETY_STEP_LIMIT {
@@ -637,6 +644,8 @@ where
                         && chord <= 2.0 * h
                         && chord * turn <= 32.0 * chord_deviation
                         && smooth
+                        && within_one_span(a, b, x, y)
+                        && !bulges(a, b, (x, p), (y, q), chord_deviation, tol)
                     {
                         step = Some((y, q, ty, turn / chord.max(f64::MIN_POSITIVE)));
                         break;
@@ -675,8 +684,8 @@ where
             (x, p, t) = (y, q, ty);
             last_curvature = curvature;
             h = (2.0 * h)
-                .min(H_MAX.max(RELATIVE_STEP * p.distance(start)))
-                .min((8.0 * chord_deviation / curvature.max(f64::MIN_POSITIVE)).sqrt());
+                .min((8.0 * chord_deviation / curvature.max(f64::MIN_POSITIVE)).sqrt())
+                .min(span_step(a, b, x, t));
         }
     }
     let [forward, backward] = halves;
@@ -684,6 +693,108 @@ where
     points.push(start);
     points.extend(forward);
     (points.len() >= 4).then_some(points)
+}
+
+/// Multiple of the chord deviation a step's midpoint may stray from its
+/// chord (see [`bulges`]).
+const MIDPOINT_SLACK: f64 = 2.0;
+
+/// Whether the intersection between the traced points `p` (parameters
+/// `x`) and `q` (parameters `y`) strays from their chord by more than
+/// `deviation` at its midpoint, or cannot be found there: the midpoint of
+/// the parameters converged onto both surfaces in the plane through the
+/// chord's midpoint, normal to it.
+fn bulges<A, B>(
+    a: &A,
+    b: &B,
+    (x, p): ([f64; 4], Point3D),
+    (y, q): ([f64; 4], Point3D),
+    deviation: f64,
+    tol: Tolerance,
+) -> bool
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let chord = q - p;
+    let length = chord.magnitude();
+    if length <= tol.confusion {
+        return false;
+    }
+    let middle = p + chord * 0.5;
+    let guess = std::array::from_fn(|k| 0.5 * (x[k] + y[k]));
+    meet(a, b, guess, Some((middle, chord * (1.0 / length))), tol)
+        .is_none_or(|z| a.eval_point(z[0], z[1]).distance(middle) > MIDPOINT_SLACK * deviation)
+}
+
+/// The longest step from parameters `x` along the unit tangent `t` that
+/// advances at most one knot span in each parameter of a B-spline side
+/// (to first order), or infinity when neither side is a B-spline.
+fn span_step<A, B>(a: &A, b: &B, x: [f64; 4], t: Vector3D) -> f64
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let on = |surface: Option<&BSplineSurface>, u: f64, v: f64| {
+        surface.map_or(f64::INFINITY, |s| {
+            let (_, [su, sv]) = s.eval_d1(u, v);
+            let m = [[su.dot(su), su.dot(sv)], [su.dot(sv), sv.dot(sv)]];
+            let Some([du, dv]) = solve_2x2(m, [su.dot(t), sv.dot(t)], 1e-12) else {
+                return f64::INFINITY;
+            };
+            let along = |knots: &[f64], periodic: bool, at: f64, rate: f64| {
+                if rate == 0.0 {
+                    return f64::INFINITY;
+                }
+                span_width(knots, periodic, at, rate > 0.0) / rate.abs()
+            };
+            along(s.u_knots(), s.is_u_periodic(), u, du).min(along(
+                s.v_knots(),
+                s.is_v_periodic(),
+                v,
+                dv,
+            ))
+        })
+    };
+    on(a.as_bspline(), x[0], x[1]).min(on(b.as_bspline(), x[2], x[3]))
+}
+
+/// Whether the move from parameters `x` to `y` advances at most one knot
+/// span in each parameter of a B-spline side.
+fn within_one_span<A, B>(a: &A, b: &B, x: [f64; 4], y: [f64; 4]) -> bool
+where
+    A: ParametricSurface,
+    B: ParametricSurface,
+{
+    let on = |surface: Option<&BSplineSurface>, k: usize| {
+        surface.is_none_or(|s| {
+            let fits = |knots: &[f64], periodic: bool, from: f64, to: f64| {
+                (to - from).abs() <= span_width(knots, periodic, from, to > from)
+            };
+            fits(s.u_knots(), s.is_u_periodic(), x[k], y[k])
+                && fits(s.v_knots(), s.is_v_periodic(), x[k + 1], y[k + 1])
+        })
+    };
+    on(a.as_bspline(), 0) && on(b.as_bspline(), 2)
+}
+
+/// The width of the knot span holding `at` (wrapped into the knots' range
+/// when `periodic`), taking the span ahead when `at` lies on a knot:
+/// the next one when `forward`, the previous one otherwise.
+fn span_width(knots: &[f64], periodic: bool, at: f64, forward: bool) -> f64 {
+    let (first, last) = (knots[0], knots[knots.len() - 1]);
+    let at = if periodic {
+        first + (at - first).rem_euclid(last - first)
+    } else {
+        at
+    };
+    let end = if forward {
+        knots.partition_point(|&k| k <= at)
+    } else {
+        knots.partition_point(|&k| k < at)
+    };
+    let end = end.clamp(1, knots.len() - 1);
+    knots[end] - knots[end - 1]
 }
 
 /// Half the side of the model-size cube centred on the origin, where
@@ -1354,6 +1465,142 @@ mod tests {
         let curves = marching_intersection(&first, &second, tol);
         assert_eq!(curves.len(), 2);
         assert_on_both(&curves, &first, &second);
+    }
+
+    #[test]
+    fn test_marching_sphere_between_torus_meridians() {
+        // Spheres centred halfway between two seeding meridians of the
+        // torus: the meridians on either side miss them, or lie wholly
+        // inside the large one, so the grids find the curves.
+        use crate::{Sphere, Torus};
+        let tol = Tolerance::DEFAULT;
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+        let azimuth = 7.5f64.to_radians();
+        for (distance, radius, count) in
+            [(3.0, 1.2, 2), (4.0, 0.3, 1), (4.0, 0.15, 1), (2.0, 0.25, 1)]
+        {
+            let centre = Point3D::new(distance * azimuth.cos(), distance * azimuth.sin(), 0.0);
+            let sphere = Sphere::new(centre, radius).unwrap();
+            let curves = marching_intersection(&sphere, &torus, tol);
+            assert_eq!(curves.len(), count, "radius {radius} at {distance}");
+            assert_closed_on_both(&curves, &sphere, &torus);
+        }
+    }
+
+    #[test]
+    fn test_marching_against_a_torus_finds_what_the_grid_finds() {
+        // Random spheres, cylinders and cones about a torus: wherever the
+        // grid seeds find curves, so does the seeding.
+        use crate::{Cone, Cylinder, Sphere, Torus};
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+        let mut state = 42u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 11) as f64 / (1u64 << 53) as f64
+        };
+        fn check<S: ParametricSurface>(surface: &S, torus: &crate::Torus, case: usize) {
+            let tol = Tolerance::DEFAULT;
+            if !grid_marching(surface, torus, tol).is_empty() {
+                assert!(
+                    !marching_intersection(surface, torus, tol).is_empty(),
+                    "case {case}"
+                );
+            }
+        }
+        for case in 0..24 {
+            let azimuth = next() * std::f64::consts::TAU;
+            let distance = 1.5 + 3.0 * next();
+            let height = -1.5 + 3.0 * next();
+            let centre = Point3D::new(distance * azimuth.cos(), distance * azimuth.sin(), height);
+            let radius = 0.1 + 1.5 * next();
+            let axis = Vector3D::new(next() - 0.5, next() - 0.5, next() - 0.5);
+            check(&Sphere::new(centre, radius).unwrap(), &torus, case);
+            check(
+                &Cylinder::new(centre, axis, 0.1 + 0.6 * next()).unwrap(),
+                &torus,
+                case,
+            );
+            let (semi_angle, reference) = (0.1 + 0.5 * next(), 0.1 + 0.6 * next());
+            check(
+                &Cone::new(centre, axis, semi_angle, reference).unwrap(),
+                &torus,
+                case,
+            );
+        }
+    }
+
+    /// The straight wall along the diagonal of the xy plane over 280,
+    /// extruded along z over `[-1, 1]`, with one pole pushed off by `bump`
+    /// at `at` along it, its neighbours `width` apart.
+    fn bumped_wall(bump: f64, width: f64, at: f64) -> crate::surfaces::BSplineSurface {
+        let r = std::f64::consts::FRAC_1_SQRT_2;
+        let along = [
+            0.0,
+            40.0,
+            80.0,
+            120.0,
+            at - 2.0 * width,
+            at - width,
+            at,
+            at + width,
+            at + 2.0 * width,
+            200.0,
+            240.0,
+            280.0,
+        ];
+        let poles = along
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| {
+                let off = if i == 6 { bump } else { 0.0 };
+                let (x, y) = ((s + off) * r, (s - off) * r);
+                vec![Point3D::new(x, y, -1.0), Point3D::new(x, y, 1.0)]
+            })
+            .collect::<Vec<_>>();
+        let knots: Vec<f64> = (0..=poles.len() - 3).map(|k| k as f64).collect();
+        let mut multiplicities = vec![1; knots.len()];
+        multiplicities[0] = 4;
+        *multiplicities.last_mut().unwrap() = 4;
+        crate::surfaces::BSplineSurface::new(
+            3,
+            1,
+            poles,
+            knots,
+            multiplicities,
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_marching_does_not_step_over_a_small_bump() {
+        // A straight run with one small bump whose ends have the same
+        // tangent: a long step across it would see no turn.
+        use crate::Plane;
+        let tol = Tolerance::DEFAULT;
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        for (bump, width, at) in [(0.05, 0.25, 125.0), (0.02, 0.1, 150.0), (0.2, 0.5, 175.0)] {
+            let wall = bumped_wall(bump, width, at);
+            let curves = marching_intersection(&plane, &wall, tol);
+            assert_eq!(curves.len(), 1, "bump {bump} at {at}");
+            let curve = &curves[0];
+            let knots = curve.knots();
+            for span in knots.windows(2) {
+                for k in 0..20 {
+                    let p = curve.eval_point(span[0] + (span[1] - span[0]) * k as f64 / 20.0);
+                    assert!(
+                        wall.project_point(p, tol).distance < 1e-3,
+                        "bump {bump}: {p:?}"
+                    );
+                    assert!(p.z.abs() < 1e-3, "{p:?}");
+                }
+            }
+        }
     }
 
     #[test]

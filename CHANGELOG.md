@@ -40,16 +40,18 @@ the Python distribution are versioned in lockstep.
   elementary surface meet the other surface: rulings and circles of a
   cylinder or cone, circles of a sphere or torus (not against a torus),
   lines of a plane across the other surface's bounding box. A B-spline
-  side adds its own parameter grid. This replaces the parameter grid
-  limited to `[-10, 10]` along unbounded directions, so an intersection
-  far from the parameter origin is found; a sphere or torus against a
-  torus keeps the grid.
+  side adds its own parameter grid, and so do both sides when both
+  surfaces are bounded (spheres, tori, B-splines). This replaces the
+  parameter grid limited to `[-10, 10]` along unbounded directions, so an
+  intersection far from the parameter origin is found.
 - A marching trace ends where it leaves the cube of side
   `Tolerance::MODEL_SIZE` centred on the origin, instead of after 2000
   steps: an unbounded curve now runs to the cube, and a long loop closes.
-  The longest step grows with the distance from the seed (a tenth of it,
-  at least 0.1), still bounded by the curvature, so such a curve takes a
-  few hundred points.
+  The step follows the curvature with no fixed cap of 0.1; a step is
+  halved when the intersection at its midpoint strays from its chord, or
+  when it advances more than one knot span of a B-spline side. Traced
+  curves of low curvature take fewer points; each step costs one more
+  Newton solve.
 - `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the
   frame's z direction on every call (it is unit by construction): about
   13 ns faster per call, and the parameters may differ in the last bits.

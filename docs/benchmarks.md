@@ -418,41 +418,50 @@ The same bench times elementary pairs:
   whose axis is parallel to a generator (two curves to infinity).
 
 Fastest of three runs, same settings (2026-10-15, machine loaded). Three
-versions: the grid over `[-10, 10]` with traces of at most 2000 steps
-each way; the first iso-curve seeding, iso-curves alone with 10 000
-steps; and the current one, which adds the B-spline side's grid and
-cylinder and cone circles, leaves out circles against a torus, and ends
-traces on the model-size cube with steps growing with the distance from
-the seed.
+versions:
+- the grid over `[-10, 10]`, with traces of at most 2000 steps of at most
+  0.1 each way;
+- the iso-curve seeding of the first review round, whose steps grew with
+  the distance from the seed;
+- the current one. Steps follow the curvature with no fixed cap, are
+  halved when the midpoint strays from the chord or the step advances more
+  than one knot span of a B-spline side, and stop on the model-size cube.
+  Bounded pairs add both grids.
 
-| case | grid | iso-curves alone | current |
+| case | grid | first round | current |
 |---|---|---|---|
-| `bspline_surface_pair` | ~2.60 ms | ~2.68 ms | ~2.58 ms |
-| `torus_plane_oblique` | ~479 µs | ~427 µs | ~417 µs |
-| `sphere_torus` | ~678 µs | ~2.07 ms | ~511 µs |
-| `cylinder_extruded_wall` | ~1.89 ms | ~40 µs (0 of 2 curves) | ~433 µs |
-| `cone_cylinder_unbounded` | ~5.58 ms (4001 poles per curve) | ~27.8 ms (20 001) | ~747 µs (407) |
+| `bspline_surface_pair` | ~2.61 ms | ~2.60 ms | ~3.11 ms |
+| `torus_plane_oblique` | ~478 µs | ~441 µs | ~580 µs |
+| `sphere_torus` | ~682 µs | ~524 µs | ~1.02 ms |
+| `cylinder_extruded_wall` | ~1.86 ms | ~460 µs | ~415 µs |
+| `cone_cylinder_unbounded` | ~5.73 ms (4001 poles per curve) | ~771 µs (407) | ~665 µs (215) |
 
-The cone–cylinder curves used to stop after a fixed number of steps of at
-most 0.1; they now run to the cube 50 000 away in about 200 steps each
-way. The torus seeds from 24 meridian circles cut by the sphere or the
-plane (exact), the plane from 48 lines across the torus's box (each a
-quartic); the sphere's circles, which would meet the torus only through
-the sampled search, are left out. The wall's grid finds the curves that
-the cylinder's rulings, running along the extrusion, miss. Two tori have
-no exact family and keep the grid (about 1.04 ms for the pair in the
-probe below, as before).
+The midpoint check costs one more Newton solve per step. It makes the
+B-spline pair and the torus–plane pair about 20 % slower than the grid.
+The sphere–torus pair also traces from both grids, because the torus
+meridians alone can pass between small loops. In exchange, a step can no
+longer cross a feature whose ends share a tangent, such as a small bump
+on a straight wall, which the first round did.
+
+The cone–cylinder curves used to stop after a fixed number of steps.
+They now run to the cube 50 000 away, the step doubling along the nearly
+straight branches. The torus seeds from 24 meridian circles cut by the
+sphere or the plane (exact), and the plane from 48 lines across the
+torus's box (each a quartic). The sphere's circles would meet the torus
+only through the sampled search, so they are left out. The wall's grid
+finds the curves that the cylinder's rulings miss, since the rulings run
+along the extrusion.
 
 Measured outside the bench (best of five calls, release), pairs without
 a closed form: the cone pairs through the routed `intersect` on
 `Surface`, the tori (radii 3 and 1, and 3 and 0.8 tilted and shifted)
 through `marching_intersection`:
 
-| pair | grid | iso-curves alone | current |
+| pair | grid | first round | current |
 |---|---|---|---|
-| cone × cylinder along a generator | ~3.9 ms | ~18.0 ms | ~0.54 ms |
-| cone × cone, parallel axes | ~4.4 ms | ~20.1 ms | ~0.43 ms |
-| torus × torus | ~1.04 ms | ~3.20 ms | ~1.04 ms |
+| cone × cylinder along a generator | ~4.1 ms | ~0.54 ms | ~0.50 ms |
+| cone × cone, parallel axes | ~4.4 ms | ~0.44 ms | ~0.40 ms |
+| torus × torus (grid seeds in all three) | ~1.04 ms | ~1.06 ms | ~1.39 ms |
 
 Reproduce with:
 
