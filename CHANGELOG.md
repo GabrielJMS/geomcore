@@ -45,7 +45,7 @@ the Python distribution are versioned in lockstep.
   routed `intersect`, so a pair with a closed form is solved exactly;
   ranges where the shapes coincide are no longer returned as dense hits.
 - Marching, run by the routed `intersect` of two surfaces without a
-  closed form, seed from the points where the iso-curves of an
+  closed form, seeds from the points where the iso-curves of an
   elementary surface meet the other surface: rulings and circles of a
   cylinder or cone, circles of a sphere or torus (not against a torus),
   lines of a plane across the other surface's bounding box. A B-spline
