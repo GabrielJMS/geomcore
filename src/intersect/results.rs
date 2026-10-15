@@ -6,11 +6,35 @@
 //! ([`Completeness`]). The fields are private and read through accessors,
 //! so the storage can change without breaking callers.
 
+use super::inline_or_heap_list::InlineOrHeapList;
 use super::{
     Completeness, CurveCurveHit, CurveCurveHit2D, CurveCurveRegion, CurveSurfaceHit,
     CurveSurfaceRegion,
 };
 use crate::{Curve3D, Point3D, Tolerance, Vector3D};
+
+/// The hits of a 3D curve-curve result. The inline capacity is the most
+/// hits an exact pair yields (two conics meet at most 4 times), so an
+/// exact result never allocates; a numeric result keeps its `Vec`.
+pub(crate) type CurveCurveHitList = InlineOrHeapList<CurveCurveHit, 4>;
+
+/// The hits of a 2D curve-curve result: lines and circles meet at most
+/// twice.
+pub(crate) type CurveCurveHitList2D = InlineOrHeapList<CurveCurveHit2D, 2>;
+
+/// The overlaps of a curve-curve result: a coincidence restricted to two
+/// parameter ranges gives one piece, or two when it crosses a seam; a rare
+/// third piece moves the list to the heap.
+pub(crate) type CurveCurveOverlapList = InlineOrHeapList<CurveCurveOverlap, 2>;
+
+/// The hits of a curve-surface result. The inline capacity is the most
+/// hits an exact pair yields (a line or conic meets a quadric or torus at
+/// most 4 times).
+pub(crate) type CurveSurfaceHitList = InlineOrHeapList<CurveSurfaceHit, 4>;
+
+/// The overlaps of a curve-surface result: an exact coincidence is one
+/// parameter range.
+pub(crate) type CurveSurfaceOverlapList = InlineOrHeapList<(f64, f64), 1>;
 
 /// How an intersection was computed.
 ///
@@ -106,7 +130,8 @@ pub struct SurfaceSurfaceRegion {
     pub max_corner: Point3D,
 }
 
-fn sorted_by_first(mut hits: Vec<CurveCurveHit>) -> Vec<CurveCurveHit> {
+#[inline]
+fn sorted_by_first(mut hits: CurveCurveHitList) -> CurveCurveHitList {
     hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
     hits
 }
@@ -158,15 +183,19 @@ pub(crate) fn curve_surface_multiplicity(
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveCurveIntersection {
-    hits: Vec<CurveCurveHit>,
-    overlaps: Vec<CurveCurveOverlap>,
+    hits: CurveCurveHitList,
+    overlaps: CurveCurveOverlapList,
     method: IntersectionMethod,
     completeness: Completeness<CurveCurveRegion>,
 }
 
 impl CurveCurveIntersection {
     /// An exact, complete result; the hits are sorted by first parameter.
-    pub(crate) fn exact(hits: Vec<CurveCurveHit>, overlaps: Vec<CurveCurveOverlap>) -> Self {
+    ///
+    /// It takes a whole list: the router hands over the exact solver's
+    /// own list unchanged when neither curve is trimmed, which measured
+    /// faster than pushing the hits one by one.
+    pub(crate) fn exact(hits: CurveCurveHitList, overlaps: CurveCurveOverlapList) -> Self {
         CurveCurveIntersection {
             hits: sorted_by_first(hits),
             overlaps,
@@ -181,8 +210,8 @@ impl CurveCurveIntersection {
         completeness: Completeness<CurveCurveRegion>,
     ) -> Self {
         CurveCurveIntersection {
-            hits: sorted_by_first(hits),
-            overlaps: Vec::new(),
+            hits: sorted_by_first(hits.into()),
+            overlaps: CurveCurveOverlapList::new(),
             method: IntersectionMethod::Numeric,
             completeness,
         }
@@ -335,20 +364,34 @@ impl CurveCurveIntersection {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveCurveIntersection2D {
-    hits: Vec<CurveCurveHit2D>,
-    overlaps: Vec<CurveCurveOverlap>,
+    hits: CurveCurveHitList2D,
+    overlaps: CurveCurveOverlapList,
     completeness: Completeness<CurveCurveRegion>,
 }
 
 impl CurveCurveIntersection2D {
     /// An exact, complete result; the hits are sorted by first parameter.
-    pub(crate) fn exact(mut hits: Vec<CurveCurveHit2D>, overlaps: Vec<CurveCurveOverlap>) -> Self {
-        hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
-        CurveCurveIntersection2D {
-            hits,
+    ///
+    /// The hits are pushed into the result itself: the result is about
+    /// 200 to 300 bytes, and collecting the hits first, then moving the
+    /// list in, measured slower.
+    #[inline]
+    pub(crate) fn exact(
+        hits: impl IntoIterator<Item = CurveCurveHit2D>,
+        overlaps: CurveCurveOverlapList,
+    ) -> Self {
+        let mut result = CurveCurveIntersection2D {
+            hits: CurveCurveHitList2D::new(),
             overlaps,
             completeness: Completeness::Complete,
+        };
+        for hit in hits {
+            result.hits.push(hit);
         }
+        result
+            .hits
+            .sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
+        result
     }
 
     /// The isolated hits, sorted by first parameter. A hit outside a
@@ -481,21 +524,35 @@ impl CurveCurveIntersection2D {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveSurfaceIntersection {
-    hits: Vec<CurveSurfaceHit>,
-    overlaps: Vec<(f64, f64)>,
+    hits: CurveSurfaceHitList,
+    overlaps: CurveSurfaceOverlapList,
     method: IntersectionMethod,
     completeness: Completeness<CurveSurfaceRegion>,
 }
 
 impl CurveSurfaceIntersection {
     /// An exact, complete result; the hits are sorted by curve parameter.
-    pub(crate) fn exact(hits: Vec<CurveSurfaceHit>, overlaps: Vec<(f64, f64)>) -> Self {
-        CurveSurfaceIntersection {
-            hits: sorted_by_curve_parameter(hits),
+    ///
+    /// Like [`CurveCurveIntersection2D::exact`], it pushes the hits into
+    /// the result itself.
+    #[inline]
+    pub(crate) fn exact(
+        hits: impl IntoIterator<Item = CurveSurfaceHit>,
+        overlaps: CurveSurfaceOverlapList,
+    ) -> Self {
+        let mut result = CurveSurfaceIntersection {
+            hits: CurveSurfaceHitList::new(),
             overlaps,
             method: IntersectionMethod::Exact,
             completeness: Completeness::Complete,
+        };
+        for hit in hits {
+            result.hits.push(hit);
         }
+        result
+            .hits
+            .sort_by(|a, b| a.curve_parameter.total_cmp(&b.curve_parameter));
+        result
     }
 
     /// A numeric result with the status of its search.
@@ -504,8 +561,8 @@ impl CurveSurfaceIntersection {
         completeness: Completeness<CurveSurfaceRegion>,
     ) -> Self {
         CurveSurfaceIntersection {
-            hits: sorted_by_curve_parameter(hits),
-            overlaps: Vec::new(),
+            hits: sorted_by_curve_parameter(hits.into()),
+            overlaps: CurveSurfaceOverlapList::new(),
             method: IntersectionMethod::Numeric,
             completeness,
         }
@@ -615,7 +672,8 @@ impl CurveSurfaceIntersection {
     }
 }
 
-fn sorted_by_curve_parameter(mut hits: Vec<CurveSurfaceHit>) -> Vec<CurveSurfaceHit> {
+#[inline]
+fn sorted_by_curve_parameter(mut hits: CurveSurfaceHitList) -> CurveSurfaceHitList {
     hits.sort_by(|a, b| a.curve_parameter.total_cmp(&b.curve_parameter));
     hits
 }
@@ -723,7 +781,10 @@ mod tests {
 
     #[test]
     fn test_exact_curve_curve_is_complete_and_sorted() {
-        let r = CurveCurveIntersection::exact(vec![hit(2.0, 0.0), hit(1.0, 5.0)], vec![]);
+        let r = CurveCurveIntersection::exact(
+            [hit(2.0, 0.0), hit(1.0, 5.0)].into_iter().collect(),
+            CurveCurveOverlapList::new(),
+        );
         assert_eq!(r.method(), IntersectionMethod::Exact);
         assert!(r.is_complete());
         assert_eq!(r.hits()[0].first_parameter, 1.0);
@@ -747,7 +808,10 @@ mod tests {
 
     #[test]
     fn test_unbounded_overlap_is_not_empty() {
-        let r = CurveSurfaceIntersection::exact(vec![], vec![(f64::NEG_INFINITY, f64::INFINITY)]);
+        let r = CurveSurfaceIntersection::exact(
+            [],
+            [(f64::NEG_INFINITY, f64::INFINITY)].into_iter().collect(),
+        );
         assert!(!r.is_empty());
         assert_eq!(r.overlaps().len(), 1);
     }
@@ -772,7 +836,7 @@ mod tests {
 
     #[test]
     fn test_two_dimensional_result_is_exact_and_complete() {
-        let r = CurveCurveIntersection2D::exact(vec![], vec![]);
+        let r = CurveCurveIntersection2D::exact([], CurveCurveOverlapList::new());
         assert_eq!(r.method(), IntersectionMethod::Exact);
         assert!(r.is_complete() && r.is_empty());
     }

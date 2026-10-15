@@ -101,18 +101,48 @@ cylinder of radius 1.5 about the vertical axis at two points, and
 coplanar circles of radius 2 and 1.5 with centres 1 to 2 apart, crossing
 at two points.
 
-Machine: Linux 7.0, x86-64 desktop, single thread, default criterion
-settings (2026-10-15). Medians per pair; batch time divided by 1024.
+Machine: Linux 7.0, x86-64 desktop, single thread (2026-10-15). The
+machine was loaded, so criterion medians moved by ±10% between runs;
+the table gives the median of five interleaved runs of each build, each
+run keeping the fastest of 30 timings of the batch. Times are per pair.
 
-| pair | exact | routed | routed / exact |
-|---|---|---|---|
-| line–cylinder | ~82 ns | ~212 ns | ~2.6x |
-| circle–circle (coplanar) | ~40 ns | ~191 ns | ~4.8x |
+| pair | exact | routed, heap lists | routed, inline lists | routed / exact |
+|---|---|---|---|---|
+| line–cylinder | ~75 ns | ~192 ns | ~189 ns | ~2.5x |
+| circle–circle (coplanar) | ~32 ns | ~179 ns | ~167 ns | ~5.2x |
+| 2D circle–circle | ~8 ns | ~124 ns | ~124 ns | ~15x |
 
-Both routed cases cost more than twice the exact call. Not optimized: the
-spec defers it. The routed call builds the family result (a struct with
-slice accessors) rather than the small typed enum, which accounts for the
-extra time on these closed-form pairs.
+The 2D row uses the same circles in the plane; it was timed once for
+this comparison and is not part of the bench.
+
+The results now keep their hits and overlaps inline, up to the most an
+exact pair can produce (4 hits in 3D, 2 in 2D), so an exact routed call
+no longer allocates (it made one allocation, two for a 2D pair). That
+saved less than expected: a heap allocation of this size costs about
+10–20 ns, and the larger result (about 300 bytes instead of 88) costs
+part of it back in copies.
+
+The routed call does more than the typed exact call, and most of the
+gap is that extra work. Measured by taking the routed path apart step by
+step, and by counting instructions under callgrind:
+
+- **Surface and curve parameters of each hit.** The typed exact results
+  carry points (and, for a line, its own parameter), not the parameters
+  on both operands that the routed result reports. Recovering them takes
+  one `atan2` per angular parameter: about 60 ns for the two
+  line–cylinder hits, about 80 ns for the four circle angles of a
+  circle–circle pair, and nearly all of the 2D gap. `atan2` alone is
+  about 21% of the instructions of either routed 3D call.
+- **The untyped dispatch.** The router converts both operands to the
+  untyped `ElementaryCurve` / `ElementarySurface` enums (120 bytes each)
+  and dispatches on the pair: about 25–30 ns.
+- **Building the result.** Clipping hits to the parameter ranges,
+  sorting, and moving the result: about 10–30 ns. When neither curve is
+  trimmed, the curve–curve router now hands the exact solver's hit list
+  over as it is.
+
+The routed call cannot get close to the typed one while it reports
+parameters the typed result does not compute.
 
 Reproduce with:
 

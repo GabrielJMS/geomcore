@@ -18,10 +18,13 @@ use crate::curves::{
     Line2D, Line3D, Parabola3D, ParametricCurve2D, ParametricCurve3D, TrimmedCurve2D,
     TrimmedCurve3D,
 };
+use crate::intersect::results::{
+    CurveCurveHitList, CurveCurveOverlapList, CurveSurfaceOverlapList,
+};
 use crate::intersect::{
     CircleCircle2DIntersection, CurveCurveHit, CurveCurveHit2D, CurveCurveIntersection,
     CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceHit, CurveSurfaceIntersection,
-    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, IntersectExact,
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, InlineList, IntersectExact,
     LineCircle2DIntersection, LineLine2DIntersection, intersect_curve_curve,
     intersect_curve_surface,
 };
@@ -158,30 +161,36 @@ fn representative_in(
 /// `tol.parametric`, ordered by start, each expressed in the range's
 /// representation: none, one, or two when the overlap meets the range on
 /// both sides of the seam of a periodic curve. An overlap covering the
-/// whole period returns the range as one piece.
+/// whole period returns the range as one piece. The three slots hold the
+/// three shifted copies the search tries, so the list never fills up.
 pub(crate) fn clip_range(
     overlap: (f64, f64),
     range: (f64, f64),
     period: Option<f64>,
     tol: Tolerance,
-) -> Vec<(f64, f64)> {
+) -> InlineList<(f64, f64), 3> {
     let clip = |(low, high): (f64, f64)| {
         let clipped = (low.max(range.0), high.min(range.1));
         (clipped.1 - clipped.0 > tol.parametric).then_some(clipped)
     };
+    let mut pieces = InlineList::new();
     let Some(period) = period else {
-        return clip(overlap).into_iter().collect();
+        if let Some(piece) = clip(overlap) {
+            pieces.push(piece);
+        }
+        return pieces;
     };
     if overlap.1 - overlap.0 >= period - tol.parametric {
-        return vec![range];
+        pieces.push(range);
+        return pieces;
     }
     let first_copy = ((range.0 - overlap.1) / period).floor();
-    let mut pieces: Vec<(f64, f64)> = (0..3)
-        .filter_map(|step| {
-            let shift = (first_copy + f64::from(step)) * period;
-            clip((overlap.0 + shift, overlap.1 + shift))
-        })
-        .collect();
+    for step in 0..3 {
+        let shift = (first_copy + f64::from(step)) * period;
+        if let Some(piece) = clip((overlap.0 + shift, overlap.1 + shift)) {
+            pieces.push(piece);
+        }
+    }
     pieces.sort_by(|a, b| a.0.total_cmp(&b.0));
     pieces
 }
@@ -213,6 +222,7 @@ pub(crate) fn route_curve_surface<C: CurveOperand, S: ParametricSurface>(
 /// surface into the routed result: hits outside `range` dropped, the kept
 /// ones carrying their representative in `range` and the surface
 /// parameters of their point.
+#[inline]
 fn from_exact_curve_surface(
     exact: ExactCurveSurfaceIntersection,
     basis: &ElementaryCurve,
@@ -222,30 +232,28 @@ fn from_exact_curve_surface(
 ) -> CurveSurfaceIntersection {
     match exact {
         ExactCurveSurfaceIntersection::Points(list) => {
-            let hits = list
-                .iter()
-                .filter_map(|hit| {
-                    let curve_parameter = match range {
-                        Some(range) => in_range(hit.parameter, range, basis.period(), tol)?,
-                        None => hit.parameter,
-                    };
-                    Some(CurveSurfaceHit {
-                        curve_parameter,
-                        surface_parameters: elementary.parameters_of(hit.point),
-                        point: hit.point,
-                        multiplicity: hit.multiplicity,
-                    })
+            let hits = list.iter().filter_map(|hit| {
+                let curve_parameter = match range {
+                    Some(range) => in_range(hit.parameter, range, basis.period(), tol)?,
+                    None => hit.parameter,
+                };
+                Some(CurveSurfaceHit {
+                    curve_parameter,
+                    surface_parameters: elementary.parameters_of(hit.point),
+                    point: hit.point,
+                    multiplicity: hit.multiplicity,
                 })
-                .collect();
-            CurveSurfaceIntersection::exact(hits, Vec::new())
+            });
+            CurveSurfaceIntersection::exact(hits, CurveSurfaceOverlapList::new())
         }
         // The whole curve lies on the surface: a trimmed curve over its
         // range, the basis over its bounds (infinite for a line).
         ExactCurveSurfaceIntersection::Coincident => {
-            CurveSurfaceIntersection::exact(Vec::new(), vec![range.unwrap_or(basis.bounds())])
+            let overlap = range.unwrap_or(basis.bounds());
+            CurveSurfaceIntersection::exact([], [overlap].into_iter().collect())
         }
         ExactCurveSurfaceIntersection::Empty => {
-            CurveSurfaceIntersection::exact(Vec::new(), Vec::new())
+            CurveSurfaceIntersection::exact([], CurveSurfaceOverlapList::new())
         }
         ExactCurveSurfaceIntersection::NotAnalytic => {
             unreachable!("the router sends a pair with no closed form to the numeric search")
@@ -351,6 +359,7 @@ type Operand = (ElementaryCurve, Option<(f64, f64)>);
 /// Turns the exact intersection of two elementary bases into the routed
 /// result: hits outside either range dropped, the kept ones carrying their
 /// representative in each range, and a coincidence clipped to both ranges.
+#[inline]
 fn from_exact_curve_curve(
     exact: ExactCurveCurveIntersection,
     (first, first_range): Operand,
@@ -361,30 +370,35 @@ fn from_exact_curve_curve(
         representative_in(parameter, range, curve.period(), tol)
     };
     match exact {
+        // Neither basis is restricted: the solver's list is kept as it is,
+        // already ordered by first parameter.
+        ExactCurveCurveIntersection::Points(list)
+            if first_range.is_none() && second_range.is_none() =>
+        {
+            CurveCurveIntersection::exact(
+                CurveCurveHitList::Inline(list),
+                CurveCurveOverlapList::new(),
+            )
+        }
         ExactCurveCurveIntersection::Points(list) => {
-            let hits = list
-                .iter()
-                .filter_map(|hit| {
-                    Some(CurveCurveHit {
-                        first_parameter: representative(hit.first_parameter, &first, first_range)?,
-                        second_parameter: representative(
-                            hit.second_parameter,
-                            &second,
-                            second_range,
-                        )?,
-                        ..*hit
-                    })
+            let hits = list.iter().filter_map(|hit| {
+                Some(CurveCurveHit {
+                    first_parameter: representative(hit.first_parameter, &first, first_range)?,
+                    second_parameter: representative(hit.second_parameter, &second, second_range)?,
+                    ..*hit
                 })
-                .collect();
-            CurveCurveIntersection::exact(hits, Vec::new())
+            });
+            CurveCurveIntersection::exact(hits.collect(), CurveCurveOverlapList::new())
         }
         ExactCurveCurveIntersection::Coincident => {
             let first_range = first_range.unwrap_or(first.bounds());
             let second_range = second_range.unwrap_or(second.bounds());
             let overlaps = coincident_overlaps((&first, first_range), (&second, second_range), tol);
-            CurveCurveIntersection::exact(Vec::new(), overlaps)
+            CurveCurveIntersection::exact(CurveCurveHitList::new(), overlaps)
         }
-        ExactCurveCurveIntersection::Empty => CurveCurveIntersection::exact(Vec::new(), Vec::new()),
+        ExactCurveCurveIntersection::Empty => {
+            CurveCurveIntersection::exact(CurveCurveHitList::new(), CurveCurveOverlapList::new())
+        }
         ExactCurveCurveIntersection::NotAnalytic => {
             unreachable!("the router sends a pair with no closed form to the numeric search")
         }
@@ -403,11 +417,11 @@ fn coincident_overlaps<C: CoincidentCurve>(
     (first, first_range): (&C, (f64, f64)),
     (second, second_range): (&C, (f64, f64)),
     tol: Tolerance,
-) -> Vec<CurveCurveOverlap> {
+) -> CurveCurveOverlapList {
     let same_direction = runs_along(second, second_range, first);
     let on_first = mapped_range(second, second_range, first, same_direction, tol);
-    let mut overlaps = Vec::new();
-    for piece in clip_range(on_first, first_range, first.cycle_length(), tol) {
+    let mut overlaps = CurveCurveOverlapList::new();
+    for &piece in clip_range(on_first, first_range, first.cycle_length(), tol).iter() {
         let on_second = mapped_range(first, piece, second, same_direction, tol);
         let pieces_on_second = clip_range(on_second, second_range, second.cycle_length(), tol);
         if let [single] = pieces_on_second[..] {
@@ -420,7 +434,7 @@ fn coincident_overlaps<C: CoincidentCurve>(
         }
         // The piece crosses the second curve's seam: read the first curve's
         // part of each side back from its end points.
-        for part in pieces_on_second {
+        for &part in pieces_on_second.iter() {
             let end = |parameter: f64| {
                 let found = first.parameter_of_image(second, parameter);
                 in_range(found, piece, first.cycle_length(), tol)
@@ -670,10 +684,11 @@ pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
             multiplicity,
         })
     };
-    let hits: Vec<Option<CurveCurveHit2D>> = match (&first, &second) {
+    // At most two hits; `None` marks an empty slot or a hit outside a range.
+    let hits: [Option<CurveCurveHit2D>; 2] = match (&first, &second) {
         (Curve2D::Line(line), Curve2D::Line(other)) => match line.intersect_exact(other, tol) {
-            LineLine2DIntersection::Point(t, point, s) => vec![hit(t, s, point, 1)],
-            LineLine2DIntersection::Parallel => Vec::new(),
+            LineLine2DIntersection::Point(t, point, s) => [hit(t, s, point, 1), None],
+            LineLine2DIntersection::Parallel => [None, None],
             LineLine2DIntersection::Coincident => {
                 return coincidence_2d(first, first_range, second, second_range, tol);
             }
@@ -682,20 +697,20 @@ pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
             let on_circle = |point| circle.parameter_of(point);
             match line.intersect_exact(circle, tol) {
                 LineCircle2DIntersection::Points((t, p), (u, q)) => {
-                    vec![hit(t, on_circle(p), p, 1), hit(u, on_circle(q), q, 1)]
+                    [hit(t, on_circle(p), p, 1), hit(u, on_circle(q), q, 1)]
                 }
-                LineCircle2DIntersection::Tangent(t, p) => vec![hit(t, on_circle(p), p, 2)],
-                LineCircle2DIntersection::Empty => Vec::new(),
+                LineCircle2DIntersection::Tangent(t, p) => [hit(t, on_circle(p), p, 2), None],
+                LineCircle2DIntersection::Empty => [None, None],
             }
         }
         (Curve2D::Circle(circle), Curve2D::Line(line)) => {
             let on_circle = |point| circle.parameter_of(point);
             match line.intersect_exact(circle, tol) {
                 LineCircle2DIntersection::Points((t, p), (u, q)) => {
-                    vec![hit(on_circle(p), t, p, 1), hit(on_circle(q), u, q, 1)]
+                    [hit(on_circle(p), t, p, 1), hit(on_circle(q), u, q, 1)]
                 }
-                LineCircle2DIntersection::Tangent(t, p) => vec![hit(on_circle(p), t, p, 2)],
-                LineCircle2DIntersection::Empty => Vec::new(),
+                LineCircle2DIntersection::Tangent(t, p) => [hit(on_circle(p), t, p, 2), None],
+                LineCircle2DIntersection::Empty => [None, None],
             }
         }
         (Curve2D::Circle(circle), Curve2D::Circle(other)) => {
@@ -708,16 +723,16 @@ pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
                 )
             };
             match circle.intersect_exact(other, tol) {
-                CircleCircle2DIntersection::Points(p, q) => vec![both(p, 1), both(q, 1)],
-                CircleCircle2DIntersection::Tangent(p) => vec![both(p, 2)],
-                CircleCircle2DIntersection::Empty => Vec::new(),
+                CircleCircle2DIntersection::Points(p, q) => [both(p, 1), both(q, 1)],
+                CircleCircle2DIntersection::Tangent(p) => [both(p, 2), None],
+                CircleCircle2DIntersection::Empty => [None, None],
                 CircleCircle2DIntersection::Coincident => {
                     return coincidence_2d(first, first_range, second, second_range, tol);
                 }
             }
         }
     };
-    CurveCurveIntersection2D::exact(hits.into_iter().flatten().collect(), Vec::new())
+    CurveCurveIntersection2D::exact(hits.into_iter().flatten(), CurveCurveOverlapList::new())
 }
 
 /// The result for two coincident 2D bases restricted to their ranges.
@@ -731,7 +746,7 @@ fn coincidence_2d(
     let first_range = first_range.unwrap_or(first.bounds());
     let second_range = second_range.unwrap_or(second.bounds());
     let overlaps = coincident_overlaps((&first, first_range), (&second, second_range), tol);
-    CurveCurveIntersection2D::exact(Vec::new(), overlaps)
+    CurveCurveIntersection2D::exact([], overlaps)
 }
 
 /// Implements [`Intersect`] for every 2D curve of the list with every one
@@ -826,14 +841,14 @@ mod tests {
     #[test]
     fn test_clip_range() {
         assert_eq!(
-            clip_range((f64::NEG_INFINITY, f64::INFINITY), (2.0, 3.0), None, TOL),
-            vec![(2.0, 3.0)]
+            *clip_range((f64::NEG_INFINITY, f64::INFINITY), (2.0, 3.0), None, TOL),
+            [(2.0, 3.0)]
         );
         assert_eq!(
-            clip_range((0.0, TAU), (-1.0, 1.0), Some(TAU), TOL),
-            vec![(-1.0, 1.0)]
+            *clip_range((0.0, TAU), (-1.0, 1.0), Some(TAU), TOL),
+            [(-1.0, 1.0)]
         );
-        assert_eq!(clip_range((0.0, 1.0), (2.0, 3.0), None, TOL), vec![]);
+        assert!(clip_range((0.0, 1.0), (2.0, 3.0), None, TOL).is_empty());
     }
 
     #[test]
@@ -843,7 +858,7 @@ mod tests {
         let (low, high) = pieces[0];
         assert!((low - (6.0 - TAU)).abs() < 1e-15);
         assert!((high - (6.5 - TAU)).abs() < 1e-15);
-        assert_eq!(clip_range((3.0, 4.0), (-1.0, 1.0), Some(TAU), TOL), vec![]);
+        assert!(clip_range((3.0, 4.0), (-1.0, 1.0), Some(TAU), TOL).is_empty());
     }
 
     #[test]
