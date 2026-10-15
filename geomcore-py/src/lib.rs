@@ -5,9 +5,7 @@
 //! surfaces under `geomcore.surfaces`. Fallible constructors raise
 //! `ValueError` carrying the underlying error description.
 
-use std::ffi::CString;
-
-use pyo3::exceptions::{PyDeprecationWarning, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
@@ -61,35 +59,10 @@ pub(crate) fn parse_parametrization(s: &str) -> PyResult<PointParametrization> {
     }
 }
 
-/// Warns that a per-pair `intersect_*` method is deprecated in favour of
-/// `intersect`.
-pub(crate) fn warn_deprecated(py: Python<'_>, method: &str) -> PyResult<()> {
-    let message = CString::new(format!(
-        "{method} is deprecated since 0.29.0; use intersect"
-    ))?;
-    PyErr::warn(py, &py.get_type::<PyDeprecationWarning>(), &message, 1)
-}
-
-/// Body of an `intersect` method: runs the first arm whose class `other`
-/// is an instance of, and raises `TypeError` when none matches.
-macro_rules! dispatch_intersect {
-    ($other:ident, $receiver:literal, $supported:literal, {
-        $($class:ty => |$o:ident| $call:expr),+ $(,)?
-    }) => {{
-        $(
-            if let Ok($o) = $other.extract::<PyRef<'_, $class>>() {
-                return $call;
-            }
-        )+
-        Err(PyTypeError::new_err(format!(
-            concat!($receiver, ".intersect supports ", $supported, ", not {}"),
-            $other.get_type().name()?
-        )))
-    }};
-}
-
 mod curves;
+mod intersect;
 mod numeric;
+mod results;
 mod surfaces;
 mod values;
 
@@ -97,9 +70,13 @@ use curves::{
     PyBSplineCurve3D, PyCircle2D, PyCircle3D, PyEllipse3D, PyHyperbola3D, PyLine2D, PyLine3D,
     PyParabola3D, PyTrimmedCurve2D, PyTrimmedCurve3D,
 };
-use numeric::{
-    py_curve_curve_extrema, py_intersect_curve_curve, py_intersect_curve_surface,
-    py_intersect_marching, py_parametrize_numeric,
+use numeric::{py_curve_curve_extrema, py_parametrize_numeric};
+use results::{
+    PyCompleteness, PyCompletenessStatus, PyCurveCurveExtrema, PyCurveCurveExtremum,
+    PyCurveCurveHit, PyCurveCurveHit2D, PyCurveCurveIntersection, PyCurveCurveIntersection2D,
+    PyCurveCurveOverlap, PyCurveCurveRegion, PyCurveSurfaceHit, PyCurveSurfaceIntersection,
+    PyCurveSurfaceRegion, PyIncompleteReason, PyIntersectionCurve, PyIntersectionMethod,
+    PySurfaceSurfaceIntersection, PySurfaceSurfaceRegion,
 };
 use surfaces::{PyBSplineSurface, PyCone, PyCylinder, PyPlane, PySphere, PyTorus};
 use values::{
@@ -126,6 +103,25 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBoundingBox3D>()?;
     m.add_class::<PyDiscretization2D>()?;
     m.add_class::<PyDiscretization3D>()?;
+
+    m.add_class::<PyIntersectionMethod>()?;
+    m.add_class::<PyCompletenessStatus>()?;
+    m.add_class::<PyIncompleteReason>()?;
+    m.add_class::<PyCompleteness>()?;
+    m.add_class::<PyCurveCurveRegion>()?;
+    m.add_class::<PyCurveSurfaceRegion>()?;
+    m.add_class::<PySurfaceSurfaceRegion>()?;
+    m.add_class::<PyCurveCurveHit>()?;
+    m.add_class::<PyCurveCurveHit2D>()?;
+    m.add_class::<PyCurveSurfaceHit>()?;
+    m.add_class::<PyCurveCurveOverlap>()?;
+    m.add_class::<PyIntersectionCurve>()?;
+    m.add_class::<PyCurveCurveIntersection>()?;
+    m.add_class::<PyCurveCurveIntersection2D>()?;
+    m.add_class::<PyCurveSurfaceIntersection>()?;
+    m.add_class::<PySurfaceSurfaceIntersection>()?;
+    m.add_class::<PyCurveCurveExtremum>()?;
+    m.add_class::<PyCurveCurveExtrema>()?;
 
     let curves = PyModule::new(py, "curves")?;
     curves.add_class::<PyLine3D>()?;
@@ -155,11 +151,8 @@ fn geomcore_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     sys_modules.set_item("geomcore.curves", &curves)?;
     sys_modules.set_item("geomcore.surfaces", &surfaces)?;
 
-    m.add_function(wrap_pyfunction!(py_intersect_curve_surface, m)?)?;
-    m.add_function(wrap_pyfunction!(py_intersect_marching, m)?)?;
     m.add_function(wrap_pyfunction!(py_parametrize_numeric, m)?)?;
     m.add_function(wrap_pyfunction!(py_curve_curve_extrema, m)?)?;
-    m.add_function(wrap_pyfunction!(py_intersect_curve_curve, m)?)?;
 
     Ok(())
 }

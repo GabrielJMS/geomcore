@@ -1,22 +1,15 @@
-use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use geomcore::Bound3D;
-use geomcore::IntersectExact;
 use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve3D, Ellipse3D, Hyperbola3D, Line2D, Line3D,
     Parabola3D, ParametricCurve3D, PointExtrema2D, PointExtrema3D, TrimmedCurve2D, TrimmedCurve3D,
-};
-use geomcore::{
-    CircleCircle2DIntersection, CircleCircle3DIntersection, LineCircle2DIntersection,
-    LineCircle3DIntersection, LineLine2DIntersection, LineLine3DIntersection,
-    LinePlaneIntersection, Point3D, Tolerance,
 };
 
 use crate::numeric::*;
 use crate::surfaces::*;
 use crate::values::*;
-use crate::{check_curve_order, parse_parametrization, tolerance, val_err, warn_deprecated};
+use crate::{check_curve_order, parse_parametrization, tolerance, val_err};
 
 // ---------------------------------------------------------------------------
 // Curves
@@ -126,210 +119,6 @@ impl PyLine3D {
             .collect()
     }
 
-    /// Intersects this line with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
-    ///
-    /// - `Plane`: Returns `("point", (t, Point3D))`, `("parallel", None)` or
-    ///   `("coincident", None)`.
-    /// - `Cylinder`: Returns `("two_points", ((t1, Point3D), (t2, Point3D)))`,
-    ///   `("one_point", (t, Point3D))`, `("tangent", (t, Point3D))`,
-    ///   `("empty", None)` or `("coincident", None)` when the line is a
-    ///   generator.
-    /// - `Cone`: Returns `("two_points", ((t1, Point3D), (t2, Point3D)))`,
-    ///   `("one_point", (t, Point3D))`, `("tangent", (t, Point3D))`,
-    ///   `("empty", None)` or `("coincident", None)` when the line is a
-    ///   generator. Roots behind the apex are filtered, so a single surviving
-    ///   hit reports `("one_point", (t, Point3D))`.
-    /// - `Sphere`: Returns `("two_points", ((t1, Point3D), (t2, Point3D)))`,
-    ///   `("one_point", (t, Point3D))`, `("tangent", (t, Point3D))`,
-    ///   `("empty", None)` or `("coincident", None)` (the latter never triggers
-    ///   for spheres, which contain no line).
-    /// - `Torus`: Returns `("hits", [(t, Point3D, (u, v), multiplicity)])` (up
-    ///   to four hits ordered by line parameter) or `("empty", None)`.
-    /// - `Line3D`: Returns `("point", (s, Point3D, t))`,
-    ///   `("parallel", distance)`, `("coincident", None)` or
-    ///   `("skew", (s, t, distance))`.
-    /// - `Circle3D`: Returns `("points", ((t1, Point3D), (t2, Point3D)))`,
-    ///   `("tangent", (t, Point3D))` or `("empty", None)`.
-    /// - `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
-    ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
-    ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect(
-        &self,
-        py: Python<'_>,
-        other: &Bound<'_, PyAny>,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Line3D", "Plane, Cylinder, Cone, Sphere, Torus, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
-            PyPlane => |o| self.plane_result(py, &o, tol),
-            PyCylinder => |o| self.cylinder_result(py, &o, tol),
-            PyCone => |o| self.cone_result(py, &o, tol),
-            PySphere => |o| self.sphere_result(py, &o, tol),
-            PyTorus => |o| self.torus_result(py, &o, tol),
-            PyLine3D => |o| self.line_result(py, &o, tol),
-            PyCircle3D => |o| self.circle_result(py, &o, tol),
-            PyEllipse3D => |o| self.ellipse_result(py, &o, tol),
-            PyParabola3D => |o| self.parabola_result(py, &o, tol),
-            PyHyperbola3D => |o| self.hyperbola_result(py, &o, tol),
-        })
-    }
-
-    /// Intersects this line with a plane.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (plane, tol = None))]
-    fn intersect_plane(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_plane")?;
-        self.plane_result(py, plane, tolerance(tol))
-    }
-
-    /// Intersects this line with a sphere.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (sphere, tol = None))]
-    fn intersect_sphere(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_sphere")?;
-        self.sphere_result(py, sphere, tolerance(tol))
-    }
-
-    /// Intersects this line with a cylinder.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cylinder, tol = None))]
-    fn intersect_cylinder(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_cylinder")?;
-        self.cylinder_result(py, cylinder, tolerance(tol))
-    }
-
-    /// Intersects this line with a cone.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cone, tol = None))]
-    fn intersect_cone(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_cone")?;
-        self.cone_result(py, cone, tolerance(tol))
-    }
-
-    /// Intersects this line with another 3D line.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect_line(
-        &self,
-        py: Python<'_>,
-        other: &PyLine3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_line")?;
-        self.line_result(py, other, tolerance(tol))
-    }
-
-    /// Intersects this line with a 3D circle.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (circle, tol = None))]
-    fn intersect_circle(
-        &self,
-        py: Python<'_>,
-        circle: &PyCircle3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_circle")?;
-        self.circle_result(py, circle, tolerance(tol))
-    }
-
-    /// Intersects this line with an ellipse.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (ellipse, tol = None))]
-    fn intersect_ellipse(
-        &self,
-        py: Python<'_>,
-        ellipse: &PyEllipse3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_ellipse")?;
-        self.ellipse_result(py, ellipse, tolerance(tol))
-    }
-
-    /// Intersects this line with a parabola.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (parabola, tol = None))]
-    fn intersect_parabola(
-        &self,
-        py: Python<'_>,
-        parabola: &PyParabola3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_parabola")?;
-        self.parabola_result(py, parabola, tolerance(tol))
-    }
-
-    /// Intersects this line with a hyperbola.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (hyperbola, tol = None))]
-    fn intersect_hyperbola(
-        &self,
-        py: Python<'_>,
-        hyperbola: &PyHyperbola3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_hyperbola")?;
-        self.hyperbola_result(py, hyperbola, tolerance(tol))
-    }
-
-    /// Intersects this line with a torus.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (torus, tol = None))]
-    fn intersect_torus(
-        &self,
-        py: Python<'_>,
-        torus: &PyTorus,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line3D.intersect_torus")?;
-        self.torus_result(py, torus, tolerance(tol))
-    }
-
     /// Compute this line's 2D representation in a surface's (u, v) space.
     ///
     /// Raises `ValueError` if no closed-form representation exists for the
@@ -346,140 +135,24 @@ impl PyLine3D {
         let tol = tolerance(tol);
         curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
-}
 
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyLine3D {
-    pub(crate) fn plane_result(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect_exact(&plane.0, tol) {
-            LinePlaneIntersection::Point(t, p) => Ok((
-                "point".to_string(),
-                (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            LinePlaneIntersection::Parallel => Ok(("parallel".to_string(), py.None())),
-            LinePlaneIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-        }
-    }
-
-    pub(crate) fn sphere_result(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        quadric_hit_to_py(py, self.0.intersect_exact(&sphere.0, tol))
-    }
-
-    pub(crate) fn cylinder_result(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        quadric_hit_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
-    }
-
-    pub(crate) fn cone_result(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        quadric_hit_to_py(py, self.0.intersect_exact(&cone.0, tol))
-    }
-
-    pub(crate) fn line_result(
-        &self,
-        py: Python<'_>,
-        other: &PyLine3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect_exact(&other.0, tol) {
-            LineLine3DIntersection::Point(s, p, t) => Ok((
-                "point".to_string(),
-                (s, PyPoint3D(p).into_pyobject(py)?.into_any().unbind(), t)
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            LineLine3DIntersection::Parallel(d) => Ok((
-                "parallel".to_string(),
-                d.into_pyobject(py)?.into_any().unbind(),
-            )),
-            LineLine3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-            LineLine3DIntersection::Skew { s, t, distance } => Ok((
-                "skew".to_string(),
-                (s, t, distance).into_pyobject(py)?.into_any().unbind(),
-            )),
-        }
-    }
-
-    pub(crate) fn circle_result(
-        &self,
-        py: Python<'_>,
-        circle: &PyCircle3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        fn hit(py: Python<'_>, t: f64, p: Point3D) -> PyResult<Py<PyAny>> {
-            (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
-                .into_pyobject(py)
-                .map(|o| o.into_any().unbind())
-        }
-        match self.0.intersect_exact(&circle.0, tol) {
-            LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => Ok((
-                "points".to_string(),
-                (hit(py, t1, p1)?, hit(py, t2, p2)?)
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            LineCircle3DIntersection::Tangent(t, p) => Ok(("tangent".to_string(), hit(py, t, p)?)),
-            LineCircle3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
-        }
-    }
-
-    pub(crate) fn ellipse_result(
-        &self,
-        py: Python<'_>,
-        ellipse: &PyEllipse3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        line_conic_to_py(py, self.0.intersect_exact(&ellipse.0, tol))
-    }
-
-    pub(crate) fn parabola_result(
-        &self,
-        py: Python<'_>,
-        parabola: &PyParabola3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        line_conic_to_py(py, self.0.intersect_exact(&parabola.0, tol))
-    }
-
-    pub(crate) fn hyperbola_result(
-        &self,
-        py: Python<'_>,
-        hyperbola: &PyHyperbola3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        line_conic_to_py(py, self.0.intersect_exact(&hyperbola.0, tol))
-    }
-
-    pub(crate) fn torus_result(
-        &self,
-        py: Python<'_>,
-        torus: &PyTorus,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        line_torus_to_py(py, self.0.intersect_exact(&torus.0, tol))
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -651,259 +324,23 @@ impl PyCircle3D {
         curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
 
-    /// Intersects this circle with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
+    /// Intersects with any curve or surface, in either order.
     ///
-    /// - `Plane`, `Cylinder`, `Cone`, `Sphere`: Returns `("circle", Circle3D)`,
-    ///   `("hits", [(t, Point3D, multiplicity)])` or `("empty", None)`.
-    /// - `Line3D`: Returns `("points", ((t1, Point3D), (t2, Point3D)))`,
-    ///   `("tangent", (t, Point3D))` or `("empty", None)`.
-    /// - `Circle3D`: Only coplanar pairs admit a closed form. Returns
-    ///   `("points", (Point3D, Point3D))`, `("tangent", Point3D)`,
-    ///   `("empty", None)`, `("coincident", None)` or `("not_analytic", None)`.
-    /// - `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
-    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
-    ///   or `("empty", None)`, with `s` on this circle and `t` on `other`
-    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
-    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
-    ///   recover it with that conic's `parameter_of(point)`.
-    ///
-    /// Apart from conic pairs, the payload is the same whichever shape is the
-    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
-    /// each `t` is still a line parameter. Raises `TypeError` for any other
-    /// type.
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
     #[pyo3(signature = (other, tol = None))]
     fn intersect(
-        &self,
-        py: Python<'_>,
+        slf: &Bound<'_, Self>,
         other: &Bound<'_, PyAny>,
         tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Circle3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
-            PyPlane => |o| self.plane_result(py, &o, tol),
-            PyCylinder => |o| self.cylinder_result(py, &o, tol),
-            PyCone => |o| self.cone_result(py, &o, tol),
-            PySphere => |o| self.sphere_result(py, &o, tol),
-            PyLine3D => |o| o.circle_result(py, self, tol),
-            PyCircle3D => |o| self.circle_result(py, &o, tol),
-            PyEllipse3D => |o| self.ellipse_result(py, &o, tol),
-            PyParabola3D => |o| self.parabola_result(py, &o, tol),
-            PyHyperbola3D => |o| self.hyperbola_result(py, &o, tol),
-        })
-    }
-
-    /// Intersects this circle with another 3D circle.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect_circle(
-        &self,
-        py: Python<'_>,
-        other: &PyCircle3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_circle")?;
-        self.circle_result(py, other, tolerance(tol))
-    }
-
-    /// Intersects this circle with an ellipse.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (ellipse, tol = None))]
-    fn intersect_ellipse(
-        &self,
-        py: Python<'_>,
-        ellipse: &PyEllipse3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_ellipse")?;
-        self.ellipse_result(py, ellipse, tolerance(tol))
-    }
-
-    /// Intersects this circle with a parabola.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (parabola, tol = None))]
-    fn intersect_parabola(
-        &self,
-        py: Python<'_>,
-        parabola: &PyParabola3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_parabola")?;
-        self.parabola_result(py, parabola, tolerance(tol))
-    }
-
-    /// Intersects this circle with a hyperbola.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (hyperbola, tol = None))]
-    fn intersect_hyperbola(
-        &self,
-        py: Python<'_>,
-        hyperbola: &PyHyperbola3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_hyperbola")?;
-        self.hyperbola_result(py, hyperbola, tolerance(tol))
-    }
-
-    /// Intersects this circle with a plane.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (plane, tol = None))]
-    fn intersect_plane(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_plane")?;
-        self.plane_result(py, plane, tolerance(tol))
-    }
-
-    /// Intersects this circle with a sphere.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (sphere, tol = None))]
-    fn intersect_sphere(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_sphere")?;
-        self.sphere_result(py, sphere, tolerance(tol))
-    }
-
-    /// Intersects this circle with a cylinder.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cylinder, tol = None))]
-    fn intersect_cylinder(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_cylinder")?;
-        self.cylinder_result(py, cylinder, tolerance(tol))
-    }
-
-    /// Intersects this circle with a cone.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cone, tol = None))]
-    fn intersect_cone(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle3D.intersect_cone")?;
-        self.cone_result(py, cone, tolerance(tol))
-    }
-}
-
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyCircle3D {
-    pub(crate) fn circle_result(
-        &self,
-        py: Python<'_>,
-        other: &PyCircle3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect_exact(&other.0, tol) {
-            CircleCircle3DIntersection::Points(p1, p2) => Ok((
-                "points".to_string(),
-                (
-                    PyPoint3D(p1).into_pyobject(py)?.into_any().unbind(),
-                    PyPoint3D(p2).into_pyobject(py)?.into_any().unbind(),
-                )
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            CircleCircle3DIntersection::Tangent(p) => Ok((
-                "tangent".to_string(),
-                PyPoint3D(p).into_pyobject(py)?.into_any().unbind(),
-            )),
-            CircleCircle3DIntersection::Empty => Ok(("empty".to_string(), py.None())),
-            CircleCircle3DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-            CircleCircle3DIntersection::NotAnalytic => Ok(("not_analytic".to_string(), py.None())),
-        }
-    }
-
-    pub(crate) fn ellipse_result(
-        &self,
-        py: Python<'_>,
-        ellipse: &PyEllipse3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect_exact(&ellipse.0, tol))
-    }
-
-    pub(crate) fn parabola_result(
-        &self,
-        py: Python<'_>,
-        parabola: &PyParabola3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect_exact(&parabola.0, tol))
-    }
-
-    pub(crate) fn hyperbola_result(
-        &self,
-        py: Python<'_>,
-        hyperbola: &PyHyperbola3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect_exact(&hyperbola.0, tol))
-    }
-
-    pub(crate) fn plane_result(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
-    }
-
-    pub(crate) fn sphere_result(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
-    }
-
-    pub(crate) fn cylinder_result(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
-    }
-
-    pub(crate) fn cone_result(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -1070,122 +507,6 @@ impl PyEllipse3D {
             .collect()
     }
 
-    /// Intersects this ellipse with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
-    ///
-    /// - `Plane`, `Cylinder`, `Cone`, `Sphere`: Returns
-    ///   `("hits", [(t, Point3D, multiplicity)])`, `("coincident", None)` or
-    ///   `("empty", None)`.
-    /// - `Line3D`: Returns
-    ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
-    ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    /// - `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
-    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
-    ///   or `("empty", None)`, with `s` on this ellipse and `t` on `other`
-    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
-    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
-    ///   recover it with that conic's `parameter_of(point)`.
-    ///
-    /// Apart from conic pairs, the payload is the same whichever shape is the
-    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
-    /// each `t` is still a line parameter. Raises `TypeError` for any other
-    /// type.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect(
-        &self,
-        py: Python<'_>,
-        other: &Bound<'_, PyAny>,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Ellipse3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
-            PyPlane => |o| self.plane_result(py, &o, tol),
-            PyCylinder => |o| self.cylinder_result(py, &o, tol),
-            PyCone => |o| self.cone_result(py, &o, tol),
-            PySphere => |o| self.sphere_result(py, &o, tol),
-            PyLine3D => |o| o.ellipse_result(py, self, tol),
-            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-        })
-    }
-
-    /// Intersects this ellipse with a plane.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (plane, tol = None))]
-    fn intersect_plane(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Ellipse3D.intersect_plane")?;
-        self.plane_result(py, plane, tolerance(tol))
-    }
-
-    /// Intersects this ellipse with a sphere.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (sphere, tol = None))]
-    fn intersect_sphere(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Ellipse3D.intersect_sphere")?;
-        self.sphere_result(py, sphere, tolerance(tol))
-    }
-
-    /// Intersects this ellipse with a cylinder.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cylinder, tol = None))]
-    fn intersect_cylinder(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Ellipse3D.intersect_cylinder")?;
-        self.cylinder_result(py, cylinder, tolerance(tol))
-    }
-
-    /// Intersects this ellipse with a cone.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cone, tol = None))]
-    fn intersect_cone(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Ellipse3D.intersect_cone")?;
-        self.cone_result(py, cone, tolerance(tol))
-    }
-
-    /// Intersects this ellipse with another 3D ellipse.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect_ellipse(
-        &self,
-        py: Python<'_>,
-        other: &PyEllipse3D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Ellipse3D.intersect_ellipse")?;
-        self.ellipse_result(py, other, tolerance(tol))
-    }
-
     /// Not available for ellipses in this release; always raises `ValueError`.
     #[pyo3(signature = (surface, tol = None))]
     fn parametrize_on(
@@ -1198,53 +519,24 @@ impl PyEllipse3D {
         let tol = tolerance(tol);
         curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
-}
 
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyEllipse3D {
-    pub(crate) fn plane_result(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
-    }
-
-    pub(crate) fn sphere_result(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
-    }
-
-    pub(crate) fn cylinder_result(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
-    }
-
-    pub(crate) fn cone_result(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
-    }
-
-    pub(crate) fn ellipse_result(
-        &self,
-        py: Python<'_>,
-        other: &PyEllipse3D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect_exact(&other.0, tol))
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -1360,107 +652,6 @@ impl PyParabola3D {
             .collect()
     }
 
-    /// Intersects this parabola with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
-    ///
-    /// - `Plane`, `Cylinder`, `Cone`, `Sphere`: Returns
-    ///   `("hits", [(t, Point3D, multiplicity)])`, `("coincident", None)` or
-    ///   `("empty", None)`.
-    /// - `Line3D`: Returns
-    ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
-    ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    /// - `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
-    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
-    ///   or `("empty", None)`, with `s` on this parabola and `t` on `other`
-    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
-    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
-    ///   recover it with that conic's `parameter_of(point)`.
-    ///
-    /// Apart from conic pairs, the payload is the same whichever shape is the
-    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
-    /// each `t` is still a line parameter. Raises `TypeError` for any other
-    /// type.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect(
-        &self,
-        py: Python<'_>,
-        other: &Bound<'_, PyAny>,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Parabola3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
-            PyPlane => |o| self.plane_result(py, &o, tol),
-            PyCylinder => |o| self.cylinder_result(py, &o, tol),
-            PyCone => |o| self.cone_result(py, &o, tol),
-            PySphere => |o| self.sphere_result(py, &o, tol),
-            PyLine3D => |o| o.parabola_result(py, self, tol),
-            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-        })
-    }
-
-    /// Intersects this parabola with a plane.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (plane, tol = None))]
-    fn intersect_plane(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Parabola3D.intersect_plane")?;
-        self.plane_result(py, plane, tolerance(tol))
-    }
-
-    /// Intersects this parabola with a sphere.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (sphere, tol = None))]
-    fn intersect_sphere(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Parabola3D.intersect_sphere")?;
-        self.sphere_result(py, sphere, tolerance(tol))
-    }
-
-    /// Intersects this parabola with a cylinder.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cylinder, tol = None))]
-    fn intersect_cylinder(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Parabola3D.intersect_cylinder")?;
-        self.cylinder_result(py, cylinder, tolerance(tol))
-    }
-
-    /// Intersects this parabola with a cone.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cone, tol = None))]
-    fn intersect_cone(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Parabola3D.intersect_cone")?;
-        self.cone_result(py, cone, tolerance(tol))
-    }
-
     /// Not available for parabolas in this release; always raises `ValueError`.
     #[pyo3(signature = (surface, tol = None))]
     fn parametrize_on(
@@ -1473,44 +664,24 @@ impl PyParabola3D {
         let tol = tolerance(tol);
         curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
-}
 
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyParabola3D {
-    pub(crate) fn plane_result(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
-    }
-
-    pub(crate) fn sphere_result(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
-    }
-
-    pub(crate) fn cylinder_result(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
-    }
-
-    pub(crate) fn cone_result(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -1653,107 +824,6 @@ impl PyHyperbola3D {
             .collect()
     }
 
-    /// Intersects this hyperbola with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
-    ///
-    /// - `Plane`, `Cylinder`, `Cone`, `Sphere`: Returns
-    ///   `("hits", [(t, Point3D, multiplicity)])`, `("coincident", None)` or
-    ///   `("empty", None)`.
-    /// - `Line3D`: Returns
-    ///   `("points", ((t1, Point3D, u1), (t2, Point3D, u2)))`,
-    ///   `("tangent", (t, Point3D, u))` or `("empty", None)`.
-    /// - `Circle3D`, `Ellipse3D`, `Parabola3D`, `Hyperbola3D`: Returns
-    ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
-    ///   or `("empty", None)`, with `s` on this hyperbola and `t` on `other`
-    ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
-    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
-    ///   recover it with that conic's `parameter_of(point)`.
-    ///
-    /// Apart from conic pairs, the payload is the same whichever shape is the
-    /// receiver, so parameters keep their roles: in `circle.intersect(line)`
-    /// each `t` is still a line parameter. Raises `TypeError` for any other
-    /// type.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect(
-        &self,
-        py: Python<'_>,
-        other: &Bound<'_, PyAny>,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Hyperbola3D", "Plane, Cylinder, Cone, Sphere, Line3D, Circle3D, Ellipse3D, Parabola3D or Hyperbola3D", {
-            PyPlane => |o| self.plane_result(py, &o, tol),
-            PyCylinder => |o| self.cylinder_result(py, &o, tol),
-            PyCone => |o| self.cone_result(py, &o, tol),
-            PySphere => |o| self.sphere_result(py, &o, tol),
-            PyLine3D => |o| o.hyperbola_result(py, self, tol),
-            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
-        })
-    }
-
-    /// Intersects this hyperbola with a plane.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (plane, tol = None))]
-    fn intersect_plane(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Hyperbola3D.intersect_plane")?;
-        self.plane_result(py, plane, tolerance(tol))
-    }
-
-    /// Intersects this hyperbola with a sphere.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (sphere, tol = None))]
-    fn intersect_sphere(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Hyperbola3D.intersect_sphere")?;
-        self.sphere_result(py, sphere, tolerance(tol))
-    }
-
-    /// Intersects this hyperbola with a cylinder.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cylinder, tol = None))]
-    fn intersect_cylinder(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Hyperbola3D.intersect_cylinder")?;
-        self.cylinder_result(py, cylinder, tolerance(tol))
-    }
-
-    /// Intersects this hyperbola with a cone.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (cone, tol = None))]
-    fn intersect_cone(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Hyperbola3D.intersect_cone")?;
-        self.cone_result(py, cone, tolerance(tol))
-    }
-
     /// Not available for hyperbolas in this release; always raises `ValueError`.
     #[pyo3(signature = (surface, tol = None))]
     fn parametrize_on(
@@ -1766,44 +836,24 @@ impl PyHyperbola3D {
         let tol = tolerance(tol);
         curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
-}
 
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyHyperbola3D {
-    pub(crate) fn plane_result(
-        &self,
-        py: Python<'_>,
-        plane: &PyPlane,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
-    }
-
-    pub(crate) fn sphere_result(
-        &self,
-        py: Python<'_>,
-        sphere: &PySphere,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
-    }
-
-    pub(crate) fn cylinder_result(
-        &self,
-        py: Python<'_>,
-        cylinder: &PyCylinder,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
-    }
-
-    pub(crate) fn cone_result(
-        &self,
-        py: Python<'_>,
-        cone: &PyCone,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -2111,6 +1161,25 @@ impl PyBSplineCurve3D {
         let tol = tolerance(tol);
         curve2d_to_py(py, self.0.parametrize_on(s, tol).map_err(val_err)?)
     }
+
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
+    }
 }
 
 /// A straight line in a surface's 2D (u, v) parameter space.
@@ -2186,61 +1255,6 @@ impl PyLine2D {
             .collect()
     }
 
-    /// Intersects this line with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
-    ///
-    /// - `Line2D`: Returns `("point", (s, Point2D, t))`, `("parallel", None)`
-    ///   or `("coincident", None)`.
-    /// - `Circle2D`: Returns `("points", ((t1, Point2D), (t2, Point2D)))`,
-    ///   `("tangent", (t, Point2D))` or `("empty", None)`.
-    ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect(
-        &self,
-        py: Python<'_>,
-        other: &Bound<'_, PyAny>,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Line2D", "Line2D or Circle2D", {
-            PyLine2D => |o| self.line_result(py, &o, tol),
-            PyCircle2D => |o| self.circle_result(py, &o, tol),
-        })
-    }
-
-    /// Intersects this line with another 2D line.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect_line(
-        &self,
-        py: Python<'_>,
-        other: &PyLine2D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line2D.intersect_line")?;
-        self.line_result(py, other, tolerance(tol))
-    }
-
-    /// Intersects this line with a 2D circle.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (circle, tol = None))]
-    fn intersect_circle(
-        &self,
-        py: Python<'_>,
-        circle: &PyCircle2D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Line2D.intersect_circle")?;
-        self.circle_result(py, circle, tolerance(tol))
-    }
-
     fn __repr__(&self) -> String {
         let o = self.0.origin();
         let d = self.0.direction();
@@ -2249,48 +1263,24 @@ impl PyLine2D {
             o.x, o.y, d.x, d.y
         )
     }
-}
 
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyLine2D {
-    pub(crate) fn line_result(
-        &self,
-        py: Python<'_>,
-        other: &PyLine2D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect_exact(&other.0, tol) {
-            LineLine2DIntersection::Point(s, p, t) => Ok((
-                "point".to_string(),
-                (s, PyPoint2D(p).into_pyobject(py)?.into_any().unbind(), t)
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            LineLine2DIntersection::Parallel => Ok(("parallel".to_string(), py.None())),
-            LineLine2DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-        }
-    }
-
-    pub(crate) fn circle_result(
-        &self,
-        py: Python<'_>,
-        circle: &PyCircle2D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect_exact(&circle.0, tol) {
-            LineCircle2DIntersection::Points((t1, p1), (t2, p2)) => Ok((
-                "points".to_string(),
-                (point2(py, t1, p1)?, point2(py, t2, p2)?)
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            LineCircle2DIntersection::Tangent(t, p) => {
-                Ok(("tangent".to_string(), point2(py, t, p)?))
-            }
-            LineCircle2DIntersection::Empty => Ok(("empty".to_string(), py.None())),
-        }
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -2380,46 +1370,6 @@ impl PyCircle2D {
             .collect()
     }
 
-    /// Intersects this circle with another shape, using the exact solver
-    /// for the type of `other`. Returns a `(kind, payload)` tuple:
-    ///
-    /// - `Line2D`: Returns `("points", ((t1, Point2D), (t2, Point2D)))`,
-    ///   `("tangent", (t, Point2D))` or `("empty", None)`.
-    /// - `Circle2D`: Returns `("points", (Point2D, Point2D))`,
-    ///   `("tangent", Point2D)`, `("empty", None)` or `("coincident", None)`.
-    ///
-    /// The payload is the same whichever shape is the receiver, so parameters
-    /// keep their roles: in `circle.intersect(line)` each `t` is still a line
-    /// parameter. Raises `TypeError` for any other type.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect(
-        &self,
-        py: Python<'_>,
-        other: &Bound<'_, PyAny>,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        let tol = tolerance(tol);
-        dispatch_intersect!(other, "Circle2D", "Line2D or Circle2D", {
-            PyLine2D => |o| o.circle_result(py, self, tol),
-            PyCircle2D => |o| self.circle_result(py, &o, tol),
-        })
-    }
-
-    /// Intersects this circle with another 2D circle.
-    ///
-    /// Deprecated since 0.29.0: use `intersect`, which returns the same
-    /// result.
-    #[pyo3(signature = (other, tol = None))]
-    fn intersect_circle(
-        &self,
-        py: Python<'_>,
-        other: &PyCircle2D,
-        tol: Option<PyTolerance>,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        warn_deprecated(py, "Circle2D.intersect_circle")?;
-        self.circle_result(py, other, tolerance(tol))
-    }
-
     fn __repr__(&self) -> String {
         let c = self.0.center();
         format!(
@@ -2429,34 +1379,24 @@ impl PyCircle2D {
             self.0.radius()
         )
     }
-}
 
-// Exact intersections behind `intersect` and the deprecated per-pair methods.
-impl PyCircle2D {
-    pub(crate) fn circle_result(
-        &self,
-        py: Python<'_>,
-        other: &PyCircle2D,
-        tol: Tolerance,
-    ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect_exact(&other.0, tol) {
-            CircleCircle2DIntersection::Points(p1, p2) => Ok((
-                "points".to_string(),
-                (
-                    PyPoint2D(p1).into_pyobject(py)?.into_any().unbind(),
-                    PyPoint2D(p2).into_pyobject(py)?.into_any().unbind(),
-                )
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind(),
-            )),
-            CircleCircle2DIntersection::Tangent(p) => Ok((
-                "tangent".to_string(),
-                PyPoint2D(p).into_pyobject(py)?.into_any().unbind(),
-            )),
-            CircleCircle2DIntersection::Empty => Ok(("empty".to_string(), py.None())),
-            CircleCircle2DIntersection::Coincident => Ok(("coincident".to_string(), py.None())),
-        }
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }
 
@@ -2475,9 +1415,8 @@ pub(crate) fn max_curve_order(curve: &Curve3D) -> u32 {
 /// The basis keeps its parametrisation and `bounds()` is
 /// `(first, last)`. On a periodic basis (circle, ellipse, periodic
 /// B-spline) the range may cross the seam, up to one period. Pass it to
-/// `curve_curve_extrema`, `intersect_curve_curve`,
-/// `intersect_curve_surface` or `parametrize_numeric` to search only the
-/// range.
+/// `intersect`, `curve_curve_extrema` or `parametrize_numeric` to search
+/// only the range.
 #[pyclass(name = "TrimmedCurve3D", module = "geomcore.curves", eq)]
 #[derive(Clone, PartialEq)]
 pub(crate) struct PyTrimmedCurve3D(pub(crate) TrimmedCurve3D);
@@ -2646,6 +1585,25 @@ impl PyTrimmedCurve3D {
             e.z
         )
     }
+
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
+    }
 }
 
 /// A 2D curve restricted to the parameter range `[first, last]` of a
@@ -2787,5 +1745,24 @@ impl PyTrimmedCurve2D {
             e.x,
             e.y
         )
+    }
+
+    /// Intersects with any curve or surface, in either order.
+    ///
+    /// Returns a `CurveCurveIntersection`, `CurveCurveIntersection2D`,
+    /// `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection`, by pair
+    /// family, holding this object as `first` and `other` as `second`. A
+    /// pair with a closed form is solved exactly (`method` is `EXACT`),
+    /// any other pair by a numeric search (`NUMERIC`), whose `completeness`
+    /// tells whether it proved that nothing was missed. Raises `TypeError`
+    /// for a 2D curve against a 3D curve or a surface, and for an object
+    /// that is not a geomcore curve or surface.
+    #[pyo3(signature = (other, tol = None))]
+    fn intersect(
+        slf: &Bound<'_, Self>,
+        other: &Bound<'_, PyAny>,
+        tol: Option<PyTolerance>,
+    ) -> PyResult<Py<PyAny>> {
+        crate::intersect::intersect(slf.as_any(), other, tolerance(tol))
     }
 }

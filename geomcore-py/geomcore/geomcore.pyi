@@ -11,9 +11,6 @@ __all__ = [
     "Vector3D",
     "curve_curve_extrema",
     "curves",
-    "intersect_curve_curve",
-    "intersect_curve_surface",
-    "intersect_marching",
     "parametrize_numeric",
     "surfaces",
 ]
