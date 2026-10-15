@@ -9,6 +9,13 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- `Curve3D::parameter_of`, `Curve2D::parameter_of` and
+  `Surface::parameters_of`: the parameters of a point on a curve or surface
+  held as the enum, by the closed form of an elementary variant; a
+  B-spline projects the point with `Tolerance::DEFAULT`.
+
 ### Changed
 
 - `intersect_curve_surface` and `intersect_curve_curve` return the

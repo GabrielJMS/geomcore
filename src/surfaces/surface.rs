@@ -785,6 +785,40 @@ impl Surface {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// The surface parameters `(u, v)` of the point of the surface closest
+    /// to `point`.
+    ///
+    /// An elementary surface uses its closed form (see
+    /// [`ElementarySurface::parameters_of`]). A B-spline projects the point
+    /// with [`Tolerance::DEFAULT`] and returns the projection's parameters;
+    /// call [`project_point`](Surface::project_point) to choose the
+    /// tolerance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::Surface;
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let surface = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let (u, v) = surface.parameters_of(Point3D::new(1.0, 2.0, 0.0));
+    /// let back = geomcore::ParametricSurface::eval_point(&surface, u, v);
+    /// assert!(back.distance(Point3D::new(1.0, 2.0, 0.0)) < 1e-12);
+    /// ```
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
+        match self {
+            Surface::Plane(s) => s.parameters_of(point),
+            Surface::Cylinder(s) => s.parameters_of(point),
+            Surface::Cone(s) => s.parameters_of(point),
+            Surface::Sphere(s) => s.parameters_of(point),
+            Surface::Torus(s) => s.parameters_of(point),
+            Surface::BSpline(s) => {
+                let projection = s.project_point(point, Tolerance::DEFAULT);
+                (projection.u, projection.v)
+            }
+        }
+    }
+
     /// The surface as an [`ElementarySurface`], or `None` for a B-spline.
     pub fn as_elementary(&self) -> Option<ElementarySurface> {
         match self {

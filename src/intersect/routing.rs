@@ -250,24 +250,88 @@ pub(crate) fn in_range(
     (just_below >= range.0 - tol.parametric).then_some(just_below)
 }
 
+/// [`in_range`], with the seam of a periodic curve measured in space.
+///
+/// A point within `tol.confusion` in space of the seam (the start of the
+/// curve's bounds, up to a period) counts as the seam itself: its angle can
+/// come out on either side (just below 2π for a point a hair below the
+/// x axis of a circle), so a range starting or ending at the seam keeps it,
+/// with the seam's representative in the range. `seam` gives the seam's
+/// parameter and the curve's speed there; it is only called when the
+/// parametric test fails.
+#[inline]
+fn in_range_or_at_seam(
+    parameter: f64,
+    range: (f64, f64),
+    period: Option<f64>,
+    seam: impl FnOnce() -> (f64, f64),
+    tol: Tolerance,
+) -> Option<f64> {
+    if let Some(kept) = in_range(parameter, range, period, tol) {
+        return Some(kept);
+    }
+    let period = period?;
+    let (seam, speed) = seam();
+    let past_seam = (parameter - seam).rem_euclid(period);
+    let off_seam = past_seam.min(period - past_seam);
+    if off_seam * speed > tol.confusion {
+        return None;
+    }
+    in_range(seam, range, Some(period), tol)
+}
+
+/// The seam of a 3D curve: the start of its bounds and its speed there.
+fn seam_3d(curve: &impl ParametricCurve3D) -> (f64, f64) {
+    let seam = curve.bounds().0;
+    (seam, curve.eval_derivative(seam, 1).magnitude())
+}
+
+/// The seam of a 2D curve: the start of its bounds and its speed there.
+fn seam_2d(curve: &impl ParametricCurve2D) -> (f64, f64) {
+    let seam = curve.bounds().0;
+    (seam, curve.eval_derivative(seam, 1).magnitude())
+}
+
+/// The end of `range` nearest `parameter`, measured modulo `period` on a
+/// periodic curve: the representative of a point that touches the range
+/// from outside it. Clamping would pick the wrong end for a point just past
+/// the seam (angle `5e-8` against a range ending at 2π).
+fn nearest_end(parameter: f64, range: (f64, f64), period: Option<f64>) -> f64 {
+    let Some(period) = period else {
+        return parameter.clamp(range.0, range.1);
+    };
+    let distance = |end: f64| {
+        let past = (parameter - end).rem_euclid(period);
+        past.min(period - past)
+    };
+    if distance(range.0) <= distance(range.1) {
+        range.0
+    } else {
+        range.1
+    }
+}
+
 /// The parameter a hit keeps on one curve, or `None` when the hit lies
 /// outside the curve's range.
 ///
 /// On a curve restricted to `range` the range test needs the parameter:
 /// the `stored` one, or the one `recover` computes from the point when the
 /// solver did not, and the hit keeps its representative in the range (see
-/// [`in_range`]). On an unrestricted curve the hit keeps what the solver
-/// stored, computed or not.
+/// [`in_range_or_at_seam`]). On an unrestricted curve the hit keeps what
+/// the solver stored, computed or not.
 #[inline]
 fn kept_parameter(
     stored: Option<f64>,
     range: Option<(f64, f64)>,
     period: Option<f64>,
     recover: impl FnOnce() -> f64,
+    seam: impl FnOnce() -> (f64, f64),
     tol: Tolerance,
 ) -> Option<Option<f64>> {
     match range {
-        Some(range) => in_range(stored.unwrap_or_else(recover), range, period, tol).map(Some),
+        Some(range) => {
+            in_range_or_at_seam(stored.unwrap_or_else(recover), range, period, seam, tol).map(Some)
+        }
         None => Some(stored),
     }
 }
@@ -392,7 +456,13 @@ fn from_exact_curve_surface(
         ExactCurveSurfaceIntersection::Points(list) => {
             let hits = list.iter().filter_map(|hit| {
                 let curve_parameter = match range {
-                    Some(range) => in_range(hit.parameter, range, basis.period(), tol)?,
+                    Some(range) => in_range_or_at_seam(
+                        hit.parameter,
+                        range,
+                        basis.period(),
+                        || seam_3d(basis),
+                        tol,
+                    )?,
                     None => hit.parameter,
                 };
                 Some(CurveSurfaceHit {
@@ -527,8 +597,8 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
     tol: Tolerance,
 ) -> CurveCurveIntersection {
     match exact {
-        // Neither basis is restricted: the solver's list is kept as it is,
-        // already ordered by first parameter when every hit has one.
+        // Neither basis is restricted: the solver's hits are kept as they
+        // are, with no range test.
         ExactCurveCurveIntersection::Points(list)
             if first_range.is_none() && second_range.is_none() =>
         {
@@ -545,6 +615,7 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
                         first_range,
                         first.period(),
                         || first.basis_parameter_of(hit.point),
+                        || seam_3d(&first),
                         tol,
                     )?,
                     second_parameter: kept_parameter(
@@ -552,6 +623,7 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
                         second_range,
                         second.period(),
                         || second.basis_parameter_of(hit.point),
+                        || seam_3d(&second),
                         tol,
                     )?,
                     ..*hit
@@ -621,9 +693,9 @@ fn coincident_overlaps<C: CoincidentCurve>(
         if is_single_point(piece, &first_speed, tol) {
             let first_parameter = (0.5 * (piece.0 + piece.1)).clamp(first_range.0, first_range.1);
             let found = second.parameter_of_image(first, first_parameter);
-            let second_parameter = in_range(found, second_range, second.cycle_length(), tol)
-                .unwrap_or(found)
-                .clamp(second_range.0, second_range.1);
+            let period = second.cycle_length();
+            let second_parameter = in_range(found, second_range, period, tol)
+                .unwrap_or_else(|| nearest_end(found, second_range, period));
             touches.push((first_parameter, second_parameter));
             continue;
         }
@@ -648,9 +720,9 @@ fn coincident_overlaps<C: CoincidentCurve>(
         for &part in pieces_on_second.iter() {
             let end = |parameter: f64| {
                 let found = first.parameter_of_image(second, parameter);
-                in_range(found, piece, first.cycle_length(), tol)
-                    .unwrap_or(found)
-                    .clamp(piece.0, piece.1)
+                let period = first.cycle_length();
+                in_range(found, piece, period, tol)
+                    .unwrap_or_else(|| nearest_end(found, piece, period))
             };
             let (start, finish) = (end(part.0), end(part.1));
             overlaps.push(CurveCurveOverlap {
@@ -1118,6 +1190,16 @@ where
         ExactCurveCurve2DIntersection::Coincident => {
             coincidence_2d(first.into(), first_range, second.into(), second_range, tol)
         }
+        // Neither basis is restricted: the solver's hits are kept as they
+        // are, with no range test.
+        ExactCurveCurve2DIntersection::Hits(hits)
+            if first_range.is_none() && second_range.is_none() =>
+        {
+            CurveCurveIntersection2D::exact(
+                hits.into_iter().flatten(),
+                CurveCurveOverlapList::new(),
+            )
+        }
         ExactCurveCurve2DIntersection::Hits(hits) => {
             let kept = hits.into_iter().flatten().filter_map(|hit| {
                 Some(CurveCurveHit2D {
@@ -1126,6 +1208,7 @@ where
                         first_range,
                         first.period(),
                         || first.basis_parameter_of(hit.point),
+                        || seam_2d(&first),
                         tol,
                     )?,
                     second_parameter: kept_parameter(
@@ -1133,6 +1216,7 @@ where
                         second_range,
                         second.period(),
                         || second.basis_parameter_of(hit.point),
+                        || seam_2d(&second),
                         tol,
                     )?,
                     ..hit

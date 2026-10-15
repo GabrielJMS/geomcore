@@ -122,7 +122,8 @@
 //! existing dispatch code in [`curves::Curve3D`]/[`surfaces::Surface`].
 //! Such types are intersected by [`intersect_curve_curve`] and
 //! [`intersect_curve_surface`], which run the numeric search on any
-//! curve and surface and return the same results as [`Intersect::intersect`].
+//! curve and surface and return the same result types as
+//! [`Intersect::intersect`], solved numerically.
 #![warn(missing_docs)]
 
 pub(crate) mod tol {

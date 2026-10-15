@@ -715,6 +715,35 @@ impl Curve3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
+    /// The parameter of the point of the curve closest to `point`.
+    ///
+    /// An elementary curve uses its closed form (see
+    /// [`ElementaryCurve::parameter_of`]). A B-spline projects the point
+    /// with [`Tolerance::DEFAULT`] and returns the projection's parameter;
+    /// call [`project_point`](Curve3D::project_point) to choose the
+    /// tolerance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::Curve3D;
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    ///
+    /// let curve = Curve3D::from(Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
+    /// let parameter = curve.parameter_of(Point3D::new(0.0, 2.0, 0.0));
+    /// assert!((parameter - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    /// ```
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
+        match self {
+            Curve3D::Line(c) => c.parameter_of(point),
+            Curve3D::Circle(c) => c.parameter_of(point),
+            Curve3D::Ellipse(c) => c.parameter_of(point),
+            Curve3D::Parabola(c) => c.parameter_of(point),
+            Curve3D::Hyperbola(c) => c.parameter_of(point),
+            Curve3D::BSpline(c) => c.project_point(point, Tolerance::DEFAULT).parameter,
+        }
+    }
+
     /// The curve as an [`ElementaryCurve`], or `None` for a B-spline.
     pub fn as_elementary(&self) -> Option<ElementaryCurve> {
         match self {

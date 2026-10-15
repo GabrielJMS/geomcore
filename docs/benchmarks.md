@@ -219,6 +219,11 @@ curve–surface, 264 → 328 for curve–curve and 144 → 176 in 2D. What is
 left over the exact call is mostly moving that result (memcpy is 13–15%
 of the routed instructions) and converting the solver's hits into it.
 
+The 2D router then skipped the range test for two unrestricted curves,
+as the 3D one already did: 2D circle–circle routed 321 → 247
+instructions per pair, 35 → 25 ns. The other two pairs did not move
+(1161 and 759 instructions).
+
 Reproduce with:
 
 ```sh

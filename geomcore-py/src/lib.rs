@@ -3930,6 +3930,8 @@ impl PyCircle3D {
     ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
     ///   or `("empty", None)`, with `s` on this circle and `t` on `other`
     ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
+    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
+    ///   recover it with that conic's `parameter_of(point)`.
     ///
     /// Apart from conic pairs, the payload is the same whichever shape is the
     /// receiver, so parameters keep their roles: in `circle.intersect(line)`
@@ -4349,6 +4351,8 @@ impl PyEllipse3D {
     ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
     ///   or `("empty", None)`, with `s` on this ellipse and `t` on `other`
     ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
+    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
+    ///   recover it with that conic's `parameter_of(point)`.
     ///
     /// Apart from conic pairs, the payload is the same whichever shape is the
     /// receiver, so parameters keep their roles: in `circle.intersect(line)`
@@ -4640,6 +4644,8 @@ impl PyParabola3D {
     ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
     ///   or `("empty", None)`, with `s` on this parabola and `t` on `other`
     ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
+    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
+    ///   recover it with that conic's `parameter_of(point)`.
     ///
     /// Apart from conic pairs, the payload is the same whichever shape is the
     /// receiver, so parameters keep their roles: in `circle.intersect(line)`
@@ -4934,6 +4940,8 @@ impl PyHyperbola3D {
     ///   `("hits", [(s, Point3D, t, multiplicity)])`, `("coincident", None)`
     ///   or `("empty", None)`, with `s` on this hyperbola and `t` on `other`
     ///   (multiplicity ≥ 2 marks tangency). A hyperbola is one branch.
+    ///   Most pairs compute only one of `s` and `t`: the other is `None`;
+    ///   recover it with that conic's `parameter_of(point)`.
     ///
     /// Apart from conic pairs, the payload is the same whichever shape is the
     /// receiver, so parameters keep their roles: in `circle.intersect(line)`

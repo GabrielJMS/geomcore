@@ -729,10 +729,12 @@ pub struct CurveCurveExtremum {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
-    /// Parameter on the first curve, within its bounds, give or take
-    /// `tol.parametric` (on a circle or ellipse, a hit at the seam reports
-    /// the start of the bounds). `None` when the solver did not compute
-    /// it; recover it with the curve's `parameter_of(hit.point)`.
+    /// Parameter on the first curve, within its bounds or the trimmed
+    /// curve's range, give or take `tol.parametric`: the hit's
+    /// representative there (a hit within `tol.confusion` of a circle's
+    /// seam reports the seam's representative in the range). `None` when
+    /// the solver did not compute it; recover it with the curve's
+    /// `parameter_of(hit.point)`.
     pub first_parameter: Option<f64>,
     /// Parameter on the second curve, within its bounds, give or take
     /// `tol.parametric`. `None` when the solver did not compute it;

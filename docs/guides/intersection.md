@@ -78,7 +78,8 @@ trimmed pieces are searched over their own range. A curve or surface
 type you define yourself, by implementing `ParametricCurve3D` or
 `ParametricSurface`, goes through `intersect_curve_curve(a, b, tol)` and
 `intersect_curve_surface(curve, surface, tol)`: they always run the
-numeric search and return the same results as the routed call. On
+numeric search and return the same result types as the routed call,
+solved numerically. On
 B-splines there is no sampling grid:
 Bézier pieces subdivide where their control boxes overlap until each
 pair holds at most one hit, then Newton solves it — crossings a grid

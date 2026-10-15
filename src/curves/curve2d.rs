@@ -300,6 +300,26 @@ impl Curve2D {
     pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection2D> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
+
+    /// The parameter of the point of the curve closest to `point`, by the
+    /// curve's closed form.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::Curve2D;
+    /// use geomcore::{Circle2D, Point2D};
+    ///
+    /// let curve = Curve2D::from(Circle2D::new(Point2D::ORIGIN, 2.0).unwrap());
+    /// let parameter = curve.parameter_of(Point2D::new(0.0, 2.0));
+    /// assert!((parameter - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    /// ```
+    pub fn parameter_of(&self, point: Point2D) -> f64 {
+        match self {
+            Curve2D::Line(c) => c.parameter_of(point),
+            Curve2D::Circle(c) => c.parameter_of(point),
+        }
+    }
 }
 
 impl From<Line2D> for Curve2D {

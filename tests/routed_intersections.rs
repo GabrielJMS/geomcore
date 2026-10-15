@@ -1,7 +1,7 @@
 //! The routed intersection: exact when a closed form exists, numeric
 //! otherwise, and the result says which method ran.
 
-use geomcore::curves::{Curve3D, ElementaryCurve, TrimmedCurve3D};
+use geomcore::curves::{Curve3D, ElementaryCurve, TrimmedCurve2D, TrimmedCurve3D};
 use geomcore::surfaces::Surface;
 use geomcore::*;
 use std::f64::consts::{PI, TAU};
@@ -869,4 +869,261 @@ fn test_numeric_path_stores_every_parameter() {
             .iter()
             .all(|h| h.curve_parameter.is_some() && h.surface_parameters.is_some())
     );
+}
+
+/// A hit within `tol.confusion` in space of the seam, just outside an arc
+/// that starts or ends there, on a unit circle in the xy plane.
+struct SeamCase {
+    /// The arc's range.
+    range: (f64, f64),
+    /// The angle of the hit: a hair past the arc's seam end.
+    angle: f64,
+    /// The direction angle of the line through the hit; its second hit on
+    /// the circle falls outside the arc.
+    line_angle: f64,
+    /// The angle of the centre of a unit circle through the hit; its
+    /// second hit falls outside the arc.
+    crossing_angle: f64,
+    /// The arc parameter the hit keeps: the seam's representative.
+    expected: f64,
+}
+
+const SEAM_CASES: [SeamCase; 2] = [
+    SeamCase {
+        range: (0.0, PI),
+        angle: -5e-9,
+        line_angle: PI / 3.0,
+        crossing_angle: -PI / 3.0,
+        expected: 0.0,
+    },
+    SeamCase {
+        range: (PI, TAU),
+        angle: 5e-9,
+        line_angle: 2.0 * PI / 3.0,
+        crossing_angle: PI / 3.0,
+        expected: TAU,
+    },
+];
+
+fn assert_seam_parameter(parameter: Option<f64>, case: &SeamCase) {
+    let parameter = parameter.expect("a trimmed side stores its parameter");
+    assert!(
+        (parameter - case.expected).abs() < 1e-12,
+        "parameter {parameter}, expected {}",
+        case.expected
+    );
+}
+
+#[test]
+fn test_hit_a_hair_past_the_seam_end_of_an_arc_is_kept_in_3d() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    for case in &SEAM_CASES {
+        let arc = TrimmedCurve3D::new(circle, case.range.0, case.range.1).unwrap();
+        let hit = circle.eval_point(case.angle);
+        let (sin, cos) = case.line_angle.sin_cos();
+        let line = Line3D::new(hit, Vector3D::new(cos, sin, 0.0)).unwrap();
+        let (sin, cos) = (case.crossing_angle + case.angle).sin_cos();
+        let crossing = Circle3D::new(Point3D::new(cos, sin, 0.0), Vector3D::Z, 1.0).unwrap();
+        let (sin, cos) = case.line_angle.sin_cos();
+        let plane = Plane::new(hit, Vector3D::new(-sin, cos, 0.0)).unwrap();
+
+        let r = arc.intersect(&line, TOL);
+        assert_eq!(r.hits().len(), 1, "arc with line, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].first_parameter, case);
+        let r = line.intersect(&arc, TOL);
+        assert_eq!(r.hits().len(), 1, "line with arc, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].second_parameter, case);
+        let r = arc.intersect(&crossing, TOL);
+        assert_eq!(r.hits().len(), 1, "arc with circle, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].first_parameter, case);
+        let r = crossing.intersect(&arc, TOL);
+        assert_eq!(r.hits().len(), 1, "circle with arc, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].second_parameter, case);
+        let r = arc.intersect(&plane, TOL);
+        assert_eq!(r.hits().len(), 1, "arc with plane, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].curve_parameter, case);
+    }
+}
+
+#[test]
+fn test_hit_a_hair_past_the_seam_end_of_an_arc_is_kept_in_2d() {
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    for case in &SEAM_CASES {
+        let arc = TrimmedCurve2D::new(circle, case.range.0, case.range.1).unwrap();
+        let hit = circle.eval_point(case.angle);
+        let (sin, cos) = case.line_angle.sin_cos();
+        let line = Line2D::new(hit, Vector2D::new(cos, sin)).unwrap();
+        let (sin, cos) = (case.crossing_angle + case.angle).sin_cos();
+        let crossing = Circle2D::new(Point2D::new(cos, sin), 1.0).unwrap();
+
+        let r = arc.intersect(&line, TOL);
+        assert_eq!(r.hits().len(), 1, "arc with line, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].first_parameter, case);
+        let r = line.intersect(&arc, TOL);
+        assert_eq!(r.hits().len(), 1, "line with arc, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].second_parameter, case);
+        let r = arc.intersect(&crossing, TOL);
+        assert_eq!(r.hits().len(), 1, "arc with circle, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].first_parameter, case);
+        let r = crossing.intersect(&arc, TOL);
+        assert_eq!(r.hits().len(), 1, "circle with arc, range {:?}", case.range);
+        assert_seam_parameter(r.hits()[0].second_parameter, case);
+    }
+}
+
+#[test]
+fn test_hit_farther_than_the_confusion_past_the_seam_is_dropped() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let arc = TrimmedCurve3D::new(circle, 0.0, PI).unwrap();
+    let hit = circle.eval_point(-1e-6);
+    let (sin, cos) = (PI / 3.0).sin_cos();
+    let line = Line3D::new(hit, Vector3D::new(cos, sin, 0.0)).unwrap();
+    assert!(arc.intersect(&line, TOL).hits().is_empty());
+}
+
+/// Two arcs of one circle whose ends meet at the seam, `gap` apart in
+/// angle: `[gap, PI/2]` and `[3PI/2, 2PI]`, then the second shifted one
+/// turn up against `[PI, 2PI]`.
+fn seam_touch_ranges(gap: f64) -> [((f64, f64), (f64, f64)); 2] {
+    [
+        ((gap, PI / 2.0), (3.0 * PI / 2.0, TAU)),
+        ((TAU + gap, TAU + 1.0), (PI, TAU)),
+    ]
+}
+
+fn assert_touch_parameters(
+    first: Option<f64>,
+    second: Option<f64>,
+    eval: (Point3D, Point3D),
+    point: Point3D,
+    ranges: ((f64, f64), (f64, f64)),
+) {
+    let (first, second) = (first.unwrap(), second.unwrap());
+    let within = |p: f64, (lo, hi): (f64, f64)| p >= lo - 1e-9 && p <= hi + 1e-9;
+    assert!(
+        within(first, ranges.0),
+        "first {first} outside {:?}",
+        ranges.0
+    );
+    assert!(
+        within(second, ranges.1),
+        "second {second} outside {:?}",
+        ranges.1
+    );
+    assert!(
+        eval.0.distance(point) <= 1e-7,
+        "first parameter is not the point"
+    );
+    assert!(
+        eval.1.distance(point) <= 1e-7,
+        "second parameter is not the point"
+    );
+}
+
+#[test]
+fn test_arcs_touching_across_the_seam_store_the_near_ends() {
+    for radius in [1.0, 0.5, 0.01] {
+        for gap_in_space in [0.0, 1e-10, 5e-9, 5e-8, 9e-8] {
+            let gap = gap_in_space / radius;
+            for (range_a, range_b) in seam_touch_ranges(gap) {
+                let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, radius).unwrap();
+                let a = TrimmedCurve3D::new(circle, range_a.0, range_a.1).unwrap();
+                let b = TrimmedCurve3D::new(circle, range_b.0, range_b.1).unwrap();
+                for (first, second, ranges) in
+                    [(&a, &b, (range_a, range_b)), (&b, &a, (range_b, range_a))]
+                {
+                    let r = first.intersect(second, TOL);
+                    assert!(r.overlaps().is_empty());
+                    assert_eq!(r.hits().len(), 1, "radius {radius}, gap {gap}");
+                    let h = r.hits()[0];
+                    assert_touch_parameters(
+                        h.first_parameter,
+                        h.second_parameter,
+                        (
+                            circle.eval_point(h.first_parameter.unwrap()),
+                            circle.eval_point(h.second_parameter.unwrap()),
+                        ),
+                        h.point,
+                        ranges,
+                    );
+                }
+                let circle = Circle2D::new(Point2D::ORIGIN, radius).unwrap();
+                let a = TrimmedCurve2D::new(circle, range_a.0, range_a.1).unwrap();
+                let b = TrimmedCurve2D::new(circle, range_b.0, range_b.1).unwrap();
+                let lift = |p: Point2D| Point3D::new(p.x, p.y, 0.0);
+                for (first, second, ranges) in
+                    [(&a, &b, (range_a, range_b)), (&b, &a, (range_b, range_a))]
+                {
+                    let r = first.intersect(second, TOL);
+                    assert!(r.overlaps().is_empty());
+                    assert_eq!(r.hits().len(), 1, "2D radius {radius}, gap {gap}");
+                    let h = r.hits()[0];
+                    assert_touch_parameters(
+                        h.first_parameter,
+                        h.second_parameter,
+                        (
+                            lift(circle.eval_point(h.first_parameter.unwrap())),
+                            lift(circle.eval_point(h.second_parameter.unwrap())),
+                        ),
+                        lift(h.point),
+                        ranges,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_reviewer_seam_touch_stores_two_pi_on_the_second_arc() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let a = TrimmedCurve3D::new(circle, 5e-8, PI / 2.0).unwrap();
+    let b = TrimmedCurve3D::new(circle, 3.0 * PI / 2.0, TAU).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert_eq!(r.hits().len(), 1);
+    assert!((r.hits()[0].second_parameter.unwrap() - TAU).abs() < 1e-12);
+}
+
+/// A caller-defined surface: a plane the crate does not know.
+struct Floor(Plane);
+
+impl ParametricSurface for Floor {
+    fn eval_point(&self, u: f64, v: f64) -> Point3D {
+        self.0.eval_point(u, v)
+    }
+    fn eval_derivative(&self, u: f64, v: f64, du: u32, dv: u32) -> Vector3D {
+        self.0.eval_derivative(u, v, du, dv)
+    }
+    fn u_bounds(&self) -> (f64, f64) {
+        self.0.u_bounds()
+    }
+    fn v_bounds(&self) -> (f64, f64) {
+        self.0.v_bounds()
+    }
+    fn u_period(&self) -> Option<f64> {
+        None
+    }
+    fn v_period(&self) -> Option<f64> {
+        None
+    }
+    fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        ParametricSurface::project_point(&self.0, point, tol)
+    }
+    fn contains(&self, point: Point3D, tol: Tolerance) -> bool {
+        ParametricSurface::contains(&self.0, point, tol)
+    }
+}
+
+#[test]
+fn test_caller_defined_surface_intersects_through_the_public_numeric_function() {
+    let floor = Floor(Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap());
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::X, 2.0).unwrap();
+    let r = intersect_curve_surface(&circle, &floor, TOL);
+    assert_eq!(r.method(), IntersectionMethod::Numeric);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 2);
+    assert_hits_lie_on(&r, &circle, &floor);
+    for h in r.hits() {
+        assert!((h.point.z - 1.0).abs() < 1e-9);
+    }
 }
