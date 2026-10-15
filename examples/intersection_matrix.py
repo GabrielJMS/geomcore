@@ -2,10 +2,11 @@
 
 Builds a 5x5 grid (Plane, Cylinder, Cone, Sphere, Torus), one cell per
 (type, type) pair, in receiver order: the cell (row, col) shows
-``row.intersect(col)``. Each cell shows both surfaces as meshes and the
-intersection curves overlaid in red, labelled with the method that found
-them: ``EXACT`` where a closed form exists, ``NUMERIC`` (marched) where
-not. Extend PAIRS to show other configurations.
+``row.intersect(col)``. Each cell hands the intersection result straight to the viewer, which draws
+both surfaces translucent, the curves in the accent colour and a note on the
+method that found them: ``exact`` where a closed form exists, ``numeric``
+(marched) where not. The viewer windows the unbounded surfaces (plane,
+cylinder, cone) from the scene extent, so they grow with the grid. Extend PAIRS to show other configurations.
 
 Usage:
     python examples/intersection_matrix.py [--out scene.json] [--serve]
@@ -21,7 +22,6 @@ Viewing without --serve: open the hosted viewer and drag-drop the saved
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from pathlib import Path
 
@@ -31,22 +31,6 @@ from geomcore.surfaces import Cone, Cylinder, Plane, Sphere, Torus
 import geomcore_viewer as gv
 
 TYPES = ["Plane", "Cylinder", "Cone", "Sphere", "Torus"]
-
-TAU = 2.0 * math.pi
-
-# (nu, nv, u_range, v_range) per surface type; the u/v ranges are the window each surface is drawn over.
-WINDOWS = {
-    "Plane": (24, 24, (-6.0, 6.0), (-6.0, 6.0)),
-    "Cylinder": (48, 16, (0.0, TAU), (-6.0, 6.0)),
-    "Cone": (48, 20, (0.0, TAU), (-4.0, 6.0)),
-    "Sphere": (48, 24, (0.0, TAU), (-1.55, 1.55)),
-    "Torus": (48, 24, (0.0, TAU), (0.0, TAU)),
-}
-
-SURFACE_COLORS = ("#4d94ff", "#35c163")
-CURVE_COLOR = "#ff5533"
-# Translucent surfaces so intersection curves inside stay visible.
-SURFACE_OPACITY = 0.45
 
 # Layout: cells are CELL_STEP apart; surfaces span about +-6 locally.
 CELL_STEP = 18.0
@@ -111,18 +95,11 @@ def main() -> int:
     with_curve, empty = [], []
     for i, row in enumerate(TYPES):
         for j, col in enumerate(TYPES):
-            s1, s2 = cell_surfaces(row, col)
-            result = s1.intersect(s2)
             move = Transform.translation(Vector3D(j * CELL_STEP, -i * CELL_STEP, 0.0))
-            tag = f"{row}×{col}"
-            for index, (surface, kind) in enumerate(((s1, row), (s2, col))):
-                _, _, (u0, u1), (v0, v1) = WINDOWS[kind]
-                view.add(surface.transformed(move), label=f"{tag} {kind}#{index + 1}", group=tag,
-                         color=SURFACE_COLORS[index], opacity=SURFACE_OPACITY, u=(u0, u1), v=(v0, v1))
-            curves = [piece.curve for piece in result.curves]
-            if curves:
-                view.add(*[c.transformed(move) for c in curves],
-                         label=f"{tag} {result.method.name}", group=tag, color=CURVE_COLOR)
+            s1, s2 = (surface.transformed(move) for surface in cell_surfaces(row, col))
+            result = s1.intersect(s2)
+            view.add(result, label=f"{row}×{col}")
+            if result.curves:
                 with_curve.append(f"({row},{col})")
             else:
                 empty.append(f"({row},{col})")
