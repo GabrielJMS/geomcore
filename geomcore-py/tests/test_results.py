@@ -456,9 +456,9 @@ def test_extrema_length_is_the_number_of_minima():
 
 def test_curves_and_surfaces_have_deterministic_reprs():
     circle = Circle3D(Point3D(1.0, 0.0, 0.0), Vector3D.unit_z(), 2.5)
-    assert repr(circle) == "Circle3D(center=(1, 0, 0), normal=(0, 0, 1), radius=2.5)"
-    assert repr(Sphere(Point3D.origin(), 3.0)) == "Sphere(center=(0, 0, 0), radius=3)"
-    assert repr(Plane(Point3D.origin(), Vector3D.unit_z())) == "Plane(origin=(0, 0, 0), normal=(0, 0, 1))"
+    assert repr(circle) == "Circle3D(center=(1.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0), radius=2.5)"
+    assert repr(Sphere(Point3D.origin(), 3.0)) == "Sphere(center=(0.0, 0.0, 0.0), radius=3.0)"
+    assert repr(Plane(Point3D.origin(), Vector3D.unit_z())) == "Plane(origin=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))"
     result = Plane(Point3D.origin(), Vector3D.unit_z()).intersect(Sphere(Point3D.origin(), 3.0))
-    assert "Circle3D(center=(0, 0, 0), normal=(0, 0, 1), radius=3)" in repr(result)
+    assert "Circle3D(center=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0), radius=3.0)" in repr(result)
     assert " at 0x" not in repr(result)

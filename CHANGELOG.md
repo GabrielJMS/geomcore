@@ -45,6 +45,9 @@ the Python distribution are versioned in lockstep.
 
 ### Changed
 
+- Python reprs print floats as Python does (`1.0`, `1e-07`) and show
+  coordinates below `1e-15` as `0.0`, so rounding noise such as
+  `cos(pi / 2)` no longer clutters them.
 - Python: the `Vector3D` unit constructors `x()`, `y()` and `z()` are renamed
   `unit_x()`, `unit_y()` and `unit_z()`, matching `Vector3D::X`, `Y` and `Z`;
   `x`, `y` and `z` are now the component properties, as on `Point3D`.

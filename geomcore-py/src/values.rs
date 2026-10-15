@@ -100,7 +100,7 @@ impl PyPoint3D {
     }
 
     fn __repr__(&self) -> String {
-        format!("Point3D({}, {}, {})", self.0.x, self.0.y, self.0.z)
+        format!("Point3D{}", coordinates(self.0))
     }
 }
 
@@ -225,7 +225,7 @@ impl PyVector3D {
     }
 
     fn __repr__(&self) -> String {
-        format!("Vector3D({}, {}, {})", self.0.x, self.0.y, self.0.z)
+        format!("Vector3D{}", coordinates(self.0))
     }
 }
 
@@ -294,7 +294,7 @@ impl PyPoint2D {
     }
 
     fn __repr__(&self) -> String {
-        format!("Point2D({}, {})", self.0.x, self.0.y)
+        format!("Point2D{}", coordinates_2d(self.0))
     }
 }
 
@@ -402,7 +402,7 @@ impl PyVector2D {
     }
 
     fn __repr__(&self) -> String {
-        format!("Vector2D({}, {})", self.0.x, self.0.y)
+        format!("Vector2D{}", coordinates_2d(self.0))
     }
 }
 
@@ -662,7 +662,9 @@ impl PyTolerance {
     fn __repr__(&self) -> String {
         format!(
             "Tolerance(confusion={}, angular={}, parametric={})",
-            self.0.confusion, self.0.angular, self.0.parametric
+            python_float(self.0.confusion),
+            python_float(self.0.angular),
+            python_float(self.0.parametric)
         )
     }
 }
@@ -801,8 +803,9 @@ impl PyBoundingBox3D {
     fn __repr__(&self) -> String {
         let (lo, hi) = (self.0.min(), self.0.max());
         format!(
-            "BoundingBox3D(min=({}, {}, {}), max=({}, {}, {}))",
-            lo.x, lo.y, lo.z, hi.x, hi.y, hi.z
+            "BoundingBox3D(min={}, max={})",
+            coordinates(lo),
+            coordinates(hi)
         )
     }
 }
@@ -972,13 +975,60 @@ pub(crate) trait Coordinates2D {
 /// `(x, y)` as written in a `__repr__`.
 pub(crate) fn coordinates_2d(value: impl Coordinates2D) -> String {
     let (x, y) = value.xy();
-    format!("({x}, {y})")
+    format!("({}, {})", float_repr(x), float_repr(y))
 }
 
 /// `(x, y, z)` as written in a `__repr__`.
 pub(crate) fn coordinates(value: impl Coordinates) -> String {
     let (x, y, z) = value.xyz();
-    format!("({x}, {y}, {z})")
+    format!("({}, {}, {})", float_repr(x), float_repr(y), float_repr(z))
+}
+
+/// Coordinates below this magnitude print as `0.0` in a `__repr__`: they are
+/// rounding noise of a computation that should have given zero (such as
+/// `cos(pi / 2)`), not geometry.
+const REPR_NOISE: f64 = 1e-15;
+
+/// A float as a `__repr__` writes it: as Python's `repr` (shortest text that
+/// reads back to the same number), with magnitudes below `1e-15` as `0.0`.
+pub(crate) fn float_repr(value: f64) -> String {
+    if value.abs() < REPR_NOISE {
+        return "0.0".to_string();
+    }
+    python_float(value)
+}
+
+/// A float as Python's `repr` writes it. Use it where a tiny value is
+/// meaningful, such as a tolerance.
+pub(crate) fn python_float(value: f64) -> String {
+    if value.is_nan() {
+        return "nan".to_string();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "inf" } else { "-inf" }.to_string();
+    }
+    let sign = if value.is_sign_negative() { "-" } else { "" };
+    // `{:e}` gives the shortest round-trip digits: `d.ddde<exponent>`.
+    let scientific = format!("{:e}", value.abs());
+    let (mantissa, exponent) = scientific
+        .split_once('e')
+        .expect("scientific notation has an exponent");
+    let exponent: i32 = exponent.parse().expect("the exponent is an integer");
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+    if !(-4..16).contains(&exponent) {
+        let exponent_sign = if exponent < 0 { '-' } else { '+' };
+        return format!("{sign}{mantissa}e{exponent_sign}{:02}", exponent.abs());
+    }
+    if exponent >= 0 {
+        let integer_length = exponent as usize + 1;
+        let padded = format!("{digits:0<integer_length$}");
+        let (integer, fraction) = padded.split_at(integer_length);
+        let fraction = if fraction.is_empty() { "0" } else { fraction };
+        format!("{sign}{integer}.{fraction}")
+    } else {
+        let zeros = "0".repeat((-exponent - 1) as usize);
+        format!("{sign}0.{zeros}{digits}")
+    }
 }
 
 /// A Rust `bool` as Python writes it.

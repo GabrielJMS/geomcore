@@ -120,7 +120,7 @@ def test_equality_and_repr():
     assert projection == circle.project_point(query)
     assert projection != circle.project_point(Point3D(0.0, 4.0, 0.0))
     assert repr(projection) == (
-        "CurveProjection(target=Circle3D, query_point=Point3D(3, 0, 0), "
-        "parameter=0.0, point=Point3D(2, 0, 0), distance=1.0)"
+        "CurveProjection(target=Circle3D, query_point=Point3D(3.0, 0.0, 0.0), "
+        "parameter=0.0, point=Point3D(2.0, 0.0, 0.0), distance=1.0)"
     )
     assert repr(projection) == repr(circle.project_point(query))

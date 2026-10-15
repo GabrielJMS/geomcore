@@ -295,7 +295,7 @@ impl PyCylinder {
             "Cylinder(origin={}, axis={}, radius={})",
             crate::values::coordinates(self.0.frame().origin()),
             crate::values::coordinates(self.0.frame().z_direction()),
-            self.0.radius()
+            float_repr(self.0.radius())
         )
     }
 
@@ -522,8 +522,8 @@ impl PyCone {
             "Cone(origin={}, axis={}, reference_radius={}, semi_angle={})",
             crate::values::coordinates(self.0.frame().origin()),
             crate::values::coordinates(self.0.frame().z_direction()),
-            self.0.ref_radius(),
-            self.0.semi_angle()
+            float_repr(self.0.ref_radius()),
+            float_repr(self.0.semi_angle())
         )
     }
 
@@ -754,7 +754,7 @@ impl PySphere {
         format!(
             "Sphere(center={}, radius={})",
             crate::values::coordinates(self.0.center()),
-            self.0.radius()
+            float_repr(self.0.radius())
         )
     }
 
@@ -986,8 +986,8 @@ impl PyTorus {
             "Torus(center={}, axis={}, major_radius={}, minor_radius={})",
             crate::values::coordinates(self.0.center()),
             crate::values::coordinates(self.0.frame().z_direction()),
-            self.0.major_radius(),
-            self.0.minor_radius()
+            float_repr(self.0.major_radius()),
+            float_repr(self.0.minor_radius())
         )
     }
 

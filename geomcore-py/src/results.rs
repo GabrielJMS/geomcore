@@ -18,30 +18,18 @@ use geomcore::{
 };
 
 use crate::numeric::curve3d_to_py;
-use crate::values::{PyPoint2D, PyPoint3D};
+use crate::values::{PyPoint2D, PyPoint3D, coordinates, coordinates_2d, float_repr};
 
 // ---------------------------------------------------------------------------
 // repr helpers
 // ---------------------------------------------------------------------------
 
 fn point3_repr(p: Point3D) -> String {
-    format!("Point3D({}, {}, {})", p.x, p.y, p.z)
+    format!("Point3D{}", coordinates(p))
 }
 
 fn point2_repr(p: Point2D) -> String {
-    format!("Point2D({}, {})", p.x, p.y)
-}
-
-fn float_repr(value: f64) -> String {
-    if value.is_finite() {
-        format!("{value:?}")
-    } else if value.is_nan() {
-        "nan".to_string()
-    } else if value > 0.0 {
-        "inf".to_string()
-    } else {
-        "-inf".to_string()
-    }
+    format!("Point2D{}", coordinates_2d(p))
 }
 
 fn optional_repr(value: Option<f64>) -> String {

@@ -4,6 +4,7 @@ import math
 
 import pytest
 
+import geomcore
 from geomcore import (
     Axis2D,
     Axis3D,
@@ -388,3 +389,25 @@ def test_frame_3d_members():
     assert point.distance(Point3D(2.0, 4.0, 6.0)) == pytest.approx(0.0)
     assert frame.point_at(0.0, 0.0, 2.0) == Point3D(1.0, 2.0, 5.0)
     assert frame.local_coordinates(Point3D(1.0, 2.0, 5.0))[2] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Reprs print floats like Python and snap rounding noise to zero
+# ---------------------------------------------------------------------------
+
+
+def test_repr_floats_are_python_style():
+    assert repr(Point3D(1.0, -0.5, 1e-7)) == "Point3D(1.0, -0.5, 1e-07)"
+    assert repr(Vector3D(1e16, 1e15, 123456.789)) == "Vector3D(1e+16, 1000000000000000.0, 123456.789)"
+    assert repr(Point2D(0.1, 2.5e-5)) == "Point2D(0.1, 2.5e-05)"
+    assert repr(Point2D(-3.0, 1.5e300)) == "Point2D(-3.0, 1.5e+300)"
+
+
+def test_repr_snaps_rounding_noise_to_zero():
+    noisy = math.cos(math.pi / 2)
+    assert 0.0 < noisy < 1e-15
+    assert repr(Point3D(noisy, -noisy, 1.0)) == "Point3D(0.0, 0.0, 1.0)"
+    circle = Circle3D(Point3D(noisy, 0.0, 0.0), Z, 1.0)
+    assert repr(circle).startswith("Circle3D(center=(0.0, 0.0, 0.0)")
+    # A tolerance is not geometry: tiny values are kept.
+    assert "angular=1e-12" in repr(geomcore.Tolerance())

@@ -285,7 +285,7 @@ impl PyCircle3D {
             "Circle3D(center={}, normal={}, radius={})",
             crate::values::coordinates(self.0.center()),
             crate::values::coordinates(self.0.normal()),
-            self.0.radius()
+            float_repr(self.0.radius())
         )
     }
 
@@ -530,8 +530,8 @@ impl PyEllipse3D {
             "Ellipse3D(center={}, normal={}, major_radius={}, minor_radius={})",
             crate::values::coordinates(self.0.center()),
             crate::values::coordinates(self.0.frame().z_direction()),
-            self.0.major_radius(),
-            self.0.minor_radius()
+            float_repr(self.0.major_radius()),
+            float_repr(self.0.minor_radius())
         )
     }
 
@@ -783,7 +783,7 @@ impl PyParabola3D {
             "Parabola3D(apex={}, normal={}, focal={})",
             crate::values::coordinates(self.0.apex()),
             crate::values::coordinates(self.0.frame().z_direction()),
-            self.0.focal()
+            float_repr(self.0.focal())
         )
     }
 
@@ -978,8 +978,8 @@ impl PyHyperbola3D {
             "Hyperbola3D(center={}, normal={}, major_radius={}, minor_radius={})",
             crate::values::coordinates(self.0.center()),
             crate::values::coordinates(self.0.frame().z_direction()),
-            self.0.major_radius(),
-            self.0.minor_radius()
+            float_repr(self.0.major_radius()),
+            float_repr(self.0.minor_radius())
         )
     }
 
@@ -1687,11 +1687,10 @@ impl PyLine2D {
     }
 
     fn __repr__(&self) -> String {
-        let o = self.0.origin();
-        let d = self.0.direction();
         format!(
-            "Line2D(origin=({}, {}), direction=({}, {}))",
-            o.x, o.y, d.x, d.y
+            "Line2D(origin={}, direction={})",
+            coordinates_2d(self.0.origin()),
+            coordinates_2d(self.0.direction())
         )
     }
 
@@ -1872,12 +1871,10 @@ impl PyCircle2D {
     }
 
     fn __repr__(&self) -> String {
-        let c = self.0.center();
         format!(
-            "Circle2D(center=({}, {}), radius={})",
-            c.x,
-            c.y,
-            self.0.radius()
+            "Circle2D(center={}, radius={})",
+            coordinates_2d(self.0.center()),
+            float_repr(self.0.radius())
         )
     }
 
@@ -2120,15 +2117,11 @@ impl PyTrimmedCurve3D {
     fn __repr__(&self) -> String {
         let (s, e) = (self.0.start_point(), self.0.end_point());
         format!(
-            "TrimmedCurve3D(first={}, last={}, start=({}, {}, {}), end=({}, {}, {}))",
-            self.0.first(),
-            self.0.last(),
-            s.x,
-            s.y,
-            s.z,
-            e.x,
-            e.y,
-            e.z
+            "TrimmedCurve3D(first={}, last={}, start={}, end={})",
+            float_repr(self.0.first()),
+            float_repr(self.0.last()),
+            coordinates(s),
+            coordinates(e)
         )
     }
 
@@ -2329,13 +2322,11 @@ impl PyTrimmedCurve2D {
     fn __repr__(&self) -> String {
         let (s, e) = (self.0.start_point(), self.0.end_point());
         format!(
-            "TrimmedCurve2D(first={}, last={}, start=({}, {}), end=({}, {}))",
-            self.0.first(),
-            self.0.last(),
-            s.x,
-            s.y,
-            e.x,
-            e.y
+            "TrimmedCurve2D(first={}, last={}, start={}, end={})",
+            float_repr(self.0.first()),
+            float_repr(self.0.last()),
+            coordinates_2d(s),
+            coordinates_2d(e)
         )
     }
 
