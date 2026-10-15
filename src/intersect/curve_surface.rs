@@ -3,11 +3,11 @@
 //! pairs on B-splines.
 
 use super::curve_surface_hull::CurveSurfaceHits;
-use super::{CurveSurfaceHit, mixed};
-use crate::Tolerance;
+use super::{CurveSurfaceHit, curve_surface_multiplicity, mixed};
 use crate::curves::ParametricCurve3D;
 use crate::math::{brent_minimum, newton_3d};
 use crate::surfaces::ParametricSurface;
+use crate::{Point3D, Tolerance};
 
 /// Generic curve-surface intersection for any parametric curve and surface.
 ///
@@ -19,7 +19,7 @@ use crate::surfaces::ParametricSurface;
 /// minimized over `t` alone between the neighbouring samples. That finds
 /// hits at singular points of the surface parametrization (a sphere
 /// pole, a cone apex, a collapsed B-spline edge), where the Newton system
-/// is singular; their `surface_params` are the projection's.
+/// is singular; their `surface_parameters` are the projection's.
 /// Unbounded curves seed `[-10, 10]`. Overlapping pairs yield dense hit
 /// sets along the overlap — use the exact intersection
 /// ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact)) when
@@ -62,8 +62,8 @@ use crate::surfaces::ParametricSurface;
 /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
 /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
 /// assert_eq!(hits.len(), 2);
-/// assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
-/// assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
+/// assert!((hits[0].curve_parameter + 2.0).abs() < 1e-9);
+/// assert!((hits[1].curve_parameter - 2.0).abs() < 1e-9);
 /// assert!(!hits.is_complete());
 ///
 /// // A B-spline segment through the sphere: the search proves both hits.
@@ -134,6 +134,11 @@ where
             hits.push(hit);
         }
     };
+    let multiplicity_at = |t: f64, u: f64, v: f64, point: Point3D| {
+        let (_, tangent) = curve.eval_d1(t);
+        let (_, [su, sv]) = surface.eval_d1(u, v);
+        curve_surface_multiplicity(tangent, su.cross(sv), point, tol)
+    };
     for i in order.into_iter().take(KEEP) {
         let t = samples[i].0;
         let proj = surface.project_point(curve.eval_point(t), tol);
@@ -156,9 +161,10 @@ where
                 push(
                     &mut hits,
                     CurveSurfaceHit {
-                        curve_param: rt,
-                        surface_params: (ru, rv),
+                        curve_parameter: rt,
+                        surface_parameters: (ru, rv),
                         point: p,
+                        multiplicity: multiplicity_at(rt, ru, rv, p),
                     },
                 );
                 continue;
@@ -181,15 +187,16 @@ where
                 push(
                     &mut hits,
                     CurveSurfaceHit {
-                        curve_param: rt,
-                        surface_params: (proj.u, proj.v),
+                        curve_parameter: rt,
+                        surface_parameters: (proj.u, proj.v),
                         point: p,
+                        multiplicity: multiplicity_at(rt, proj.u, proj.v, p),
                     },
                 );
             }
         }
     }
-    hits.sort_by(|a, b| a.curve_param.partial_cmp(&b.curve_param).unwrap());
+    hits.sort_by(|a, b| a.curve_parameter.partial_cmp(&b.curve_parameter).unwrap());
     hits
 }
 
@@ -205,13 +212,13 @@ mod tests {
         let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
         let hits = intersect_curve_surface(&line, &sphere, tol);
         assert_eq!(hits.len(), 2);
-        assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
-        assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
+        assert!((hits[0].curve_parameter + 2.0).abs() < 1e-9);
+        assert!((hits[1].curve_parameter - 2.0).abs() < 1e-9);
         // Cross-check against the exact intersection.
         match line.intersect_exact(&sphere, tol) {
             LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
-                assert!((hits[0].curve_param - t1).abs() < 1e-9);
-                assert!((hits[1].curve_param - t2).abs() < 1e-9);
+                assert!((hits[0].curve_parameter - t1).abs() < 1e-9);
+                assert!((hits[1].curve_parameter - t2).abs() < 1e-9);
             }
             _ => panic!("exact intersection expected two points"),
         }
@@ -234,7 +241,7 @@ mod tests {
         let on_both = |hit: &CurveSurfaceHit, surface: &dyn ParametricSurface| {
             surface.contains(hit.point, tol)
                 && surface
-                    .eval_point(hit.surface_params.0, hit.surface_params.1)
+                    .eval_point(hit.surface_parameters.0, hit.surface_parameters.1)
                     .distance(hit.point)
                     <= 1e-6
         };
@@ -244,8 +251,8 @@ mod tests {
         let line = Line3D::new(Point3D::new(0.0, 0.0, -3.0), Vector3D::Z).unwrap();
         let hits = intersect_curve_surface(&line, &sphere, tol);
         assert_eq!(hits.len(), 2, "{hits:?}");
-        assert!((hits[0].curve_param - 2.0).abs() < 1e-9, "{hits:?}");
-        assert!((hits[1].curve_param - 4.0).abs() < 1e-9, "{hits:?}");
+        assert!((hits[0].curve_parameter - 2.0).abs() < 1e-9, "{hits:?}");
+        assert!((hits[1].curve_parameter - 4.0).abs() < 1e-9, "{hits:?}");
         assert!(hits.iter().all(|h| on_both(h, &sphere)));
 
         // A line through a cone's apex, square to the axis, meets it there
@@ -269,7 +276,7 @@ mod tests {
         assert_eq!(curve.eval_point(0.5), Point3D::new(0.0, 0.0, 1.0));
         let hits = intersect_curve_surface(&curve, &sphere, tol);
         assert_eq!(hits.len(), 2, "{hits:?}");
-        assert!((hits[0].curve_param - 0.5).abs() < 1e-9, "{hits:?}");
+        assert!((hits[0].curve_parameter - 0.5).abs() < 1e-9, "{hits:?}");
         assert!(hits.iter().all(|h| on_both(h, &sphere)));
     }
 
@@ -282,7 +289,7 @@ mod tests {
         let plane = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
         let hits = intersect_curve_surface(&curve, &plane, tol);
         assert_eq!(hits.len(), 1);
-        assert!((hits[0].curve_param - 0.5).abs() < 1e-9);
+        assert!((hits[0].curve_parameter - 0.5).abs() < 1e-9);
         assert_eq!(hits[0].point, Point3D::new(1.0, 0.0, 0.0));
     }
 }

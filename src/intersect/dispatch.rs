@@ -529,7 +529,7 @@ impl From<LineTorusIntersection> for ExactCurveSurfaceIntersection {
         match result {
             LineTorusIntersection::Hits(hits) => ExactCurveSurfaceIntersection::points(
                 hits.into_iter()
-                    .map(|h| hit(h.line_param, h.point, h.multiplicity)),
+                    .map(|h| hit(h.line_parameter, h.point, h.multiplicity)),
             ),
             LineTorusIntersection::Empty => ExactCurveSurfaceIntersection::Empty,
         }
@@ -653,7 +653,7 @@ reversed!(
 /// let ExactCurveCurveIntersection::Points(hits) = line.intersect_exact(&circle, Tolerance::DEFAULT) else {
 ///     panic!("expected hits");
 /// };
-/// let on_line: Vec<f64> = hits.iter().map(|hit| hit.first_param).collect();
+/// let on_line: Vec<f64> = hits.iter().map(|hit| hit.first_parameter).collect();
 /// assert_eq!(on_line, [-2.0, 2.0]);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -681,7 +681,7 @@ impl ExactCurveCurveIntersection {
         if list.is_empty() {
             return ExactCurveCurveIntersection::Empty;
         }
-        list.sort_by(|a, b| a.first_param.total_cmp(&b.first_param));
+        list.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
         ExactCurveCurveIntersection::Points(list)
     }
 
@@ -690,8 +690,8 @@ impl ExactCurveCurveIntersection {
         match self {
             ExactCurveCurveIntersection::Points(hits) => {
                 ExactCurveCurveIntersection::points(hits.iter().map(|h| CurveCurveHit {
-                    first_param: h.second_param,
-                    second_param: h.first_param,
+                    first_parameter: h.second_parameter,
+                    second_parameter: h.first_parameter,
                     ..*h
                 }))
             }
@@ -703,9 +703,9 @@ impl ExactCurveCurveIntersection {
 /// A hit at `first` on the first curve and `second` on the second.
 fn pair(first: f64, point: Point3D, second: f64, multiplicity: u32) -> CurveCurveHit {
     CurveCurveHit {
-        first_param: first,
+        first_parameter: first,
         point,
-        second_param: second,
+        second_parameter: second,
         multiplicity,
     }
 }
@@ -759,7 +759,7 @@ fn line_circle(
         }
         LineCircle3DIntersection::Tangent(t, p) => {
             let hit = on_circle(t, p);
-            let multiplicity = lone_hit_multiplicity(line, circle, hit.second_param, tol);
+            let multiplicity = lone_hit_multiplicity(line, circle, hit.second_parameter, tol);
             ExactCurveCurveIntersection::points([CurveCurveHit {
                 multiplicity,
                 ..hit
@@ -775,13 +775,13 @@ fn line_conic(
     conic: &impl Conic,
     tol: Tolerance,
 ) -> ExactCurveCurveIntersection {
-    let from = |h: LineConicHit, m: u32| pair(h.line_param, h.point, h.conic_param, m);
+    let from = |h: LineConicHit, m: u32| pair(h.line_parameter, h.point, h.conic_parameter, m);
     match result {
         LineConic3DIntersection::Points(h1, h2) => {
             ExactCurveCurveIntersection::points([from(h1, 1), from(h2, 1)])
         }
         LineConic3DIntersection::Tangent(h) => {
-            let multiplicity = lone_hit_multiplicity(line, conic, h.conic_param, tol);
+            let multiplicity = lone_hit_multiplicity(line, conic, h.conic_parameter, tol);
             ExactCurveCurveIntersection::points([from(h, multiplicity)])
         }
         LineConic3DIntersection::Empty => ExactCurveCurveIntersection::Empty,
@@ -1412,15 +1412,18 @@ mod tests {
             ExactCurveCurveIntersection::Points(hits) => {
                 assert!(!hits.is_empty());
                 for pair in hits.windows(2) {
-                    assert!(pair[0].first_param <= pair[1].first_param, "{hits:?}");
+                    assert!(
+                        pair[0].first_parameter <= pair[1].first_parameter,
+                        "{hits:?}"
+                    );
                 }
                 for hit in hits {
                     assert!(
-                        near(a.eval_point(hit.first_param), hit.point),
+                        near(a.eval_point(hit.first_parameter), hit.point),
                         "{hit:?} off {a:?}"
                     );
                     assert!(
-                        near(b.eval_point(hit.second_param), hit.point),
+                        near(b.eval_point(hit.second_parameter), hit.point),
                         "{hit:?} off {b:?}"
                     );
                     assert!(hit.multiplicity >= 1);
@@ -1495,7 +1498,9 @@ mod tests {
                     );
                 }
                 for h in hits.iter().filter(|h| {
-                    h.multiplicity == 1 && window(a, h.first_param) && window(b, h.second_param)
+                    h.multiplicity == 1
+                        && window(a, h.first_parameter)
+                        && window(b, h.second_parameter)
                 }) {
                     assert!(
                         numeric.iter().any(|n| close(h.point, n.point)),
@@ -1799,9 +1804,9 @@ mod tests {
                         {
                             for h in list.iter() {
                                 let t = if swapped {
-                                    h.second_param
+                                    h.second_parameter
                                 } else {
-                                    h.first_param
+                                    h.first_parameter
                                 };
                                 in_bounds(curve, t);
                                 hits += 1;

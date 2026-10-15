@@ -27,6 +27,7 @@ mod dispatch;
 mod marching;
 mod mixed;
 mod pieces;
+mod results;
 pub use completeness::{Completeness, IncompleteReason};
 mod surface_surface;
 pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
@@ -39,6 +40,11 @@ pub use dispatch::{
     InlineList, IntersectExact,
 };
 pub use marching::marching_intersection;
+pub(crate) use results::curve_surface_multiplicity;
+pub use results::{
+    CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceIntersection,
+    IntersectionCurve, IntersectionMethod, SurfaceSurfaceIntersection, SurfaceSurfaceRegion,
+};
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -165,11 +171,11 @@ pub enum LineTorusIntersection {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineTorusHit {
     /// Parameter on the line.
-    pub line_param: f64,
+    pub line_parameter: f64,
     /// The hit point.
     pub point: Point3D,
     /// Parameters on the torus.
-    pub surface_params: (f64, f64),
+    pub surface_parameters: (f64, f64),
     /// Root multiplicity (≥ 2 signals tangency).
     pub multiplicity: u32,
 }
@@ -468,11 +474,11 @@ pub enum CircleCircle3DIntersection {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineConicHit {
     /// Parameter on the line.
-    pub line_param: f64,
+    pub line_parameter: f64,
     /// The hit point.
     pub point: Point3D,
     /// Parameter on the conic.
-    pub conic_param: f64,
+    pub conic_parameter: f64,
 }
 
 /// Result of intersecting a 3D line with an ellipse, parabola, or
@@ -661,9 +667,9 @@ pub enum ConicConicIntersection {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveExtremum {
     /// Parameter on the first curve.
-    pub first_param: f64,
+    pub first_parameter: f64,
     /// Parameter on the second curve.
-    pub second_param: f64,
+    pub second_parameter: f64,
     /// Distance between the two points.
     pub distance: f64,
 }
@@ -673,22 +679,63 @@ pub struct CurveCurveExtremum {
 pub struct CurveCurveHit {
     /// Parameter on the first curve, within its bounds (on a circle or
     /// ellipse, a hit at the seam reports the start of the bounds).
-    pub first_param: f64,
+    pub first_parameter: f64,
+    /// Parameter on the second curve, within its bounds.
+    pub second_parameter: f64,
     /// The meeting point (on the first curve; within tolerance of both).
     pub point: Point3D,
-    /// Parameter on the second curve, within its bounds.
-    pub second_param: f64,
     /// 1 where the curves cross, 2 or more where they are tangent.
     pub multiplicity: u32,
 }
 
-/// One transversal meeting of a curve and a surface.
+/// One meeting of two 2D curves.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{CurveCurveHit2D, Point2D};
+/// let hit = CurveCurveHit2D {
+///     first_parameter: 1.0,
+///     second_parameter: 0.5,
+///     point: Point2D::new(1.0, 0.0),
+///     multiplicity: 1,
+/// };
+/// assert_eq!(hit.multiplicity, 1);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveCurveHit2D {
+    /// Parameter on the first curve, within its bounds.
+    pub first_parameter: f64,
+    /// Parameter on the second curve, within its bounds.
+    pub second_parameter: f64,
+    /// The meeting point (on the first curve; within tolerance of both).
+    pub point: Point2D,
+    /// 1 where the curves cross, 2 or more where they are tangent.
+    pub multiplicity: u32,
+}
+
+/// One meeting of a curve and a surface.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{CurveSurfaceHit, Point3D};
+/// let hit = CurveSurfaceHit {
+///     curve_parameter: 2.0,
+///     surface_parameters: (0.0, 0.0),
+///     point: Point3D::new(2.0, 0.0, 0.0),
+///     multiplicity: 1,
+/// };
+/// assert_eq!(hit.curve_parameter, 2.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
     /// Parameter on the curve.
-    pub curve_param: f64,
+    pub curve_parameter: f64,
     /// Parameters on the surface.
-    pub surface_params: (f64, f64),
+    pub surface_parameters: (f64, f64),
     /// The meeting point (on the curve; within tolerance of the surface).
     pub point: Point3D,
+    /// 1 where the curve crosses the surface, 2 where it grazes it.
+    pub multiplicity: u32,
 }

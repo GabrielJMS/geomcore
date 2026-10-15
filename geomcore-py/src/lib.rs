@@ -2838,7 +2838,7 @@ type CurveHitPy = (f64, (f64, f64), Py<PyAny>);
 ///
 /// Every local minimum of the distance over the curves' parameter
 /// domains, including minima at the ends of bounded curves, as
-/// `(first_param, second_param, distance)` tuples ordered by distance.
+/// `(first_parameter, second_parameter, distance)` tuples ordered by distance.
 /// Parallel lines, concentric circles and other continuous families of
 /// equal minima report the distance once, with a representative pair.
 /// Use the analytic methods when classification matters.
@@ -2854,13 +2854,13 @@ fn py_curve_curve_extrema(
     let b = extract_curve_arg(curve_b)?;
     Ok(curve_curve_extrema(&a, &b, tol)
         .iter()
-        .map(|e| (e.first_param, e.second_param, e.distance))
+        .map(|e| (e.first_parameter, e.second_parameter, e.distance))
         .collect())
 }
 
 /// Generic 3D curve-curve intersection: extrema within tolerance.
 ///
-/// Returns `(first_param, Point3D, second_param)` tuples ordered by
+/// Returns `(first_parameter, Point3D, second_parameter)` tuples ordered by
 /// first-curve parameter.
 #[pyfunction]
 #[pyo3(name = "intersect_curve_curve", signature = (curve_a, curve_b, tol = None))]
@@ -2876,9 +2876,9 @@ fn py_intersect_curve_curve(
     let mut out = Vec::new();
     for h in intersect_curve_curve(&a, &b, tol) {
         out.push((
-            h.first_param,
+            h.first_parameter,
             PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
-            h.second_param,
+            h.second_parameter,
         ));
     }
     Ok(out)
@@ -2887,7 +2887,7 @@ fn py_intersect_curve_curve(
 ///
 /// Samples the curve, projects onto the surface for seeds, and refines
 /// with Newton on `C(t) - S(u, v) = 0`. Returns a
-/// `(curve_param, (u, v), Point3D)` tuple per transversal hit, ordered
+/// `(curve_parameter, (u, v), Point3D)` tuple per transversal hit, ordered
 /// by curve parameter. Overlapping pairs yield dense hit sets; use the
 /// analytic `intersect_*` methods when classification matters.
 #[pyfunction]
@@ -2904,8 +2904,8 @@ fn py_intersect_curve_surface(
     let mut out = Vec::new();
     for h in intersect_curve_surface(&c, &s, tol) {
         out.push((
-            h.curve_param,
-            h.surface_params,
+            h.curve_parameter,
+            h.surface_parameters,
             PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
         ));
     }
@@ -2977,9 +2977,9 @@ fn conic_surface_to_py(
 
 fn line_conic_hit(py: Python<'_>, h: &LineConicHit) -> PyResult<Py<PyAny>> {
     (
-        h.line_param,
+        h.line_parameter,
         PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
-        h.conic_param,
+        h.conic_parameter,
     )
         .into_pyobject(py)
         .map(|o| o.into_any().unbind())
@@ -3006,9 +3006,9 @@ fn conic_conic_to_py(py: Python<'_>, hit: ConicConicIntersection) -> PyResult<(S
             for h in &hits {
                 out.push(
                     (
-                        h.first_param,
+                        h.first_parameter,
                         PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
-                        h.second_param,
+                        h.second_parameter,
                         h.multiplicity,
                     )
                         .into_pyobject(py)?
@@ -3028,9 +3028,9 @@ fn conic_conic_to_py(py: Python<'_>, hit: ConicConicIntersection) -> PyResult<(S
 
 fn line_torus_hit(py: Python<'_>, h: &LineTorusHit) -> PyResult<Py<PyAny>> {
     (
-        h.line_param,
+        h.line_parameter,
         PyPoint3D(h.point).into_pyobject(py)?.into_any().unbind(),
-        h.surface_params,
+        h.surface_parameters,
         h.multiplicity,
     )
         .into_pyobject(py)

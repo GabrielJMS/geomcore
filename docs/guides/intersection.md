@@ -101,7 +101,7 @@ the parameter regions where hits may be missing otherwise.
 
     let hits = intersect_curve_surface(&spline, &surface, tol);
     for h in hits.hits() {
-        let _ = (h.curve_param, h.point);
+        let _ = (h.curve_parameter, h.point);
     }
     let meetings = intersect_curve_curve(&a, &b, tol);
     ```

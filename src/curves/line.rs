@@ -393,9 +393,9 @@ impl Line3D {
             LinePlaneIntersection::Point(t, p) => {
                 if contains(p) {
                     LineConic3DIntersection::Tangent(LineConicHit {
-                        line_param: t,
+                        line_parameter: t,
                         point: p,
-                        conic_param: conic_parameter_of(p),
+                        conic_parameter: conic_parameter_of(p),
                     })
                 } else {
                     LineConic3DIntersection::Empty
@@ -423,9 +423,9 @@ impl Line3D {
                     let p = self.eval_point(t);
                     if contains(p) {
                         hits.push(LineConicHit {
-                            line_param: t,
+                            line_parameter: t,
                             point: p,
-                            conic_param: conic_parameter_of(p),
+                            conic_parameter: conic_parameter_of(p),
                         });
                     }
                 };
@@ -958,7 +958,7 @@ impl IntersectExact<Torus> for Line3D {
     ///     LineTorusIntersection::Hits(hits) => {
     ///         assert_eq!(hits.len(), 4);
     ///         assert_eq!(
-    ///             [hits[0].line_param, hits[1].line_param, hits[2].line_param, hits[3].line_param],
+    ///             [hits[0].line_parameter, hits[1].line_parameter, hits[2].line_parameter, hits[3].line_parameter],
     ///             [-5.0, -3.0, 3.0, 5.0]
     ///         );
     ///     }
@@ -994,9 +994,9 @@ impl IntersectExact<Torus> for Line3D {
                 let p = self.eval_point(t);
                 if torus.contains(p, tol) {
                     Some(LineTorusHit {
-                        line_param: t,
+                        line_parameter: t,
                         point: p,
-                        surface_params: torus.parameters_of(p),
+                        surface_parameters: torus.parameters_of(p),
                         multiplicity: r.multiplicity,
                     })
                 } else {
@@ -1004,7 +1004,7 @@ impl IntersectExact<Torus> for Line3D {
                 }
             })
             .collect();
-        hits.sort_by(|x, y| x.line_param.partial_cmp(&y.line_param).unwrap());
+        hits.sort_by(|x, y| x.line_parameter.partial_cmp(&y.line_parameter).unwrap());
         if hits.is_empty() {
             LineTorusIntersection::Empty
         } else {
@@ -1159,7 +1159,7 @@ impl IntersectExact<Ellipse3D> for Line3D {
     /// let tol = Tolerance::DEFAULT;
     /// match line.intersect_exact(&ellipse, tol) {
     ///     LineConic3DIntersection::Points(h1, h2) => {
-    ///         assert_eq!((h1.line_param, h2.line_param), (-3.0, 3.0));
+    ///         assert_eq!((h1.line_parameter, h2.line_parameter), (-3.0, 3.0));
     ///         assert_eq!((h1.point, h2.point), (Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)));
     ///     }
     ///     _ => panic!("expected two points"),
@@ -1203,7 +1203,7 @@ impl IntersectExact<Parabola3D> for Line3D {
     /// let tol = Tolerance::DEFAULT;
     /// match line.intersect_exact(&parabola, tol) {
     ///     LineConic3DIntersection::Tangent(hit) => {
-    ///         assert_eq!(hit.line_param, 0.0);
+    ///         assert_eq!(hit.line_parameter, 0.0);
     ///         assert_eq!(hit.point, Point3D::ORIGIN);
     ///     }
     ///     _ => panic!("expected a tangent"),
@@ -1935,12 +1935,12 @@ mod tests {
         let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         match line.intersect_exact(&ellipse, tol) {
             LineConic3DIntersection::Points(h1, h2) => {
-                assert_eq!((h1.line_param, h2.line_param), (-3.0, 3.0));
+                assert_eq!((h1.line_parameter, h2.line_parameter), (-3.0, 3.0));
                 assert_eq!(
                     (h1.point, h2.point),
                     (Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0))
                 );
-                assert_eq!(h2.conic_param, 0.0);
+                assert_eq!(h2.conic_parameter, 0.0);
             }
             _ => panic!("expected two points"),
         }
@@ -1948,9 +1948,9 @@ mod tests {
         let graze = Line3D::new(Point3D::new(3.0, 0.0, 0.0), Vector3D::Z).unwrap();
         match graze.intersect_exact(&ellipse, tol) {
             LineConic3DIntersection::Tangent(hit) => {
-                assert_eq!(hit.line_param, 0.0);
+                assert_eq!(hit.line_parameter, 0.0);
                 assert_eq!(hit.point, Point3D::new(3.0, 0.0, 0.0));
-                assert_eq!(hit.conic_param, 0.0);
+                assert_eq!(hit.conic_parameter, 0.0);
             }
             _ => panic!("expected a tangent"),
         }
@@ -1970,7 +1970,7 @@ mod tests {
         let axis = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         match axis.intersect_exact(&parabola, tol) {
             LineConic3DIntersection::Tangent(hit) => {
-                assert_eq!(hit.line_param, 0.0);
+                assert_eq!(hit.line_parameter, 0.0);
                 assert_eq!(hit.point, Point3D::ORIGIN);
             }
             _ => panic!("expected a tangent"),
@@ -1979,7 +1979,7 @@ mod tests {
         let vertical = Line3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Y).unwrap();
         match vertical.intersect_exact(&parabola, tol) {
             LineConic3DIntersection::Points(h1, h2) => {
-                assert_eq!((h1.line_param, h2.line_param), (-2.0, 2.0));
+                assert_eq!((h1.line_parameter, h2.line_parameter), (-2.0, 2.0));
                 assert_eq!(
                     (h1.point, h2.point),
                     (Point3D::new(1.0, -2.0, 0.0), Point3D::new(1.0, 2.0, 0.0))
@@ -2004,7 +2004,7 @@ mod tests {
         let tangent = Line3D::new(Point3D::new(2.0, -5.0, 0.0), Vector3D::Y).unwrap();
         match tangent.intersect_exact(&hyperbola, tol) {
             LineConic3DIntersection::Tangent(hit) => {
-                assert_eq!(hit.line_param, 5.0);
+                assert_eq!(hit.line_parameter, 5.0);
                 assert_eq!(hit.point, Point3D::new(2.0, 0.0, 0.0));
             }
             _ => panic!("expected a tangent"),
@@ -2013,7 +2013,7 @@ mod tests {
         let axis = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         match axis.intersect_exact(&hyperbola, tol) {
             LineConic3DIntersection::Tangent(hit) => {
-                assert_eq!(hit.line_param, 2.0);
+                assert_eq!(hit.line_parameter, 2.0);
                 assert_eq!(hit.point, Point3D::new(2.0, 0.0, 0.0));
             }
             _ => panic!("expected a lone hit"),
@@ -2035,15 +2035,15 @@ mod tests {
         match line.intersect_exact(&torus, tol) {
             LineTorusIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 4);
-                let params: Vec<f64> = hits.iter().map(|h| h.line_param).collect();
+                let params: Vec<f64> = hits.iter().map(|h| h.line_parameter).collect();
                 assert_eq!(params, vec![-5.0, -3.0, 3.0, 5.0]);
                 for h in &hits {
-                    assert_eq!(h.point, line.eval_point(h.line_param));
+                    assert_eq!(h.point, line.eval_point(h.line_parameter));
                     assert!(torus.contains(h.point, tol));
                     assert_eq!(h.multiplicity, 1);
                     let (u, v) = torus.parameters_of(h.point);
-                    assert!((h.surface_params.0 - u).abs() < 1e-12);
-                    assert!((h.surface_params.1 - v).abs() < 1e-12);
+                    assert!((h.surface_parameters.0 - u).abs() < 1e-12);
+                    assert!((h.surface_parameters.1 - v).abs() < 1e-12);
                 }
             }
             _ => panic!("expected four hits"),
@@ -2053,7 +2053,7 @@ mod tests {
         match graze.intersect_exact(&torus, tol) {
             LineTorusIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 1);
-                assert_eq!(hits[0].line_param, 0.0);
+                assert_eq!(hits[0].line_parameter, 0.0);
                 assert_eq!(hits[0].point, Point3D::new(0.0, 5.0, 0.0));
                 assert_eq!(hits[0].multiplicity, 2);
             }
@@ -2104,7 +2104,7 @@ mod tests {
                     );
                     for (h, g) in hits.iter().zip(generic.iter()) {
                         assert!(
-                            (h.line_param - g.curve_param).abs() < 1e-6,
+                            (h.line_parameter - g.curve_parameter).abs() < 1e-6,
                             "param mismatch for line {origin:?} {dir:?}"
                         );
                         assert!(h.point.distance(g.point) < 1e-6);
@@ -2271,7 +2271,7 @@ mod tests {
                         .iter()
                         .find(|h| h.multiplicity == 2)
                         .unwrap_or_else(|| panic!("no tangent hit in {hits:?}"));
-                    assert!((touch.line_param - 3.0).abs() < 1e-6);
+                    assert!((touch.line_parameter - 3.0).abs() < 1e-6);
                     assert!(touch.point.distance(contact) < 1e-6);
                 }
                 other => panic!("expected hits, got {other:?}"),
@@ -2342,7 +2342,7 @@ mod tests {
         let line = Line3D::new(Point3D::new(-300.0, 0.0, 0.0), Vector3D::X).unwrap();
         match line.intersect_exact(&torus, tol) {
             LineTorusIntersection::Hits(hits) => {
-                let params: Vec<f64> = hits.iter().map(|h| h.line_param).collect();
+                let params: Vec<f64> = hits.iter().map(|h| h.line_parameter).collect();
                 assert_eq!(params, vec![175.0, 225.0, 375.0, 425.0]);
                 assert!(hits.iter().all(|h| h.multiplicity == 1));
             }
@@ -2362,7 +2362,7 @@ mod tests {
                 assert_eq!(hits.len(), 4);
                 let expected = [-0.05, -0.03, 0.03, 0.05];
                 for (h, x) in hits.iter().zip(expected) {
-                    assert!((h.line_param - (1e5 + x)).abs() < 1e-9);
+                    assert!((h.line_parameter - (1e5 + x)).abs() < 1e-9);
                     assert_eq!(h.multiplicity, 1);
                 }
             }
@@ -2398,7 +2398,7 @@ mod tests {
                 let expected = Point3D::new(-625.3518880129151, -710.7210476574684, 0.0);
                 let near = h1.point.distance(expected).min(h2.point.distance(expected));
                 assert!(near < 1e-6, "{h1:?} {h2:?}");
-                assert!(h1.line_param < h2.line_param);
+                assert!(h1.line_parameter < h2.line_parameter);
             }
             other => panic!("expected two points, got {other:?}"),
         }

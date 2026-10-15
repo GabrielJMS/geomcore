@@ -154,6 +154,11 @@ pub use intersect::{
     CurveSurfaceRegion, IncompleteReason,
 };
 pub use intersect::{
+    CurveCurveHit2D, CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap,
+    CurveSurfaceIntersection, IntersectionCurve, IntersectionMethod, SurfaceSurfaceIntersection,
+    SurfaceSurfaceRegion,
+};
+pub use intersect::{
     ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
     InlineList, IntersectExact,
 };

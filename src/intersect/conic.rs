@@ -446,7 +446,7 @@ pub(crate) fn intersect_conic_conic<A: Conic, B: Conic>(
             return ConicConicIntersection::Coincident;
         };
         for h in hits.iter_mut() {
-            (h.first_param, h.second_param) = (h.second_param, h.first_param);
+            (h.first_parameter, h.second_parameter) = (h.second_parameter, h.first_parameter);
         }
         hits
     } else {
@@ -458,7 +458,7 @@ pub(crate) fn intersect_conic_conic<A: Conic, B: Conic>(
     if hits.is_empty() {
         return ConicConicIntersection::Empty;
     }
-    hits.sort_unstable_by(|x, y| x.first_param.total_cmp(&y.first_param));
+    hits.sort_unstable_by(|x, y| x.first_parameter.total_cmp(&y.first_parameter));
     ConicConicIntersection::Hits(hits.to_vec())
 }
 
@@ -475,9 +475,9 @@ fn conic_conic_hits<A: Conic, B: Conic>(
     // Both parameters come from the point, so a closed conic's lies in its
     // own bounds whichever conic was solved for.
     let hit = |p: Point3D, multiplicity: u32| CurveCurveHit {
-        first_param: conic.parameter_in_bounds(conic.parameter_of(p), tol),
+        first_parameter: conic.parameter_in_bounds(conic.parameter_of(p), tol),
         point: p,
-        second_param: other.parameter_in_bounds(other.parameter_of(p), tol),
+        second_parameter: other.parameter_in_bounds(other.parameter_of(p), tol),
         multiplicity,
     };
     // Coplanar when either conic lies in the other's plane: solving in
@@ -500,7 +500,7 @@ fn conic_conic_hits<A: Conic, B: Conic>(
             for h in on_plane {
                 if other.contains(h.point, point_tolerance(h.point, tol)) {
                     let mut h = hit(h.point, h.multiplicity);
-                    let along = other.eval_derivative(h.second_param, 1);
+                    let along = other.eval_derivative(h.second_parameter, 1);
                     if h.multiplicity < 2
                         || along.dot(normal).abs() > along_tolerance * along.magnitude()
                     {
@@ -847,14 +847,14 @@ mod tests {
         let ConicConicIntersection::Hits(mut back) = second.intersect_exact(first, tol) else {
             panic!("expected hits the other way round");
         };
-        back.sort_by(|p, q| p.second_param.total_cmp(&q.second_param));
+        back.sort_by(|p, q| p.second_parameter.total_cmp(&q.second_parameter));
         assert_eq!(hits.len(), back.len());
         for (h, b) in hits.iter().zip(&back) {
-            assert!(first.eval_point(h.first_param).distance(h.point) < 1e-9);
-            assert!(second.eval_point(h.second_param).distance(h.point) < 1e-9);
+            assert!(first.eval_point(h.first_parameter).distance(h.point) < 1e-9);
+            assert!(second.eval_point(h.second_parameter).distance(h.point) < 1e-9);
             assert!(h.point.distance(b.point) < 1e-9);
-            assert!((h.first_param - b.second_param).abs() < 1e-9);
-            assert!((h.second_param - b.first_param).abs() < 1e-9);
+            assert!((h.first_parameter - b.second_parameter).abs() < 1e-9);
+            assert!((h.second_parameter - b.first_parameter).abs() < 1e-9);
             assert_eq!(h.multiplicity, b.multiplicity);
         }
         hits

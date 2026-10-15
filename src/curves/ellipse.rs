@@ -1008,13 +1008,13 @@ mod tests {
                 for h in &hits {
                     assert!(e1.contains(h.point, tol));
                     assert!(e2.contains(h.point, tol));
-                    assert_eq!(h.first_param, e1.parameter_of(h.point));
-                    assert_eq!(h.second_param, e2.parameter_of(h.point));
+                    assert_eq!(h.first_parameter, e1.parameter_of(h.point));
+                    assert_eq!(h.second_parameter, e2.parameter_of(h.point));
                 }
-                let mut ordered: Vec<f64> = hits.iter().map(|h| h.first_param).collect();
+                let mut ordered: Vec<f64> = hits.iter().map(|h| h.first_parameter).collect();
                 ordered.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 assert_eq!(
-                    hits.iter().map(|h| h.first_param).collect::<Vec<_>>(),
+                    hits.iter().map(|h| h.first_parameter).collect::<Vec<_>>(),
                     ordered
                 );
             }
@@ -1035,8 +1035,8 @@ mod tests {
                 let hit = hits[0];
                 assert_eq!(hit.multiplicity, 2);
                 assert!(hit.point.distance(Point3D::new(3.0, 0.0, 0.0)) < 1e-12);
-                assert_eq!(hit.first_param, e1.parameter_of(hit.point));
-                assert_eq!(hit.second_param, grazing.parameter_of(hit.point));
+                assert_eq!(hit.first_parameter, e1.parameter_of(hit.point));
+                assert_eq!(hit.second_parameter, grazing.parameter_of(hit.point));
             }
             other => panic!("expected a tangent, got {other:?}"),
         }
@@ -1064,7 +1064,7 @@ mod tests {
                 for (h, y) in hits.iter().zip([1.5, -1.5]) {
                     assert!(h.point.distance(Point3D::new(0.0, y, 0.0)) < 1e-12);
                     assert_eq!(h.multiplicity, 1);
-                    assert!(tilted.eval_point(h.second_param).distance(h.point) < 1e-12);
+                    assert!(tilted.eval_point(h.second_parameter).distance(h.point) < 1e-12);
                 }
             }
             other => panic!("expected two crossings, got {other:?}"),

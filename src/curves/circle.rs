@@ -1400,8 +1400,8 @@ mod tests {
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
                     assert!(ellipse.contains(h.point, tol));
-                    assert_eq!(h.first_param, circle.parameter_of(h.point));
-                    assert_eq!(h.second_param, ellipse.parameter_of(h.point));
+                    assert_eq!(h.first_parameter, circle.parameter_of(h.point));
+                    assert_eq!(h.second_parameter, ellipse.parameter_of(h.point));
                 }
             }
             _ => panic!("expected four points"),
@@ -1470,7 +1470,7 @@ mod tests {
                 for h in &hits {
                     assert!(circle.contains(h.point, tol));
                     assert!(ellipse.contains(h.point, tol));
-                    assert!(circle.eval_point(h.first_param).distance(h.point) < 1e-12);
+                    assert!(circle.eval_point(h.first_parameter).distance(h.point) < 1e-12);
                 }
             }
             other => panic!("expected four points, got {other:?}"),

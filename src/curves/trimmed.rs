@@ -794,7 +794,7 @@ mod tests {
         let half = TrimmedCurve3D::segment(Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)).unwrap();
         let hits = intersect_curve_surface(&half, &sphere, TOL);
         assert_eq!(hits.len(), 1);
-        assert!(close(hits[0].curve_param, 1.0));
+        assert!(close(hits[0].curve_parameter, 1.0));
     }
 
     #[test]
@@ -804,8 +804,8 @@ mod tests {
             .unwrap();
         let ext = curve_curve_extrema(&a, &b, TOL);
         assert!(close(ext[0].distance, 5.0_f64.sqrt()));
-        assert!(close(ext[0].first_param, 1.0));
-        assert!(close(ext[0].second_param, 1.0));
+        assert!(close(ext[0].first_parameter, 1.0));
+        assert!(close(ext[0].second_parameter, 1.0));
     }
 
     // ---- borrowed basis ----
