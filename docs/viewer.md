@@ -14,20 +14,21 @@ The demo scene shows an ellipse, a circle, a hyperbola and a line, with the poin
     pip install geomcore geomcore-viewer
     ```
 
-    geomcore-viewer 0.2 has no dependencies and ships the built viewer
+    geomcore-viewer 0.3 has no dependencies and ships the built viewer
     in the wheel. It reads geomcore objects through their public
     getters rather than pinning a geomcore version, and works with
-    geomcore 0.33 to 0.35.
+    geomcore 0.33 and later. Drawing result objects directly
+    (projections, intersections, extrema) needs geomcore 0.36.
 
 === "Rust"
 
     ```toml
     [dependencies]
     geomcore = "0.32"
-    geomcore-viewer = { version = "0.2", features = ["geomcore"] }
+    geomcore-viewer = { version = "0.3", features = ["geomcore"] }
     ```
 
-    The `geomcore` feature of geomcore-viewer 0.2 is built against
+    The `geomcore` feature of geomcore-viewer 0.3 is built against
     geomcore 0.32. Paired with a later geomcore, Cargo pulls in both
     versions and the viewer does not accept the newer types, so keep
     geomcore at 0.32 in code that uses the viewer until a viewer
@@ -50,7 +51,7 @@ The embedded page above is static. From a script, a debugger or a notebook, `vie
     C = Circle3D(Point3D(2, 1, 0), Vector3D.unit_z(), 1.5)
     view.add(E, label="E")
     view.add(C, label="C")
-    view.add(C.intersect(E), label="P")           # intersection points P₁, P₂
+    view.add(C.intersect(E), label="P")           # the result draws directly: hits P, operands faded
     ```
 
 === "Rust"
