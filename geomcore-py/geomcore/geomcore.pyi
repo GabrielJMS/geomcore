@@ -1,7 +1,9 @@
 from geomcore import *
 
 __all__ = [
+    "Axis2D",
     "Axis3D",
+    "Frame2D",
     "Frame3D",
     "Point2D",
     "Point3D",

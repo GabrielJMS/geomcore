@@ -1,7 +1,9 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use geomcore::{Axis3D, Frame3D, Point2D, Point3D, Tolerance, Transform, Vector2D, Vector3D};
+use geomcore::{
+    Axis2D, Axis3D, Frame2D, Frame3D, Point2D, Point3D, Tolerance, Transform, Vector2D, Vector3D,
+};
 use geomcore::{
     BoundingBox3D, Discretization2D, Discretization3D, DiscretizationCriteria, Discretize2D,
     Discretize3D,
@@ -238,6 +240,105 @@ impl PyAxis3D {
     /// The unit direction of the axis.
     fn direction(&self) -> PyVector3D {
         PyVector3D(self.0.direction())
+    }
+}
+
+/// An axis in the plane: a point plus a unit direction.
+#[pyclass(name = "Axis2D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
+pub(crate) struct PyAxis2D(pub(crate) Axis2D);
+
+#[pymethods]
+impl PyAxis2D {
+    #[new]
+    /// Build an axis from an origin and a direction (normalized internally).
+    fn py_new(origin: PyPoint2D, direction: PyVector2D) -> PyResult<Self> {
+        Ok(PyAxis2D(
+            Axis2D::new(origin.0, direction.0).map_err(val_err)?,
+        ))
+    }
+
+    /// The axis origin.
+    fn origin(&self) -> PyPoint2D {
+        PyPoint2D(self.0.origin())
+    }
+
+    /// The unit direction of the axis.
+    fn direction(&self) -> PyVector2D {
+        PyVector2D(self.0.direction())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Axis2D(origin={}, direction={})",
+            coordinates_2d(self.0.origin()),
+            coordinates_2d(self.0.direction())
+        )
+    }
+}
+
+/// An orthonormal placement frame in the plane (origin + x/y directions).
+/// The frame is direct when y is x turned a quarter turn counter-clockwise.
+#[pyclass(name = "Frame2D", module = "geomcore", eq)]
+#[derive(Clone, PartialEq)]
+pub(crate) struct PyFrame2D(pub(crate) Frame2D);
+
+#[pymethods]
+impl PyFrame2D {
+    #[new]
+    /// Build a frame from an origin and the x and y directions (each
+    /// normalized internally; they must be orthogonal).
+    fn py_new(
+        origin: PyPoint2D,
+        x_direction: PyVector2D,
+        y_direction: PyVector2D,
+    ) -> PyResult<Self> {
+        Ok(PyFrame2D(
+            Frame2D::new(origin.0, x_direction.0, y_direction.0).map_err(val_err)?,
+        ))
+    }
+
+    /// Build a direct frame from an origin and an x direction.
+    #[staticmethod]
+    fn from_x(origin: PyPoint2D, x_direction: PyVector2D) -> PyResult<Self> {
+        Ok(PyFrame2D(
+            Frame2D::from_x(origin.0, x_direction.0).map_err(val_err)?,
+        ))
+    }
+
+    /// The world frame at the origin.
+    #[staticmethod]
+    fn world() -> Self {
+        PyFrame2D(Frame2D::WORLD)
+    }
+
+    /// The frame origin.
+    fn origin(&self) -> PyPoint2D {
+        PyPoint2D(self.0.origin())
+    }
+
+    /// The unit x direction.
+    fn x_direction(&self) -> PyVector2D {
+        PyVector2D(self.0.x_direction())
+    }
+
+    /// The unit y direction.
+    fn y_direction(&self) -> PyVector2D {
+        PyVector2D(self.0.y_direction())
+    }
+
+    /// Whether y is x turned a quarter turn counter-clockwise.
+    fn is_direct(&self) -> bool {
+        self.0.is_direct()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Frame2D(origin={}, x_direction={}, y_direction={})",
+            coordinates_2d(self.0.origin()),
+            coordinates_2d(self.0.x_direction()),
+            coordinates_2d(self.0.y_direction())
+        )
     }
 }
 
@@ -626,6 +727,29 @@ impl Coordinates for Vector3D {
     fn xyz(&self) -> (f64, f64, f64) {
         (self.x, self.y, self.z)
     }
+}
+
+impl Coordinates2D for Point2D {
+    fn xy(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+}
+
+impl Coordinates2D for Vector2D {
+    fn xy(&self) -> (f64, f64) {
+        (self.x, self.y)
+    }
+}
+
+/// Something with two coordinates, as `(x, y)` in a `__repr__`.
+pub(crate) trait Coordinates2D {
+    fn xy(&self) -> (f64, f64);
+}
+
+/// `(x, y)` as written in a `__repr__`.
+pub(crate) fn coordinates_2d(value: impl Coordinates2D) -> String {
+    let (x, y) = value.xy();
+    format!("({x}, {y})")
 }
 
 /// `(x, y, z)` as written in a `__repr__`.

@@ -22,6 +22,11 @@ pub(crate) struct PyPlane(pub(crate) Plane);
 
 #[pymethods]
 impl PyPlane {
+    /// The placement frame of the plane.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Plane(origin={}, normal={})",
@@ -201,6 +206,16 @@ pub(crate) struct PyCylinder(pub(crate) Cylinder);
 
 #[pymethods]
 impl PyCylinder {
+    /// The axis of the cylinder: its origin and unit direction.
+    fn axis(&self) -> PyAxis3D {
+        PyAxis3D(self.0.axis())
+    }
+
+    /// The placement frame of the cylinder.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Cylinder(origin={}, axis={}, radius={})",
@@ -386,6 +401,11 @@ pub(crate) struct PyCone(pub(crate) Cone);
 
 #[pymethods]
 impl PyCone {
+    /// The placement frame of the cone.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Cone(origin={}, axis={}, reference_radius={}, semi_angle={})",
@@ -577,6 +597,11 @@ pub(crate) struct PySphere(pub(crate) Sphere);
 
 #[pymethods]
 impl PySphere {
+    /// The placement frame of the sphere.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Sphere(center={}, radius={})",
@@ -761,6 +786,16 @@ pub(crate) struct PyTorus(pub(crate) Torus);
 
 #[pymethods]
 impl PyTorus {
+    /// The center of the torus.
+    fn center(&self) -> PyPoint3D {
+        PyPoint3D(self.0.center())
+    }
+
+    /// The placement frame of the torus.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Torus(center={}, axis={}, major_radius={}, minor_radius={})",

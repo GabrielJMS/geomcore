@@ -23,6 +23,11 @@ pub(crate) struct PyLine3D(pub(crate) Line3D);
 
 #[pymethods]
 impl PyLine3D {
+    /// The axis of the line: its origin and unit direction.
+    fn axis(&self) -> PyAxis3D {
+        PyAxis3D(self.0.axis())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Line3D(origin={}, direction={})",
@@ -182,6 +187,11 @@ pub(crate) struct PyCircle3D(pub(crate) Circle3D);
 
 #[pymethods]
 impl PyCircle3D {
+    /// The placement frame of the circle.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Circle3D(center={}, normal={}, radius={})",
@@ -389,6 +399,11 @@ pub(crate) struct PyEllipse3D(pub(crate) Ellipse3D);
 
 #[pymethods]
 impl PyEllipse3D {
+    /// The placement frame of the ellipse.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Ellipse3D(center={}, normal={}, major_radius={}, minor_radius={})",
@@ -609,6 +624,17 @@ pub(crate) struct PyParabola3D(pub(crate) Parabola3D);
 
 #[pymethods]
 impl PyParabola3D {
+    /// The apex of the parabola: its point of smallest radius, at the frame
+    /// origin.
+    fn apex(&self) -> PyPoint3D {
+        PyPoint3D(self.0.apex())
+    }
+
+    /// The placement frame of the parabola.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Parabola3D(apex={}, normal={}, focal={})",
@@ -777,6 +803,11 @@ pub(crate) struct PyHyperbola3D(pub(crate) Hyperbola3D);
 
 #[pymethods]
 impl PyHyperbola3D {
+    /// The placement frame of the hyperbola.
+    fn frame(&self) -> PyFrame3D {
+        PyFrame3D(self.0.frame())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Hyperbola3D(center={}, normal={}, major_radius={}, minor_radius={})",
@@ -1322,6 +1353,17 @@ pub(crate) struct PyLine2D(pub(crate) Line2D);
 
 #[pymethods]
 impl PyLine2D {
+    /// Build a 2D line from an axis.
+    #[staticmethod]
+    fn from_axis(axis: PyAxis2D) -> Self {
+        PyLine2D(Line2D::from_axis(axis.0))
+    }
+
+    /// The axis of the line: its origin and unit direction.
+    fn axis(&self) -> PyAxis2D {
+        PyAxis2D(self.0.axis())
+    }
+
     #[new]
     /// Build a 2D line from an origin and a direction (normalized internally).
     fn py_new(origin: PyPoint2D, direction: PyVector2D) -> PyResult<Self> {
@@ -1434,6 +1476,11 @@ pub(crate) struct PyCircle2D(pub(crate) Circle2D);
 
 #[pymethods]
 impl PyCircle2D {
+    /// The placement frame of the circle.
+    fn frame(&self) -> PyFrame2D {
+        PyFrame2D(self.0.frame())
+    }
+
     #[new]
     /// Build a 2D circle from its center and radius.
     fn py_new(center: PyPoint2D, radius: f64) -> PyResult<Self> {
