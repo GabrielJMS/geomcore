@@ -9,6 +9,13 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Surface curvature properties (#73): `curvatures(u, v, tol)` returns
+  principal curvatures with directions plus mean and Gaussian
+  curvature (`None` where the normal degenerates). Curvatures are
+  measured along the unit normal, negative bending away from it.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added
