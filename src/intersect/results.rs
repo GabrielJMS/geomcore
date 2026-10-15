@@ -93,8 +93,10 @@ pub struct CurveCurveOverlap {
 pub struct IntersectionCurve {
     /// The curve of contact.
     pub curve: Curve3D,
-    /// `true` where the surfaces graze along the curve. A numeric curve
-    /// is always `false`, because marching does not trace grazing curves.
+    /// `true` where the surfaces touch along the curve instead of crossing
+    /// it. A numeric curve is `true` where the surfaces' normals are
+    /// parallel along it, or so nearly that moving one surface by the
+    /// confusion distance makes them touch.
     pub tangent: bool,
 }
 
@@ -782,12 +784,24 @@ impl SurfaceSurfaceIntersection {
     /// A numeric result with the status of its search.
     pub(crate) fn numeric(
         curves: Vec<IntersectionCurve>,
+        contact_points: Vec<Point3D>,
         completeness: Completeness<SurfaceSurfaceRegion>,
     ) -> Self {
         SurfaceSurfaceIntersection {
             curves,
-            contact_points: Vec::new(),
+            contact_points,
             coincident: false,
+            method: IntersectionMethod::Numeric,
+            completeness,
+        }
+    }
+
+    /// A numeric result for two surfaces found to be the same surface.
+    pub(crate) fn numeric_coincident(completeness: Completeness<SurfaceSurfaceRegion>) -> Self {
+        SurfaceSurfaceIntersection {
+            curves: Vec::new(),
+            contact_points: Vec::new(),
+            coincident: true,
             method: IntersectionMethod::Numeric,
             completeness,
         }
@@ -808,7 +822,9 @@ impl SurfaceSurfaceIntersection {
         &self.curves
     }
 
-    /// The isolated points where the surfaces touch.
+    /// The isolated points where the surfaces touch. On the numeric path,
+    /// the points where marching found them touching without a curve of
+    /// contact running on.
     ///
     /// # Examples
     ///
@@ -826,6 +842,14 @@ impl SurfaceSurfaceIntersection {
 
     /// Whether the surfaces are the same surface.
     ///
+    /// On the numeric path this is found from samples: every sample of
+    /// each surface lies on the other, with the normals parallel. The
+    /// completeness is then [`Completeness::Sampled`]. Where only one
+    /// surface lies on the other (a patch on its whole surface), the
+    /// result is not coincident but
+    /// [`Incomplete`](Completeness::Incomplete), with a region covering
+    /// the patch.
+    ///
     /// # Examples
     ///
     /// ```
@@ -834,6 +858,12 @@ impl SurfaceSurfaceIntersection {
     /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     /// let result = plane.intersect(&sphere, Tolerance::DEFAULT);
     /// assert!(!result.is_coincident());
+    ///
+    /// // A sphere against its own B-spline form, found numerically.
+    /// let copy = sphere.to_bspline();
+    /// let result = sphere.intersect(&copy, Tolerance::DEFAULT);
+    /// assert!(result.is_coincident() && result.curves().is_empty());
+    /// assert_eq!(result.completeness(), &geomcore::Completeness::Sampled);
     /// ```
     pub fn is_coincident(&self) -> bool {
         self.coincident

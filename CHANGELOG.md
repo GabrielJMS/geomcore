@@ -183,8 +183,22 @@ Python:
   side adds its own parameter grid, and so do both sides when both
   surfaces are bounded (spheres, tori, B-splines). This replaces the
   parameter grid limited to `[-10, 10]` along unbounded directions, so an
-  intersection far from the parameter origin is found. Every marched
-  result reports `Sampled`.
+  intersection far from the parameter origin is found. A marched
+  result reports `Sampled`, or `Incomplete` where the surfaces lie on
+  each other (below).
+- Before seeding, marching checks whether a bounded surface lies on the
+  other (a 7 × 7 grid of its points within confusion, normals parallel):
+  surfaces lying on each other, such as a sphere and its `to_bspline()`,
+  come back coincident; a patch lying on a larger surface comes back
+  `Incomplete` with one `Unseparated` region over the patch. Where the
+  surfaces touch along a curve, the curve is traced along the direction
+  in which they keep touching and reported with `tangent` set; a touch
+  at a point is a contact point. Patches overlapping in part report an
+  `Unseparated` region around the overlap. A sphere against its own
+  `to_bspline()` takes 0.3 ms instead of 6.8 ms (and 2 spurious curves),
+  a B-spline sphere against itself 0.6 ms instead of 270 ms (and 35
+  curves); a plane tangent to a cylinder patch 0.1 ms instead of 1.9 ms
+  (and no curve).
 - A marching trace ends where it leaves the cube of side
   `Tolerance::MODEL_SIZE` centred on the origin, instead of after 2000
   steps: an unbounded curve now runs to the cube, and a long loop closes.

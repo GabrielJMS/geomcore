@@ -13,16 +13,29 @@
 //! - a cone of semi-angle 0.3 against a cylinder whose axis is parallel to
 //!   one of its generators (two curves running to the model-size cube).
 //!
-//! Every pair has no closed form, so `intersect` marches; the bench asserts
-//! it. Informational only, like `eval_throughput`; not a correctness gate.
+//! And pairs where the surfaces lie on each other or touch, which the
+//! coincidence check settles before marching or which trace a touching
+//! curve:
+//! - a sphere against its own B-spline form (coincident);
+//! - a cylinder against its B-spline patch over a whole turn and
+//!   `z` in `[0, 2]` (incomplete, the region covering the patch);
+//! - a plane against its own bilinear patch (likewise);
+//! - that B-spline sphere against itself (coincident);
+//! - the plane `x = 1` against that cylinder patch, which it touches along
+//!   a ruling (one curve, flagged tangent).
+//!
+//! Every pair has no closed form, so `intersect` runs the numeric search;
+//! the bench asserts it, and asserts each degenerate pair's answer outside
+//! the timed loop. Informational only, like `eval_throughput`; not a
+//! correctness gate.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::surfaces::BSplineSurface;
 use geomcore::{
-    Cone, Cylinder, Intersect, IntersectionMethod, Plane, Point3D, Sphere,
-    SurfaceSurfaceIntersection, Tolerance, Torus, Vector3D,
+    Completeness, Cone, Cylinder, IncompleteReason, Intersect, IntersectionMethod, Plane, Point3D,
+    Sphere, SurfaceSurfaceIntersection, Tolerance, Torus, Vector3D,
 };
 
 fn surface(height: impl Fn(f64, f64) -> f64) -> BSplineSurface {
@@ -75,15 +88,27 @@ fn extruded_wall() -> BSplineSurface {
     .unwrap()
 }
 
-fn assert_marched<A, B>(first: &A, second: &B, tol: Tolerance)
+fn assert_marched<A, B>(first: &A, second: &B, tol: Tolerance) -> SurfaceSurfaceIntersection
 where
     A: Intersect<B, Output = SurfaceSurfaceIntersection>,
 {
+    let result = first.intersect(second, tol);
     assert_eq!(
-        first.intersect(second, tol).method(),
+        result.method(),
         IntersectionMethod::Numeric,
         "a closed form now exists: the bench no longer measures marching"
     );
+    result
+}
+
+/// Asserts that the result reports one surface lying on the other: no
+/// curve, not coincident, and an unseparated region.
+fn assert_lies_on(result: &SurfaceSurfaceIntersection) {
+    assert!(result.curves().is_empty() && !result.is_coincident());
+    assert!(matches!(
+        result.completeness(),
+        Completeness::Incomplete { reason: IncompleteReason::Unseparated, regions } if regions.len() == 1
+    ));
 }
 
 fn bench_marching_intersection(c: &mut Criterion) {
@@ -124,7 +149,44 @@ fn bench_marching_intersection(c: &mut Criterion) {
     group.bench_function("cone_cylinder_unbounded", |b| {
         b.iter(|| black_box(black_box(&cone).intersect(&along_generator, tol)))
     });
+    bench_degenerate_pairs(&mut group, tol);
     group.finish();
+}
+
+fn bench_degenerate_pairs(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    tol: Tolerance,
+) {
+    let sphere = Sphere::new(Point3D::new(0.3, 0.2, 0.5), 0.8).unwrap();
+    let sphere_copy = sphere.to_bspline();
+    assert!(assert_marched(&sphere, &sphere_copy, tol).is_coincident());
+    group.bench_function("sphere_bspline_copy", |b| {
+        b.iter(|| black_box(black_box(&sphere).intersect(&sphere_copy, tol)))
+    });
+    let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let cylinder_patch = cylinder
+        .to_bspline_patch((0.0, std::f64::consts::TAU), (0.0, 2.0))
+        .unwrap();
+    assert_lies_on(&assert_marched(&cylinder, &cylinder_patch, tol));
+    group.bench_function("cylinder_own_patch", |b| {
+        b.iter(|| black_box(black_box(&cylinder).intersect(&cylinder_patch, tol)))
+    });
+    let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    let plane_patch = plane.to_bspline_patch((-1.0, 2.0), (0.0, 3.0)).unwrap();
+    assert_lies_on(&assert_marched(&plane, &plane_patch, tol));
+    group.bench_function("plane_own_patch", |b| {
+        b.iter(|| black_box(black_box(&plane).intersect(&plane_patch, tol)))
+    });
+    assert!(assert_marched(&sphere_copy, &sphere_copy, tol).is_coincident());
+    group.bench_function("bspline_sphere_itself", |b| {
+        b.iter(|| black_box(black_box(&sphere_copy).intersect(&sphere_copy, tol)))
+    });
+    let touching = Plane::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::X).unwrap();
+    let result = assert_marched(&touching, &cylinder_patch, tol);
+    assert!(result.curves().len() == 1 && result.curves()[0].tangent);
+    group.bench_function("plane_tangent_to_cylinder_patch", |b| {
+        b.iter(|| black_box(black_box(&touching).intersect(&cylinder_patch, tol)))
+    });
 }
 
 criterion_group!(benches, bench_marching_intersection);

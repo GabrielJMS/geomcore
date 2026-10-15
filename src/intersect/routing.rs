@@ -34,7 +34,7 @@ use crate::surfaces::{
     BSplineSurface, Cone, Cylinder, ElementarySurface, ParametricSurface, Plane, Sphere, Surface,
     Torus,
 };
-use crate::{Completeness, Point2D, Point3D};
+use crate::{Point2D, Point3D};
 
 /// Routed intersection: exact when a closed form exists, numeric otherwise.
 ///
@@ -606,14 +606,7 @@ where
             return from_exact_surface_surface(exact);
         }
     }
-    let curves = marching_intersection(a, b, tol)
-        .into_iter()
-        .map(|curve| IntersectionCurve {
-            curve: Curve3D::BSpline(curve),
-            tangent: false,
-        })
-        .collect();
-    SurfaceSurfaceIntersection::numeric(curves, Completeness::Sampled)
+    marching_intersection(a, b, tol)
 }
 
 /// Turns the exact intersection of two surface bases into the routed

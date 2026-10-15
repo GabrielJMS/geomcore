@@ -1160,7 +1160,7 @@ mod tests {
     use super::*;
 
     use crate::curves::{Curve3D, ParametricCurve3D, PointExtrema3D};
-    use crate::intersect::marching::marching_intersection;
+    use crate::intersect::marching::marched_curves;
     use crate::surfaces::{ElementarySurface, ParametricSurface};
 
     use crate::{
@@ -1333,7 +1333,7 @@ mod tests {
                 if curves.is_empty() || curves.iter().any(|(_, tangent)| *tangent) {
                     continue;
                 }
-                let traced = marching_intersection(a, b, TOL);
+                let traced = marched_curves(a, b, TOL);
                 assert!(
                     !traced.is_empty(),
                     "marching found nothing for {a:?} and {b:?}"

@@ -176,10 +176,35 @@ smaller than the iso-curve spacing can be missed.
     let curves = result.curves();   // BSpline curves where marched
     ```
 
-Marching is approximate by design — fitted curves, no tangency
-classification, no singular points. Where the surfaces touch instead
-of crossing, traces stop rather than turn onto the other branch. A
-wavy B-spline patch through a sphere, marched live below — one fitted
+Before seeding, a surface with bounded parameters is checked for lying
+on the other: a 7 × 7 grid of its points must lie within confusion of
+the other surface, with the normals parallel. Surfaces lying on each
+other, such as a sphere and its own `to_bspline()`, come back coincident
+(`Sampled`, since samples found it). A patch lying on a larger or
+unbounded surface, such as a cylinder and its `to_bspline_patch`, comes
+back `Incomplete` with one `Unseparated` region covering the patch, and
+no curves. Where the surfaces touch along a curve (a plane tangent to a
+cylinder patch along a ruling, a sphere inside a cylinder of its radius)
+the curve is traced along the direction in which they keep touching and
+reported with `tangent` set; a touch at a point is a contact point.
+
+Marching is approximate by design. Its limits:
+- the curves are fitted, to about 1e-4 at the default tolerance;
+- no singular points: a touch at a sphere's pole or a cone's apex is
+  not reported;
+- the coincidence check sees only a whole surface lying on the other:
+  two patches that overlap in part are marched; the seeds where they lie
+  on each other make the result `Incomplete` with an `Unseparated`
+  region around the overlap, but spurious curves may still cross it;
+- surfaces that coincide within confusion but whose normals differ by
+  more than the angular tolerance (a fitted copy rather than an exact
+  conversion) are marched as crossing surfaces;
+- where crossing curves touch each other, traces stop rather than turn
+  onto the other branch;
+- a loop that no seeding iso-curve crosses and that leaves no distance
+  minimum on either grid is missed.
+
+A wavy B-spline patch through a sphere, marched live below — one fitted
 loop in ~8 ms on the same machine (the loop arrives in the viewer as
 a sampled polyline until native B-spline types land,
 [viewer#5](https://github.com/geomcore/geomcore-viewer/issues/5);

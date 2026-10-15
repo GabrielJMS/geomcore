@@ -470,6 +470,44 @@ through the same routed `intersect` (direct marching call at the time):
 | cone × cone, parallel axes | ~4.4 ms | ~0.44 ms | ~0.40 ms |
 | torus × torus (grid seeds in all three) | ~1.04 ms | ~1.06 ms | ~1.39 ms |
 
+The same bench times pairs where the surfaces lie on each other or touch,
+and asserts each answer outside the timed loop:
+- `sphere_bspline_copy`: a sphere of radius 0.8 against its own rational
+  B-spline form (coincident);
+- `cylinder_own_patch`: a cylinder of radius 1 against its patch over a
+  whole turn and `z` in `[0, 2]` (incomplete, one region covering the
+  patch);
+- `plane_own_patch`: a plane against its own bilinear patch (likewise);
+- `bspline_sphere_itself`: that B-spline sphere against itself
+  (coincident);
+- `plane_tangent_to_cylinder_patch`: the plane `x = 1` against that
+  cylinder patch, which it touches along a ruling (one curve, tangent).
+
+Before the coincidence check, seeding cut every iso-curve of the
+elementary side with the other surface. On surfaces lying on each other
+each iso-curve lies on the other surface, so its search never separates
+and falls back to sampling: about 0.5–2 ms per iso-curve, for 24 to 48 of
+them. The plane touching the patch paid the same for its 22 lines
+touching the patch. Now a 7 × 7 grid of one surface's points is
+projected onto the other first, and the check stops at the first point
+off it, which costs crossing pairs one or two projections. Where the
+grids of seeds find only touches, the iso-curves are left out.
+
+Fastest of three runs, same settings (2026-10-15, machine loaded). The
+0.35 marching call, the routed call before the check, and the current
+one:
+
+| case | 0.35 | before | current |
+|---|---|---|---|
+| `sphere_bspline_copy` | ~6.8 ms (2 spurious curves) | ~787 ms (none, not coincident) | ~306 µs (coincident) |
+| `cylinder_own_patch` | ~2.0 ms (none) | ~469 ms (none, not coincident) | ~10 µs (one region) |
+| `plane_own_patch` | ~0.32 ms (none) | ~42 ms (none, not coincident) | ~5.7 µs (one region) |
+| `bspline_sphere_itself` | ~270 ms (35 spurious curves) | ~1.04 s (25 spurious curves) | ~568 µs (coincident) |
+| `plane_tangent_to_cylinder_patch` | ~1.9 ms (none) | ~24 ms (one curve, not tangent) | ~90 µs (one tangent curve) |
+
+The check makes the crossing pairs above at most a few percent slower,
+within the noise of the loaded machine.
+
 Reproduce with:
 
 ```sh
