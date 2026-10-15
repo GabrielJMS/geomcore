@@ -331,3 +331,144 @@ fn test_arc_across_the_seam_of_a_full_circle_splits_there() {
     assert_eq!(reverse.overlaps().len(), 2);
     assert_overlaps_within(&reverse, circle.bounds(), (-1.0, 1.0));
 }
+
+fn assert_hits_2d_lie_on<A: ParametricCurve2D, B: ParametricCurve2D>(
+    r: &CurveCurveIntersection2D,
+    first: &A,
+    second: &B,
+) {
+    for h in r.hits() {
+        assert!(first.eval_point(h.first_parameter).distance(h.point) <= 1e-7);
+        assert!(second.eval_point(h.second_parameter).distance(h.point) <= 1e-7);
+    }
+}
+
+#[test]
+fn test_2d_line_circle_hits() {
+    let line = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::new(1.0, 0.0)).unwrap();
+    let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    let r = circle.intersect(&line, TOL);
+    assert_eq!(r.hits().len(), 2);
+    assert_hits_2d_lie_on(&r, &circle, &line);
+    // The line first reads the same hits from its own side.
+    let from_line = line.intersect(&circle, TOL);
+    assert_eq!(from_line.hits().len(), 2);
+    assert_hits_2d_lie_on(&from_line, &line, &circle);
+    assert!((from_line.hits()[0].first_parameter - 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_2d_trimmed_segment_misses() {
+    let line = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::new(1.0, 0.0)).unwrap();
+    let segment = TrimmedCurve2D::new(line, 0.0, 1.0).unwrap();
+    let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    assert!(segment.intersect(&circle, TOL).is_empty());
+    assert!(circle.intersect(&segment, TOL).is_empty());
+}
+
+#[test]
+fn test_2d_tangent_circles() {
+    let a = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let b = Circle2D::new(Point2D::new(2.0, 0.0), 1.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert_eq!(r.hits().len(), 1);
+    assert_eq!(r.hits()[0].multiplicity, 2);
+    assert_hits_2d_lie_on(&r, &a, &b);
+}
+
+#[test]
+fn test_2d_tangent_line_has_multiplicity_two() {
+    let line = Line2D::new(Point2D::new(-5.0, 2.0), Vector2D::X).unwrap();
+    let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    let r = line.intersect(&circle, TOL);
+    assert_eq!(r.hits().len(), 1);
+    assert_eq!(r.hits()[0].multiplicity, 2);
+}
+
+#[test]
+fn test_2d_lines_cross_and_parallels_are_empty() {
+    let a = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    let b = Line2D::new(Point2D::new(1.0, -1.0), Vector2D::Y).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert_eq!(r.hits().len(), 1);
+    assert!((r.hits()[0].first_parameter - 1.0).abs() < 1e-12);
+    assert!((r.hits()[0].second_parameter - 1.0).abs() < 1e-12);
+    let parallel = Line2D::new(Point2D::new(0.0, 1.0), Vector2D::X).unwrap();
+    let r = a.intersect(&parallel, TOL);
+    assert!(r.is_empty() && r.is_complete());
+}
+
+#[test]
+fn test_2d_routed_hits_equal_exact_hits() {
+    let line = Line2D::new(Point2D::new(-5.0, 0.5), Vector2D::X).unwrap();
+    let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    let routed = Curve2D::from(line).intersect(&Curve2D::from(circle), TOL);
+    let LineCircle2DIntersection::Points((t1, p1), (t2, p2)) = line.intersect_exact(&circle, TOL)
+    else {
+        panic!("expected two hits");
+    };
+    assert_eq!(routed.hits()[0].first_parameter, t1);
+    assert_eq!(routed.hits()[0].point, p1);
+    assert_eq!(routed.hits()[1].first_parameter, t2);
+    assert_eq!(routed.hits()[1].point, p2);
+}
+
+#[test]
+fn test_2d_trimmed_arc_keeps_only_its_hits() {
+    let line = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::X).unwrap();
+    let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    // The arc across the seam keeps the hit at angle 0, not the one at PI.
+    let arc = TrimmedCurve2D::new(circle, -1.0, 1.0).unwrap();
+    let r = arc.intersect(&line, TOL);
+    assert_eq!(r.hits().len(), 1);
+    assert!(r.hits()[0].first_parameter.abs() < 1e-12);
+    assert!((r.hits()[0].second_parameter - 7.0).abs() < 1e-12);
+}
+
+#[test]
+fn test_2d_coincident_segments_with_opposite_directions() {
+    let a = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    let b = Line2D::new(Point2D::new(5.0, 0.0), -Vector2D::X).unwrap();
+    let first = TrimmedCurve2D::new(a, 0.0, 4.0).unwrap();
+    let second = TrimmedCurve2D::new(b, 0.0, 3.0).unwrap();
+    let r = first.intersect(&second, TOL);
+    assert_eq!(r.overlaps().len(), 1);
+    assert!(close(r.overlaps()[0].first_range, (2.0, 4.0)));
+    assert!(close(r.overlaps()[0].second_range, (1.0, 3.0)));
+    assert!(!r.overlaps()[0].same_direction);
+    let whole = a.intersect(&a, TOL);
+    assert_eq!(whole.overlaps().len(), 1);
+    assert_eq!(
+        whole.overlaps()[0].first_range,
+        (f64::NEG_INFINITY, f64::INFINITY)
+    );
+    assert!(whole.overlaps()[0].same_direction);
+}
+
+#[test]
+fn test_2d_coincident_arcs_overlap_on_both_sides_of_the_seam() {
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let a = TrimmedCurve2D::new(circle, 0.0, 5.0).unwrap();
+    let b = TrimmedCurve2D::new(circle, 4.0, 7.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert_eq!(r.overlaps().len(), 2);
+    let o = r.overlaps();
+    assert!(close(o[0].first_range, (0.0, 7.0 - TAU)));
+    assert!(close(o[0].second_range, (TAU, 7.0)));
+    assert!(close(o[1].first_range, (4.0, 5.0)));
+    assert!(close(o[1].second_range, (4.0, 5.0)));
+    assert!(o.iter().all(|piece| piece.same_direction));
+}
+
+#[test]
+fn test_2d_coincident_circles_in_opposite_directions() {
+    let a = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    let frame = Frame2D::new(Point2D::ORIGIN, Vector2D::X, Vector2D::new(0.0, -1.0)).unwrap();
+    let b = Circle2D::from_frame(frame, 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert_eq!(r.overlaps().len(), 1);
+    let o = r.overlaps()[0];
+    assert!(!o.same_direction);
+    assert!(close(o.first_range, a.bounds()));
+    assert!((o.second_range.1 - o.second_range.0 - TAU).abs() < 1e-9);
+}

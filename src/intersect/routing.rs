@@ -11,15 +11,19 @@
 //! parameter-range clipping that turns an exact intersection of the basis
 //! into the intersection of the trimmed curve.
 
+use crate::Point2D;
 use crate::Tolerance;
 use crate::curves::{
-    BSplineCurve3D, Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Hyperbola3D, Line3D, Parabola3D,
-    ParametricCurve3D, TrimmedCurve3D,
+    BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, ElementaryCurve, Ellipse3D, Hyperbola3D,
+    Line2D, Line3D, Parabola3D, ParametricCurve2D, ParametricCurve3D, TrimmedCurve2D,
+    TrimmedCurve3D,
 };
 use crate::intersect::{
-    CurveCurveHit, CurveCurveIntersection, CurveCurveOverlap, CurveSurfaceHit,
-    CurveSurfaceIntersection, ExactCurveCurveIntersection, ExactCurveSurfaceIntersection,
-    IntersectExact, intersect_curve_curve, intersect_curve_surface,
+    CircleCircle2DIntersection, CurveCurveHit, CurveCurveHit2D, CurveCurveIntersection,
+    CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceHit, CurveSurfaceIntersection,
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, IntersectExact,
+    LineCircle2DIntersection, LineLine2DIntersection, intersect_curve_curve,
+    intersect_curve_surface,
 };
 use crate::surfaces::{
     BSplineSurface, Cone, Cylinder, ElementarySurface, ParametricSurface, Plane, Sphere, Surface,
@@ -131,6 +135,20 @@ pub(crate) fn in_range(
     }
     let just_below = shifted - period;
     (just_below >= range.0 - tol.parametric).then_some(just_below)
+}
+
+/// The representative of `parameter` in `range`, when the curve is
+/// restricted to one (see [`in_range`]); the parameter itself when it is not.
+fn representative_in(
+    parameter: f64,
+    range: Option<(f64, f64)>,
+    period: Option<f64>,
+    tol: Tolerance,
+) -> Option<f64> {
+    match range {
+        Some(range) => in_range(parameter, range, period, tol),
+        None => Some(parameter),
+    }
 }
 
 /// Clips an overlap `(a, b)` to `range`, shifting by periods like
@@ -339,10 +357,8 @@ fn from_exact_curve_curve(
     (second, second_range): Operand,
     tol: Tolerance,
 ) -> CurveCurveIntersection {
-    let representative = |parameter, curve: &ElementaryCurve, range: Option<(f64, f64)>| match range
-    {
-        Some(range) => in_range(parameter, range, curve.period(), tol),
-        None => Some(parameter),
+    let representative = |parameter, curve: &ElementaryCurve, range| {
+        representative_in(parameter, range, curve.period(), tol)
     };
     match exact {
         ExactCurveCurveIntersection::Points(list) => {
@@ -383,17 +399,17 @@ fn from_exact_curve_curve(
 /// pieces when it crosses the first curve's seam), then each piece is
 /// mapped back onto the second curve and split where it crosses the
 /// second curve's seam.
-fn coincident_overlaps(
-    (first, first_range): (&ElementaryCurve, (f64, f64)),
-    (second, second_range): (&ElementaryCurve, (f64, f64)),
+fn coincident_overlaps<C: CoincidentCurve>(
+    (first, first_range): (&C, (f64, f64)),
+    (second, second_range): (&C, (f64, f64)),
     tol: Tolerance,
 ) -> Vec<CurveCurveOverlap> {
     let same_direction = runs_along(second, second_range, first);
     let on_first = mapped_range(second, second_range, first, same_direction, tol);
     let mut overlaps = Vec::new();
-    for piece in clip_range(on_first, first_range, first.period(), tol) {
+    for piece in clip_range(on_first, first_range, first.cycle_length(), tol) {
         let on_second = mapped_range(first, piece, second, same_direction, tol);
-        let pieces_on_second = clip_range(on_second, second_range, second.period(), tol);
+        let pieces_on_second = clip_range(on_second, second_range, second.cycle_length(), tol);
         if let [single] = pieces_on_second[..] {
             overlaps.push(CurveCurveOverlap {
                 first_range: piece,
@@ -406,8 +422,8 @@ fn coincident_overlaps(
         // part of each side back from its end points.
         for part in pieces_on_second {
             let end = |parameter: f64| {
-                let found = first.parameter_of(second.eval_point(parameter));
-                in_range(found, piece, first.period(), tol)
+                let found = first.parameter_of_image(second, parameter);
+                in_range(found, piece, first.cycle_length(), tol)
                     .unwrap_or(found)
                     .clamp(piece.0, piece.1)
             };
@@ -423,19 +439,69 @@ fn coincident_overlaps(
     overlaps
 }
 
+/// What the overlap mapping needs from a curve, in 2D or 3D, to relate it
+/// to a coincident curve of the same kind.
+pub(crate) trait CoincidentCurve {
+    /// The period, or `None` when the curve is not periodic.
+    fn cycle_length(&self) -> Option<f64>;
+
+    /// The parameter, on this curve, of the point `other` has at
+    /// `parameter`; `other` coincides with this curve.
+    fn parameter_of_image(&self, other: &Self, parameter: f64) -> f64;
+
+    /// Whether this curve at `parameter` and `other` at the same point
+    /// run the same way.
+    fn runs_with(&self, parameter: f64, other: &Self) -> bool;
+}
+
+impl CoincidentCurve for ElementaryCurve {
+    fn cycle_length(&self) -> Option<f64> {
+        self.period()
+    }
+
+    fn parameter_of_image(&self, other: &Self, parameter: f64) -> f64 {
+        self.parameter_of(other.eval_point(parameter))
+    }
+
+    fn runs_with(&self, parameter: f64, other: &Self) -> bool {
+        let image = other.parameter_of_image(self, parameter);
+        self.eval_derivative(parameter, 1)
+            .dot(other.eval_derivative(image, 1))
+            >= 0.0
+    }
+}
+
+impl CoincidentCurve for Curve2D {
+    fn cycle_length(&self) -> Option<f64> {
+        self.period()
+    }
+
+    fn parameter_of_image(&self, other: &Self, parameter: f64) -> f64 {
+        let point = other.eval_point(parameter);
+        match self {
+            Curve2D::Line(line) => line.parameter_of(point),
+            Curve2D::Circle(circle) => circle.parameter_of(point),
+        }
+    }
+
+    fn runs_with(&self, parameter: f64, other: &Self) -> bool {
+        let image = other.parameter_of_image(self, parameter);
+        self.eval_derivative(parameter, 1)
+            .dot(other.eval_derivative(image, 1))
+            >= 0.0
+    }
+}
+
 /// Whether the coincident curves `from` and `to` run the same way: the
 /// sign of the tangents' dot product at a sample of `range`.
-fn runs_along(from: &ElementaryCurve, range: (f64, f64), to: &ElementaryCurve) -> bool {
+fn runs_along<C: CoincidentCurve>(from: &C, range: (f64, f64), to: &C) -> bool {
     let sample = match (range.0.is_finite(), range.1.is_finite()) {
         (true, true) => 0.5 * (range.0 + range.1),
         (true, false) => range.0,
         (false, true) => range.1,
         (false, false) => 0.0,
     };
-    let image = to.parameter_of(from.eval_point(sample));
-    from.eval_derivative(sample, 1)
-        .dot(to.eval_derivative(image, 1))
-        >= 0.0
+    from.runs_with(sample, to)
 }
 
 /// The image of `range` of curve `from` on the coincident curve `to`, as a
@@ -445,15 +511,15 @@ fn runs_along(from: &ElementaryCurve, range: (f64, f64), to: &ElementaryCurve) -
 /// An infinite end maps to the infinity its direction gives on `to`. On a
 /// periodic curve the image starts at the image of the range's start in
 /// the direction of travel, and a full period maps to a full period.
-fn mapped_range(
-    from: &ElementaryCurve,
+fn mapped_range<C: CoincidentCurve>(
+    from: &C,
     range: (f64, f64),
-    to: &ElementaryCurve,
+    to: &C,
     along: bool,
     tol: Tolerance,
 ) -> (f64, f64) {
-    let image = |parameter: f64| to.parameter_of(from.eval_point(parameter));
-    let Some(period) = to.period() else {
+    let image = |parameter: f64| to.parameter_of_image(from, parameter);
+    let Some(period) = to.cycle_length() else {
         let end = |parameter: f64| {
             if parameter.is_finite() {
                 image(parameter)
@@ -466,7 +532,7 @@ fn mapped_range(
         let (start, finish) = (end(range.0), end(range.1));
         return (start.min(finish), start.max(finish));
     };
-    let full_period = from.period().unwrap_or(period);
+    let full_period = from.cycle_length().unwrap_or(period);
     if range.1 - range.0 >= full_period - tol.parametric {
         let start = image(range.0);
         return (start, start + period);
@@ -552,6 +618,177 @@ impl<X: CurveOperand, Y: CurveOperand> Intersect<TrimmedCurve3D<Y>> for TrimmedC
     #[inline]
     fn intersect(&self, other: &TrimmedCurve3D<Y>, tol: Tolerance) -> CurveCurveIntersection {
         route_curve_curve(self, other, tol)
+    }
+}
+
+/// How a 2D curve enters the router: its basis and the parameter range it
+/// is restricted to (`None` = the basis's own bounds).
+pub(crate) trait CurveOperand2D: ParametricCurve2D {
+    /// The basis and the restricting parameter range.
+    fn basis_and_range(&self) -> (Curve2D, Option<(f64, f64)>);
+}
+
+macro_rules! basis_operand_2d {
+    ($($curve:ty),*) => {$(
+        impl CurveOperand2D for $curve {
+            fn basis_and_range(&self) -> (Curve2D, Option<(f64, f64)>) {
+                ((*self).into(), None)
+            }
+        }
+    )*};
+}
+
+basis_operand_2d!(Line2D, Circle2D, Curve2D);
+
+impl<C: CurveOperand2D> CurveOperand2D for TrimmedCurve2D<C> {
+    /// A trimmed curve of a trimmed curve keeps the inner basis and the
+    /// outer range: the outer range lies within the inner one.
+    fn basis_and_range(&self) -> (Curve2D, Option<(f64, f64)>) {
+        let (basis, _) = self.basis().basis_and_range();
+        (basis, Some((self.first(), self.last())))
+    }
+}
+
+/// Intersects two 2D curves. Every pair has a closed form, so the result
+/// is exact and complete.
+#[inline]
+pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
+    a: &A,
+    b: &B,
+    tol: Tolerance,
+) -> CurveCurveIntersection2D {
+    let (first, first_range) = a.basis_and_range();
+    let (second, second_range) = b.basis_and_range();
+    let representative = |parameter, curve: &Curve2D, range| {
+        representative_in(parameter, range, curve.cycle_length(), tol)
+    };
+    let hit = |first_parameter, second_parameter, point: Point2D, multiplicity| {
+        Some(CurveCurveHit2D {
+            first_parameter: representative(first_parameter, &first, first_range)?,
+            second_parameter: representative(second_parameter, &second, second_range)?,
+            point,
+            multiplicity,
+        })
+    };
+    let hits: Vec<Option<CurveCurveHit2D>> = match (&first, &second) {
+        (Curve2D::Line(line), Curve2D::Line(other)) => match line.intersect_exact(other, tol) {
+            LineLine2DIntersection::Point(t, point, s) => vec![hit(t, s, point, 1)],
+            LineLine2DIntersection::Parallel => Vec::new(),
+            LineLine2DIntersection::Coincident => {
+                return coincidence_2d(first, first_range, second, second_range, tol);
+            }
+        },
+        (Curve2D::Line(line), Curve2D::Circle(circle)) => {
+            let on_circle = |point| circle.parameter_of(point);
+            match line.intersect_exact(circle, tol) {
+                LineCircle2DIntersection::Points((t, p), (u, q)) => {
+                    vec![hit(t, on_circle(p), p, 1), hit(u, on_circle(q), q, 1)]
+                }
+                LineCircle2DIntersection::Tangent(t, p) => vec![hit(t, on_circle(p), p, 2)],
+                LineCircle2DIntersection::Empty => Vec::new(),
+            }
+        }
+        (Curve2D::Circle(circle), Curve2D::Line(line)) => {
+            let on_circle = |point| circle.parameter_of(point);
+            match line.intersect_exact(circle, tol) {
+                LineCircle2DIntersection::Points((t, p), (u, q)) => {
+                    vec![hit(on_circle(p), t, p, 1), hit(on_circle(q), u, q, 1)]
+                }
+                LineCircle2DIntersection::Tangent(t, p) => vec![hit(on_circle(p), t, p, 2)],
+                LineCircle2DIntersection::Empty => Vec::new(),
+            }
+        }
+        (Curve2D::Circle(circle), Curve2D::Circle(other)) => {
+            let both = |point: Point2D, multiplicity| {
+                hit(
+                    circle.parameter_of(point),
+                    other.parameter_of(point),
+                    point,
+                    multiplicity,
+                )
+            };
+            match circle.intersect_exact(other, tol) {
+                CircleCircle2DIntersection::Points(p, q) => vec![both(p, 1), both(q, 1)],
+                CircleCircle2DIntersection::Tangent(p) => vec![both(p, 2)],
+                CircleCircle2DIntersection::Empty => Vec::new(),
+                CircleCircle2DIntersection::Coincident => {
+                    return coincidence_2d(first, first_range, second, second_range, tol);
+                }
+            }
+        }
+    };
+    CurveCurveIntersection2D::exact(hits.into_iter().flatten().collect(), Vec::new())
+}
+
+/// The result for two coincident 2D bases restricted to their ranges.
+fn coincidence_2d(
+    first: Curve2D,
+    first_range: Option<(f64, f64)>,
+    second: Curve2D,
+    second_range: Option<(f64, f64)>,
+    tol: Tolerance,
+) -> CurveCurveIntersection2D {
+    let first_range = first_range.unwrap_or(first.bounds());
+    let second_range = second_range.unwrap_or(second.bounds());
+    let overlaps = coincident_overlaps((&first, first_range), (&second, second_range), tol);
+    CurveCurveIntersection2D::exact(Vec::new(), overlaps)
+}
+
+/// Implements [`Intersect`] for every 2D curve of the list with every one
+/// of the list, the receiver read first.
+macro_rules! curve_curve_2d {
+    (@row $first:ty; [$($second:ty),*]) => {$(
+        impl Intersect<$second> for $first {
+            type Output = CurveCurveIntersection2D;
+
+            #[inline]
+            fn intersect(&self, other: &$second, tol: Tolerance) -> CurveCurveIntersection2D {
+                route_curve_curve_2d(self, other, tol)
+            }
+        }
+    )*};
+    ([$($first:ty),*]) => {
+        curve_curve_2d!(@all [$($first),*]; [$($first),*]);
+    };
+    (@all [$($first:ty),*]; $seconds:tt) => {$(
+        curve_curve_2d!(@row $first; $seconds);
+    )*};
+}
+
+curve_curve_2d!([Line2D, Circle2D, Curve2D]);
+
+/// Implements [`Intersect`] between a trimmed 2D curve over any operand and
+/// each 2D curve of the list, in both orders.
+macro_rules! trimmed_curve_curve_2d {
+    ($($curve:ty),*) => {$(
+        impl<X: CurveOperand2D> Intersect<$curve> for TrimmedCurve2D<X> {
+            type Output = CurveCurveIntersection2D;
+
+            #[inline]
+            fn intersect(&self, other: &$curve, tol: Tolerance) -> CurveCurveIntersection2D {
+                route_curve_curve_2d(self, other, tol)
+            }
+        }
+
+        impl<X: CurveOperand2D> Intersect<TrimmedCurve2D<X>> for $curve {
+            type Output = CurveCurveIntersection2D;
+
+            #[inline]
+            fn intersect(&self, other: &TrimmedCurve2D<X>, tol: Tolerance) -> CurveCurveIntersection2D {
+                route_curve_curve_2d(self, other, tol)
+            }
+        }
+    )*};
+}
+
+trimmed_curve_curve_2d!(Line2D, Circle2D, Curve2D);
+
+impl<X: CurveOperand2D, Y: CurveOperand2D> Intersect<TrimmedCurve2D<Y>> for TrimmedCurve2D<X> {
+    type Output = CurveCurveIntersection2D;
+
+    #[inline]
+    fn intersect(&self, other: &TrimmedCurve2D<Y>, tol: Tolerance) -> CurveCurveIntersection2D {
+        route_curve_curve_2d(self, other, tol)
     }
 }
 

@@ -111,19 +111,6 @@ fn sorted_by_first(mut hits: Vec<CurveCurveHit>) -> Vec<CurveCurveHit> {
     hits
 }
 
-// Consumed by the 2D curve-curve routing (Task 7).
-#[allow(dead_code)]
-fn swapped_overlaps(overlaps: Vec<CurveCurveOverlap>) -> Vec<CurveCurveOverlap> {
-    overlaps
-        .into_iter()
-        .map(|o| CurveCurveOverlap {
-            first_range: o.second_range,
-            second_range: o.first_range,
-            same_direction: o.same_direction,
-        })
-        .collect()
-}
-
 /// The multiplicity of a curve-surface hit: 2 when the curve's `tangent`
 /// is perpendicular to the surface `normal` within the angular tolerance
 /// for the hit's extent (the curve grazes the surface), 1 otherwise. A
@@ -330,6 +317,22 @@ impl CurveCurveIntersection {
 /// [`completeness`](Self::completeness) (always complete),
 /// [`is_complete`](Self::is_complete) and [`is_empty`](Self::is_empty).
 /// `Intersect::intersect` returns it.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Circle2D, Intersect, IntersectionMethod, Line2D, Point2D, Tolerance, Vector2D};
+///
+/// // The x axis crosses a circle of radius 2 at x = -2 and x = 2.
+/// let line = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::X).unwrap();
+/// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+/// let result = circle.intersect(&line, Tolerance::DEFAULT);
+/// // Hits come sorted by the circle's angle: x = 2 (angle 0) first, then x = -2.
+/// let along_line: Vec<f64> = result.hits().iter().map(|hit| hit.second_parameter).collect();
+/// assert!((along_line[0] - 7.0).abs() < 1e-9 && (along_line[1] - 3.0).abs() < 1e-9);
+/// assert_eq!(result.method(), IntersectionMethod::Exact);
+/// assert!(result.is_complete());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveCurveIntersection2D {
     hits: Vec<CurveCurveHit2D>,
@@ -339,7 +342,6 @@ pub struct CurveCurveIntersection2D {
 
 impl CurveCurveIntersection2D {
     /// An exact, complete result; the hits are sorted by first parameter.
-    #[allow(dead_code)] // Consumed by the routing of Task 7.
     pub(crate) fn exact(mut hits: Vec<CurveCurveHit2D>, overlaps: Vec<CurveCurveOverlap>) -> Self {
         hits.sort_by(|a, b| a.first_parameter.total_cmp(&b.first_parameter));
         CurveCurveIntersection2D {
@@ -349,47 +351,106 @@ impl CurveCurveIntersection2D {
         }
     }
 
-    /// The same result read from the other curve's side.
-    #[allow(dead_code)] // Consumed by the routing of Task 7.
-    pub(crate) fn swapped(self) -> Self {
-        let hits = self
-            .hits
-            .into_iter()
-            .map(|h| CurveCurveHit2D {
-                first_parameter: h.second_parameter,
-                second_parameter: h.first_parameter,
-                ..h
-            })
-            .collect();
-        CurveCurveIntersection2D::exact(hits, swapped_overlaps(self.overlaps))
-    }
-
-    /// The isolated hits, sorted by first parameter.
+    /// The isolated hits, sorted by first parameter. A hit outside a
+    /// trimmed curve's range is dropped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve2D;
+    /// use geomcore::{Circle2D, Intersect, Line2D, Point2D, Tolerance, Vector2D};
+    ///
+    /// // The segment covers x in [-5, -1], so only the near side is met.
+    /// let line = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::X).unwrap();
+    /// let segment = TrimmedCurve2D::new(line, 0.0, 4.0).unwrap();
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let result = segment.intersect(&circle, Tolerance::DEFAULT);
+    /// assert_eq!(result.hits().len(), 1);
+    /// assert!((result.hits()[0].first_parameter - 3.0).abs() < 1e-9);
+    /// ```
     pub fn hits(&self) -> &[CurveCurveHit2D] {
         &self.hits
     }
 
-    /// The ranges over which the curves coincide.
+    /// The ranges over which the curves coincide, with the same rules as
+    /// [`CurveCurveIntersection::overlaps`]: sorted by the start of the
+    /// first range, each range increasing and inside its curve's own range,
+    /// two pieces when an overlap crosses a closed curve's seam, and
+    /// `same_direction` telling whether the curves run the same way.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve2D;
+    /// use geomcore::{CurveCurveOverlap, Intersect, Line2D, Point2D, Tolerance, Vector2D};
+    ///
+    /// // Two segments of one line share x in [1, 2]; the second runs backwards.
+    /// let forward = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let backward = Line2D::new(Point2D::new(3.0, 0.0), -Vector2D::X).unwrap();
+    /// let first = TrimmedCurve2D::new(forward, 0.0, 2.0).unwrap();
+    /// let second = TrimmedCurve2D::new(backward, 0.0, 2.0).unwrap();
+    /// let result = first.intersect(&second, Tolerance::DEFAULT);
+    /// let overlap = result.overlaps()[0];
+    /// assert_eq!(overlap.first_range, (1.0, 2.0));
+    /// assert_eq!(overlap.second_range, (1.0, 2.0));
+    /// assert!(!overlap.same_direction);
+    /// ```
     pub fn overlaps(&self) -> &[CurveCurveOverlap] {
         &self.overlaps
     }
 
     /// Always [`IntersectionMethod::Exact`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, IntersectionMethod, Line2D, Point2D, Tolerance, Vector2D};
+    /// let a = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let b = Line2D::new(Point2D::ORIGIN, Vector2D::Y).unwrap();
+    /// assert_eq!(a.intersect(&b, Tolerance::DEFAULT).method(), IntersectionMethod::Exact);
+    /// ```
     pub fn method(&self) -> IntersectionMethod {
         IntersectionMethod::Exact
     }
 
     /// Always [`Completeness::Complete`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Completeness, Intersect, Line2D, Point2D, Tolerance, Vector2D};
+    /// let a = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let result = a.intersect(&a, Tolerance::DEFAULT);
+    /// assert_eq!(result.completeness(), &Completeness::Complete);
+    /// ```
     pub fn completeness(&self) -> &Completeness<CurveCurveRegion> {
         &self.completeness
     }
 
     /// Always `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Circle2D, Intersect, Point2D, Tolerance};
+    /// let a = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    /// let b = Circle2D::new(Point2D::new(5.0, 0.0), 1.0).unwrap();
+    /// assert!(a.intersect(&b, Tolerance::DEFAULT).is_complete());
+    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
 
     /// Whether no hit and no overlap was found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Intersect, Line2D, Point2D, Tolerance, Vector2D};
+    /// let a = Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap();
+    /// let b = Line2D::new(Point2D::new(0.0, 1.0), Vector2D::X).unwrap();
+    /// assert!(a.intersect(&b, Tolerance::DEFAULT).is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.hits.is_empty() && self.overlaps.is_empty()
     }
