@@ -97,6 +97,58 @@ pub trait ParametricSurface {
         )
     }
 
+    /// Unit normal `Su × Sv` at parameters `(u, v)`, or `None` where the
+    /// normal degenerates: a partial derivative vanishes or both run
+    /// parallel, as at a sphere's poles or a cone's apex.
+    ///
+    /// A partial at or below `tol.confusion` is numerical noise rather
+    /// than a direction; otherwise the sine of the angle between the
+    /// partials is checked against `tol.angular`, so the outcome agrees
+    /// with the crate's parallelism convention (see `CONTEXT.md`).
+    /// Raw partials stay available through
+    /// [`eval_d1`](Self::eval_d1); there is no `tangent` method.
+    ///
+    /// Note: [`Plane`] has an inherent zero-argument `normal()` returning
+    /// its constant normal, which shadows this method on that type; call
+    /// the parametric form as
+    /// [`ParametricSurface::normal`](Self::normal)`(&plane, u, v, tol)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ParametricSurface;
+    /// use geomcore::{Plane, Point3D, Sphere, Tolerance, Vector3D};
+    ///
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert_eq!(
+    ///     ParametricSurface::normal(&plane, 1.0, 2.0, Tolerance::DEFAULT),
+    ///     Some(Vector3D::Z)
+    /// );
+    ///
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let n = ParametricSurface::normal(&sphere, 0.0, 0.0, Tolerance::DEFAULT).unwrap();
+    /// assert_eq!(n, Vector3D::X);
+    /// // Degenerate at the poles: no normal.
+    /// use std::f64::consts::FRAC_PI_2;
+    /// assert_eq!(
+    ///     ParametricSurface::normal(&sphere, 0.0, FRAC_PI_2, Tolerance::DEFAULT),
+    ///     None
+    /// );
+    /// ```
+    fn normal(&self, u: f64, v: f64, tol: Tolerance) -> Option<Vector3D> {
+        let (_, [su, sv]) = self.eval_d1(u, v);
+        let (mu, mv) = (su.magnitude(), sv.magnitude());
+        if mu <= tol.confusion || mv <= tol.confusion {
+            return None;
+        }
+        let n = su.cross(sv);
+        if n.magnitude() <= tol.angular * mu * mv {
+            None
+        } else {
+            Some(n * (1.0 / n.magnitude()))
+        }
+    }
+
     /// Returns the surface's `u` parameter bounds as `(first, last)`.
     /// Unbounded surfaces use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn u_bounds(&self) -> (f64, f64);
@@ -1342,6 +1394,105 @@ mod tests {
             wrapped.eval_derivative(0.3, 0.4, 0, 1),
             torus().eval_derivative(0.3, 0.4, 0, 1)
         );
+    }
+
+    // ---- normal: unit Su x Sv, None where degenerate ----
+
+    #[test]
+    fn test_normal_plane_is_constant_z() {
+        let p = plane();
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricSurface::normal(&p, 1.0, -2.0, tol),
+            Some(Vector3D::Z)
+        );
+        assert_eq!(
+            ParametricSurface::normal(&p, 0.0, 0.0, tol),
+            Some(p.normal())
+        );
+    }
+
+    #[test]
+    fn test_normal_cylinder_points_radially_outward() {
+        let c = cylinder();
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricSurface::normal(&c, 0.0, 3.0, tol),
+            Some(Vector3D::X)
+        );
+    }
+
+    #[test]
+    fn test_normal_cone_matches_tilted_radial() {
+        let c = cone();
+        let tol = Tolerance::DEFAULT;
+        let n = ParametricSurface::normal(&c, 0.0, 0.0, tol).unwrap();
+        let expected = Vector3D::new(0.4f64.cos(), 0.0, -0.4f64.sin());
+        assert!((n - expected).magnitude() < 1e-12);
+        assert!((n.magnitude() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_normal_sphere_points_outward_and_fails_at_poles() {
+        let s = sphere();
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricSurface::normal(&s, 0.0, 0.0, tol),
+            Some(Vector3D::X)
+        );
+        assert_eq!(ParametricSurface::normal(&s, 0.0, FRAC_PI_2, tol), None);
+        assert_eq!(ParametricSurface::normal(&s, 1.0, -FRAC_PI_2, tol), None);
+    }
+
+    #[test]
+    fn test_normal_torus_points_outward_on_outer_equator() {
+        let t = torus();
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricSurface::normal(&t, 0.0, 0.0, tol),
+            Some(Vector3D::X)
+        );
+    }
+
+    #[test]
+    fn test_normal_cone_fails_at_apex() {
+        let c = cone();
+        let tol = Tolerance::DEFAULT;
+        let v_apex = -2.0 / 0.4f64.sin();
+        assert_eq!(ParametricSurface::normal(&c, 0.0, v_apex, tol), None);
+        assert_eq!(ParametricSurface::normal(&c, 2.0, v_apex, tol), None);
+    }
+
+    #[test]
+    fn test_normal_bspline_agrees_with_cross_of_partials() {
+        let b = bspline();
+        let tol = Tolerance::DEFAULT;
+        let (_, [su, sv]) = b.eval_d1(0.3, 0.4);
+        let expected = su.cross(sv) * (1.0 / su.cross(sv).magnitude());
+        assert_eq!(ParametricSurface::normal(&b, 0.3, 0.4, tol), Some(expected));
+    }
+
+    #[test]
+    fn test_normal_surface_enum_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let surfaces: Vec<Surface> = vec![
+            plane().into(),
+            cylinder().into(),
+            cone().into(),
+            sphere().into(),
+            torus().into(),
+            bspline().into(),
+        ];
+        for surface in &surfaces {
+            assert_eq!(
+                surface.normal(0.3, 0.2, tol),
+                ParametricSurface::normal(surface, 0.3, 0.2, tol)
+            );
+            let (_, [su, sv]) = surface.eval_d1(0.3, 0.2);
+            let n = surface.normal(0.3, 0.2, tol).unwrap();
+            let expected = su.cross(sv).normalized().unwrap();
+            assert!((n - expected).magnitude() < 1e-15);
+        }
     }
 
     // ---- elementary surfaces ----

@@ -22,6 +22,10 @@ A plane, sphere, cylinder or cone: an elementary surface whose implicit equation
 A point lies on a curve or surface when it is within `tol.confusion` of it, tested by `contains`.
 _Avoid_: inside (reserved for polygons), containment for anything other than this test
 
+**Normal**:
+The unit direction of `Su × Sv` at a surface's parameters. It is undefined where the derivatives vanish or run parallel, such as a sphere's poles or a cone's apex.
+_Avoid_: raw cross product for the normal, tangent for either partial derivative
+
 **B-spline**:
 A curve or surface defined by poles, knots and optional weights. Every curve or surface is either elementary or a B-spline.
 
