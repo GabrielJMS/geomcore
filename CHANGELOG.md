@@ -9,6 +9,14 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Curve local properties (#69): `tangent(u, tol)` returns the unit
+  direction of motion (`None` where the speed vanishes, as at a cusp),
+  `curvature(u, tol)` the turn rate per unit arc length, and
+  `curvature_center(u, tol)` the centre of the osculating circle
+  (`None` on a straight run or where the speed vanishes).
+
 ## [0.34.0] - 2026-10-13
 
 ### Added

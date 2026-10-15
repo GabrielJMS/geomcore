@@ -94,3 +94,13 @@ A closed 2D outline of straight segments. It encloses a region.
 **Point-in-polygon classification**:
 Deciding whether a point is inside the region a closed polygon encloses, outside it, or on its boundary: one of Inside, Outside, OnBoundary. A polygon never offers a `contains` method.
 _Avoid_: containment, contains (reserved for a point that lies on a curve or surface), point on polygon
+
+## Local properties
+
+**Tangent**:
+The unit direction of a curve's motion at a parameter. It is undefined where the speed vanishes, as at a cusp.
+_Avoid_: derivative (the un-normalized rate), tangent for a surface partial derivative
+
+**Curvature**:
+How fast a curve's tangent turns per unit of arc length. Its reciprocal is the radius of the osculating circle, whose centre is the centre of curvature; both are undefined on a straight run and where the speed vanishes.
+_Avoid_: bend, curvature for a surface (which has two principal values, not one)

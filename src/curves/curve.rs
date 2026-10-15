@@ -102,6 +102,83 @@ pub trait ParametricCurve3D {
         )
     }
 
+    /// Unit tangent `C'/|C'|` at parameter `u`, or `None` where the speed
+    /// vanishes (a cusp or a stop): a speed at or below `tol.confusion`
+    /// is numerical noise rather than a direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.tangent(5.0, Tolerance::DEFAULT), Some(Vector3D::X));
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(
+    ///     ParametricCurve3D::tangent(&circle, 0.0, Tolerance::DEFAULT),
+    ///     Some(Vector3D::Y)
+    /// );
+    /// ```
+    fn tangent(&self, u: f64, tol: Tolerance) -> Option<Vector3D> {
+        let (_, d1) = self.eval_d1(u);
+        let speed = d1.magnitude();
+        (speed > tol.confusion).then(|| d1 * (1.0 / speed))
+    }
+
+    /// Scalar curvature `|dT/ds|` at parameter `u`, or `None` where the
+    /// speed vanishes (a cusp or a stop). Zero on a straight line.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.curvature(5.0, Tolerance::DEFAULT), Some(0.0));
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(
+    ///     ParametricCurve3D::curvature(&circle, 0.0, Tolerance::DEFAULT),
+    ///     Some(0.5)
+    /// );
+    /// ```
+    fn curvature(&self, u: f64, tol: Tolerance) -> Option<f64> {
+        curvature_vector(self, u, tol).map(|k| k.magnitude())
+    }
+
+    /// Centre of curvature `P + N/κ` at parameter `u` (`N` the principal
+    /// normal, `κ` the curvature), or `None` where the speed vanishes or
+    /// the curve runs straight (`κ` is zero, so the centre is at infinity).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(
+    ///     ParametricCurve3D::curvature_center(&circle, 0.0, Tolerance::DEFAULT),
+    ///     Some(Point3D::ORIGIN)
+    /// );
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.curvature_center(5.0, Tolerance::DEFAULT), None);
+    /// ```
+    fn curvature_center(&self, u: f64, tol: Tolerance) -> Option<Point3D> {
+        let (p, _, _) = self.eval_d2(u);
+        let k = curvature_vector(self, u, tol)?;
+        let kappa = k.magnitude();
+        if kappa == 0.0 {
+            None
+        } else {
+            Some(p + k * (1.0 / (kappa * kappa)))
+        }
+    }
+
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn bounds(&self) -> (f64, f64);
@@ -176,6 +253,22 @@ pub trait ParametricCurve3D {
     fn as_elementary(&self) -> Option<ElementaryCurve> {
         None
     }
+}
+
+/// Curvature vector `dT/ds = (C'' − (C''·T)T)/|C'|²` at parameter `u`,
+/// or `None` where the speed vanishes (a cusp or a stop).
+fn curvature_vector<C: ParametricCurve3D + ?Sized>(
+    c: &C,
+    u: f64,
+    tol: Tolerance,
+) -> Option<Vector3D> {
+    let (_, d1, d2) = c.eval_d2(u);
+    let speed = d1.magnitude();
+    if speed <= tol.confusion {
+        return None;
+    }
+    let t = d1 * (1.0 / speed);
+    Some((d2 - t * d2.dot(t)) * (1.0 / (speed * speed)))
 }
 
 /// Distance extrema from a point to a 3D curve: what a
@@ -1175,5 +1268,105 @@ mod tests {
     #[test]
     fn test_bspline_curve_is_not_elementary() {
         assert_eq!(Curve3D::from(bspline()).as_elementary(), None);
+    }
+
+    // ---- tangent / curvature / centre ----
+
+    fn cusp() -> BSplineCurve3D {
+        // Quadratic Bezier out to (1,0,0) and back: the speed vanishes
+        // exactly at u = 0.5 while the second derivative does not.
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::ORIGIN,
+        ];
+        BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap()
+    }
+
+    fn numeric_curvature<C: ParametricCurve3D>(c: &C, u: f64) -> f64 {
+        let h = 1e-6;
+        let t0 = c.eval_derivative(u - h, 1).normalized().unwrap();
+        let t1 = c.eval_derivative(u + h, 1).normalized().unwrap();
+        ((t1 - t0) * (1.0 / (2.0 * h))).magnitude() / c.eval_derivative(u, 1).magnitude()
+    }
+
+    #[test]
+    fn test_tangent_is_unit_along_motion() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricCurve3D::tangent(&line(), 5.0, tol),
+            Some(Vector3D::X)
+        );
+        assert_eq!(
+            ParametricCurve3D::tangent(&circle(), 0.0, tol),
+            Some(Vector3D::Y)
+        );
+        assert_eq!(ParametricCurve3D::tangent(&cusp(), 0.5, tol), None);
+    }
+
+    #[test]
+    fn test_curvature_line_zero_circle_inverse_radius_cusp_none() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(ParametricCurve3D::curvature(&line(), 5.0, tol), Some(0.0));
+        assert_eq!(ParametricCurve3D::curvature(&circle(), 0.0, tol), Some(0.5));
+        assert_eq!(ParametricCurve3D::curvature(&cusp(), 0.5, tol), None);
+    }
+
+    #[test]
+    fn test_curvature_center_circle_origin_line_none_cusp_none() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricCurve3D::curvature_center(&circle(), 0.0, tol),
+            Some(Point3D::ORIGIN)
+        );
+        assert_eq!(ParametricCurve3D::curvature_center(&line(), 5.0, tol), None);
+        assert_eq!(ParametricCurve3D::curvature_center(&cusp(), 0.5, tol), None);
+    }
+
+    #[test]
+    fn test_ellipse_vertex_curvature_matches_closed_form() {
+        // Vertex (a, 0): k = a/b^2, centre at (a - b^2/a, 0, 0).
+        let tol = Tolerance::DEFAULT;
+        let e = ellipse();
+        let k = ParametricCurve3D::curvature(&e, 0.0, tol).unwrap();
+        assert!((k - 3.0 / 1.5f64.powi(2)).abs() < 1e-12);
+        let c = ParametricCurve3D::curvature_center(&e, 0.0, tol).unwrap();
+        assert!((c - Point3D::new(3.0 - 1.5f64.powi(2) / 3.0, 0.0, 0.0)).magnitude() < 1e-12);
+    }
+
+    #[test]
+    fn test_curvature_matches_finite_differences() {
+        let tol = Tolerance::DEFAULT;
+        for (curve, u) in [
+            (Curve3D::from(parabola()), 0.5),
+            (Curve3D::from(hyperbola()), 0.5),
+            (Curve3D::from(bspline()), 0.5),
+        ] {
+            let k = curve.curvature(u, tol).unwrap();
+            assert!(
+                (k - numeric_curvature(&curve, u)).abs() < 1e-6,
+                "u = {u}: {k}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_curve3d_enum_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let curves: Vec<Curve3D> = vec![
+            line().into(),
+            circle().into(),
+            ellipse().into(),
+            parabola().into(),
+            hyperbola().into(),
+            bspline().into(),
+        ];
+        for curve in &curves {
+            let t = curve.tangent(0.5, tol).unwrap();
+            let expected = curve.eval_d1(0.5).1.normalized().unwrap();
+            assert!((t - expected).magnitude() < 1e-15);
+            assert!(curve.curvature(0.5, tol).is_some());
+        }
+        assert_eq!(cusp().tangent(0.5, tol), None);
     }
 }
