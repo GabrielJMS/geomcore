@@ -1,6 +1,6 @@
 //! Exact intersection result types.
 //!
-//! [`Intersect::intersect`] on two elementary curves or surfaces returns one
+//! [`IntersectExact::intersect_exact`] on two elementary curves or surfaces returns one
 //! of these enums: the intersecting geometry on success, or an explicit
 //! classification when the pair is tangent, disjoint, parallel, or
 //! coincident. Tangency and coincidence are decided with
@@ -10,8 +10,8 @@
 //! When the types are only known at run time, the same call on
 //! [`crate::surfaces::Surface`], [`crate::curves::Curve3D`] or their
 //! elementary enums returns a general result instead:
-//! [`SurfaceIntersection`], [`CurveSurfaceIntersection`] or
-//! [`CurveCurveIntersection`].
+//! [`ExactSurfaceIntersection`], [`ExactCurveSurfaceIntersection`] or
+//! [`ExactCurveCurveIntersection`].
 
 use crate::{
     Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Plane, Point2D, Point3D, Vector3D,
@@ -35,7 +35,8 @@ pub use curve_curve_hull::{CurveCurveExtrema, CurveCurveHits, CurveCurveRegion};
 pub use curve_surface::intersect_curve_surface;
 pub use curve_surface_hull::{CurveSurfaceHits, CurveSurfaceRegion};
 pub use dispatch::{
-    CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
+    InlineList, IntersectExact,
 };
 pub use marching::marching_intersection;
 
@@ -635,10 +636,10 @@ pub enum ConicSurfaceIntersection {
 /// # Examples
 ///
 /// ```
-/// use geomcore::{ConicConicIntersection, Ellipse3D, Frame3D, Hyperbola3D, Intersect, Tolerance};
+/// use geomcore::{ConicConicIntersection, Ellipse3D, Frame3D, Hyperbola3D, IntersectExact, Tolerance};
 /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 2.0).unwrap();
 /// let hyperbola = Hyperbola3D::from_frame(Frame3D::WORLD, 1.0, 0.5).unwrap();
-/// match ellipse.intersect(&hyperbola, Tolerance::DEFAULT) {
+/// match ellipse.intersect_exact(&hyperbola, Tolerance::DEFAULT) {
 ///     // The branch x > 0 meets the ellipse at (2.4739, ±1.1314).
 ///     ConicConicIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
 ///     other => panic!("expected two hits, got {other:?}"),

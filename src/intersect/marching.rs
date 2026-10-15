@@ -38,7 +38,7 @@ use crate::{Point3D, Tolerance, Vector3D};
 /// The fits are APPROXIMATIONS (interpolation error, typically ~1e-4 at
 /// default tolerance — assert residuals, not containment): exact
 /// classification stays with the exact intersection
-/// ([`Intersect::intersect`](crate::Intersect::intersect)). Likewise
+/// ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact)). Likewise
 /// no tangency classification (grazing pairs may trace partially or not
 /// at all), no marching through singular points (poles, apexes), and,
 /// unless both surfaces are B-splines, a fixed seed grid (a loop that

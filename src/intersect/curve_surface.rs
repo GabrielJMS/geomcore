@@ -22,7 +22,7 @@ use crate::surfaces::ParametricSurface;
 /// is singular; their `surface_params` are the projection's.
 /// Unbounded curves seed `[-10, 10]`. Overlapping pairs yield dense hit
 /// sets along the overlap — use the exact intersection
-/// ([`Intersect::intersect`](crate::Intersect::intersect)) when
+/// ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact)) when
 /// classification (tangent, coincident) matters.
 ///
 /// The hits are [`Completeness::Sampled`](crate::Completeness::Sampled):
@@ -196,7 +196,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Intersect, Line3D, LineQuadricIntersection, Point3D, Sphere, Vector3D};
+    use crate::{IntersectExact, Line3D, LineQuadricIntersection, Point3D, Sphere, Vector3D};
 
     #[test]
     fn test_generic_line_sphere_matches_exact() {
@@ -208,7 +208,7 @@ mod tests {
         assert!((hits[0].curve_param + 2.0).abs() < 1e-9);
         assert!((hits[1].curve_param - 2.0).abs() < 1e-9);
         // Cross-check against the exact intersection.
-        match line.intersect(&sphere, tol) {
+        match line.intersect_exact(&sphere, tol) {
             LineQuadricIntersection::TwoPoints((t1, _), (t2, _)) => {
                 assert!((hits[0].curve_param - t1).abs() < 1e-9);
                 assert!((hits[1].curve_param - t2).abs() < 1e-9);

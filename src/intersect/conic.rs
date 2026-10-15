@@ -31,8 +31,8 @@ use crate::math::{
 };
 use crate::surfaces::ParametricSurface;
 use crate::{
-    Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, InlineList, Intersect, Parabola3D,
-    Plane, Point3D, Sphere, Tolerance, Vector3D,
+    Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, InlineList, IntersectExact,
+    Parabola3D, Plane, Point3D, Sphere, Tolerance, Vector3D,
 };
 
 /// The shape of a conic in its own frame: what its parametrization
@@ -572,15 +572,15 @@ fn point_tolerance(p: Point3D, tol: Tolerance) -> Tolerance {
     }
 }
 
-/// Implements [`Intersect`] between two conics with
+/// Implements [`IntersectExact`] between two conics with
 /// [`intersect_conic_conic`].
 macro_rules! conic_conic {
     ($($a:ty => $b:ty),* $(,)?) => {$(
-        impl Intersect<$b> for $a {
+        impl IntersectExact<$b> for $a {
             type Output = ConicConicIntersection;
 
             /// Intersects with another conic; see [`ConicConicIntersection`].
-            fn intersect(&self, other: &$b, tol: Tolerance) -> ConicConicIntersection {
+            fn intersect_exact(&self, other: &$b, tol: Tolerance) -> ConicConicIntersection {
                 intersect_conic_conic(self, other, tol)
             }
         }
@@ -837,14 +837,14 @@ mod tests {
     /// order is reversed.
     fn conic_hits<A, B>(first: &A, second: &B) -> Vec<CurveCurveHit>
     where
-        A: Conic + Intersect<B, Output = ConicConicIntersection>,
-        B: Conic + Intersect<A, Output = ConicConicIntersection>,
+        A: Conic + IntersectExact<B, Output = ConicConicIntersection>,
+        B: Conic + IntersectExact<A, Output = ConicConicIntersection>,
     {
         let tol = Tolerance::DEFAULT;
-        let ConicConicIntersection::Hits(hits) = first.intersect(second, tol) else {
+        let ConicConicIntersection::Hits(hits) = first.intersect_exact(second, tol) else {
             panic!("expected hits");
         };
-        let ConicConicIntersection::Hits(mut back) = second.intersect(first, tol) else {
+        let ConicConicIntersection::Hits(mut back) = second.intersect_exact(first, tol) else {
             panic!("expected hits the other way round");
         };
         back.sort_by(|p, q| p.second_param.total_cmp(&q.second_param));
@@ -966,7 +966,7 @@ mod tests {
         // An ellipse meeting only the mirror branch.
         let left = ellipse((-3.0, 0.0), Vector3D::X, 2.5, 1.0);
         assert_eq!(
-            left.intersect(&h, Tolerance::DEFAULT),
+            left.intersect_exact(&h, Tolerance::DEFAULT),
             ConicConicIntersection::Empty
         );
     }
@@ -1028,16 +1028,28 @@ mod tests {
     fn test_same_and_parallel_conics() {
         let tol = Tolerance::DEFAULT;
         let p = parabola((1.0, 2.0), Vector3D::new(1.0, 1.0, 0.0), 0.5);
-        assert_eq!(p.intersect(&p, tol), ConicConicIntersection::Coincident);
+        assert_eq!(
+            p.intersect_exact(&p, tol),
+            ConicConicIntersection::Coincident
+        );
         let h = hyperbola((1.0, 2.0), Vector3D::new(1.0, 1.0, 0.0), 2.0, 1.0);
-        assert_eq!(h.intersect(&h, tol), ConicConicIntersection::Coincident);
+        assert_eq!(
+            h.intersect_exact(&h, tol),
+            ConicConicIntersection::Coincident
+        );
         // The mirror branch is another curve.
         let mirror = hyperbola((1.0, 2.0), -Vector3D::new(1.0, 1.0, 0.0), 2.0, 1.0);
-        assert_eq!(h.intersect(&mirror, tol), ConicConicIntersection::Empty);
+        assert_eq!(
+            h.intersect_exact(&mirror, tol),
+            ConicConicIntersection::Empty
+        );
         // A circle and the ellipse that is the same circle.
         let c = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let round = ellipse((0.0, 0.0), Vector3D::Y, 2.0, 2.0);
-        assert_eq!(c.intersect(&round, tol), ConicConicIntersection::Coincident);
+        assert_eq!(
+            c.intersect_exact(&round, tol),
+            ConicConicIntersection::Coincident
+        );
         // Distinct parallel planes.
         let lifted = Parabola3D::new(
             Point3D::new(1.0, 2.0, 0.5),
@@ -1046,7 +1058,10 @@ mod tests {
             0.5,
         )
         .unwrap();
-        assert_eq!(p.intersect(&lifted, tol), ConicConicIntersection::Empty);
+        assert_eq!(
+            p.intersect_exact(&lifted, tol),
+            ConicConicIntersection::Empty
+        );
     }
 
     #[test]
@@ -1073,6 +1088,6 @@ mod tests {
         assert_hits(conic_hits(&e, &leaving), &[(3.0, 0.0, 1)]);
         // Missing the line the planes share.
         let away = Circle3D::new(Point3D::new(0.0, 0.0, 5.0), Vector3D::X, 1.0).unwrap();
-        assert_eq!(e.intersect(&away, tol), ConicConicIntersection::Empty);
+        assert_eq!(e.intersect_exact(&away, tol), ConicConicIntersection::Empty);
     }
 }

@@ -11,7 +11,7 @@ use pyo3::exceptions::{PyDeprecationWarning, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
-use geomcore::Intersect;
+use geomcore::IntersectExact;
 use geomcore::curves::{
     BSplineCurve3D, Circle2D, Circle3D, Curve2D, Curve3D, Ellipse3D, Hyperbola3D, Line2D, Line3D,
     Parabola3D, ParametricCurve3D, PointExtrema2D, PointExtrema3D, PointParametrization,
@@ -870,7 +870,7 @@ impl PyPlane {
         other: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             PlanePlaneIntersection::Line(l) => Ok((
                 "line".to_string(),
                 PyLine3D(l).into_pyobject(py)?.into_any().unbind(),
@@ -886,7 +886,7 @@ impl PyPlane {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&sphere.0, tol) {
+        match self.0.intersect_exact(&sphere.0, tol) {
             PlaneSphereIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -905,7 +905,7 @@ impl PyPlane {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cylinder.0, tol) {
+        match self.0.intersect_exact(&cylinder.0, tol) {
             PlaneCylinderIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -938,7 +938,7 @@ impl PyPlane {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cone.0, tol) {
+        match self.0.intersect_exact(&cone.0, tol) {
             PlaneConeIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1217,7 +1217,7 @@ impl PyCylinder {
         other: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             CylinderCylinderIntersection::TwoLines(l1, l2) => Ok((
                 "two_lines".to_string(),
                 (
@@ -1498,7 +1498,7 @@ impl PyCone {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cylinder.0, tol) {
+        match self.0.intersect_exact(&cylinder.0, tol) {
             ConeCylinderIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -1516,7 +1516,7 @@ impl PyCone {
         other: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             ConeConeIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1797,7 +1797,7 @@ impl PySphere {
         other: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             SphereSphereIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1817,7 +1817,7 @@ impl PySphere {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cylinder.0, tol) {
+        match self.0.intersect_exact(&cylinder.0, tol) {
             SphereCylinderIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -1843,7 +1843,7 @@ impl PySphere {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cone.0, tol) {
+        match self.0.intersect_exact(&cone.0, tol) {
             SphereConeIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -2137,7 +2137,7 @@ impl PyTorus {
         plane: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&plane.0, tol) {
+        match self.0.intersect_exact(&plane.0, tol) {
             TorusPlaneIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -2160,7 +2160,7 @@ impl PyTorus {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&sphere.0, tol) {
+        match self.0.intersect_exact(&sphere.0, tol) {
             TorusSphereIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -2183,7 +2183,7 @@ impl PyTorus {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cylinder.0, tol) {
+        match self.0.intersect_exact(&cylinder.0, tol) {
             TorusCylinderIntersection::TwoCircles(c1, c2) => {
                 Ok(("two_circles".to_string(), circles_to_py(py, c1, c2)?))
             }
@@ -2202,7 +2202,7 @@ impl PyTorus {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&cone.0, tol) {
+        match self.0.intersect_exact(&cone.0, tol) {
             TorusConeIntersection::Rings(rings) => Ok((
                 "rings".to_string(),
                 rings
@@ -2224,7 +2224,7 @@ impl PyTorus {
         other: &PyTorus,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             TorusTorusIntersection::Circle(c) => Ok((
                 "circle".to_string(),
                 PyCircle3D(c).into_pyobject(py)?.into_any().unbind(),
@@ -3584,7 +3584,7 @@ impl PyLine3D {
         plane: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&plane.0, tol) {
+        match self.0.intersect_exact(&plane.0, tol) {
             LinePlaneIntersection::Point(t, p) => Ok((
                 "point".to_string(),
                 (t, PyPoint3D(p).into_pyobject(py)?.into_any().unbind())
@@ -3603,7 +3603,7 @@ impl PyLine3D {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        quadric_hit_to_py(py, self.0.intersect(&sphere.0, tol))
+        quadric_hit_to_py(py, self.0.intersect_exact(&sphere.0, tol))
     }
 
     fn cylinder_result(
@@ -3612,7 +3612,7 @@ impl PyLine3D {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        quadric_hit_to_py(py, self.0.intersect(&cylinder.0, tol))
+        quadric_hit_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
     }
 
     fn cone_result(
@@ -3621,7 +3621,7 @@ impl PyLine3D {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        quadric_hit_to_py(py, self.0.intersect(&cone.0, tol))
+        quadric_hit_to_py(py, self.0.intersect_exact(&cone.0, tol))
     }
 
     fn line_result(
@@ -3630,7 +3630,7 @@ impl PyLine3D {
         other: &PyLine3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             LineLine3DIntersection::Point(s, p, t) => Ok((
                 "point".to_string(),
                 (s, PyPoint3D(p).into_pyobject(py)?.into_any().unbind(), t)
@@ -3661,7 +3661,7 @@ impl PyLine3D {
                 .into_pyobject(py)
                 .map(|o| o.into_any().unbind())
         }
-        match self.0.intersect(&circle.0, tol) {
+        match self.0.intersect_exact(&circle.0, tol) {
             LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => Ok((
                 "points".to_string(),
                 (hit(py, t1, p1)?, hit(py, t2, p2)?)
@@ -3680,7 +3680,7 @@ impl PyLine3D {
         ellipse: &PyEllipse3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        line_conic_to_py(py, self.0.intersect(&ellipse.0, tol))
+        line_conic_to_py(py, self.0.intersect_exact(&ellipse.0, tol))
     }
 
     fn parabola_result(
@@ -3689,7 +3689,7 @@ impl PyLine3D {
         parabola: &PyParabola3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        line_conic_to_py(py, self.0.intersect(&parabola.0, tol))
+        line_conic_to_py(py, self.0.intersect_exact(&parabola.0, tol))
     }
 
     fn hyperbola_result(
@@ -3698,7 +3698,7 @@ impl PyLine3D {
         hyperbola: &PyHyperbola3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        line_conic_to_py(py, self.0.intersect(&hyperbola.0, tol))
+        line_conic_to_py(py, self.0.intersect_exact(&hyperbola.0, tol))
     }
 
     fn torus_result(
@@ -3707,7 +3707,7 @@ impl PyLine3D {
         torus: &PyTorus,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        line_torus_to_py(py, self.0.intersect(&torus.0, tol))
+        line_torus_to_py(py, self.0.intersect_exact(&torus.0, tol))
     }
 }
 
@@ -4051,7 +4051,7 @@ impl PyCircle3D {
         other: &PyCircle3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             CircleCircle3DIntersection::Points(p1, p2) => Ok((
                 "points".to_string(),
                 (
@@ -4078,7 +4078,7 @@ impl PyCircle3D {
         ellipse: &PyEllipse3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect(&ellipse.0, tol))
+        conic_conic_to_py(py, self.0.intersect_exact(&ellipse.0, tol))
     }
 
     fn parabola_result(
@@ -4087,7 +4087,7 @@ impl PyCircle3D {
         parabola: &PyParabola3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect(&parabola.0, tol))
+        conic_conic_to_py(py, self.0.intersect_exact(&parabola.0, tol))
     }
 
     fn hyperbola_result(
@@ -4096,7 +4096,7 @@ impl PyCircle3D {
         hyperbola: &PyHyperbola3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect(&hyperbola.0, tol))
+        conic_conic_to_py(py, self.0.intersect_exact(&hyperbola.0, tol))
     }
 
     fn plane_result(
@@ -4105,7 +4105,7 @@ impl PyCircle3D {
         plane: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect(&plane.0, tol))
+        circle_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
     }
 
     fn sphere_result(
@@ -4114,7 +4114,7 @@ impl PyCircle3D {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect(&sphere.0, tol))
+        circle_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
     }
 
     fn cylinder_result(
@@ -4123,7 +4123,7 @@ impl PyCircle3D {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
+        circle_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
     }
 
     fn cone_result(
@@ -4132,7 +4132,7 @@ impl PyCircle3D {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        circle_surface_to_py(py, self.0.intersect(&cone.0, tol))
+        circle_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
     }
 }
 
@@ -4334,10 +4334,10 @@ impl PyEllipse3D {
             PyCone => |o| self.cone_result(py, &o, tol),
             PySphere => |o| self.sphere_result(py, &o, tol),
             PyLine3D => |o| o.ellipse_result(py, self, tol),
-            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
         })
     }
 
@@ -4438,7 +4438,7 @@ impl PyEllipse3D {
         plane: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&plane.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
     }
 
     fn sphere_result(
@@ -4447,7 +4447,7 @@ impl PyEllipse3D {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&sphere.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
     }
 
     fn cylinder_result(
@@ -4456,7 +4456,7 @@ impl PyEllipse3D {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
     }
 
     fn cone_result(
@@ -4465,7 +4465,7 @@ impl PyEllipse3D {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&cone.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
     }
 
     fn ellipse_result(
@@ -4474,7 +4474,7 @@ impl PyEllipse3D {
         other: &PyEllipse3D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_conic_to_py(py, self.0.intersect(&other.0, tol))
+        conic_conic_to_py(py, self.0.intersect_exact(&other.0, tol))
     }
 }
 
@@ -4625,10 +4625,10 @@ impl PyParabola3D {
             PyCone => |o| self.cone_result(py, &o, tol),
             PySphere => |o| self.sphere_result(py, &o, tol),
             PyLine3D => |o| o.parabola_result(py, self, tol),
-            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
         })
     }
 
@@ -4714,7 +4714,7 @@ impl PyParabola3D {
         plane: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&plane.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
     }
 
     fn sphere_result(
@@ -4723,7 +4723,7 @@ impl PyParabola3D {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&sphere.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
     }
 
     fn cylinder_result(
@@ -4732,7 +4732,7 @@ impl PyParabola3D {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
     }
 
     fn cone_result(
@@ -4741,7 +4741,7 @@ impl PyParabola3D {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&cone.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
     }
 }
 
@@ -4919,10 +4919,10 @@ impl PyHyperbola3D {
             PyCone => |o| self.cone_result(py, &o, tol),
             PySphere => |o| self.sphere_result(py, &o, tol),
             PyLine3D => |o| o.hyperbola_result(py, self, tol),
-            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
-            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect(&o.0, tol)),
+            PyCircle3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyEllipse3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyParabola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
+            PyHyperbola3D => |o| conic_conic_to_py(py, self.0.intersect_exact(&o.0, tol)),
         })
     }
 
@@ -5008,7 +5008,7 @@ impl PyHyperbola3D {
         plane: &PyPlane,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&plane.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&plane.0, tol))
     }
 
     fn sphere_result(
@@ -5017,7 +5017,7 @@ impl PyHyperbola3D {
         sphere: &PySphere,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&sphere.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&sphere.0, tol))
     }
 
     fn cylinder_result(
@@ -5026,7 +5026,7 @@ impl PyHyperbola3D {
         cylinder: &PyCylinder,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&cylinder.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&cylinder.0, tol))
     }
 
     fn cone_result(
@@ -5035,7 +5035,7 @@ impl PyHyperbola3D {
         cone: &PyCone,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        conic_surface_to_py(py, self.0.intersect(&cone.0, tol))
+        conic_surface_to_py(py, self.0.intersect_exact(&cone.0, tol))
     }
 }
 
@@ -5497,7 +5497,7 @@ impl PyLine2D {
         other: &PyLine2D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             LineLine2DIntersection::Point(s, p, t) => Ok((
                 "point".to_string(),
                 (s, PyPoint2D(p).into_pyobject(py)?.into_any().unbind(), t)
@@ -5516,7 +5516,7 @@ impl PyLine2D {
         circle: &PyCircle2D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&circle.0, tol) {
+        match self.0.intersect_exact(&circle.0, tol) {
             LineCircle2DIntersection::Points((t1, p1), (t2, p2)) => Ok((
                 "points".to_string(),
                 (point2(py, t1, p1)?, point2(py, t2, p2)?)
@@ -5680,7 +5680,7 @@ impl PyCircle2D {
         other: &PyCircle2D,
         tol: Tolerance,
     ) -> PyResult<(String, Py<PyAny>)> {
-        match self.0.intersect(&other.0, tol) {
+        match self.0.intersect_exact(&other.0, tol) {
             CircleCircle2DIntersection::Points(p1, p2) => Ok((
                 "points".to_string(),
                 (

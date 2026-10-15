@@ -1,22 +1,19 @@
-//! Cost of the `Intersect` entry point.
+//! Cost of the `IntersectExact` entry point.
 //!
 //! For a few representative pairs, times a batch of exact intersections
-//! four ways: the typed trait call, the deprecated per-pair method it
-//! replaces, the untyped call on `ElementaryCurve` / `ElementarySurface`,
-//! and the untyped call on `Curve3D` / `Surface`. The typed call and the
-//! per-pair method should match; the untyped calls add a `match` and the
-//! conversion to the general result.
+//! three ways: the typed trait call, the untyped call on `ElementaryCurve`
+//! / `ElementarySurface`, and the untyped call on `Curve3D` / `Surface`.
+//! The untyped calls add a `match` and the conversion to the general
+//! result.
 //!
 //! Informational only, like `eval_throughput`; not a correctness gate.
-
-#![allow(deprecated)]
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::curves::{Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Line3D};
 use geomcore::surfaces::{Cone, Cylinder, ElementarySurface, Plane, Sphere, Surface, Torus};
-use geomcore::{Intersect, Point3D, Tolerance, Vector3D};
+use geomcore::{IntersectExact, Point3D, Tolerance, Vector3D};
 
 const BATCH: usize = 1024;
 
@@ -41,7 +38,7 @@ fn direction(i: usize) -> Vector3D {
 
 /// Times one pair kind four ways over the same batch.
 macro_rules! bench_pair {
-    ($c:expr, $name:literal, $pairs:expr, $per_pair:ident, $elem_a:ty, $elem_b:ty, $erased_a:ty, $erased_b:ty) => {{
+    ($c:expr, $name:literal, $pairs:expr, $elem_a:ty, $elem_b:ty, $erased_a:ty, $erased_b:ty) => {{
         let pairs = $pairs;
         let elementary: Vec<($elem_a, $elem_b)> = pairs
             .iter()
@@ -57,28 +54,21 @@ macro_rules! bench_pair {
         group.bench_function("typed", |b| {
             b.iter(|| {
                 for (x, y) in black_box(&pairs) {
-                    black_box(x.intersect(y, tol));
-                }
-            })
-        });
-        group.bench_function("per_pair", |b| {
-            b.iter(|| {
-                for (x, y) in black_box(&pairs) {
-                    black_box(x.$per_pair(y, tol));
+                    black_box(x.intersect_exact(y, tol));
                 }
             })
         });
         group.bench_function("elementary", |b| {
             b.iter(|| {
                 for (x, y) in black_box(&elementary) {
-                    black_box(x.intersect(y, tol));
+                    black_box(x.intersect_exact(y, tol));
                 }
             })
         });
         group.bench_function("erased", |b| {
             b.iter(|| {
                 for (x, y) in black_box(&erased) {
-                    black_box(x.intersect(y, tol));
+                    black_box(x.intersect_exact(y, tol));
                 }
             })
         });
@@ -99,7 +89,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "plane_sphere",
         plane_sphere,
-        intersect_sphere,
         ElementarySurface,
         ElementarySurface,
         Surface,
@@ -119,7 +108,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "torus_cone",
         torus_cone,
-        intersect_cone,
         ElementarySurface,
         ElementarySurface,
         Surface,
@@ -140,7 +128,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "line_torus",
         line_torus,
-        intersect_torus,
         ElementaryCurve,
         ElementarySurface,
         Curve3D,
@@ -161,7 +148,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "circle_cylinder",
         circle_cylinder,
-        intersect_cylinder,
         ElementaryCurve,
         ElementarySurface,
         Curve3D,
@@ -183,7 +169,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "line_circle",
         line_circle,
-        intersect_circle,
         ElementaryCurve,
         ElementaryCurve,
         Curve3D,
@@ -205,7 +190,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "ellipse_ellipse",
         ellipse_ellipse,
-        intersect_ellipse,
         ElementaryCurve,
         ElementaryCurve,
         Curve3D,

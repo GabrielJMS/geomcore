@@ -2,7 +2,7 @@
 //! construction from an apex angle or two circular sections, thin wrappers
 //! over [`crate::surface_math::analytic`].
 
-use crate::Intersect;
+use crate::IntersectExact;
 use crate::frame::frame_error;
 use crate::projection::{self, SurfaceProjection};
 use crate::surface_math::analytic;
@@ -476,22 +476,6 @@ impl Cone {
     pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
-
-    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cone(&self, other: &Cone, tol: Tolerance) -> ConeConeIntersection {
-        self.intersect(other, tol)
-    }
-
-    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cylinder(
-        &self,
-        cylinder: &Cylinder,
-        tol: Tolerance,
-    ) -> ConeCylinderIntersection {
-        self.intersect(cylinder, tol)
-    }
 }
 
 /// Checks that `semi_angle` is within the accepted range for a cone:
@@ -527,7 +511,7 @@ fn arbitrary_perpendicular_frame(origin: Point3D, axis_direction: Vector3D) -> F
     Frame3D::new(origin, z, x_dir).expect("x_dir constructed perpendicular to z by design")
 }
 
-impl Intersect<Cone> for Cone {
+impl IntersectExact<Cone> for Cone {
     type Output = ConeConeIntersection;
 
     /// Intersects this cone with another cone.
@@ -544,17 +528,17 @@ impl Intersect<Cone> for Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Cone, ConeConeIntersection, Frame3D, Point3D, Tolerance, Vector3D};
     /// let c1 = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let c2 = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
     /// assert_eq!(
-    ///     c1.intersect(&c2, tol),
+    ///     c1.intersect_exact(&c2, tol),
     ///     ConeConeIntersection::Coincident
     /// );
     /// ```
-    fn intersect(&self, other: &Cone, tol: Tolerance) -> ConeConeIntersection {
+    fn intersect_exact(&self, other: &Cone, tol: Tolerance) -> ConeConeIntersection {
         let a1 = self.frame().z_direction();
         let a2 = other.frame().z_direction();
         if a1.cross(a2).magnitude() > tol.angular {
@@ -595,7 +579,7 @@ impl Intersect<Cone> for Cone {
     }
 }
 
-impl Intersect<Cylinder> for Cone {
+impl IntersectExact<Cylinder> for Cone {
     type Output = ConeCylinderIntersection;
 
     /// Intersects this cone with a cylinder.
@@ -611,12 +595,12 @@ impl Intersect<Cylinder> for Cone {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Cone, ConeCylinderIntersection, Cylinder, Frame3D, Point3D, Tolerance, Vector3D};
     /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match cone.intersect(&cylinder, tol) {
+    /// match cone.intersect_exact(&cylinder, tol) {
     ///     ConeCylinderIntersection::TwoCircles(_, circle) => {
     ///         assert_eq!(circle.radius(), 2.0);
     ///         assert!(circle.center().distance(Point3D::ORIGIN) < 1e-12);
@@ -624,7 +608,7 @@ impl Intersect<Cylinder> for Cone {
     ///     _ => panic!("expected two circles"),
     /// }
     /// ```
-    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConeCylinderIntersection {
+    fn intersect_exact(&self, cylinder: &Cylinder, tol: Tolerance) -> ConeCylinderIntersection {
         let a = self.frame().z_direction();
         let axis = cylinder.axis();
         if a.cross(axis.direction()).magnitude() > tol.angular {
@@ -919,7 +903,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-        match cone.intersect(&cylinder, tol) {
+        match cone.intersect_exact(&cylinder, tol) {
             ConeCylinderIntersection::TwoCircles(lower, upper) => {
                 // The reference section, and its mirror through the apex.
                 assert!(upper.center().distance(Point3D::ORIGIN) < 1e-9);
@@ -937,7 +921,7 @@ mod tests {
         }
         // A negative semi-angle opens the other way: same two rings.
         let flipped = Cone::from_frame(Frame3D::WORLD, -0.4, 2.0).unwrap();
-        match flipped.intersect(&cylinder, tol) {
+        match flipped.intersect_exact(&cylinder, tol) {
             ConeCylinderIntersection::TwoCircles(lower, upper) => {
                 for p in [lower, upper]
                     .iter()
@@ -952,13 +936,13 @@ mod tests {
         // Degenerate tube: just the apex.
         let axis_line = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 0.0).unwrap();
         assert_eq!(
-            cone.intersect(&axis_line, tol),
+            cone.intersect_exact(&axis_line, tol),
             ConeCylinderIntersection::ApexPoint(cone.apex())
         );
         // Offset axis: space quartic, no closed form.
         let off = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
         assert_eq!(
-            cone.intersect(&off, tol),
+            cone.intersect_exact(&off, tol),
             ConeCylinderIntersection::NotAnalytic
         );
         // Tilted axis: space quartic, no closed form.
@@ -969,7 +953,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            cone.intersect(&tilted, tol),
+            cone.intersect_exact(&tilted, tol),
             ConeCylinderIntersection::NotAnalytic
         );
     }
@@ -981,7 +965,7 @@ mod tests {
         // Second coaxial cone: shifted frame, wider angle.
         let frame2 = Frame3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z, Vector3D::X).unwrap();
         let c2 = Cone::from_frame(frame2, 0.6, 1.0).unwrap();
-        match c1.intersect(&c2, tol) {
+        match c1.intersect_exact(&c2, tol) {
             ConeConeIntersection::TwoCircles(first, second) => {
                 let height = |c: Circle3D| c.center().z;
                 assert!(height(first) < height(second));
@@ -998,7 +982,7 @@ mod tests {
         // Same angle, offset apex: the nappes facing each other meet in
         // one ring halfway between the apexes.
         let shifted = Cone::from_frame(frame2, 0.4, 1.0).unwrap();
-        match c1.intersect(&shifted, tol) {
+        match c1.intersect_exact(&shifted, tol) {
             ConeConeIntersection::Circle(circle) => {
                 let mid = c1.apex() + (shifted.apex() - c1.apex()) * 0.5;
                 assert!(circle.center().distance(mid) < 1e-9);
@@ -1013,19 +997,19 @@ mod tests {
         let apex_frame = Frame3D::new(c1.apex(), Vector3D::Z * -1.0, Vector3D::X).unwrap();
         let reversed = Cone::from_frame(apex_frame, -0.4, 0.0).unwrap();
         assert_eq!(
-            c1.intersect(&reversed, tol),
+            c1.intersect_exact(&reversed, tol),
             ConeConeIntersection::Coincident
         );
         // Same apex, different angle: only the apex.
         let wide = Cone::from_frame(apex_frame, 0.7, 0.0).unwrap();
         assert_eq!(
-            c1.intersect(&wide, tol),
+            c1.intersect_exact(&wide, tol),
             ConeConeIntersection::ApexPoint(c1.apex())
         );
         // Tilted axis: space quartic, no closed form.
         let tilted = Cone::new(Point3D::ORIGIN, Vector3D::X, 0.4, 2.0).unwrap();
         assert_eq!(
-            c1.intersect(&tilted, tol),
+            c1.intersect_exact(&tilted, tol),
             ConeConeIntersection::NotAnalytic
         );
     }

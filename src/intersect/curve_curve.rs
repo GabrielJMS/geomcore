@@ -768,7 +768,7 @@ fn merge_valleys(
 /// A hit where the tangents are parallel within `tol.angular` has
 /// multiplicity 2.
 /// Overlapping curves report a single representative point; use the
-/// exact intersection ([`Intersect::intersect`](crate::Intersect::intersect))
+/// exact intersection ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact))
 /// to detect coincidence.
 ///
 /// The hits are [`Completeness::Sampled`](crate::Completeness::Sampled),
@@ -890,7 +890,7 @@ where
 mod tests {
     use super::*;
     use crate::curves::BSplineCurve3D;
-    use crate::{Intersect, Line3D, LineCircle3DIntersection};
+    use crate::{IntersectExact, Line3D, LineCircle3DIntersection};
 
     #[test]
     fn test_curve_curve_extrema_skew_matches_exact() {
@@ -901,7 +901,7 @@ mod tests {
         let ext = curve_curve_extrema(&l1, &l2, tol);
         assert_eq!(ext.len(), 1);
         assert!((ext[0].distance - 1.0).abs() < 1e-9);
-        match l1.intersect(&l2, tol) {
+        match l1.intersect_exact(&l2, tol) {
             LineLine3DIntersection::Skew { s, t, distance } => {
                 assert!((ext[0].first_param - s).abs() < 1e-9);
                 assert!((ext[0].second_param - t).abs() < 1e-9);
@@ -1038,7 +1038,7 @@ mod tests {
         // The representative's foot: (3, 9, 5) on the second line.
         let foot = b.eval_point(ext[0].second_param);
         assert!(foot.distance(Point3D::new(3.0, 9.0, 5.0)) < 1e-12);
-        match a.intersect(&b, tol) {
+        match a.intersect_exact(&b, tol) {
             LineLine3DIntersection::Parallel(d) => assert!((ext[0].distance - d).abs() < 1e-12),
             _ => panic!("exact intersection expected parallel"),
         }
@@ -1172,7 +1172,7 @@ mod tests {
         assert!((hits[0].first_param + 2.0).abs() < 1e-9);
         assert!((hits[1].first_param - 2.0).abs() < 1e-9);
         // Cross-check against the exact intersection.
-        match line.intersect(&circle, tol) {
+        match line.intersect_exact(&circle, tol) {
             LineCircle3DIntersection::Points((t1, _), (t2, _)) => {
                 assert!((hits[0].first_param - t1).abs() < 1e-9);
                 assert!((hits[1].first_param - t2).abs() < 1e-9);

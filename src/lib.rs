@@ -50,24 +50,24 @@
 //!
 //! # Intersections
 //!
-//! [`Intersect`] is the one entry point for exact intersections. Between
+//! [`IntersectExact`] is the entry point for exact intersections. Between
 //! two concrete types it returns the pair's own result, in either order:
 //!
 //! ```
-//! use geomcore::{Intersect, PlaneSphereIntersection, Point3D, Vector3D};
+//! use geomcore::{IntersectExact, PlaneSphereIntersection, Point3D, Vector3D};
 //! use geomcore::surfaces::{Plane, Sphere};
 //!
 //! let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
 //! let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
 //! let tol = geomcore::Tolerance::default();
-//! let PlaneSphereIntersection::Circle(circle) = plane.intersect(&sphere, tol) else {
+//! let PlaneSphereIntersection::Circle(circle) = plane.intersect_exact(&sphere, tol) else {
 //!     panic!("expected a circle");
 //! };
-//! assert_eq!(sphere.intersect(&plane, tol), PlaneSphereIntersection::Circle(circle));
+//! assert_eq!(sphere.intersect_exact(&plane, tol), PlaneSphereIntersection::Circle(circle));
 //! ```
 //!
 //! Between [`surfaces::Surface`] or [`curves::Curve3D`] values it returns
-//! a general result such as [`SurfaceIntersection`], which reports
+//! a general result such as [`ExactSurfaceIntersection`], which reports
 //! `NotAnalytic` for a B-spline or a pair without a closed form; the
 //! numeric functions ([`marching_intersection`],
 //! [`intersect_curve_surface`], [`intersect_curve_curve`]) cover those.
@@ -154,7 +154,8 @@ pub use intersect::{
     CurveSurfaceRegion, IncompleteReason,
 };
 pub use intersect::{
-    CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
+    InlineList, IntersectExact,
 };
 pub use intersect::{curve_curve_extrema, intersect_curve_curve};
 pub use point::{Point2D, Point3D};
