@@ -3,9 +3,15 @@
 //! Times `marching_intersection` on two bicubic 6×6 B-spline surfaces over
 //! `[0, 5]^2`, with heights `sin(0.7 i j)` and `0.5 cos(1.3 i) cos(1.1 j)`
 //! at their poles `(i, j)`. They cross in six curves: five open across the
-//! footprint and one closed loop. Also times a torus of radii 3 and 1
-//! about z against the plane through `(0.5, 0, 0.2)` tilted 0.6 radians
-//! about y, which cuts it in two closed curves.
+//! footprint and one closed loop. Also times elementary pairs:
+//! - a torus of radii 3 and 1 about z against the plane through
+//!   `(0.5, 0, 0.2)` tilted 0.6 radians about y (two closed curves);
+//! - a sphere of radius 1.2 centred on that torus's centre circle
+//!   (two closed curves);
+//! - a cylinder of radius 1 about z against a cubic wall extruded along z
+//!   (two open curves);
+//! - a cone of semi-angle 0.3 against a cylinder whose axis is parallel to
+//!   one of its generators (two curves running to the model-size cube).
 //!
 //! Informational only, like `eval_throughput`; not a correctness gate.
 
@@ -13,7 +19,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use geomcore::surfaces::BSplineSurface;
-use geomcore::{Plane, Point3D, Tolerance, Torus, Vector3D, marching_intersection};
+use geomcore::{
+    Cone, Cylinder, Plane, Point3D, Sphere, Tolerance, Torus, Vector3D, marching_intersection,
+};
 
 fn surface(height: impl Fn(f64, f64) -> f64) -> BSplineSurface {
     let poles = (0..6)
@@ -41,6 +49,30 @@ fn surface(height: impl Fn(f64, f64) -> f64) -> BSplineSurface {
     .unwrap()
 }
 
+/// A cubic wall waving between x = 0.1 and x = 0.4 over y in
+/// `[-2.5, 2.5]`, extruded along z over `[-3, 3]`.
+fn extruded_wall() -> BSplineSurface {
+    let poles = (0..6)
+        .map(|i| {
+            let y = -2.5 + i as f64;
+            let x = if i % 2 == 0 { 0.4 } else { 0.1 };
+            vec![Point3D::new(x, y, -3.0), Point3D::new(x, y, 3.0)]
+        })
+        .collect();
+    BSplineSurface::new(
+        3,
+        1,
+        poles,
+        vec![0.0, 1.0, 2.0, 3.0],
+        vec![4, 1, 1, 4],
+        vec![0.0, 1.0],
+        vec![2, 2],
+        false,
+        false,
+    )
+    .unwrap()
+}
+
 fn bench_marching_intersection(c: &mut Criterion) {
     let wavy = surface(|x, y| (0.7 * x * y).sin());
     let bumpy = surface(|x, y| 0.5 * (1.3 * x).cos() * (1.1 * y).cos());
@@ -58,6 +90,27 @@ fn bench_marching_intersection(c: &mut Criterion) {
     .unwrap();
     group.bench_function("torus_plane_oblique", |b| {
         b.iter(|| black_box(marching_intersection(black_box(&torus), &plane, tol)))
+    });
+    let sphere = Sphere::new(Point3D::new(3.0, 0.0, 0.0), 1.2).unwrap();
+    group.bench_function("sphere_torus", |b| {
+        b.iter(|| black_box(marching_intersection(black_box(&sphere), &torus, tol)))
+    });
+    let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let wall = extruded_wall();
+    group.bench_function("cylinder_extruded_wall", |b| {
+        b.iter(|| black_box(marching_intersection(black_box(&cylinder), &wall, tol)))
+    });
+    let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.3, 1.0).unwrap();
+    let generator = Vector3D::new(0.3f64.sin(), 0.0, 0.3f64.cos());
+    let along_generator = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), generator, 0.5).unwrap();
+    group.bench_function("cone_cylinder_unbounded", |b| {
+        b.iter(|| {
+            black_box(marching_intersection(
+                black_box(&cone),
+                &along_generator,
+                tol,
+            ))
+        })
     });
     group.finish();
 }

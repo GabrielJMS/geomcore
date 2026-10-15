@@ -407,22 +407,52 @@ nanoseconds; most leaves lie on a curve traced already and are skipped
 by a box test against the traced points, so about half the time goes to
 the search and most of the rest to tracing the six curves.
 
-The same bench times an elementary pair: a torus of radii 3 and 1 about z
-against the plane through `(0.5, 0, 0.2)` tilted 0.6 radians about y,
-which cut in two closed curves. Fastest of three runs, same settings
-(2026-10-15, machine loaded):
+The same bench times elementary pairs:
+- `torus_plane_oblique`: a torus of radii 3 and 1 about z against the
+  plane through `(0.5, 0, 0.2)` tilted 0.6 radians about y (two loops);
+- `sphere_torus`: a sphere of radius 1.2 centred on that torus's centre
+  circle (two loops);
+- `cylinder_extruded_wall`: a cylinder of radius 1 about z against a cubic
+  B-spline wall extruded along z (two open curves);
+- `cone_cylinder_unbounded`: a cone of semi-angle 0.3 against a cylinder
+  whose axis is parallel to a generator (two curves to infinity).
 
-| seeds | torus–plane | B-spline pair |
-|---|---|---|
-| grid over `[-10, 10]` (before) | ~491 µs | ~2.61 ms |
-| iso-curves meeting the other surface (after) | ~418 µs | ~2.62 ms |
+Fastest of three runs, same settings (2026-10-15, machine loaded). Three
+versions: the grid over `[-10, 10]` with traces of at most 2000 steps
+each way; the first iso-curve seeding, iso-curves alone with 10 000
+steps; and the current one, which adds the B-spline side's grid and
+cylinder and cone circles, leaves out circles against a torus, and ends
+traces on the model-size cube with steps growing with the distance from
+the seed.
 
-The torus seeds from 24 meridian circles cut by the plane, and the plane
-from 48 lines across the torus's box, each line–torus pair solved by its
-quartic: up to 2 seed points per circle and 4 per line, most skipped by
-the box test against the traced curves, against the grid's 2 × 625
-projections. The B-spline pair
-does not use the iso-curves, so its time is unchanged.
+| case | grid | iso-curves alone | current |
+|---|---|---|---|
+| `bspline_surface_pair` | ~2.60 ms | ~2.68 ms | ~2.58 ms |
+| `torus_plane_oblique` | ~479 µs | ~427 µs | ~417 µs |
+| `sphere_torus` | ~678 µs | ~2.07 ms | ~511 µs |
+| `cylinder_extruded_wall` | ~1.89 ms | ~40 µs (0 of 2 curves) | ~433 µs |
+| `cone_cylinder_unbounded` | ~5.58 ms (4001 poles per curve) | ~27.8 ms (20 001) | ~747 µs (407) |
+
+The cone–cylinder curves used to stop after a fixed number of steps of at
+most 0.1; they now run to the cube 50 000 away in about 200 steps each
+way. The torus seeds from 24 meridian circles cut by the sphere or the
+plane (exact), the plane from 48 lines across the torus's box (each a
+quartic); the sphere's circles, which would meet the torus only through
+the sampled search, are left out. The wall's grid finds the curves that
+the cylinder's rulings, running along the extrusion, miss. Two tori have
+no exact family and keep the grid (about 1.04 ms for the pair in the
+probe below, as before).
+
+Measured outside the bench (best of five calls, release), pairs without
+a closed form: the cone pairs through the routed `intersect` on
+`Surface`, the tori (radii 3 and 1, and 3 and 0.8 tilted and shifted)
+through `marching_intersection`:
+
+| pair | grid | iso-curves alone | current |
+|---|---|---|---|
+| cone × cylinder along a generator | ~3.9 ms | ~18.0 ms | ~0.54 ms |
+| cone × cone, parallel axes | ~4.4 ms | ~20.1 ms | ~0.43 ms |
+| torus × torus | ~1.04 ms | ~3.20 ms | ~1.04 ms |
 
 Reproduce with:
 
