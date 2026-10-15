@@ -902,12 +902,20 @@ impl PyCurveCurveIntersection2D {
 /// and the curve's parameter ranges that lie on the surface.
 ///
 /// `first` and `second` are the operands, in the order of the call;
-/// whichever order that was, the hit parameters keep their roles.
+/// whichever order that was, the hit parameters keep their roles, and
+/// `curve` and `surface` name the operands by role.
 #[pyclass(name = "CurveSurfaceIntersection", module = "geomcore", frozen)]
 pub(crate) struct PyCurveSurfaceIntersection {
     pub(crate) result: CurveSurfaceIntersection,
     pub(crate) first: Py<PyAny>,
     pub(crate) second: Py<PyAny>,
+}
+
+impl PyCurveSurfaceIntersection {
+    /// Whether the call was made on the surface.
+    fn surface_first(&self, py: Python<'_>) -> bool {
+        crate::surfaces::surface_of(self.first.bind(py)).is_some()
+    }
 }
 
 #[pymethods]
@@ -949,6 +957,26 @@ impl PyCurveSurfaceIntersection {
     #[getter]
     fn second(&self, py: Python<'_>) -> Py<PyAny> {
         self.second.clone_ref(py)
+    }
+
+    /// The curve operand, whichever of `first` and `second` it is.
+    #[getter]
+    fn curve(&self, py: Python<'_>) -> Py<PyAny> {
+        if self.surface_first(py) {
+            self.second.clone_ref(py)
+        } else {
+            self.first.clone_ref(py)
+        }
+    }
+
+    /// The surface operand, whichever of `first` and `second` it is.
+    #[getter]
+    fn surface(&self, py: Python<'_>) -> Py<PyAny> {
+        if self.surface_first(py) {
+            self.first.clone_ref(py)
+        } else {
+            self.second.clone_ref(py)
+        }
     }
 
     /// Whether the result is proved to hold every hit.

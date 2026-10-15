@@ -200,8 +200,8 @@ impl PyVector3D {
     /// The signed angle from this vector to `other` around `reference`
     /// (right-hand rule), in (-pi, pi]. A zero `reference` gives the unsigned
     /// angle in [0, pi].
-    fn angle_with_ref(&self, other: &PyVector3D, reference: &PyVector3D) -> f64 {
-        self.0.angle_with_ref(other.0, reference.0)
+    fn angle_with_reference(&self, other: &PyVector3D, reference: &PyVector3D) -> f64 {
+        self.0.angle_with_reference(other.0, reference.0)
     }
 
     fn __add__(&self, other: &PyVector3D) -> PyVector3D {

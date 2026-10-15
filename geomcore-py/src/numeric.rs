@@ -17,29 +17,36 @@ use crate::tolerance;
 use crate::values::*;
 
 pub(crate) fn extract_curve3d(obj: &Bound<'_, PyAny>) -> PyResult<Curve3D> {
-    if let Ok(c) = obj.extract::<PyRef<'_, PyLine3D>>() {
-        return Ok(Curve3D::from(c.0));
+    curve3d_of(obj).ok_or_else(|| {
+        PyTypeError::new_err(
+            "expected a geomcore 3D curve (Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D or BSplineCurve3D)",
+        )
+    })
+}
+
+/// The 3D curve `obj` holds, if it is one of the whole 3D curve classes.
+/// Each class is checked with a type test, so a miss raises nothing (a
+/// failed `extract` would build a Python error first).
+pub(crate) fn curve3d_of(obj: &Bound<'_, PyAny>) -> Option<Curve3D> {
+    if let Ok(c) = obj.downcast::<PyLine3D>() {
+        return Some(Curve3D::from(c.borrow().0));
     }
-    if let Ok(c) = obj.extract::<PyRef<'_, PyCircle3D>>() {
-        return Ok(Curve3D::from(c.0));
+    if let Ok(c) = obj.downcast::<PyCircle3D>() {
+        return Some(Curve3D::from(c.borrow().0));
     }
-    if let Ok(c) = obj.extract::<PyRef<'_, PyEllipse3D>>() {
-        return Ok(Curve3D::from(c.0));
+    if let Ok(c) = obj.downcast::<PyEllipse3D>() {
+        return Some(Curve3D::from(c.borrow().0));
     }
-    if let Ok(c) = obj.extract::<PyRef<'_, PyParabola3D>>() {
-        return Ok(Curve3D::from(c.0));
+    if let Ok(c) = obj.downcast::<PyParabola3D>() {
+        return Some(Curve3D::from(c.borrow().0));
     }
-    if let Ok(c) = obj.extract::<PyRef<'_, PyHyperbola3D>>() {
-        return Ok(Curve3D::from(c.0));
+    if let Ok(c) = obj.downcast::<PyHyperbola3D>() {
+        return Some(Curve3D::from(c.borrow().0));
     }
-    if let Ok(c) = obj.extract::<PyRef<'_, PyBSplineCurve3D>>() {
-        // BSplineCurve3D owns heap data (not Copy): clone is required here.
-        #[allow(clippy::clone_on_copy)]
-        return Ok(Curve3D::from(c.0.clone()));
+    if let Ok(c) = obj.downcast::<PyBSplineCurve3D>() {
+        return Some(Curve3D::from(c.borrow().0.clone()));
     }
-    Err(PyTypeError::new_err(
-        "expected a geomcore 3D curve (Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D or BSplineCurve3D)",
-    ))
+    None
 }
 
 /// A 3D curve passed to a generic function: a whole curve, or a piece of
@@ -103,14 +110,20 @@ impl ParametricCurve3D for CurveArg {
 }
 
 pub(crate) fn extract_curve_arg(obj: &Bound<'_, PyAny>) -> PyResult<CurveArg> {
-    if let Ok(c) = obj.extract::<PyRef<'_, PyTrimmedCurve3D>>() {
-        return Ok(CurveArg::Trimmed(c.0.clone()));
-    }
-    extract_curve3d(obj).map(CurveArg::Whole).map_err(|_| {
+    curve_arg_of(obj).ok_or_else(|| {
         PyTypeError::new_err(
             "expected a geomcore 3D curve (Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D, BSplineCurve3D or TrimmedCurve3D)",
         )
     })
+}
+
+/// The 3D curve or piece of one `obj` holds, if it is a 3D curve class;
+/// a miss raises nothing (see [`curve3d_of`]).
+pub(crate) fn curve_arg_of(obj: &Bound<'_, PyAny>) -> Option<CurveArg> {
+    if let Ok(c) = obj.downcast::<PyTrimmedCurve3D>() {
+        return Some(CurveArg::Trimmed(c.borrow().0.clone()));
+    }
+    curve3d_of(obj).map(CurveArg::Whole)
 }
 
 pub(crate) fn curve3d_to_py(py: Python<'_>, curve: Curve3D) -> PyResult<Py<PyAny>> {
@@ -126,15 +139,20 @@ pub(crate) fn curve3d_to_py(py: Python<'_>, curve: Curve3D) -> PyResult<Py<PyAny
 }
 
 pub(crate) fn extract_curve2d(obj: &Bound<'_, PyAny>) -> PyResult<Curve2D> {
-    if let Ok(c) = obj.extract::<PyRef<'_, PyLine2D>>() {
-        return Ok(Curve2D::from(c.0));
+    curve2d_of(obj)
+        .ok_or_else(|| PyTypeError::new_err("expected a geomcore 2D curve (Line2D or Circle2D)"))
+}
+
+/// The 2D curve `obj` holds, if it is `Line2D` or `Circle2D`; a miss
+/// raises nothing (see [`curve3d_of`]).
+pub(crate) fn curve2d_of(obj: &Bound<'_, PyAny>) -> Option<Curve2D> {
+    if let Ok(c) = obj.downcast::<PyLine2D>() {
+        return Some(Curve2D::from(c.borrow().0));
     }
-    if let Ok(c) = obj.extract::<PyRef<'_, PyCircle2D>>() {
-        return Ok(Curve2D::from(c.0));
+    if let Ok(c) = obj.downcast::<PyCircle2D>() {
+        return Some(Curve2D::from(c.borrow().0));
     }
-    Err(PyTypeError::new_err(
-        "expected a geomcore 2D curve (Line2D or Circle2D)",
-    ))
+    None
 }
 
 /// Closest-point enumeration between any two 3D curves.
@@ -145,21 +163,22 @@ pub(crate) fn extract_curve2d(obj: &Bound<'_, PyAny>) -> PyResult<Curve2D> {
 /// other. Parallel lines, concentric circles and other continuous
 /// families of equal minima report the distance once, with a
 /// representative pair. The result holds the curves as `first` and
-/// `second`.
+/// `second`. Other Python threads run during the search.
 #[pyfunction]
-#[pyo3(name = "curve_curve_extrema", signature = (curve_a, curve_b, tol = None))]
+#[pyo3(name = "curve_curve_extrema", signature = (first, second, tol = None))]
 pub(crate) fn py_curve_curve_extrema(
-    curve_a: &Bound<'_, PyAny>,
-    curve_b: &Bound<'_, PyAny>,
+    py: Python<'_>,
+    first: &Bound<'_, PyAny>,
+    second: &Bound<'_, PyAny>,
     tol: Option<PyTolerance>,
 ) -> PyResult<PyCurveCurveExtrema> {
     let tol = tolerance(tol);
-    let a = extract_curve_arg(curve_a)?;
-    let b = extract_curve_arg(curve_b)?;
+    let a = extract_curve_arg(first)?;
+    let b = extract_curve_arg(second)?;
     Ok(PyCurveCurveExtrema {
-        result: curve_curve_extrema(&a, &b, tol),
-        first: curve_a.clone().unbind(),
-        second: curve_b.clone().unbind(),
+        result: py.detach(|| curve_curve_extrema(&a, &b, tol)),
+        first: first.clone().unbind(),
+        second: second.clone().unbind(),
     })
 }
 
@@ -191,24 +210,24 @@ pub(crate) fn routed_curve_surface(
 
 /// Numeric curve-on-surface parametrization for pairs without closed form.
 ///
-/// Samples the curve uniformly (`n` points) and inverts each sample onto
-/// the surface. Returns `(u, v)` tuples; surface evaluation at them
-/// recovers the samples where the curve lies on the surface.
+/// Samples the curve at `sample_count` uniform parameters and inverts each
+/// sample onto the surface. Returns `(u, v)` tuples; surface evaluation at
+/// them recovers the samples where the curve lies on the surface. Other
+/// Python threads run during the projections.
 #[pyfunction]
-#[pyo3(name = "parametrize_numeric", signature = (curve, surface, n = 64, tol = None))]
+#[pyo3(name = "parametrize_numeric", signature = (curve, surface, sample_count = 64, tol = None))]
 pub(crate) fn py_parametrize_numeric(
+    py: Python<'_>,
     curve: &Bound<'_, PyAny>,
     surface: &Bound<'_, PyAny>,
-    n: usize,
+    sample_count: usize,
     tol: Option<PyTolerance>,
 ) -> PyResult<Vec<(f64, f64)>> {
     let tol = tolerance(tol);
     let c = extract_curve_arg(curve)?;
     let s = extract_surface(surface)?;
-    Ok(parametrize_numeric(&c, &s, n, tol)
-        .iter()
-        .map(|p| (p.x, p.y))
-        .collect())
+    let points = py.detach(|| parametrize_numeric(&c, &s, sample_count, tol));
+    Ok(points.iter().map(|p| (p.x, p.y)).collect())
 }
 
 pub(crate) fn curve2d_to_py(py: Python<'_>, curve: Curve2D) -> PyResult<Py<PyAny>> {

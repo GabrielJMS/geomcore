@@ -1714,25 +1714,33 @@ impl PyBSplineSurface {
 }
 
 pub(crate) fn extract_surface(obj: &Bound<'_, PyAny>) -> PyResult<Surface> {
-    if let Ok(s) = obj.extract::<PyRef<'_, PyPlane>>() {
-        return Ok(Surface::from(&s.0));
+    surface_of(obj).ok_or_else(|| {
+        PyTypeError::new_err(
+            "expected a geomcore surface (Plane, Cylinder, Cone, Sphere, Torus or BSplineSurface)",
+        )
+    })
+}
+
+/// The surface `obj` holds, if it is one of the surface classes. Each
+/// class is checked with a type test, so a miss raises nothing.
+pub(crate) fn surface_of(obj: &Bound<'_, PyAny>) -> Option<Surface> {
+    if let Ok(s) = obj.downcast::<PyPlane>() {
+        return Some(Surface::from(&s.borrow().0));
     }
-    if let Ok(s) = obj.extract::<PyRef<'_, PyCylinder>>() {
-        return Ok(Surface::from(&s.0));
+    if let Ok(s) = obj.downcast::<PyCylinder>() {
+        return Some(Surface::from(&s.borrow().0));
     }
-    if let Ok(s) = obj.extract::<PyRef<'_, PyCone>>() {
-        return Ok(Surface::from(&s.0));
+    if let Ok(s) = obj.downcast::<PyCone>() {
+        return Some(Surface::from(&s.borrow().0));
     }
-    if let Ok(s) = obj.extract::<PyRef<'_, PySphere>>() {
-        return Ok(Surface::from(&s.0));
+    if let Ok(s) = obj.downcast::<PySphere>() {
+        return Some(Surface::from(&s.borrow().0));
     }
-    if let Ok(s) = obj.extract::<PyRef<'_, PyTorus>>() {
-        return Ok(Surface::from(&s.0));
+    if let Ok(s) = obj.downcast::<PyTorus>() {
+        return Some(Surface::from(&s.borrow().0));
     }
-    if let Ok(s) = obj.extract::<PyRef<'_, PyBSplineSurface>>() {
-        return Ok(Surface::from(&s.0));
+    if let Ok(s) = obj.downcast::<PyBSplineSurface>() {
+        return Some(Surface::from(&s.borrow().0));
     }
-    Err(PyTypeError::new_err(
-        "expected a geomcore surface (Plane, Cylinder, Cone, Sphere, Torus or BSplineSurface)",
-    ))
+    None
 }

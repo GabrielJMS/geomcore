@@ -82,7 +82,7 @@ every analytic pcurve.
     ```python
     from geomcore import parametrize_numeric
 
-    uv = parametrize_numeric(curve, surface, n=64)   # [(u, v), ...]
+    uv = parametrize_numeric(curve, surface, sample_count=64)   # [(u, v), ...]
     ```
 
 === "Rust"

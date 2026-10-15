@@ -1,5 +1,7 @@
 """Projection objects: `project_point`, `project_points` and `extrema`."""
 
+import math
+
 import pytest
 
 from geomcore import (
@@ -11,7 +13,14 @@ from geomcore import (
     Vector2D,
     Vector3D,
 )
-from geomcore.curves import BSplineCurve3D, Circle3D, Line2D, TrimmedCurve3D
+from geomcore.curves import (
+    BSplineCurve3D,
+    Circle2D,
+    Circle3D,
+    Line2D,
+    TrimmedCurve2D,
+    TrimmedCurve3D,
+)
 from geomcore.surfaces import BSplineSurface, Plane, Sphere
 
 
@@ -43,6 +52,43 @@ def test_curve_projection_2d():
     assert projection.distance == pytest.approx(1.0)
     assert projection.target is line
     assert projection.query_point == query
+
+
+def test_circle_projection_2d():
+    circle = Circle2D(Point2D.origin(), 2.0)
+    query = Point2D(0.0, 3.0)
+    projection = circle.project_point(query)
+    assert isinstance(projection, CurveProjection2D)
+    assert projection.parameter == pytest.approx(math.pi / 2)
+    _assert_points_close(projection.point, Point2D(0.0, 2.0))
+    assert projection.distance == pytest.approx(1.0)
+    assert projection.target is circle
+    assert projection.query_point == query
+
+
+def test_project_points_on_2d_curves():
+    queries = [Point2D(3.0, 0.0), Point2D(0.0, -1.0)]
+    line = Line2D(Point2D.origin(), Vector2D(1.0, 0.0))
+    circle = Circle2D(Point2D.origin(), 2.0)
+    arc = TrimmedCurve2D(circle, 0.0, math.pi / 2)
+    for curve in [line, circle, arc]:
+        projections = curve.project_points(queries)
+        assert [type(p) for p in projections] == [CurveProjection2D] * 2
+        for projection, query in zip(projections, queries):
+            assert projection == curve.project_point(query)
+            assert projection.target is curve
+            assert projection.query_point == query
+            _assert_points_close(projection.point, curve.eval_point(projection.parameter))
+    # The arc ends at angle 0: the point below the circle projects there.
+    assert arc.project_point(Point2D(0.0, -1.0)).parameter == 0.0
+
+
+def test_extrema_on_2d_curves():
+    circle = Circle2D(Point2D.origin(), 2.0)
+    extrema = circle.extrema(Point2D(1.0, 0.0))
+    assert [type(e) for e in extrema] == [CurveProjection2D] * len(extrema)
+    assert extrema[0].distance == pytest.approx(1.0)
+    assert all(e.target is circle for e in extrema)
 
 
 def test_surface_projection():

@@ -162,6 +162,9 @@ def test_swapped_curve_surface_order_gives_the_same_hits():
     assert backward.first is sphere and backward.second is line
     assert backward.hits == forward.hits
     assert backward.hits[0].curve_parameter == pytest.approx(3.0)
+    # `curve` and `surface` name the operands by role, in either order.
+    assert forward.curve is line and forward.surface is sphere
+    assert backward.curve is line and backward.surface is sphere
 
 
 def test_swapped_curve_curve_order_swaps_the_parameters():
@@ -328,6 +331,7 @@ def test_curve_curve_extrema_is_an_object():
     assert minimum.distance == pytest.approx(1.0)
     assert minimum.first_parameter == pytest.approx(0.5)
     assert 0.0 <= minimum.second_parameter <= 1.0
+    assert curve_curve_extrema(first=arch, second=rail) == extrema
 
 
 # ------------------------------------------------------- repr and equality
@@ -462,3 +466,43 @@ def test_curves_and_surfaces_have_deterministic_reprs():
     result = Plane(Point3D.origin(), Vector3D.unit_z()).intersect(Sphere(Point3D.origin(), 3.0))
     assert "Circle3D(center=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0), radius=3.0)" in repr(result)
     assert " at 0x" not in repr(result)
+
+
+# ------------------------------------------------- numeric overlaps, threads
+
+
+def test_numeric_curve_lying_on_a_surface_is_an_overlap():
+    # A straight B-spline lying on the square: one overlap, no string of
+    # hits, and the result stays incomplete over it.
+    segment = _segment(Point3D(0.5, 0.5, 0.0), Point3D(1.5, 1.0, 0.0))
+    result = segment.intersect(_square())
+    assert result.method == IntersectionMethod.NUMERIC
+    assert result.hits == []
+    assert result.overlaps == [(0.0, 1.0)]
+    assert result.completeness.status == CompletenessStatus.INCOMPLETE
+    assert result.completeness.reason == IncompleteReason.UNSEPARATED
+
+
+def test_numeric_collinear_curves_are_an_overlap():
+    first = _segment(Point3D(2.0, 0.0, 0.0), Point3D(4.0, 0.0, 0.0))
+    line = Line3D(Point3D.origin(), Vector3D.unit_x())
+    for result, (first_range, second_range) in [
+        (first.intersect(line), ((0.0, 1.0), (2.0, 4.0))),
+        (line.intersect(first), ((2.0, 4.0), (0.0, 1.0))),
+    ]:
+        assert result.hits == []
+        (overlap,) = result.overlaps
+        assert overlap.first_range == pytest.approx(first_range, abs=1e-6)
+        assert overlap.second_range == pytest.approx(second_range, abs=1e-6)
+        assert overlap.same_direction
+
+
+def test_intersections_run_from_several_threads():
+    from concurrent.futures import ThreadPoolExecutor
+
+    square = _square()
+    curves = [_touching_parabola(), _segment(Point3D(0.0, 1.0, -1.0), Point3D(2.0, 1.0, 1.0))]
+    expected = [curve.intersect(square) for curve in curves]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda k: curves[k % 2].intersect(square), range(16)))
+    assert results == [expected[k % 2] for k in range(16)]

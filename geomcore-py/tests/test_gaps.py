@@ -320,7 +320,7 @@ def test_vector_3d_members():
     assert not Vector3D(math.nan, 0.0, 0.0).is_finite()
     assert v.normalized() == Vector3D(0.6, 0.0, 0.8)
     assert Vector3D.zero().normalized() is None
-    angle = Vector3D.unit_x().angle_with_ref(Vector3D.unit_y(), Vector3D.unit_z())
+    angle = Vector3D.unit_x().angle_with_reference(Vector3D.unit_y(), Vector3D.unit_z())
     assert angle == pytest.approx(math.pi / 2)
 
 

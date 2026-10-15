@@ -36,6 +36,7 @@ Rust:
 | `LineTorusHit::line_param`, `surface_params`; `LineConicHit::line_param`, `conic_param`; `CurveCurveExtremum::first_param`, `second_param` | `line_parameter`, `surface_parameters`; `line_parameter`, `conic_parameter`; `first_parameter`, `second_parameter` (plain `f64`) |
 | `projection.parameter` / `(u, v)` then `curve.eval_point(…)` for the closest point | `projection.point` |
 | `project_point`, `project_points` and `PointExtrema2D::extrema` on 2D curves returning `CurveProjection` | the same calls, returning `CurveProjection2D` (with a `Point2D` `point`) |
+| `v.angle_with_ref(other, reference)` (deprecated) | `v.angle_with_reference(other, reference)` |
 
 Python:
 
@@ -47,6 +48,8 @@ Python:
 | `geomcore.intersect_curve_surface(curve, surface)` → `[(t, (u, v), point)]` | `curve.intersect(surface).hits` → `[CurveSurfaceHit]` with `curve_parameter`, `surface_parameters`, `point`, `multiplicity` |
 | `geomcore.intersect_curve_curve(a, b)` → `[(t1, point, t2)]` | `a.intersect(b).hits` → `[CurveCurveHit]` with `first_parameter`, `second_parameter`, `point`, `multiplicity` |
 | `curve_curve_extrema(a, b)` → `[(t1, t2, distance)]` | `curve_curve_extrema(a, b).minima` → `[CurveCurveExtremum]` with `first_parameter`, `second_parameter`, `distance` |
+| `curve_curve_extrema(curve_a=a, curve_b=b)` | `curve_curve_extrema(first=a, second=b)` |
+| `parametrize_numeric(curve, surface, n=64)` | `parametrize_numeric(curve, surface, sample_count=64)` |
 | `parameter, distance = curve.project_point(p)` | `foot = curve.project_point(p)`: `foot.parameter`, `foot.point`, `foot.distance` |
 | `u, v, distance = surface.project_point(p)` | `foot = surface.project_point(p)`: `foot.u`, `foot.v`, `foot.point`, `foot.distance` |
 | `curve.extrema(p)` → `[(parameter, distance)]` | `curve.extrema(p)` → `[CurveProjection]` |
@@ -121,7 +124,9 @@ Python:
   properties named as in Rust, reprs and value equality. The enums are
   hashable and have a `name`; an empty result is falsy. Intersection
   results and `CurveCurveExtrema` hold their operands as `first` and
-  `second`.
+  `second`; `CurveSurfaceIntersection` also names them by role, `curve`
+  and `surface`, whichever was the receiver. The stubs type the operands
+  as unions of the curve or surface classes.
 - Python `intersect` accepts every curve and surface class, B-splines
   and trimmed curves included, in either order, routed as in Rust.
 - Python exceptions mirror the Rust error types: `GeomcoreError` (a
@@ -139,7 +144,7 @@ Python:
   `extrema` on `Line3D`, `Circle3D`, `Line2D` and `Circle2D`; `point_count`
   on the discretizable curves; `+`, `-` and `*` on points and vectors;
   `Vector3D.normalized`, `square_magnitude`, `is_finite` and
-  `angle_with_ref`, the members of `Vector2D` that `Vector3D` has, and
+  `angle_with_reference`, the members of `Vector2D` that `Vector3D` has, and
   `Frame3D.axis`, `local_coordinates` and `point_at`.
 
 ### Changed
@@ -226,7 +231,21 @@ Python:
   `target` they were computed on and the `query_point`, instead of
   tuples (breaking).
 - Python `curve_curve_extrema` returns a `CurveCurveExtrema` (`minima`,
-  `completeness`, `len()`) instead of a list of tuples (breaking).
+  `completeness`, `len()`) instead of a list of tuples (breaking), and
+  its arguments are named `first` and `second`, as on the result
+  (breaking for callers passing `curve_a=` or `curve_b=`).
+- `parametrize_numeric` names its sample count `sample_count` (breaking
+  in Python for callers passing `n=`).
+- `Vector3D::angle_with_ref` is renamed `angle_with_reference`; the old
+  name stays, deprecated.
+- Python `intersect` reads its operands by type tests that raise nothing
+  on a miss, the surface classes first when the call is on a surface:
+  from Python, line–cylinder drops from about 590 to 340 ns per call,
+  cylinder–line from 595 to 350 ns, circle–circle from 380 to 320 ns.
+  The routed calls that may run the numeric search or marching (a
+  B-spline operand, a conic against a torus, two surfaces),
+  `curve_curve_extrema` and `parametrize_numeric` release the
+  interpreter lock while they compute, so other Python threads run.
 - Python: the `Vector3D` unit constructors `x()`, `y()` and `z()` are
   renamed `unit_x()`, `unit_y()` and `unit_z()` (breaking), matching
   `Vector3D::X`, `Y` and `Z`; `x`, `y` and `z` are now the component

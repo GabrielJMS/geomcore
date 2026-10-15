@@ -159,7 +159,7 @@ pub(crate) fn ellipse_parameter(frame: &Frame3D, maj: f64, min: f64, p: Point3D)
 /// Signed angle from `from` to `to` around `unit_axis` (right-hand rule),
 /// in `(-PI, PI]`.
 ///
-/// The same angle as [`Vector3D::angle_with_ref`], without normalizing
+/// The same angle as [`Vector3D::angle_with_reference`], without normalizing
 /// the axis on every call: a frame's z direction is unit by construction,
 /// so the circle and ellipse parameters skip that square root and division.
 fn signed_angle_around_unit_axis(from: Vector3D, to: Vector3D, unit_axis: Vector3D) -> f64 {
