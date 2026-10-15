@@ -756,7 +756,7 @@ pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
             }
         },
         (Curve2D::Line(line), Curve2D::Circle(circle)) => {
-            let on_circle = |point| circle.parameter_of(point);
+            let on_circle = |point| circle.parameter_in_bounds(circle.parameter_of(point), tol);
             match line.intersect_exact(circle, tol) {
                 LineCircle2DIntersection::Points((t, p), (u, q)) => {
                     [hit(t, on_circle(p), p, 1), hit(u, on_circle(q), q, 1)]
@@ -766,7 +766,7 @@ pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
             }
         }
         (Curve2D::Circle(circle), Curve2D::Line(line)) => {
-            let on_circle = |point| circle.parameter_of(point);
+            let on_circle = |point| circle.parameter_in_bounds(circle.parameter_of(point), tol);
             match line.intersect_exact(circle, tol) {
                 LineCircle2DIntersection::Points((t, p), (u, q)) => {
                     [hit(on_circle(p), t, p, 1), hit(on_circle(q), u, q, 1)]
@@ -778,8 +778,8 @@ pub(crate) fn route_curve_curve_2d<A: CurveOperand2D, B: CurveOperand2D>(
         (Curve2D::Circle(circle), Curve2D::Circle(other)) => {
             let both = |point: Point2D, multiplicity| {
                 hit(
-                    circle.parameter_of(point),
-                    other.parameter_of(point),
+                    circle.parameter_in_bounds(circle.parameter_of(point), tol),
+                    other.parameter_in_bounds(other.parameter_of(point), tol),
                     point,
                     multiplicity,
                 )

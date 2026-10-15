@@ -217,7 +217,8 @@ impl CurveCurveIntersection {
         }
     }
 
-    /// The isolated hits, sorted by first parameter.
+    /// The isolated hits, sorted by first parameter. A hit outside a
+    /// trimmed curve's range is dropped.
     ///
     /// # Examples
     ///
@@ -349,7 +350,7 @@ impl CurveCurveIntersection {
 /// [`method`](Self::method) (always [`IntersectionMethod::Exact`]),
 /// [`completeness`](Self::completeness) (always complete),
 /// [`is_complete`](Self::is_complete) and [`is_empty`](Self::is_empty).
-/// `Intersect::intersect` returns it.
+/// [`Intersect::intersect`](crate::Intersect::intersect) returns it.
 ///
 /// # Examples
 ///
@@ -573,7 +574,8 @@ impl CurveSurfaceIntersection {
         }
     }
 
-    /// The isolated hits, sorted by curve parameter.
+    /// The isolated hits, sorted by curve parameter. A hit outside a
+    /// trimmed curve's range is dropped.
     ///
     /// # Examples
     ///
@@ -690,7 +692,7 @@ fn sorted_by_curve_parameter(mut hits: CurveSurfaceHitList) -> CurveSurfaceHitLi
 /// [`is_coincident`](Self::is_coincident), [`method`](Self::method),
 /// [`completeness`](Self::completeness),
 /// [`is_complete`](Self::is_complete) and [`is_empty`](Self::is_empty).
-/// `Intersect::intersect` returns it.
+/// [`Intersect::intersect`](crate::Intersect::intersect) returns it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceSurfaceIntersection {
     curves: Vec<IntersectionCurve>,

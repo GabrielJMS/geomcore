@@ -576,3 +576,23 @@ fn test_2d_arcs_overlapping_on_a_span_report_no_extra_hit() {
     assert!(r.hits().is_empty());
     assert_eq!(r.overlaps().len(), 1);
 }
+
+#[test]
+fn test_2d_hit_just_below_the_seam_reports_the_start_like_3d() {
+    // The line crosses the circle a hair below angle 0.
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let line = Line2D::new(Point2D::new(-5.0, -1e-11), Vector2D::X).unwrap();
+    let r = circle.intersect(&line, TOL);
+    assert_eq!(r.hits().len(), 2);
+    assert_eq!(r.hits()[0].first_parameter, 0.0);
+    assert!((r.hits()[1].first_parameter - PI).abs() < 1e-9);
+    let circle_3d = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let line_3d = Line3D::new(Point3D::new(-5.0, -1e-11, 0.0), Vector3D::X).unwrap();
+    let r_3d = circle_3d.intersect(&line_3d, TOL);
+    assert_eq!(r_3d.hits()[0].first_parameter, 0.0);
+    // Two circles meeting a hair below the seam of the first.
+    let other = Circle2D::new(Point2D::new(2.0, -2e-11), 1.0).unwrap();
+    let r = circle.intersect(&other, TOL);
+    assert!(!r.hits().is_empty());
+    assert_eq!(r.hits()[0].first_parameter, 0.0);
+}

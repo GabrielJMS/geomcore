@@ -1,11 +1,33 @@
-//! Exact intersection result types.
+//! Intersections of curves and surfaces, and their results.
 //!
-//! [`IntersectExact::intersect_exact`] on two elementary curves or surfaces returns one
-//! of these enums: the intersecting geometry on success, or an explicit
-//! classification when the pair is tangent, disjoint, parallel, or
-//! coincident. Tangency and coincidence are decided with
-//! [`crate::Tolerance`], so near-degenerate configurations classify
-//! robustly instead of collapsing to noise.
+//! [`Intersect::intersect`] is the entry point: it solves a pair exactly
+//! when a closed form exists and runs a numeric search otherwise. Its
+//! family results ([`CurveCurveIntersection`],
+//! [`CurveCurveIntersection2D`], [`CurveSurfaceIntersection`]) carry the
+//! hits with the parameters on both shapes, the overlaps, the method that
+//! ran ([`IntersectionMethod`]) and whether every hit was found
+//! ([`Completeness`]).
+//!
+//! ```
+//! use geomcore::{Circle3D, Completeness, Intersect, IntersectionMethod, Line3D, Point3D};
+//! use geomcore::{Tolerance, Vector3D};
+//!
+//! let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
+//! let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+//! let result = line.intersect(&circle, Tolerance::DEFAULT);
+//! assert_eq!(result.method(), IntersectionMethod::Exact);
+//! assert_eq!(result.completeness(), &Completeness::Complete);
+//! assert_eq!(result.hits().len(), 2);
+//! ```
+//!
+//! [`IntersectExact::intersect_exact`] is the typed fast path. On two
+//! elementary curves or surfaces it returns one of the pair's own enums:
+//! the intersecting geometry on success, or an explicit classification
+//! when the pair is tangent, disjoint, parallel, or coincident. Tangency
+//! and coincidence are decided with [`crate::Tolerance`], so
+//! near-degenerate configurations classify robustly instead of collapsing
+//! to noise. It recovers no parameters it does not need and never falls
+//! back to a numeric search.
 //!
 //! When the types are only known at run time, the same call on
 //! [`crate::surfaces::Surface`], [`crate::curves::Curve3D`] or their
@@ -681,12 +703,14 @@ pub struct CurveCurveExtremum {
 /// One meeting of two 3D curves.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
-    /// Parameter on the first curve, within its bounds (on a circle or
-    /// ellipse, a hit at the seam reports the start of the bounds).
+    /// Parameter on the first curve, within its bounds, give or take
+    /// `tol.parametric` (on a circle or ellipse, a hit at the seam reports
+    /// the start of the bounds).
     pub first_parameter: f64,
-    /// Parameter on the second curve, within its bounds.
+    /// Parameter on the second curve, within its bounds, give or take
+    /// `tol.parametric`.
     pub second_parameter: f64,
-    /// The meeting point (on the first curve; within tolerance of both).
+    /// The meeting point, within tolerance of both curves.
     pub point: Point3D,
     /// 1 where the curves cross, 2 or more where they are tangent.
     pub multiplicity: u32,
@@ -708,11 +732,14 @@ pub struct CurveCurveHit {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit2D {
-    /// Parameter on the first curve, within its bounds.
+    /// Parameter on the first curve, within its bounds, give or take
+    /// `tol.parametric` (on a circle, a hit at the seam reports the start
+    /// of the bounds).
     pub first_parameter: f64,
-    /// Parameter on the second curve, within its bounds.
+    /// Parameter on the second curve, within its bounds, give or take
+    /// `tol.parametric`.
     pub second_parameter: f64,
-    /// The meeting point (on the first curve; within tolerance of both).
+    /// The meeting point, within tolerance of both curves.
     pub point: Point2D,
     /// 1 where the curves cross, 2 or more where they are tangent.
     pub multiplicity: u32,
@@ -734,12 +761,14 @@ pub struct CurveCurveHit2D {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
-    /// Parameter on the curve.
+    /// Parameter on the curve, within its bounds, give or take
+    /// `tol.parametric`.
     pub curve_parameter: f64,
     /// Parameters on the surface.
     pub surface_parameters: (f64, f64),
     /// The meeting point (on the curve; within tolerance of the surface).
     pub point: Point3D,
-    /// 1 where the curve crosses the surface, 2 where it grazes it.
+    /// 1 where the curve crosses the surface, 2 or more where the curve is
+    /// tangent to it.
     pub multiplicity: u32,
 }

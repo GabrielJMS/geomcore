@@ -50,8 +50,45 @@
 //!
 //! # Intersections
 //!
-//! [`IntersectExact`] is the entry point for exact intersections. Between
-//! two concrete types it returns the pair's own result, in either order:
+//! `a.intersect(&b, tol)` ([`Intersect`]) is the entry point. It works for
+//! every supported pair of curves and surfaces, in either order: it solves
+//! the pair exactly when a closed form exists and runs a numeric search
+//! otherwise, and the result says which method ran and whether it found
+//! every hit.
+//!
+//! ```
+//! use geomcore::curves::TrimmedCurve3D;
+//! use geomcore::{
+//!     BSplineCurve3D, Completeness, Intersect, IntersectionMethod, Line3D, Point3D, Sphere,
+//!     Tolerance, Vector3D,
+//! };
+//!
+//! let tol = Tolerance::DEFAULT;
+//! let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+//!
+//! // A line through a sphere has a closed form: exact, and so complete.
+//! let line = Line3D::new(Point3D::new(0.0, 0.0, -5.0), Vector3D::Z).unwrap();
+//! let result = line.intersect(&sphere, tol);
+//! assert_eq!(result.method(), IntersectionMethod::Exact);
+//! assert_eq!(result.completeness(), &Completeness::Complete);
+//! let parameters: Vec<f64> = result.hits().iter().map(|h| h.curve_parameter).collect();
+//! assert_eq!(parameters, [3.0, 7.0]);
+//!
+//! // A segment keeps only the hits in its range.
+//! let segment = TrimmedCurve3D::new(line, 0.0, 5.0).unwrap();
+//! assert_eq!(segment.intersect(&sphere, tol).hits().len(), 1);
+//!
+//! // A B-spline has no closed form: the numeric search runs.
+//! let poles = vec![Point3D::new(0.0, 0.0, -5.0), Point3D::new(0.0, 0.0, 5.0)];
+//! let spline = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+//! let result = spline.intersect(&sphere, tol);
+//! assert_eq!(result.method(), IntersectionMethod::Numeric);
+//! assert_eq!(result.hits().len(), 2);
+//! ```
+//!
+//! [`IntersectExact::intersect_exact`] is the typed fast path: between two
+//! concrete types it returns the pair's own exact result, with no
+//! parameters recovered and no numeric fallback.
 //!
 //! ```
 //! use geomcore::{IntersectExact, PlaneSphereIntersection, Point3D, Vector3D};
@@ -68,9 +105,9 @@
 //!
 //! Between [`surfaces::Surface`] or [`curves::Curve3D`] values it returns
 //! a general result such as [`ExactSurfaceIntersection`], which reports
-//! `NotAnalytic` for a B-spline or a pair without a closed form; the
-//! routed [`Intersect::intersect`] and [`marching_intersection`] cover
-//! those.
+//! `NotAnalytic` for a B-spline or a pair without a closed form, where
+//! [`Intersect::intersect`] runs the numeric search. Two surfaces without
+//! a closed form are traced by [`marching_intersection`].
 //!
 //! # Extending the kernel
 //!
@@ -100,7 +137,8 @@ pub mod curves;
 pub mod discretization;
 /// Axis and frame placement types.
 pub mod frame;
-/// Exact intersection result types.
+/// Intersections of curves and surfaces: the routed [`Intersect`], the
+/// typed exact [`IntersectExact`], and their results.
 pub mod intersect;
 /// Internal numerical toolbox (polynomial roots, Newton, Brent).
 pub(crate) mod math;
