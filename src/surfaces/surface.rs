@@ -113,6 +113,42 @@ pub trait ParametricSurface {
     /// not periodic in `v`.
     fn v_period(&self) -> Option<f64>;
 
+    /// Returns whether travelling in `u` returns to its start, i.e.
+    /// whether the `u` edges meet.
+    ///
+    /// Periodicity implies closedness, not the other way round: a
+    /// clamped B-spline whose first and last pole rows coincide is closed
+    /// in `u` but not periodic. Default implementation: the `u` period
+    /// is [`Some`](Self::u_period).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ParametricSurface;
+    /// use geomcore::{Cylinder, Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// assert!(!ParametricSurface::is_u_closed(&plane, Tolerance::DEFAULT));
+    ///
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert!(ParametricSurface::is_u_closed(&cylinder, Tolerance::DEFAULT));
+    /// assert!(!ParametricSurface::is_v_closed(&cylinder, Tolerance::DEFAULT));
+    /// ```
+    fn is_u_closed(&self, tol: Tolerance) -> bool {
+        // Structural default: periodicity. Shapes whose edges meet without
+        // a period (a clamped B-spline) override this.
+        let _ = tol;
+        self.u_period().is_some()
+    }
+
+    /// Returns whether travelling in `v` returns to its start, i.e.
+    /// whether the `v` edges meet. As [`is_u_closed`](Self::is_u_closed),
+    /// for `v`.
+    fn is_v_closed(&self, tol: Tolerance) -> bool {
+        let _ = tol;
+        self.v_period().is_some()
+    }
+
     /// Evaluates the points on the surface at each `(u, v)` in `uvs`.
     ///
     /// Default implementation: maps [`eval_point`](Self::eval_point) over
@@ -596,6 +632,28 @@ impl ParametricSurface for Surface {
             Surface::Sphere(s) => s.v_period(),
             Surface::Torus(s) => s.v_period(),
             Surface::BSpline(s) => s.v_period(),
+        }
+    }
+
+    fn is_u_closed(&self, tol: Tolerance) -> bool {
+        match self {
+            Surface::Plane(s) => ParametricSurface::is_u_closed(s, tol),
+            Surface::Cylinder(s) => ParametricSurface::is_u_closed(s, tol),
+            Surface::Cone(s) => ParametricSurface::is_u_closed(s, tol),
+            Surface::Sphere(s) => ParametricSurface::is_u_closed(s, tol),
+            Surface::Torus(s) => ParametricSurface::is_u_closed(s, tol),
+            Surface::BSpline(s) => s.is_u_closed(tol),
+        }
+    }
+
+    fn is_v_closed(&self, tol: Tolerance) -> bool {
+        match self {
+            Surface::Plane(s) => ParametricSurface::is_v_closed(s, tol),
+            Surface::Cylinder(s) => ParametricSurface::is_v_closed(s, tol),
+            Surface::Cone(s) => ParametricSurface::is_v_closed(s, tol),
+            Surface::Sphere(s) => ParametricSurface::is_v_closed(s, tol),
+            Surface::Torus(s) => ParametricSurface::is_v_closed(s, tol),
+            Surface::BSpline(s) => s.is_v_closed(tol),
         }
     }
 
@@ -1342,6 +1400,114 @@ mod tests {
             wrapped.eval_derivative(0.3, 0.4, 0, 1),
             torus().eval_derivative(0.3, 0.4, 0, 1)
         );
+    }
+
+    // ---- closedness: periodicity implies closed, not conversely ----
+
+    fn closed_u_patch() -> BSplineSurface {
+        // Clamped degree-1 patch whose first and last pole rows coincide:
+        // closed in `u`, open in `v`, not periodic either way.
+        let row = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 0.0)];
+        BSplineSurface::new(
+            1,
+            1,
+            vec![row(0.0), row(1.0), row(0.0)],
+            vec![0.0, 1.0, 2.0],
+            vec![2, 1, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_elementary_closedness_follows_periodicity() {
+        let tol = Tolerance::DEFAULT;
+        // (is_u_closed, is_v_closed) per type.
+        assert_eq!(
+            (
+                ParametricSurface::is_u_closed(&plane(), tol),
+                ParametricSurface::is_v_closed(&plane(), tol)
+            ),
+            (false, false)
+        );
+        assert_eq!(
+            (
+                ParametricSurface::is_u_closed(&cylinder(), tol),
+                ParametricSurface::is_v_closed(&cylinder(), tol)
+            ),
+            (true, false)
+        );
+        assert_eq!(
+            (
+                ParametricSurface::is_u_closed(&cone(), tol),
+                ParametricSurface::is_v_closed(&cone(), tol)
+            ),
+            (true, false)
+        );
+        assert_eq!(
+            (
+                ParametricSurface::is_u_closed(&sphere(), tol),
+                ParametricSurface::is_v_closed(&sphere(), tol)
+            ),
+            (true, false)
+        );
+        assert_eq!(
+            (
+                ParametricSurface::is_u_closed(&torus(), tol),
+                ParametricSurface::is_v_closed(&torus(), tol)
+            ),
+            (true, true)
+        );
+    }
+
+    #[test]
+    fn test_bspline_closed_clamped_patch_without_period() {
+        let tol = Tolerance::DEFAULT;
+        let s = closed_u_patch();
+        assert_eq!(ParametricSurface::u_period(&s), None);
+        assert!(ParametricSurface::is_u_closed(&s, tol));
+        assert!(!ParametricSurface::is_v_closed(&s, tol));
+        assert!(!ParametricSurface::is_u_closed(&bspline(), tol));
+        assert!(!ParametricSurface::is_v_closed(&bspline(), tol));
+    }
+
+    #[test]
+    fn test_surface_enum_closedness_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let surfaces: Vec<Surface> = vec![
+            plane().into(),
+            cylinder().into(),
+            cone().into(),
+            sphere().into(),
+            torus().into(),
+            bspline().into(),
+            closed_u_patch().into(),
+        ];
+        // The enum dispatches to each variant's own answer, including the
+        // B-spline override.
+        for surface in &surfaces {
+            let expected = match surface {
+                Surface::Plane(s) => ParametricSurface::is_u_closed(s, tol),
+                Surface::Cylinder(s) => ParametricSurface::is_u_closed(s, tol),
+                Surface::Cone(s) => ParametricSurface::is_u_closed(s, tol),
+                Surface::Sphere(s) => ParametricSurface::is_u_closed(s, tol),
+                Surface::Torus(s) => ParametricSurface::is_u_closed(s, tol),
+                Surface::BSpline(s) => s.is_u_closed(tol),
+            };
+            assert_eq!(surface.is_u_closed(tol), expected);
+            let expected_v = match surface {
+                Surface::Plane(s) => ParametricSurface::is_v_closed(s, tol),
+                Surface::Cylinder(s) => ParametricSurface::is_v_closed(s, tol),
+                Surface::Cone(s) => ParametricSurface::is_v_closed(s, tol),
+                Surface::Sphere(s) => ParametricSurface::is_v_closed(s, tol),
+                Surface::Torus(s) => ParametricSurface::is_v_closed(s, tol),
+                Surface::BSpline(s) => s.is_v_closed(tol),
+            };
+            assert_eq!(surface.is_v_closed(tol), expected_v);
+        }
     }
 
     // ---- elementary surfaces ----

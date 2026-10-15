@@ -123,6 +123,32 @@ pub trait ParametricCurve3D {
         self.period().is_some()
     }
 
+    /// Returns whether the curve's ends meet, i.e. whether travelling
+    /// along it returns to its start.
+    ///
+    /// Periodicity implies closedness, not the other way round: a
+    /// clamped B-spline whose first and last poles coincide is closed
+    /// but not periodic. Default implementation: [`is_periodic`](Self::is_periodic).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert!(!line.is_closed(Tolerance::DEFAULT));
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// assert!(ParametricCurve3D::is_closed(&circle, Tolerance::DEFAULT));
+    /// ```
+    fn is_closed(&self, tol: Tolerance) -> bool {
+        // Structural default: periodicity. Shapes whose ends meet without
+        // a period (a clamped B-spline, a full-span trim) override this.
+        let _ = tol;
+        self.is_periodic()
+    }
+
     /// The B-spline this curve evaluates: the curve itself, or the basis
     /// of a trimmed B-spline, of which the curve is the piece over
     /// [`bounds`](Self::bounds). `None` for any other curve.
@@ -465,6 +491,10 @@ impl ParametricCurve3D for BSplineCurve3D {
         BSplineCurve3D::eval_points(self, us)
     }
 
+    fn is_closed(&self, tol: Tolerance) -> bool {
+        BSplineCurve3D::is_closed(self, tol)
+    }
+
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
         Some(self)
     }
@@ -583,6 +613,17 @@ impl ParametricCurve3D for Curve3D {
             Curve3D::Parabola(c) => c.eval_points(us),
             Curve3D::Hyperbola(c) => c.eval_points(us),
             Curve3D::BSpline(c) => c.eval_points(us),
+        }
+    }
+
+    fn is_closed(&self, tol: Tolerance) -> bool {
+        match self {
+            Curve3D::Line(c) => ParametricCurve3D::is_closed(c, tol),
+            Curve3D::Circle(c) => ParametricCurve3D::is_closed(c, tol),
+            Curve3D::Ellipse(c) => ParametricCurve3D::is_closed(c, tol),
+            Curve3D::Parabola(c) => ParametricCurve3D::is_closed(c, tol),
+            Curve3D::Hyperbola(c) => ParametricCurve3D::is_closed(c, tol),
+            Curve3D::BSpline(c) => c.is_closed(tol),
         }
     }
 
@@ -1175,5 +1216,80 @@ mod tests {
     #[test]
     fn test_bspline_curve_is_not_elementary() {
         assert_eq!(Curve3D::from(bspline()).as_elementary(), None);
+    }
+
+    // ---- closedness: periodicity implies closed, not conversely ----
+
+    fn closed_triangle() -> BSplineCurve3D {
+        // Clamped degree-1 triangle returning to its start: closed in
+        // geometry, without a period.
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::ORIGIN,
+        ];
+        BSplineCurve3D::new(1, poles, vec![0.0, 1.0, 2.0], vec![2, 1, 2], false).unwrap()
+    }
+
+    #[test]
+    fn test_elementary_closedness_follows_periodicity() {
+        let tol = Tolerance::DEFAULT;
+        assert!(!ParametricCurve3D::is_closed(&line(), tol));
+        assert!(ParametricCurve3D::is_closed(&circle(), tol));
+        assert!(ParametricCurve3D::is_closed(&ellipse(), tol));
+        assert!(!ParametricCurve3D::is_closed(&parabola(), tol));
+        assert!(!ParametricCurve3D::is_closed(&hyperbola(), tol));
+    }
+
+    #[test]
+    fn test_bspline_closed_clamped_curve_without_period() {
+        let tol = Tolerance::DEFAULT;
+        let c = closed_triangle();
+        assert_eq!(ParametricCurve3D::period(&c), None);
+        assert!(ParametricCurve3D::is_closed(&c, tol));
+        assert!(c.is_closed(tol));
+        assert!(!ParametricCurve3D::is_closed(&bspline(), tol));
+    }
+
+    #[test]
+    fn test_trimmed_closedness_needs_a_full_span() {
+        use std::f64::consts::TAU;
+
+        use crate::curves::TrimmedCurve3D;
+
+        let tol = Tolerance::DEFAULT;
+        let circle = circle();
+        let whole = TrimmedCurve3D::new(circle, 0.0, TAU).unwrap();
+        assert!(whole.is_closed(tol));
+        assert!(ParametricCurve3D::is_closed(&whole, tol));
+        let arc = TrimmedCurve3D::new(circle, 0.0, 1.0).unwrap();
+        assert!(!arc.is_closed(tol));
+        let segment = TrimmedCurve3D::new(line(), 0.0, 1.0).unwrap();
+        assert!(!segment.is_closed(tol));
+    }
+
+    #[test]
+    fn test_curve3d_enum_closedness_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let curves: Vec<Curve3D> = vec![
+            line().into(),
+            circle().into(),
+            ellipse().into(),
+            parabola().into(),
+            hyperbola().into(),
+            bspline().into(),
+            closed_triangle().into(),
+        ];
+        for curve in &curves {
+            let expected = match curve {
+                Curve3D::Line(c) => ParametricCurve3D::is_closed(c, tol),
+                Curve3D::Circle(c) => ParametricCurve3D::is_closed(c, tol),
+                Curve3D::Ellipse(c) => ParametricCurve3D::is_closed(c, tol),
+                Curve3D::Parabola(c) => ParametricCurve3D::is_closed(c, tol),
+                Curve3D::Hyperbola(c) => ParametricCurve3D::is_closed(c, tol),
+                Curve3D::BSpline(c) => c.is_closed(tol),
+            };
+            assert_eq!(curve.is_closed(tol), expected);
+        }
     }
 }

@@ -1,5 +1,5 @@
 //! B-spline (NURBS) curves in 3D: de Boor evaluation with derivatives,
-//! rational (weighted) poles, and periodic (closed) curves, a thin wrapper
+//! rational (weighted) poles, and periodic curves, a thin wrapper
 //! over [`crate::curve_math::bspline`].
 //!
 //! The poles are stored once, with a separate weight per pole if rational;
@@ -390,7 +390,7 @@ impl BSplineCurve3D {
         self.knots.degree()
     }
 
-    /// Returns whether the curve is periodic (closed).
+    /// Returns whether the curve is periodic.
     ///
     /// # Examples
     ///
@@ -402,6 +402,30 @@ impl BSplineCurve3D {
     /// ```
     pub fn is_periodic(&self) -> bool {
         self.knots.is_periodic()
+    }
+
+    /// Returns whether the curve's ends meet: a periodic curve, or one
+    /// whose first and last evaluated points coincide within
+    /// `tol.confusion`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Tolerance};
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    /// ];
+    /// let closed = BSplineCurve3D::new(1, poles, vec![0.0, 1.0, 2.0], vec![2, 1, 2], false).unwrap();
+    /// assert!(closed.is_closed(Tolerance::DEFAULT));
+    /// ```
+    pub fn is_closed(&self, tol: Tolerance) -> bool {
+        if self.is_periodic() {
+            return true;
+        }
+        let (lo, hi) = self.bounds();
+        self.eval_point(lo).distance(self.eval_point(hi)) <= tol.confusion
     }
 
     /// Returns whether the curve is rational (has per-pole weights).
@@ -1778,6 +1802,16 @@ mod tests {
     }
 
     // ---- periodic seam + wrap ----
+
+    #[test]
+    fn test_periodic_curve_is_closed() {
+        use crate::curves::ParametricCurve3D;
+
+        let curve = periodic_ring_curve();
+        assert!(curve.is_periodic());
+        assert!(curve.is_closed(Tolerance::DEFAULT));
+        assert!(ParametricCurve3D::is_closed(&curve, Tolerance::DEFAULT));
+    }
 
     #[test]
     fn test_periodic_bounds_are_full_knot_span() {

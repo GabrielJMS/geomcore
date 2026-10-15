@@ -9,6 +9,14 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Closedness queries (#70): `is_closed(tol)` on curves and
+  `is_u_closed(tol)` / `is_v_closed(tol)` on surfaces report whether
+  travelling returns to its start. Periodicity implies closedness, not
+  conversely: clamped B-splines with coincident ends and trims spanning
+  a full period count as closed without being periodic.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added

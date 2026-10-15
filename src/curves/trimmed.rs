@@ -206,6 +206,31 @@ impl<C: ParametricCurve3D> TrimmedCurve3D<C> {
         self.basis.eval_point(self.last)
     }
 
+    /// Returns whether the piece's ends meet: a piece spanning a full
+    /// period of a periodic basis, or whose start and end points coincide
+    /// within `tol.confusion`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve3D;
+    /// use geomcore::{Circle3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    /// let whole = TrimmedCurve3D::new(circle, 0.0, std::f64::consts::TAU).unwrap();
+    /// assert!(whole.is_closed(Tolerance::DEFAULT));
+    /// let arc = TrimmedCurve3D::new(circle, 0.0, 1.0).unwrap();
+    /// assert!(!arc.is_closed(Tolerance::DEFAULT));
+    /// ```
+    pub fn is_closed(&self, tol: Tolerance) -> bool {
+        if let Some(period) = self.basis.period()
+            && self.last - self.first >= period - tol.parametric
+        {
+            return true;
+        }
+        self.start_point().distance(self.end_point()) <= tol.confusion
+    }
+
     /// Evaluates the basis point at parameter `u`.
     pub fn eval_point(&self, u: f64) -> Point3D {
         self.basis.eval_point(u)
@@ -357,6 +382,10 @@ impl<C: ParametricCurve3D> ParametricCurve3D for TrimmedCurve3D<C> {
 
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         self.basis.eval_points(us)
+    }
+
+    fn is_closed(&self, tol: Tolerance) -> bool {
+        TrimmedCurve3D::is_closed(self, tol)
     }
 
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
