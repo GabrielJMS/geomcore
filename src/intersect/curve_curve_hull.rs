@@ -20,7 +20,7 @@ use std::ops::Deref;
 
 /// The hits of a numeric curve–curve intersection, ordered by parameter
 /// on the first curve, and whether they are all of them (see
-/// [`intersect_curve_curve`](crate::intersect_curve_curve)).
+/// [`search_curve_curve`](crate::search_curve_curve)).
 ///
 /// It reads as the slice of its hits.
 #[derive(Debug, Clone, PartialEq)]
@@ -1037,7 +1037,7 @@ mod tests {
     use crate::intersect::curve_curve::{
         ParamDomain, curve_curve_minima, hits_at_minima, refine_minima, sampled_curve_curve,
     };
-    use crate::intersect::{IncompleteReason, curve_curve_extrema, intersect_curve_curve};
+    use crate::intersect::{IncompleteReason, curve_curve_extrema, search_curve_curve};
 
     const TOL: Tolerance = Tolerance::DEFAULT;
 
@@ -1202,7 +1202,7 @@ mod tests {
                 "{want:?} missing from {found:#?}"
             );
         }
-        let hits = intersect_curve_curve(a, b, TOL);
+        let hits = search_curve_curve(a, b, TOL);
         assert!(hits.is_complete(), "{:?}", hits.completeness());
         assert_eq!(hits.into_hits(), found);
         found
@@ -1435,7 +1435,7 @@ mod tests {
             assert!((b.bounds().0..=b.bounds().1).contains(&hit.second_parameter));
             assert!(hit.point.distance(b.eval_point(hit.second_parameter)) <= TOL.confusion);
         }
-        assert_eq!(intersect_curve_curve(a, b, TOL).into_hits(), hits);
+        assert_eq!(search_curve_curve(a, b, TOL).into_hits(), hits);
         hits
     }
 
@@ -1520,7 +1520,7 @@ mod tests {
             (&touching, &line, (0.5, 0.5)),
             (&line, &touching, (0.5, 0.5)),
         ] {
-            let hits = intersect_curve_curve(a, b, TOL);
+            let hits = search_curve_curve(a, b, TOL);
             let (reason, regions) = incomplete(hits.completeness());
             assert_eq!(reason, IncompleteReason::Unseparated);
             assert_eq!(regions.len(), 1, "{regions:#?}");
@@ -1554,9 +1554,9 @@ mod tests {
         let part = segment(along(1.5), along(3.5));
         for swapped in [false, true] {
             let hits = if swapped {
-                intersect_curve_curve(&part, &polyline, TOL)
+                search_curve_curve(&part, &polyline, TOL)
             } else {
-                intersect_curve_curve(&polyline, &part, TOL)
+                search_curve_curve(&polyline, &part, TOL)
             };
             let (reason, regions) = incomplete(hits.completeness());
             assert_eq!(reason, IncompleteReason::Unseparated);
@@ -1585,7 +1585,7 @@ mod tests {
         let mut rng = Lcg(1);
         let (curve, _) = crossing(&mut rng, false, 1.0);
         let part = TrimmedCurve3D::new(&curve, 0.5, 2.0).unwrap();
-        let hits = intersect_curve_curve(&curve, &part, TOL);
+        let hits = search_curve_curve(&curve, &part, TOL);
         let (_, regions) = incomplete(hits.completeness());
         for k in 0..=16 {
             let s = 0.5 + 1.5 * k as f64 / 16.0;
@@ -1663,14 +1663,14 @@ mod tests {
         let mut rng = Lcg(23);
         for k in 0..8 {
             let (a, b) = crossing(&mut rng, k % 2 == 1, 1.0);
-            let hits = intersect_curve_curve(&a, &b, TOL);
+            let hits = search_curve_curve(&a, &b, TOL);
             assert!(hits.is_complete(), "{:?}", hits.completeness());
             assert!(!hits.is_empty());
             let (below, above) = skew(&mut rng, k % 2 == 0);
             let extrema = curve_curve_extrema(&below, &above, TOL);
             assert_eq!(extrema.completeness(), &Completeness::Complete);
             assert!(!extrema.is_empty());
-            assert!(intersect_curve_curve(&below, &above, TOL).is_complete());
+            assert!(search_curve_curve(&below, &above, TOL).is_complete());
         }
     }
 
@@ -1678,7 +1678,7 @@ mod tests {
     fn test_elementary_pairs_are_sampled_and_mixed_pairs_are_not() {
         let circle = crate::Circle3D::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
         let line = crate::Line3D::new(Point3D::ORIGIN, crate::Vector3D::X).unwrap();
-        let hits = intersect_curve_curve(&line, &circle, TOL);
+        let hits = search_curve_curve(&line, &circle, TOL);
         assert_eq!(hits.completeness(), &Completeness::Sampled);
         assert_eq!(hits.len(), 2);
         assert_eq!(
@@ -1686,7 +1686,7 @@ mod tests {
             &Completeness::Sampled
         );
         let chord = segment([-3.0, 0.5, 0.0], [3.0, 0.5, 0.0]);
-        let hits = intersect_curve_curve(&chord, &circle, TOL);
+        let hits = search_curve_curve(&chord, &circle, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 2);
         let extrema = curve_curve_extrema(&circle, &chord, TOL);
@@ -1755,8 +1755,8 @@ mod tests {
         let (a, b) = crossing(&mut rng, true, 2.0);
         let (ea, eb) = (Curve3D::BSpline(a.clone()), Curve3D::BSpline(b.clone()));
         let hits = assert_hits_match(&ea, &eb);
-        assert_eq!(hits, intersect_curve_curve(&a, &b, TOL).into_hits());
-        assert_eq!(hits, intersect_curve_curve(&&a, &b, TOL).into_hits());
+        assert_eq!(hits, search_curve_curve(&a, &b, TOL).into_hits());
+        assert_eq!(hits, search_curve_curve(&&a, &b, TOL).into_hits());
         assert_eq!(
             curve_curve_extrema(&ea, &eb, TOL).into_minima(),
             assert_minima_match(&a, &b)
@@ -1801,8 +1801,8 @@ mod tests {
         assert_eq!(ext.len(), 1, "{ext:#?}");
         assert!((ext[0].distance - 1.0).abs() < 1e-12);
         // Apart, the arcs never meet: no hit, and none missing.
-        assert!(intersect_curve_curve(&a, &b, TOL).is_empty());
-        assert!(intersect_curve_curve(&a, &b, TOL).is_complete());
+        assert!(search_curve_curve(&a, &b, TOL).is_empty());
+        assert!(search_curve_curve(&a, &b, TOL).is_complete());
     }
 
     #[test]

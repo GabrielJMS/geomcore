@@ -163,6 +163,10 @@ pub(crate) fn ellipse_parameter(frame: &Frame3D, maj: f64, min: f64, p: Point3D)
 /// the axis on every call: a frame's z direction is unit by construction,
 /// so the circle and ellipse parameters skip that square root and division.
 fn signed_angle_around_unit_axis(from: Vector3D, to: Vector3D, unit_axis: Vector3D) -> f64 {
+    debug_assert!(
+        (unit_axis.square_magnitude() - 1.0).abs() <= 1e-12,
+        "the axis must be unit"
+    );
     unit_axis.dot(from.cross(to)).atan2(from.dot(to))
 }
 

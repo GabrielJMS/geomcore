@@ -74,7 +74,12 @@ Two more landmarks, as figures:
 
 The routed `a.intersect(&b, tol)` takes the numeric search for pairs
 without a closed form (a B-spline, or an ellipse against a torus), and
-trimmed pieces are searched over their own range. On B-splines there is no sampling grid:
+trimmed pieces are searched over their own range. A curve or surface
+type you define yourself, by implementing `ParametricCurve3D` or
+`ParametricSurface`, goes through `intersect_curve_curve(a, b, tol)` and
+`intersect_curve_surface(curve, surface, tol)`: they always run the
+numeric search and return the same results as the routed call. On
+B-splines there is no sampling grid:
 Bézier pieces subdivide where their control boxes overlap until each
 pair holds at most one hit, then Newton solves it — crossings a grid
 would miss between samples are found, and tangencies/overlaps fall

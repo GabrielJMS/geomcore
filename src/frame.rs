@@ -123,6 +123,11 @@ impl Axis3D {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frame3D {
+    // The three axes are unit and orthogonal, `y_dir = z_dir × x_dir`:
+    // `WORLD` holds the world axes and every other constructor goes through
+    // `Frame3D::new`, which normalizes them. The circle and ellipse
+    // parameters rely on it (they skip normalizing `z_dir`), so the fields
+    // stay private.
     origin: Point3D,
     x_dir: Vector3D,
     y_dir: Vector3D,

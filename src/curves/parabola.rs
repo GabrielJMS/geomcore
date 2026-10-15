@@ -493,7 +493,7 @@ mod tests {
     use crate::IntersectExact;
     use crate::{
         Axis3D, ConicSurfaceIntersection, Cylinder, Frame3D, Parabola3D, ParabolaConstructionError,
-        Plane, Point3D, Sphere, Tolerance, Transform, Vector3D, intersect_curve_surface,
+        Plane, Point3D, Sphere, Tolerance, Transform, Vector3D, search_curve_surface,
     };
 
     // ---- construction ----
@@ -832,7 +832,7 @@ mod tests {
                     assert!(p.contains(h.point, tol));
                     assert!(cylinder.contains(h.point, tol));
                 }
-                let generic = intersect_curve_surface(&p, &cylinder, tol);
+                let generic = search_curve_surface(&p, &cylinder, tol);
                 assert_eq!(generic.len(), hits.len());
             }
             _ => panic!("expected hits"),

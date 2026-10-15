@@ -616,7 +616,7 @@ impl<C: PointExtrema2D> PointExtrema2D for TrimmedCurve2D<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intersect::{curve_curve_extrema, intersect_curve_curve, intersect_curve_surface};
+    use crate::intersect::{curve_curve_extrema, search_curve_curve, search_curve_surface};
     use crate::{Circle2D, Circle3D, Ellipse3D, Sphere};
     use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -807,10 +807,10 @@ mod tests {
     fn test_intersect_curve_curve_ignores_hits_outside_the_ranges() {
         let s = TrimmedCurve3D::segment(Point3D::new(-2.0, 0.5, 0.0), Point3D::new(2.0, 0.5, 0.0))
             .unwrap();
-        let full = intersect_curve_curve(&s, &circle(), TOL);
+        let full = search_curve_curve(&s, &circle(), TOL);
         assert_eq!(full.len(), 2);
         let upper_right = TrimmedCurve3D::new(circle(), 0.0, FRAC_PI_2).unwrap();
-        let hits = intersect_curve_curve(&s, &upper_right, TOL);
+        let hits = search_curve_curve(&s, &upper_right, TOL);
         assert_eq!(hits.len(), 1);
         assert!(hits[0].point.x > 0.0);
     }
@@ -821,9 +821,9 @@ mod tests {
         let through =
             TrimmedCurve3D::segment(Point3D::new(-2.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0))
                 .unwrap();
-        assert_eq!(intersect_curve_surface(&through, &sphere, TOL).len(), 2);
+        assert_eq!(search_curve_surface(&through, &sphere, TOL).len(), 2);
         let half = TrimmedCurve3D::segment(Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)).unwrap();
-        let hits = intersect_curve_surface(&half, &sphere, TOL);
+        let hits = search_curve_surface(&half, &sphere, TOL);
         assert_eq!(hits.len(), 1);
         assert!(close(hits[0].curve_parameter, 1.0));
     }
@@ -869,8 +869,8 @@ mod tests {
             TrimmedCurve3D::segment(Point3D::new(2.0, -3.0, 0.0), Point3D::new(2.0, 3.0, 0.0))
                 .unwrap();
         assert_eq!(
-            intersect_curve_curve(&borrowed, &line, TOL),
-            intersect_curve_curve(&owned, &line, TOL)
+            search_curve_curve(&borrowed, &line, TOL),
+            search_curve_curve(&owned, &line, TOL)
         );
         assert_eq!(
             curve_curve_extrema(&line, &borrowed, TOL),
@@ -878,8 +878,8 @@ mod tests {
         );
         let sphere = Sphere::new(Point3D::new(2.0, 0.0, 0.0), 1.0).unwrap();
         assert_eq!(
-            intersect_curve_surface(&borrowed, &sphere, TOL),
-            intersect_curve_surface(&owned, &sphere, TOL)
+            search_curve_surface(&borrowed, &sphere, TOL),
+            search_curve_surface(&owned, &sphere, TOL)
         );
 
         let circle = Circle2D::new(Point2D::new(1.0, 1.0), 2.0).unwrap();

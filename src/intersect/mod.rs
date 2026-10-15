@@ -56,9 +56,13 @@ pub use completeness::{Completeness, IncompleteReason};
 mod surface_surface;
 pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
 pub use curve_curve::curve_curve_extrema;
-pub(crate) use curve_curve::intersect_curve_curve;
+pub use curve_curve::intersect_curve_curve;
+#[cfg(test)]
+pub(crate) use curve_curve::search_curve_curve;
 pub use curve_curve_hull::{CurveCurveExtrema, CurveCurveRegion};
-pub(crate) use curve_surface::intersect_curve_surface;
+pub use curve_surface::intersect_curve_surface;
+#[cfg(test)]
+pub(crate) use curve_surface::search_curve_surface;
 pub use curve_surface_hull::CurveSurfaceRegion;
 pub use dispatch::{
     ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,

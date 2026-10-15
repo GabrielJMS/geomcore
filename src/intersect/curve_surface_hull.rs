@@ -19,7 +19,7 @@ use std::ops::Deref;
 
 /// The hits of a numeric curve–surface intersection, ordered by curve
 /// parameter, and whether they are all of them (see
-/// [`intersect_curve_surface`](crate::intersect_curve_surface)).
+/// [`search_curve_surface`](crate::search_curve_surface)).
 ///
 /// It reads as the slice of its hits.
 #[derive(Debug, Clone, PartialEq)]
@@ -685,7 +685,7 @@ mod tests {
     use crate::Point3D;
     use crate::curves::{Curve3D, ParametricCurve3D, TrimmedCurve3D};
     use crate::intersect::curve_surface::sampled_curve_surface;
-    use crate::intersect::{IncompleteReason, intersect_curve_surface};
+    use crate::intersect::{IncompleteReason, search_curve_surface};
     use crate::surfaces::Surface;
 
     const TOL: Tolerance = Tolerance::DEFAULT;
@@ -1034,7 +1034,7 @@ mod tests {
             for hits in [
                 assert_matches_sampled(&borrowed, &surface),
                 assert_matches_sampled(&owned, &surface),
-                intersect_curve_surface(&owned, &Surface::from(&surface), TOL).into_hits(),
+                search_curve_surface(&owned, &Surface::from(&surface), TOL).into_hits(),
             ] {
                 assert_eq!(hits.len(), expected.len());
                 for (hit, want) in hits.iter().zip(&expected) {
@@ -1042,12 +1042,12 @@ mod tests {
                 }
             }
         }
-        let enums = intersect_curve_surface(
+        let enums = search_curve_surface(
             &Curve3D::BSpline(curve.clone()),
             &Surface::from(&surface),
             TOL,
         );
-        assert_eq!(enums, intersect_curve_surface(&curve, &surface, TOL));
+        assert_eq!(enums, search_curve_surface(&curve, &surface, TOL));
     }
 
     fn segment(from: Point3D, to: Point3D) -> BSplineCurve3D {
@@ -1146,7 +1146,7 @@ mod tests {
             && within(p.z, (lo.z, hi.z))
     }
 
-    /// Asserts the hits of `intersect_curve_surface` include the sampled
+    /// Asserts the hits of `search_curve_surface` include the sampled
     /// search's, every one lying on both shapes.
     #[track_caller]
     fn assert_sampled_hits_kept(
@@ -1183,7 +1183,7 @@ mod tests {
                 "{t}: {regions:?}"
             );
         }
-        let hits = intersect_curve_surface(&lying, &plane, TOL);
+        let hits = search_curve_surface(&lying, &plane, TOL);
         assert_eq!(hits.completeness(), found.completeness());
         assert!(!hits.is_empty());
         assert_sampled_hits_kept(&hits, &lying, &plane);
@@ -1209,7 +1209,7 @@ mod tests {
             assert!(t0 <= 0.5 + 1e-3 && t1 >= 0.5 - 1e-3, "{region:?}");
             assert!(t1 - t0 < 1e-2, "{region:?}");
         }
-        let hits = intersect_curve_surface(&tangent, &plane, TOL);
+        let hits = search_curve_surface(&tangent, &plane, TOL);
         assert_eq!(hits.completeness(), found.completeness());
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert!(hits[0].point.distance(contact) < TOL.confusion.sqrt());
@@ -1278,7 +1278,7 @@ mod tests {
         let mut rng = Lcg(11);
         for _ in 0..8 {
             let curve = rising(&mut rng, true);
-            let hits = intersect_curve_surface(&curve, &surface, TOL);
+            let hits = search_curve_surface(&curve, &surface, TOL);
             assert!(hits.is_complete(), "{:?}", hits.completeness());
             assert!(!hits.is_empty());
         }
@@ -1289,15 +1289,15 @@ mod tests {
         let surface = wavy(false);
         let cylinder = crate::Cylinder::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
         let ray = segment(Point3D::new(0.0, 0.0, 0.5), Point3D::new(4.0, 0.0, 0.5));
-        let hits = intersect_curve_surface(&ray, &cylinder, TOL);
+        let hits = search_curve_surface(&ray, &cylinder, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 1);
         let line = crate::Line3D::new(Point3D::new(2.0, 2.0, -1.0), crate::Vector3D::Z).unwrap();
-        let hits = intersect_curve_surface(&line, &surface, TOL);
+        let hits = search_curve_surface(&line, &surface, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 1);
         let axis = crate::Line3D::new(Point3D::new(1.0, 0.0, 0.0), crate::Vector3D::X).unwrap();
-        let hits = intersect_curve_surface(&axis, &cylinder, TOL);
+        let hits = search_curve_surface(&axis, &cylinder, TOL);
         assert_eq!(hits.completeness(), &Completeness::Sampled);
         assert_eq!(hits.len(), 2);
     }

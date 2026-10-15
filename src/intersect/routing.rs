@@ -275,19 +275,23 @@ fn representative_in(
 /// piece. The three slots hold the three shifted copies the search tries,
 /// so the list never fills up.
 ///
-/// A piece no longer than `tol.parametric` is kept as a single point (see
-/// [`is_single_point`]): the overlap only touches the range there. Such a
-/// point is dropped when it is, up to a period, the end of another piece,
-/// so a touch is never reported twice.
+/// Lengths are measured in space: `speed` gives the length of the curve's
+/// derivative at a parameter (the line direction's length, the circle's
+/// radius). A piece whose length in space is at most `tol.confusion`,
+/// including a gap that small between the overlap and the range, is kept
+/// as a single point (see [`is_single_point`]): the overlap only touches
+/// the range there. Such a point is dropped when it is, up to a period,
+/// the end of another piece, so a touch is never reported twice.
 pub(crate) fn clip_range(
     overlap: (f64, f64),
     range: (f64, f64),
     period: Option<f64>,
+    speed: &impl Fn(f64) -> f64,
     tol: Tolerance,
 ) -> InlineList<(f64, f64), 3> {
     let clip = |(low, high): (f64, f64)| {
         let clipped = (low.max(range.0), high.min(range.1));
-        (clipped.1 - clipped.0 >= -tol.parametric).then_some(clipped)
+        (clipped.1 >= clipped.0 || is_single_point(clipped, speed, tol)).then_some(clipped)
     };
     let mut pieces = InlineList::new();
     let Some(period) = period else {
@@ -296,7 +300,8 @@ pub(crate) fn clip_range(
         }
         return pieces;
     };
-    if overlap.1 - overlap.0 >= period - tol.parametric {
+    let missing = period - (overlap.1 - overlap.0);
+    if missing <= 0.0 || missing * speed(overlap.1) <= tol.confusion {
         pieces.push(range);
         return pieces;
     }
@@ -310,13 +315,13 @@ pub(crate) fn clip_range(
     }
     let same_point = |a: f64, b: f64| {
         let gap = (a - b).rem_euclid(period);
-        gap.min(period - gap) <= tol.parametric
+        gap.min(period - gap) * speed(a) <= tol.confusion
     };
     for (index, &piece) in copies.iter().enumerate() {
-        let repeated = is_single_point(piece, tol)
+        let repeated = is_single_point(piece, speed, tol)
             && copies.iter().enumerate().any(|(other_index, &other)| {
-                let earlier_point = is_single_point(other, tol) && other_index < index;
-                let longer = !is_single_point(other, tol);
+                let earlier_point = is_single_point(other, speed, tol) && other_index < index;
+                let longer = !is_single_point(other, speed, tol);
                 (earlier_point || longer)
                     && (same_point(piece.0, other.0) || same_point(piece.0, other.1))
             });
@@ -328,10 +333,17 @@ pub(crate) fn clip_range(
     pieces
 }
 
-/// Whether a piece clipped by [`clip_range`] is no longer than
-/// `tol.parametric`: a single point where the overlap touches the range.
-pub(crate) fn is_single_point(piece: (f64, f64), tol: Tolerance) -> bool {
-    piece.1 - piece.0 <= tol.parametric
+/// Whether a piece clipped by [`clip_range`] is at most `tol.confusion`
+/// long in space, the parameter length times the curve's `speed` there: a
+/// single point where the overlap touches the range. A piece with its ends
+/// swapped is a gap, measured the same way.
+pub(crate) fn is_single_point(
+    (low, high): (f64, f64),
+    speed: &impl Fn(f64) -> f64,
+    tol: Tolerance,
+) -> bool {
+    let length = high - low;
+    length.is_finite() && length.abs() * speed(0.5 * (low + high)) <= tol.confusion
 }
 
 /// Intersects a curve with a surface: the exact path when the curve has an
@@ -355,9 +367,7 @@ where
         }
     }
     // A trimmed curve is searched over its own range only: no clipping.
-    let hits = intersect_curve_surface(curve, surface, tol);
-    let completeness = hits.completeness().clone();
-    CurveSurfaceIntersection::numeric(hits.into_hits(), completeness)
+    intersect_curve_surface(curve, surface, tol)
 }
 
 /// Turns the exact intersection of the curve's elementary `basis` with the
@@ -493,9 +503,7 @@ where
         }
     }
     // A trimmed curve is searched over its own range only: no clipping.
-    let hits = intersect_curve_curve(a, b, tol);
-    let completeness = hits.completeness().clone();
-    CurveCurveIntersection::numeric(hits.into_hits(), completeness)
+    intersect_curve_curve(a, b, tol)
 }
 
 /// An elementary basis and the parameter range restricting it.
@@ -578,8 +586,8 @@ fn from_exact_curve_curve<A: CurveBasis, B: CurveBasis>(
 /// mapped back onto the second curve and split where it crosses the
 /// second curve's seam.
 ///
-/// A piece no longer than `tol.parametric`, where the ranges only touch
-/// (two consecutive pieces of one line or circle), is not an overlap: it
+/// A piece at most `tol.confusion` long in space, where the ranges only
+/// touch (two consecutive pieces of one line or circle), is not an overlap: it
 /// comes back in [`CoincidentPieces::touches`] as a parameter pair, each
 /// parameter the point's representative in its range.
 fn coincident_overlaps<C: CoincidentCurve>(
@@ -591,8 +599,17 @@ fn coincident_overlaps<C: CoincidentCurve>(
     let on_first = mapped_range(second, second_range, first, same_direction, tol);
     let mut overlaps = CurveCurveOverlapList::new();
     let mut touches = InlineList::new();
-    for &piece in clip_range(on_first, first_range, first.cycle_length(), tol).iter() {
-        if is_single_point(piece, tol) {
+    let first_speed = |parameter: f64| first.speed(parameter);
+    let second_speed = |parameter: f64| second.speed(parameter);
+    let first_pieces = clip_range(
+        on_first,
+        first_range,
+        first.cycle_length(),
+        &first_speed,
+        tol,
+    );
+    for &piece in first_pieces.iter() {
+        if is_single_point(piece, &first_speed, tol) {
             let first_parameter = (0.5 * (piece.0 + piece.1)).clamp(first_range.0, first_range.1);
             let found = second.parameter_of_image(first, first_parameter);
             let second_parameter = in_range(found, second_range, second.cycle_length(), tol)
@@ -602,7 +619,13 @@ fn coincident_overlaps<C: CoincidentCurve>(
             continue;
         }
         let on_second = mapped_range(first, piece, second, same_direction, tol);
-        let pieces_on_second = clip_range(on_second, second_range, second.cycle_length(), tol);
+        let pieces_on_second = clip_range(
+            on_second,
+            second_range,
+            second.cycle_length(),
+            &second_speed,
+            tol,
+        );
         if let [single] = pieces_on_second[..] {
             overlaps.push(CurveCurveOverlap {
                 first_range: piece,
@@ -655,6 +678,10 @@ pub(crate) trait CoincidentCurve {
     /// Whether this curve at `parameter` and `other` at the same point
     /// run the same way.
     fn runs_with(&self, parameter: f64, other: &Self) -> bool;
+
+    /// The length of the first derivative at `parameter`: the line
+    /// direction's length, the circle's radius.
+    fn speed(&self, parameter: f64) -> f64;
 }
 
 impl CoincidentCurve for ElementaryCurve {
@@ -671,6 +698,10 @@ impl CoincidentCurve for ElementaryCurve {
         self.eval_derivative(parameter, 1)
             .dot(other.eval_derivative(image, 1))
             >= 0.0
+    }
+
+    fn speed(&self, parameter: f64) -> f64 {
+        self.eval_derivative(parameter, 1).magnitude()
     }
 }
 
@@ -692,6 +723,10 @@ impl CoincidentCurve for Curve2D {
         self.eval_derivative(parameter, 1)
             .dot(other.eval_derivative(image, 1))
             >= 0.0
+    }
+
+    fn speed(&self, parameter: f64) -> f64 {
+        self.eval_derivative(parameter, 1).magnitude()
     }
 }
 
@@ -1206,33 +1241,42 @@ mod tests {
         assert_eq!(in_range(-1.0 - 1e-3, (-1.0, 1.0), Some(TAU), TOL), None);
     }
 
+    /// The speed of a unit-speed line or of a circle of radius 1.
+    const UNIT_SPEED: fn(f64) -> f64 = |_| 1.0;
+
     #[test]
     fn test_clip_range() {
         assert_eq!(
-            *clip_range((f64::NEG_INFINITY, f64::INFINITY), (2.0, 3.0), None, TOL),
+            *clip_range(
+                (f64::NEG_INFINITY, f64::INFINITY),
+                (2.0, 3.0),
+                None,
+                &UNIT_SPEED,
+                TOL
+            ),
             [(2.0, 3.0)]
         );
         assert_eq!(
-            *clip_range((0.0, TAU), (-1.0, 1.0), Some(TAU), TOL),
+            *clip_range((0.0, TAU), (-1.0, 1.0), Some(TAU), &UNIT_SPEED, TOL),
             [(-1.0, 1.0)]
         );
-        assert!(clip_range((0.0, 1.0), (2.0, 3.0), None, TOL).is_empty());
+        assert!(clip_range((0.0, 1.0), (2.0, 3.0), None, &UNIT_SPEED, TOL).is_empty());
     }
 
     #[test]
     fn test_clip_range_shifts_a_partial_overlap_across_the_seam() {
-        let pieces = clip_range((6.0, 6.0 + 0.5), (-1.0, 1.0), Some(TAU), TOL);
+        let pieces = clip_range((6.0, 6.0 + 0.5), (-1.0, 1.0), Some(TAU), &UNIT_SPEED, TOL);
         assert_eq!(pieces.len(), 1);
         let (low, high) = pieces[0];
         assert!((low - (6.0 - TAU)).abs() < 1e-15);
         assert!((high - (6.5 - TAU)).abs() < 1e-15);
-        assert!(clip_range((3.0, 4.0), (-1.0, 1.0), Some(TAU), TOL).is_empty());
+        assert!(clip_range((3.0, 4.0), (-1.0, 1.0), Some(TAU), &UNIT_SPEED, TOL).is_empty());
     }
 
     #[test]
     fn test_clip_range_returns_both_pieces_across_the_seam() {
         // Arcs [0, 5] and [4, 7] of one circle share [4, 5] and [0, 7 - TAU].
-        let pieces = clip_range((4.0, 7.0), (0.0, 5.0), Some(TAU), TOL);
+        let pieces = clip_range((4.0, 7.0), (0.0, 5.0), Some(TAU), &UNIT_SPEED, TOL);
         assert_eq!(pieces.len(), 2);
         assert!((pieces[0].0 - 0.0).abs() < 1e-15 && (pieces[0].1 - (7.0 - TAU)).abs() < 1e-15);
         assert_eq!(pieces[1], (4.0, 5.0));
@@ -1240,10 +1284,13 @@ mod tests {
 
     #[test]
     fn test_clip_range_keeps_a_touch_as_a_single_point() {
-        assert_eq!(*clip_range((1.0, 2.0), (0.0, 1.0), None, TOL), [(1.0, 1.0)]);
-        let seam = clip_range((0.0, 1.0), (5.0, TAU), Some(TAU), TOL);
+        assert_eq!(
+            *clip_range((1.0, 2.0), (0.0, 1.0), None, &UNIT_SPEED, TOL),
+            [(1.0, 1.0)]
+        );
+        let seam = clip_range((0.0, 1.0), (5.0, TAU), Some(TAU), &UNIT_SPEED, TOL);
         assert_eq!(*seam, [(TAU, TAU)]);
-        assert!(is_single_point(seam[0], TOL));
+        assert!(is_single_point(seam[0], &UNIT_SPEED, TOL));
     }
 
     #[test]
@@ -1251,7 +1298,7 @@ mod tests {
         // The copy shifted by a period touches the full range at TAU, the
         // same point as the start of the real piece.
         assert_eq!(
-            *clip_range((0.0, 1.0), (0.0, TAU), Some(TAU), TOL),
+            *clip_range((0.0, 1.0), (0.0, TAU), Some(TAU), &UNIT_SPEED, TOL),
             [(0.0, 1.0)]
         );
     }

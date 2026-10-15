@@ -649,7 +649,7 @@ mod tests {
     use crate::IntersectExact;
     use crate::{
         Cone, ConicSurfaceIntersection, Frame3D, Hyperbola3D, HyperbolaConstructionError, Point3D,
-        Tolerance, Vector3D, intersect_curve_surface,
+        Tolerance, Vector3D, search_curve_surface,
     };
 
     // ---- construction ----
@@ -891,7 +891,7 @@ mod tests {
                 for h in &hits {
                     assert!(cone.contains(h.point, tol));
                 }
-                let generic = intersect_curve_surface(&h, &cone, tol);
+                let generic = search_curve_surface(&h, &cone, tol);
                 assert_eq!(generic.len(), hits.len());
             }
             _ => panic!("expected hits"),

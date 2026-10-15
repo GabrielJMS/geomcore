@@ -551,8 +551,8 @@ mod tests {
     use crate::intersect::curve_curve::{curve_curve_minima, sampled_curve_curve};
     use crate::intersect::curve_surface::sampled_curve_surface;
     use crate::intersect::{
-        CurveCurveHit, CurveSurfaceHit, curve_curve_extrema, intersect_curve_curve,
-        intersect_curve_surface,
+        CurveCurveHit, CurveSurfaceHit, curve_curve_extrema, search_curve_curve,
+        search_curve_surface,
     };
     use crate::surfaces::{Cone, Cylinder, Plane, Sphere, Surface, Torus};
 
@@ -704,7 +704,7 @@ mod tests {
         curve: &C,
         surface: &S,
     ) -> Vec<CurveSurfaceHit> {
-        let hits = intersect_curve_surface(curve, surface, TOL);
+        let hits = search_curve_surface(curve, surface, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_on_both(&hits, curve, surface);
@@ -730,7 +730,7 @@ mod tests {
         a: &A,
         b: &B,
     ) -> Vec<CurveCurveHit> {
-        let hits = intersect_curve_curve(a, b, TOL);
+        let hits = search_curve_curve(a, b, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_curve_hits_on_both(&hits, a, b);
@@ -835,7 +835,7 @@ mod tests {
         let hits = assert_surface_hits(&curve, &Surface::BSpline(surface.clone()));
         assert_eq!(
             hits,
-            intersect_curve_surface(&circle, &surface, TOL).into_hits()
+            search_curve_surface(&circle, &surface, TOL).into_hits()
         );
     }
 
@@ -876,7 +876,7 @@ mod tests {
         surface: &S,
         at: Point3D,
     ) {
-        let hits = intersect_curve_surface(curve, surface, TOL);
+        let hits = search_curve_surface(curve, surface, TOL);
         let hit = *hits
             .iter()
             .find(|h| h.point.distance(at) < 1e-6)
@@ -938,7 +938,7 @@ mod tests {
     fn test_hits_at_sphere_poles_and_cone_apex() {
         let sphere = Sphere::new(p(1.0, 2.0, 3.0), 2.0).unwrap();
         let through = segment(p(1.0, 2.0, 0.0), p(1.0, 2.0, 6.0));
-        let hits = intersect_curve_surface(&through, &sphere, TOL);
+        let hits = search_curve_surface(&through, &sphere, TOL);
         assert_ne!(hits.completeness(), &Completeness::Sampled);
         let hits = hits.into_hits();
         assert_on_both(&hits, &through, &sphere);
@@ -951,7 +951,7 @@ mod tests {
         // The apex is at height -1; the axis meets the cone there alone.
         let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, FRAC_PI_4, 1.0).unwrap();
         let axis = segment(p(0.0, 0.0, -3.0), p(0.0, 0.0, 1.0));
-        let hits = intersect_curve_surface(&axis, &cone, TOL);
+        let hits = search_curve_surface(&axis, &cone, TOL);
         assert_ne!(hits.completeness(), &Completeness::Sampled);
         let hits = hits.into_hits();
         assert_on_both(&hits, &axis, &cone);
@@ -979,7 +979,7 @@ mod tests {
         )
         .unwrap();
         let line = Line3D::new(target - line.direction() * 2500.0, line.direction()).unwrap();
-        let hits = intersect_curve_surface(&line, &surface, TOL);
+        let hits = search_curve_surface(&line, &surface, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_on_both(&hits, &line, &surface);
@@ -988,7 +988,7 @@ mod tests {
             "{hits:#?}"
         );
         let piece = segment(line.eval_point(2400.0), line.eval_point(2600.0));
-        let along = intersect_curve_surface(&piece, &surface, TOL).into_hits();
+        let along = search_curve_surface(&piece, &surface, TOL).into_hits();
         assert_eq!(hits.len(), along.len());
         for (hit, want) in hits.iter().zip(&along) {
             assert!(hit.point.distance(want.point) < 1e-9);
@@ -1004,20 +1004,20 @@ mod tests {
             ],
         );
         let plane = Plane::new(p(5000.0, 0.0, 0.0), Vector3D::X).unwrap();
-        let hits = intersect_curve_surface(&far, &plane, TOL);
+        let hits = search_curve_surface(&far, &plane, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_on_both(&hits, &far, &plane);
         assert_eq!(hits.len(), 1, "{hits:#?}");
         let cylinder = Cylinder::new(p(4998.0, 0.0, 0.0), Vector3D::Z, 5.0).unwrap();
-        let hits = intersect_curve_surface(&far, &cylinder, TOL);
+        let hits = search_curve_surface(&far, &cylinder, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_on_both(&hits, &far, &cylinder);
         assert!(!hits.is_empty());
         assert!(hits.iter().all(|h| h.surface_parameters.1 > 2999.0));
         let cone = Cone::new(p(5000.0, 0.0, 2000.0), Vector3D::Z, 0.004, 1.0).unwrap();
-        let hits = intersect_curve_surface(&far, &cone, TOL);
+        let hits = search_curve_surface(&far, &cone, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_on_both(&hits, &far, &cone);
@@ -1040,7 +1040,7 @@ mod tests {
                 panic!("{line:?} misses the box of {target:?}");
             };
             assert!((hull.range.lo..=hull.range.hi).contains(&reach));
-            let hits = intersect_curve_surface(&line, &surface, TOL);
+            let hits = search_curve_surface(&line, &surface, TOL);
             assert_eq!(hits.completeness(), &Completeness::Complete);
             assert_on_both(&hits, &line, &surface);
             assert!(
@@ -1053,7 +1053,7 @@ mod tests {
             hull_curve(&beside, Some(&cover)),
             Some(Hull::Apart)
         ));
-        let hits = intersect_curve_surface(&beside, &surface, TOL);
+        let hits = search_curve_surface(&beside, &surface, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert!(hits.is_empty());
 
@@ -1090,10 +1090,7 @@ mod tests {
         assert!(!assert_curve_hits(&hyperbola, &curve).is_empty());
         let (a, b) = (Curve3D::Circle(circle), Curve3D::BSpline(curve.clone()));
         let hits = assert_curve_hits(&a, &b);
-        assert_eq!(
-            hits,
-            intersect_curve_curve(&circle, &curve, TOL).into_hits()
-        );
+        assert_eq!(hits, search_curve_curve(&circle, &curve, TOL).into_hits());
 
         let whole = assert_curve_hits(&circle, &curve);
         for (lo, hi) in [(0.0, PI), (2.0, 5.5)] {
@@ -1130,7 +1127,7 @@ mod tests {
     /// the contact unsettled within a region holding it.
     #[track_caller]
     fn assert_tangent<A: ParametricCurve3D, B: ParametricCurve3D>(a: &A, b: &B) {
-        let hits = intersect_curve_curve(a, b, TOL);
+        let hits = search_curve_curve(a, b, TOL);
         let Completeness::Incomplete { reason, regions } = hits.completeness().clone() else {
             panic!("{:?}", hits.completeness());
         };
@@ -1162,7 +1159,7 @@ mod tests {
         assert_eq!(hits.len(), 3);
         assert!(hits.iter().all(|h| h.first_parameter > 9990.0));
         let beside = Line3D::new(p(0.0, 0.0, 5.0), Vector3D::X).unwrap();
-        let hits = intersect_curve_curve(&beside, &curve, TOL);
+        let hits = search_curve_curve(&beside, &curve, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert!(hits.is_empty());
     }
@@ -1173,7 +1170,7 @@ mod tests {
         a: &A,
         b: &B,
     ) -> Vec<CurveCurveHit> {
-        let hits = intersect_curve_curve(a, b, TOL);
+        let hits = search_curve_curve(a, b, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         let hits = hits.into_hits();
         assert_curve_hits_on_both(&hits, a, b);

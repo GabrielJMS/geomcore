@@ -87,8 +87,8 @@
 //! ```
 //!
 //! [`IntersectExact::intersect_exact`] is the typed fast path: between two
-//! concrete types it returns the pair's own exact result, with no
-//! parameters recovered and no numeric fallback.
+//! concrete types it returns the pair's own exact result. It recovers no
+//! parameters it does not need and never falls back to a numeric search.
 //!
 //! ```
 //! use geomcore::{IntersectExact, PlaneSphereIntersection, Point3D, Vector3D};
@@ -115,6 +115,9 @@
 //! [`curves::ParametricCurve3D`] (or [`curves::ParametricCurve2D`]) and
 //! [`surfaces::ParametricSurface`] respectively, without touching the
 //! existing dispatch code in [`curves::Curve3D`]/[`surfaces::Surface`].
+//! Such types are intersected by [`intersect_curve_curve`] and
+//! [`intersect_curve_surface`], which run the numeric search on any
+//! curve and surface and return the same results as [`Intersect::intersect`].
 #![warn(missing_docs)]
 
 pub(crate) mod tol {
@@ -199,8 +202,9 @@ pub use intersect::{
     ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
     InlineList, Intersect, IntersectExact,
 };
+pub use intersect::{intersect_curve_curve, intersect_curve_surface};
 #[cfg(test)]
-pub(crate) use intersect::{intersect_curve_curve, intersect_curve_surface};
+pub(crate) use intersect::{search_curve_curve, search_curve_surface};
 pub use point::{Point2D, Point3D};
 pub use projection::{CurveProjection, CurveProjection2D, SurfaceProjection};
 pub use surfaces::{

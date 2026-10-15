@@ -247,9 +247,10 @@ impl CurveCurveIntersection {
     /// along the overlap; with opposite directions, `first_range.0` pairs
     /// with `second_range.1`.
     ///
-    /// Two pieces of one curve that share no more than `tol.parametric` of
-    /// range, such as consecutive segments of a line, do not overlap: they
-    /// meet at a hit, with multiplicity 1.
+    /// Two pieces of one curve that share at most `tol.confusion` of length
+    /// in space, or stand apart by at most that, such as consecutive
+    /// segments of a line, do not overlap: they meet at a hit, with
+    /// multiplicity 1.
     ///
     /// # Examples
     ///

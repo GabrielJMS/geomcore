@@ -2,7 +2,7 @@
 //! curves: grid-seeded box minimisation of the distance between them.
 
 use super::curve_curve_hull::{CurveCurveExtrema, CurveCurveHits};
-use super::{CurveCurveExtremum, CurveCurveHit, curve_surface_hull, mixed};
+use super::{CurveCurveExtremum, CurveCurveHit, CurveCurveIntersection, curve_surface_hull, mixed};
 use crate::curves::ParametricCurve3D;
 use crate::math::{newton_min_1d, newton_min_2d};
 use crate::{Point3D, Tolerance, Vector3D};
@@ -763,6 +763,65 @@ fn merge_valleys(
         .collect()
 }
 
+/// Intersects two parametric curves of any type by the numeric search:
+/// the entry point for curve types defined outside this crate.
+///
+/// For the crate's own types, call [`Intersect::intersect`](crate::Intersect::intersect)
+/// instead: it solves the pairs with a closed form exactly, and runs this
+/// same search for the others. This function always searches, so its
+/// result's [`method`](CurveCurveIntersection::method) is
+/// [`Numeric`](crate::IntersectionMethod::Numeric), its
+/// [`completeness`](CurveCurveIntersection::completeness) says whether
+/// every hit was found, and it reports no overlaps: coincident curves
+/// yield a representative hit.
+///
+/// # Examples
+///
+/// A helix, defined by the caller, crossing a vertical line:
+///
+/// ```
+/// use geomcore::curves::ParametricCurve3D;
+/// use geomcore::{IntersectionMethod, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
+///
+/// /// A helix of radius 1 about the z axis, rising 1 per turn.
+/// struct Helix;
+///
+/// impl ParametricCurve3D for Helix {
+///     fn eval_point(&self, u: f64) -> Point3D {
+///         let turn = std::f64::consts::TAU;
+///         Point3D::new(u.cos(), u.sin(), u / turn)
+///     }
+///     fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
+///         let turn = std::f64::consts::TAU;
+///         match order {
+///             1 => Vector3D::new(-u.sin(), u.cos(), 1.0 / turn),
+///             _ => Vector3D::new(-u.cos(), -u.sin(), 0.0),
+///         }
+///     }
+///     fn bounds(&self) -> (f64, f64) {
+///         (0.0, 3.0 * std::f64::consts::TAU)
+///     }
+///     fn period(&self) -> Option<f64> {
+///         None
+///     }
+/// }
+///
+/// // A vertical line through (1, 0, 0) meets the helix once per turn.
+/// let line = Line3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z).unwrap();
+/// let result = intersect_curve_curve(&Helix, &line, Tolerance::DEFAULT);
+/// assert_eq!(result.method(), IntersectionMethod::Numeric);
+/// assert_eq!(result.hits().len(), 4);
+/// ```
+pub fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveIntersection
+where
+    A: ParametricCurve3D,
+    B: ParametricCurve3D,
+{
+    let hits = search_curve_curve(a, b, tol);
+    let completeness = hits.completeness().clone();
+    CurveCurveIntersection::numeric(hits.into_hits(), completeness)
+}
+
 /// Generic 3D curve-curve intersection: [`curve_curve_extrema`] filtered
 /// to meetings within `tol.confusion`, ordered by first-curve parameter.
 /// A hit where the tangents are parallel within `tol.angular` has
@@ -794,7 +853,7 @@ fn merge_valleys(
 /// those found, together with the hits of the grid-seeded extrema that do
 /// not merge into them.
 /// Parameters are reported on the curves themselves.
-pub(crate) fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
+pub(crate) fn search_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
 where
     A: ParametricCurve3D,
     B: ParametricCurve3D,
@@ -810,7 +869,7 @@ where
     CurveCurveHits::sampled(hits_at_minima(a, b, extrema, tol))
 }
 
-/// [`intersect_curve_curve`] through the grid-seeded extrema alone.
+/// [`search_curve_curve`] through the grid-seeded extrema alone.
 pub(super) fn sampled_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<CurveCurveHit>
 where
     A: ParametricCurve3D,
@@ -852,7 +911,7 @@ where
             }
         })
         .collect();
-    // Contact-level dedupe (see intersect_curve_surface).
+    // Contact-level dedupe (see search_curve_surface).
     let merge_gap = tol.confusion.sqrt();
     let mut merged: Vec<CurveCurveHit> = Vec::new();
     for h in hits {
@@ -1157,7 +1216,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-        let hits = intersect_curve_curve(&line, &circle, tol);
+        let hits = search_curve_curve(&line, &circle, tol);
         assert_eq!(hits.len(), 2);
         assert!((hits[0].first_parameter + 2.0).abs() < 1e-9);
         assert!((hits[1].first_parameter - 2.0).abs() < 1e-9);

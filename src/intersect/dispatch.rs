@@ -1154,8 +1154,8 @@ mod tests {
 
     use crate::{
         Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D, Plane,
-        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, intersect_curve_curve,
-        intersect_curve_surface, marching_intersection,
+        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, marching_intersection,
+        search_curve_curve, search_curve_surface,
     };
 
     const TOL: Tolerance = Tolerance::DEFAULT;
@@ -1508,7 +1508,7 @@ mod tests {
                     ExactCurveSurfaceIntersection::Empty => InlineList::new(),
                     _ => continue,
                 };
-                let numeric = intersect_curve_surface(curve, surface, TOL);
+                let numeric = search_curve_surface(curve, surface, TOL);
                 let near = |p: Point3D, q: Point3D| {
                     (p - q).magnitude() <= 1e-6 * (1.0 + p.distance(Point3D::ORIGIN))
                 };
@@ -1671,7 +1671,7 @@ mod tests {
                     ExactCurveCurveIntersection::Empty => InlineList::new(),
                     _ => continue,
                 };
-                let numeric = intersect_curve_curve(a, b, TOL);
+                let numeric = search_curve_curve(a, b, TOL);
                 let close = |p: Point3D, q: Point3D| {
                     p.distance(q) <= 1e-6 * (1.0 + p.distance(Point3D::ORIGIN))
                 };
@@ -1707,11 +1707,11 @@ mod tests {
                 hits.iter().map(|h| h.multiplicity).collect()
             };
         assert_eq!(
-            multiplicities(intersect_curve_curve(&crossing, &circle, TOL)),
+            multiplicities(search_curve_curve(&crossing, &circle, TOL)),
             [1, 1]
         );
         assert_eq!(
-            multiplicities(intersect_curve_curve(&grazing, &circle, TOL)),
+            multiplicities(search_curve_curve(&grazing, &circle, TOL)),
             [2]
         );
     }

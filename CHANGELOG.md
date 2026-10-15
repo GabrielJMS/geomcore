@@ -11,29 +11,28 @@ the Python distribution are versioned in lockstep.
 
 ### Changed
 
-- `a.intersect(&b, tol)` between two concrete elementary types (for
-  example `Line3D` and `Cylinder`, two `Circle3D`, two `Circle2D`), or a
-  trimmed curve on one, now calls the pair's typed exact solver directly
-  instead of going through the `ElementaryCurve` / `ElementarySurface`
-  enums; the result is unchanged. Routed circle–circle is about 20%
-  faster, 2D circle–circle about 15%.
+- `intersect_curve_surface` and `intersect_curve_curve` return the
+  routed results `CurveSurfaceIntersection` and `CurveCurveIntersection`
+  (breaking): read the hits with `.hits()` and the search status with
+  `completeness()`; `method()` is always `Numeric`. They stay generic
+  over `ParametricCurve3D` / `ParametricSurface`, as the entry point for
+  curve and surface types defined outside the crate. For the crate's own
+  types, the routed `a.intersect(&b, tol)` solves the pairs with a closed
+  form exactly and runs the same search for the others.
+- In Python, `geomcore.intersect_curve_surface` and
+  `geomcore.intersect_curve_curve` keep their signatures and now call the
+  routed `intersect`, so a pair with a closed form is solved exactly;
+  ranges where the shapes coincide are no longer returned as dense hits.
 - `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the
   frame's z direction on every call (it is unit by construction): about
   13 ns faster per call, and the parameters may differ in the last bits.
 
 ### Removed
 
-- The numeric free functions `intersect_curve_surface` and
-  `intersect_curve_curve`, and their results `CurveSurfaceHits` and
-  `CurveCurveHits`, are no longer public (breaking). The routed
-  `a.intersect(&b, tol)` replaces them: it runs the same numeric search
-  for pairs without a closed form, solves the others exactly, and its
-  result carries the same `completeness()`. `ConicSurfaceHit` stays
-  public, as the exact results carry it. In Python,
-  `geomcore.intersect_curve_surface` and `geomcore.intersect_curve_curve`
-  keep their signatures and now call the routed `intersect`, so a pair
-  with a closed form is solved exactly; ranges where the shapes coincide
-  are no longer returned as dense hits.
+- `CurveSurfaceHits` and `CurveCurveHits`, the former results of
+  `intersect_curve_surface` and `intersect_curve_curve`, are no longer
+  public (breaking). `ConicSurfaceHit` stays public, as the exact results
+  carry it.
 
 ## [0.35.0] - 2026-10-13
 

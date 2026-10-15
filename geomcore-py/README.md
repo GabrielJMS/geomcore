@@ -36,9 +36,11 @@ Windows, for Python 3.9+ (abi3 — one wheel covers all versions).
   `(kind, payload)` tuples, with tangency and coincidence reported, and
   `"not_analytic"` when there is no closed form. A pair without an exact
   solver raises `TypeError`.
-- Numeric intersections over any curve or surface:
-  `intersect_curve_surface`, `intersect_curve_curve`,
-  `curve_curve_extrema` and `intersect_marching`.
+- Intersection hits over any curve or surface with
+  `intersect_curve_surface` and `intersect_curve_curve`: exact when the
+  pair has a closed form, numeric otherwise. Ranges where the shapes
+  coincide are not returned. Numeric `curve_curve_extrema` and
+  `intersect_marching`.
 - Curve-on-surface parametrization: `parametrize_on` (analytic) and
   `parametrize_numeric`.
 - B-spline `interpolate` and least-squares `approximate`.

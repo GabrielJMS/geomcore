@@ -1375,7 +1375,7 @@ mod tests {
         LineConic3DIntersection, LineConstructionError, LineLine2DIntersection,
         LineLine3DIntersection, LinePlaneIntersection, LineQuadricIntersection,
         LineTorusIntersection, Parabola3D, Plane, Point2D, Point3D, Sphere, Tolerance, Torus,
-        Transform, Vector2D, Vector3D, intersect_curve_surface,
+        Transform, Vector2D, Vector3D, search_curve_surface,
     };
 
     // ---- Line3D construction ----
@@ -2098,7 +2098,7 @@ mod tests {
             };
             let line = Line3D::new(origin, dir).unwrap();
             let analytic = line.intersect_exact(&torus, tol);
-            let generic = intersect_curve_surface(&line, &torus, tol);
+            let generic = search_curve_surface(&line, &torus, tol);
             match analytic {
                 LineTorusIntersection::Hits(hits) => {
                     assert_eq!(

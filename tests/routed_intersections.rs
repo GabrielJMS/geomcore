@@ -633,3 +633,141 @@ fn test_concrete_pairs_route_like_their_enums_bit_for_bit() {
         Curve2D::from(first).intersect(&Curve2D::from(second), TOL)
     );
 }
+
+/// A curve type defined outside the crate: a helix of radius 2 about the
+/// z axis, rising 1 per turn, over three turns.
+struct Helix;
+
+impl ParametricCurve3D for Helix {
+    fn eval_point(&self, u: f64) -> Point3D {
+        Point3D::new(2.0 * u.cos(), 2.0 * u.sin(), u / TAU)
+    }
+    fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
+        match order % 4 {
+            1 => Vector3D::new(-2.0 * u.sin(), 2.0 * u.cos(), 1.0 / TAU),
+            2 => Vector3D::new(-2.0 * u.cos(), -2.0 * u.sin(), 0.0),
+            3 => Vector3D::new(2.0 * u.sin(), -2.0 * u.cos(), 0.0),
+            _ => Vector3D::new(2.0 * u.cos(), 2.0 * u.sin(), 0.0),
+        }
+    }
+    fn bounds(&self) -> (f64, f64) {
+        (0.0, 3.0 * TAU)
+    }
+    fn period(&self) -> Option<f64> {
+        None
+    }
+}
+
+#[test]
+fn test_caller_defined_curve_intersects_through_the_public_numeric_functions() {
+    // A slanted plane through the axis at height 1.5 crosses each turn.
+    let plane = Plane::new(Point3D::new(0.0, 0.0, 1.5), Vector3D::new(0.05, 0.0, 1.0)).unwrap();
+    let r = intersect_curve_surface(&Helix, &plane, TOL);
+    assert_eq!(r.method(), IntersectionMethod::Numeric);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    assert_hits_lie_on(&r, &Helix, &plane);
+
+    // A vertical line on the helix's cylinder meets it once per turn.
+    let line = Line3D::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::Z).unwrap();
+    let r = intersect_curve_curve(&Helix, &line, TOL);
+    assert_eq!(r.method(), IntersectionMethod::Numeric);
+    let parameters: Vec<f64> = r.hits().iter().map(|h| h.first_parameter).collect();
+    assert_eq!(parameters.len(), 3);
+    for (turn, parameter) in parameters.iter().enumerate() {
+        assert!((parameter - (PI / 2.0 + turn as f64 * TAU)).abs() < 1e-9);
+    }
+}
+
+#[test]
+fn test_segments_apart_by_less_than_the_confusion_touch() {
+    // A unit-speed line: a parameter gap of 5e-9 is 5e-9 in space.
+    let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    let a = TrimmedCurve3D::new(line, 0.0, 1.0).unwrap();
+    let b = TrimmedCurve3D::new(line, 1.0 + 5e-9, 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    assert_eq!(r.hits()[0].multiplicity, 1);
+    assert!(r.hits()[0].point.distance(Point3D::new(1.0, 0.0, 0.0)) < 1e-8);
+}
+
+#[test]
+fn test_segments_apart_by_more_than_the_confusion_do_not_meet() {
+    let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    let a = TrimmedCurve3D::new(line, 0.0, 1.0).unwrap();
+    let b = TrimmedCurve3D::new(line, 1.0 + 1e-3, 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.is_empty());
+    assert!(r.is_complete());
+}
+
+#[test]
+fn test_2d_consecutive_arcs_meet_at_the_seam() {
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let a = TrimmedCurve2D::new(circle, 1.5 * PI, TAU).unwrap();
+    let b = TrimmedCurve2D::new(circle, 0.0, PI / 2.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - TAU).abs() < 1e-12);
+    assert!(hit.second_parameter.abs() < 1e-12);
+    assert!(hit.point.distance(Point2D::new(1.0, 0.0)) < 1e-12);
+}
+
+#[test]
+fn test_touch_between_coincident_curves_running_opposite_ways() {
+    // The reversed circle has the point at angle a at parameter -a.
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let reversed = Circle3D::from_frame(
+        Frame3D::new(Point3D::ORIGIN, -Vector3D::Z, Vector3D::X).unwrap(),
+        1.0,
+    )
+    .unwrap();
+    let a = TrimmedCurve3D::new(circle, 0.0, PI / 2.0).unwrap();
+    // Angles [PI / 2, PI] on the reversed circle.
+    let b = TrimmedCurve3D::new(reversed, PI, 1.5 * PI).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    let hit = r.hits()[0];
+    assert!((hit.first_parameter - PI / 2.0).abs() < 1e-12);
+    assert!((hit.second_parameter - 1.5 * PI).abs() < 1e-12);
+    assert!(hit.point.distance(Point3D::new(0.0, 1.0, 0.0)) < 1e-12);
+
+    // A segment of the line running the other way: x in [1, 2].
+    let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    let backwards = Line3D::new(Point3D::ORIGIN, -Vector3D::X).unwrap();
+    let a = TrimmedCurve3D::new(line, 0.0, 1.0).unwrap();
+    let b = TrimmedCurve3D::new(backwards, -2.0, -1.0).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 1);
+    assert!((r.hits()[0].first_parameter - 1.0).abs() < 1e-12);
+    assert!((r.hits()[0].second_parameter + 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn test_arcs_making_up_the_whole_circle_touch_twice() {
+    let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
+    let a = TrimmedCurve3D::new(circle, 0.0, PI).unwrap();
+    let b = TrimmedCurve3D::new(circle, PI, TAU).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    let pairs: Vec<(f64, f64)> = r
+        .hits()
+        .iter()
+        .map(|h| (h.first_parameter, h.second_parameter))
+        .collect();
+    assert_eq!(pairs.len(), 2);
+    assert!(close(pairs[0], (0.0, TAU)));
+    assert!(close(pairs[1], (PI, PI)));
+
+    let circle = Circle2D::new(Point2D::ORIGIN, 1.0).unwrap();
+    let a = TrimmedCurve2D::new(circle, 0.0, PI).unwrap();
+    let b = TrimmedCurve2D::new(circle, PI, TAU).unwrap();
+    let r = a.intersect(&b, TOL);
+    assert!(r.overlaps().is_empty());
+    assert_eq!(r.hits().len(), 2);
+}

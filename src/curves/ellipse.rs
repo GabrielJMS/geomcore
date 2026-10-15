@@ -688,7 +688,7 @@ mod tests {
     use crate::{
         Axis3D, ConicConicIntersection, ConicSurfaceIntersection, Ellipse3D,
         EllipseConstructionError, Frame3D, Point3D, Sphere, Tolerance, Transform, Vector3D,
-        intersect_curve_curve, intersect_curve_surface,
+        search_curve_curve, search_curve_surface,
     };
 
     /// A tangent contact at `t = π` reports multiplicity 2, like its mirror
@@ -1119,7 +1119,7 @@ mod tests {
             let major = 1.0 + 2.0 * next();
             let e2 = Ellipse3D::from_frame(frame, major, (0.5 + next()).min(major)).unwrap();
             let analytic = e1.intersect_exact(&e2, tol);
-            let generic = intersect_curve_curve(&e1, &e2, tol);
+            let generic = search_curve_curve(&e1, &e2, tol);
             match analytic {
                 ConicConicIntersection::Hits(hits) => {
                     assert_eq!(
@@ -1156,7 +1156,7 @@ mod tests {
                     assert!(sphere.contains(h.point, tol));
                 }
                 // Generic solver agrees on the count.
-                let generic = intersect_curve_surface(&e, &sphere, tol);
+                let generic = search_curve_surface(&e, &sphere, tol);
                 assert_eq!(generic.len(), hits.len());
             }
             _ => panic!("expected hits"),
