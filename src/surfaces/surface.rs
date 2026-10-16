@@ -126,6 +126,14 @@ pub trait ParametricSurface {
     /// genuinely undefined at and around `(u, v)`, or `(u, v)` is not a
     /// finite parameter pair of the surface.
     ///
+    /// Two caveats. Where the surface itself has no unique normal — a
+    /// cone apex admits one limiting normal per meridian — rung 2
+    /// returns the meridian's direction at `(u, v)`, which varies with
+    /// `u`: useful as an offset seed, not as *the* normal. And a
+    /// derivative covering less than `tol.confusion` across its parameter
+    /// range never counts, so sub-confusion geometry reports `None`
+    /// everywhere.
+    ///
     /// Raw partials stay available through
     /// [`eval_d1`](Self::eval_d1); there is no `tangent` method.
     ///
@@ -1599,6 +1607,16 @@ mod tests {
         let (_, [su, sv]) = b.eval_d1(0.3, 0.4);
         let expected = su.cross(sv) * (1.0 / su.cross(sv).magnitude());
         assert_eq!(ParametricSurface::normal(&b, 0.3, 0.4, tol), Some(expected));
+    }
+
+    #[test]
+    fn test_normal_sub_confusion_geometry_is_none() {
+        // A derivative covering less than tol.confusion across its range
+        // is noise: a 1e-9 sphere's partials cover ~6e-9 over a turn, so
+        // it has no normal anywhere.
+        let tol = Tolerance::DEFAULT;
+        let tiny = Sphere::new(Point3D::ORIGIN, 1e-9).unwrap();
+        assert_eq!(ParametricSurface::normal(&tiny, 0.0, 0.0, tol), None);
     }
 
     #[test]
