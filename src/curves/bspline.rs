@@ -10,7 +10,7 @@ use std::fmt;
 
 use crate::curve_math::bspline as math;
 use crate::curve_math::editing::{self, Elevation, Insertion, Lanes};
-use crate::curves::{Curve2D, ParametrizeError};
+use crate::curves::{Curve2D, ParametrizeError, Side};
 use crate::math::boxtree::{BoxTree, Lazy};
 use crate::math::{newton_min_1d, quadrature};
 use crate::projection::CurveProjection;
@@ -1139,6 +1139,59 @@ impl BSplineCurve3D {
     /// ```
     pub fn eval_d2(&self, u: f64) -> (Point3D, Vector3D, Vector3D) {
         let [c, d1, d2] = math::derivatives::<2>(&self.knots, self.pole_view(), u);
+        (Point3D::ORIGIN + c, d1, d2)
+    }
+
+    /// Evaluates the point and the first derivative at parameter `u` from
+    /// one side: [`Side::Below`] takes the span ending at `u` (the span
+    /// starting there is [`Side::Above`], the side plain evaluation
+    /// takes). Both sides agree strictly inside a span; periodic curves
+    /// always take the above span.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineCurve3D, Point3D, Side, Vector3D};
+    /// // Two segments meeting at a kink at u = 1: direction (1,0,0) then (0,1,0).
+    /// let poles = vec![
+    ///     Point3D::new(0.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(1.0, 1.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(1, poles, vec![0.0, 1.0, 2.0], vec![2, 1, 2], false).unwrap();
+    /// assert_eq!(curve.eval_d1_sided(1.0, Side::Below).1, Vector3D::new(1.0, 0.0, 0.0));
+    /// assert_eq!(curve.eval_d1_sided(1.0, Side::Above).1, Vector3D::new(0.0, 1.0, 0.0));
+    /// ```
+    pub fn eval_d1_sided(&self, u: f64, side: Side) -> (Point3D, Vector3D) {
+        let [c, d1, _] = math::derivatives_sided::<1>(&self.knots, self.pole_view(), u, side);
+        (Point3D::ORIGIN + c, d1)
+    }
+
+    /// Evaluates the derivative of the given `order` at parameter `u`
+    /// from one side, as [`eval_d1_sided`](Self::eval_d1_sided).
+    ///
+    /// Only first and second derivatives are supported.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order == 0` or if `order > 2`, as
+    /// [`eval_derivative`](Self::eval_derivative).
+    pub fn eval_derivative_sided(&self, u: f64, order: u32, side: Side) -> Vector3D {
+        match order {
+            0 => panic!("eval_derivative: order must be >= 1 (use eval_point for order 0)"),
+            1 => math::derivatives_sided::<1>(&self.knots, self.pole_view(), u, side)[1],
+            2 => math::derivatives_sided::<2>(&self.knots, self.pole_view(), u, side)[2],
+            _ => panic!(
+                "eval_derivative: order {order} is not supported (only first and second derivatives are supported)"
+            ),
+        }
+    }
+
+    /// Evaluates the point and the first and second derivatives at
+    /// parameter `u` from one side, as
+    /// [`eval_d1_sided`](Self::eval_d1_sided).
+    pub fn eval_d2_sided(&self, u: f64, side: Side) -> (Point3D, Vector3D, Vector3D) {
+        let [c, d1, d2] = math::derivatives_sided::<2>(&self.knots, self.pole_view(), u, side);
         (Point3D::ORIGIN + c, d1, d2)
     }
 
@@ -3603,5 +3656,68 @@ mod tests {
             })
             .count();
         assert!(kept > 0, "no pole kept exactly");
+    }
+
+    // ---- one-sided evaluation ----
+
+    fn creased_cubic() -> BSplineCurve3D {
+        // Cubic with a double interior knot at 0.5: C1, so first
+        // derivatives agree across it and second derivatives do not.
+        let poles = vec![
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(1.0, 1.0, 0.0),
+            Point3D::new(2.0, 0.0, 1.0),
+            Point3D::new(3.0, 1.0, 1.0),
+            Point3D::new(4.0, 0.0, 0.0),
+            Point3D::new(5.0, 1.0, 0.0),
+        ];
+        BSplineCurve3D::new(3, poles, vec![0.0, 0.5, 1.0], vec![4, 2, 4], false).unwrap()
+    }
+
+    #[test]
+    fn test_sided_derivatives_match_split_pieces() {
+        let curve = creased_cubic();
+        let (left, right) = curve.split_at(0.5).unwrap();
+        let below1 = curve.eval_derivative_sided(0.5, 1, Side::Below);
+        let above1 = curve.eval_derivative_sided(0.5, 1, Side::Above);
+        let below2 = curve.eval_derivative_sided(0.5, 2, Side::Below);
+        let above2 = curve.eval_derivative_sided(0.5, 2, Side::Above);
+        // C1: positions and first derivatives agree, seconds differ.
+        assert!((below1 - above1).magnitude() < 1e-9);
+        assert!((below2 - above2).magnitude() > 1e-6);
+        // Each side matches its split piece evaluated at the cut.
+        let (_, left_hi) = left.bounds();
+        let (right_lo, _) = right.bounds();
+        assert!((left.eval_derivative(left_hi, 1) - below1).magnitude() < 1e-9);
+        assert!((left.eval_derivative(left_hi, 2) - below2).magnitude() < 1e-9);
+        assert!((right.eval_derivative(right_lo, 1) - above1).magnitude() < 1e-9);
+        assert!((right.eval_derivative(right_lo, 2) - above2).magnitude() < 1e-9);
+        // Points agree across the knot.
+        let (pb, _) = curve.eval_d1_sided(0.5, Side::Below);
+        let (pa, _) = curve.eval_d1_sided(0.5, Side::Above);
+        assert!(pb.distance(pa) < 1e-12);
+    }
+
+    #[test]
+    fn test_sided_evaluation_agrees_off_knots() {
+        let curve = creased_cubic();
+        for u in [0.1, 0.49, 0.51, 0.9] {
+            let (p, d1, d2) = curve.eval_d2(u);
+            assert_eq!(curve.eval_d1_sided(u, Side::Below), (p, d1));
+            assert_eq!(curve.eval_d1_sided(u, Side::Above), (p, d1));
+            assert_eq!(curve.eval_derivative_sided(u, 1, Side::Below), d1);
+            assert_eq!(curve.eval_derivative_sided(u, 2, Side::Above), d2);
+        }
+    }
+
+    #[test]
+    fn test_sided_evaluation_on_periodic_matches_plain() {
+        // Uniform periodic seams are smooth: both sides equal plain evaluation.
+        let curve = periodic_ring_curve();
+        for u in [0.0, 2.0, 5.0] {
+            let (p, d1, d2) = curve.eval_d2(u);
+            assert_eq!(curve.eval_d1_sided(u, Side::Below), (p, d1));
+            assert_eq!(curve.eval_d2_sided(u, Side::Below), (p, d1, d2));
+        }
     }
 }

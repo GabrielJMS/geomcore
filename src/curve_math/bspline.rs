@@ -20,6 +20,7 @@
 use std::sync::OnceLock;
 
 use super::analytic::in_period;
+use crate::curves::Side;
 use crate::{Point3D, Vector3D};
 
 /// Maximum supported B-spline degree.
@@ -284,6 +285,55 @@ impl KnotVector {
         (span, u)
     }
 
+    /// Mirror of [`span`](Self::span) approaching from below: the
+    /// nonzero-width span ending at `u` where `u` sits exactly on a knot,
+    /// the holding span otherwise (both sides agree strictly inside a
+    /// span, and at the range start nothing lies below).
+    ///
+    /// Periodic directions fall back to [`span`](Self::span): selecting
+    /// the span below a periodic seam needs tiled-knot surgery, and
+    /// periodic seams are smooth in the common uniform case, where both
+    /// sides agree anyway.
+    fn span_below(&self, u: f64) -> (usize, f64) {
+        if self.periodic {
+            return self.span(u);
+        }
+        let (s, u) = self.span(u);
+        let flat = &self.flat;
+        let lo = self.degree;
+        if u != flat[s] || s == lo {
+            return (s, u);
+        }
+        let mut t = s - 1;
+        while t > lo && flat[t] >= flat[t + 1] {
+            t -= 1;
+        }
+        if flat[t] < u { (t, u) } else { (s, u) }
+    }
+
+    /// [`span_knots`](Self::span_knots) with a side selector: [`Side::Above`]
+    /// behaves identically, [`Side::Below`] locates the span ending at `u`.
+    pub(crate) fn span_knots_sided<const N: usize>(
+        &self,
+        u: f64,
+        side: Side,
+        left: &mut [f64; N],
+        right: &mut [f64; N],
+    ) -> usize {
+        if side == Side::Above || self.periodic {
+            return self.span_knots(u, left, right);
+        }
+        let degree = self.degree;
+        debug_assert!(degree < N, "basis table too narrow for degree {degree}");
+        let (span, u) = self.span_below(u);
+        let flat = &self.flat;
+        for j in 1..=degree {
+            left[j] = u - flat[span + 1 - j];
+            right[j] = flat[span + j] - u;
+        }
+        span - degree
+    }
+
     /// The first pole and the non-zero basis functions at `u` of a
     /// non-periodic direction of degree 1 to 3, unrolled, or `None` for
     /// another direction.
@@ -385,6 +435,31 @@ impl KnotVector {
         w.pole_count = self.pole_count;
         w.periodic = self.periodic;
         w.first = self.span_knots(u, &mut left, &mut right);
+        match order {
+            0 => basis_values(self.degree, &left, &right, &mut w.ders[0]),
+            1 => basis_first(self.degree, &left, &right, &mut w.ders),
+            _ => basis_second(self.degree, &left, &right, &mut w.ders),
+        }
+    }
+
+    /// [`window`](Self::window) with a side selector: [`Side::Above`]
+    /// behaves identically, [`Side::Below`] evaluates the span ending at
+    /// `u` (periodic directions always take the above span).
+    pub(crate) fn window_sided<const N: usize>(
+        &self,
+        u: f64,
+        order: usize,
+        side: Side,
+        w: &mut Window<N>,
+    ) {
+        if side == Side::Above {
+            return self.window(u, order, w);
+        }
+        let mut left = [0.0f64; N];
+        let mut right = [0.0f64; N];
+        w.pole_count = self.pole_count;
+        w.periodic = self.periodic;
+        w.first = self.span_knots_sided(u, side, &mut left, &mut right);
         match order {
             0 => basis_values(self.degree, &left, &right, &mut w.ders[0]),
             1 => basis_first(self.degree, &left, &right, &mut w.ders),
@@ -981,10 +1056,24 @@ pub(crate) fn derivatives<const ORDER: usize>(
     poles: Poles,
     u: f64,
 ) -> [Vector3D; 3] {
+    derivatives_sided::<ORDER>(knots, poles, u, Side::Above)
+}
+
+/// [`derivatives`] from one side of `u`: [`Side::Below`] evaluates the
+/// span ending at `u` (the span starting there is [`Side::Above`); both
+/// agree strictly inside a span, and periodic directions always take the
+/// above span.
+#[inline]
+pub(crate) fn derivatives_sided<const ORDER: usize>(
+    knots: &KnotVector,
+    poles: Poles,
+    u: f64,
+    side: Side,
+) -> [Vector3D; 3] {
     if knots.degree < SMALL {
-        derivatives_sized::<SMALL, ORDER>(knots, poles, u)
+        derivatives_sized::<SMALL, ORDER>(knots, poles, u, side)
     } else {
-        derivatives_sized::<LARGE, ORDER>(knots, poles, u)
+        derivatives_sized::<LARGE, ORDER>(knots, poles, u, side)
     }
 }
 
@@ -993,13 +1082,14 @@ fn derivatives_sized<const N: usize, const ORDER: usize>(
     knots: &KnotVector,
     poles: Poles,
     u: f64,
+    side: Side,
 ) -> [Vector3D; 3] {
     debug_assert!(
         ORDER <= MAX_DERIVATIVE,
         "derivative order {ORDER} not supported"
     );
     let mut w = Window::<N>::new();
-    knots.window(u, ORDER, &mut w);
+    knots.window_sided(u, ORDER, side, &mut w);
     let mut sums = [[0.0f64; 4]; MAX_DERIVATIVE + 1];
     for j in 0..=knots.degree {
         let i = w.pole(j);

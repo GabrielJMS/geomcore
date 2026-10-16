@@ -94,3 +94,9 @@ A closed 2D outline of straight segments. It encloses a region.
 **Point-in-polygon classification**:
 Deciding whether a point is inside the region a closed polygon encloses, outside it, or on its boundary: one of Inside, Outside, OnBoundary. A polygon never offers a `contains` method.
 _Avoid_: containment, contains (reserved for a point that lies on a curve or surface), point on polygon
+
+## Evaluation
+
+**Side**:
+Which span to evaluate at a knot: `Below` approaches from the span ending there, `Above` from the span starting there (the side plain evaluation takes). Both sides agree away from knots.
+_Avoid_: left/right (which flip with traversal direction), sidedness

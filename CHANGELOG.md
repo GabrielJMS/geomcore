@@ -9,6 +9,14 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- One-sided evaluation at B-spline knots (#78): `Side::Below` takes
+  the span ending at the parameter (`Side::Above` is plain
+  evaluation), via `eval_d1/derivative/d2_sided` on B-spline curves
+  and surfaces. Plain evaluation paths are untouched; periodic
+  directions always take the above span.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added
