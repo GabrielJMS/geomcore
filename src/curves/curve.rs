@@ -1248,6 +1248,37 @@ mod tests {
         assert_eq!(Curve3D::from(bspline()).as_elementary(), None);
     }
 
+    #[test]
+    fn test_bspline_continuity_follows_degree_minus_multiplicity() {
+        // Degree 3 with interior multiplicities 1, 2, 3: C2, C1, C0.
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::new(2.0, 1.0, 0.0),
+            Point3D::new(3.0, 1.0, 0.0),
+            Point3D::new(4.0, 0.0, 0.0),
+            Point3D::new(5.0, 0.0, 1.0),
+            Point3D::new(6.0, 1.0, 1.0),
+            Point3D::new(7.0, 2.0, 1.0),
+            Point3D::new(8.0, 2.0, 0.0),
+            Point3D::new(9.0, 3.0, 0.0),
+        ];
+        let c = BSplineCurve3D::new(
+            3,
+            poles,
+            vec![0.0, 0.3, 0.6, 0.8, 1.0],
+            vec![4, 1, 2, 3, 4],
+            false,
+        )
+        .unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(c.continuity(0.3, tol), 2);
+        assert_eq!(c.continuity(0.6, tol), 1);
+        assert_eq!(c.continuity(0.8, tol), 0);
+        assert_eq!(c.continuity(0.45, tol), u32::MAX);
+        assert_eq!(c.min_continuity(), 0);
+    }
+
     // ---- continuity: degree minus multiplicity, smooth elsewhere ----
 
     fn kinked() -> BSplineCurve3D {
@@ -1411,3 +1442,4 @@ mod tests {
         }
     }
 }
+
