@@ -11,6 +11,7 @@ use std::collections::BinaryHeap;
 
 use crate::curve_math::bspline as curve;
 use crate::curve_math::editing::{self, Edit, Elevation, Insertion, Lanes};
+use crate::curves::Side;
 use crate::math::boxtree::{BoxTree, Lazy, box_distance};
 use crate::math::newton_min_2d;
 use crate::projection::SurfaceProjection;
@@ -1684,6 +1685,120 @@ impl BSplineSurface {
         (Point3D::ORIGIN + s, [su, sv], [suu, suv, svv])
     }
 
+    /// Evaluates the point and the first derivatives at `(u, v)`, each
+    /// direction from its own side: [`Side::Below`] takes the span ending
+    /// at the parameter, [`Side::Above`] the span starting there. Both
+    /// sides agree strictly inside a span. Plain evaluation takes the
+    /// above side, except at the upper bound, where nothing lies above a
+    /// non-periodic direction and both sides take the last span. A
+    /// periodic direction's seam is a knot like any other: at either
+    /// bound, [`Side::Below`] takes the last span of the period and
+    /// [`Side::Above`] the first.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Side, Vector3D};
+    /// // Two bilinear patches meeting at a crease along u = 1, flat then rising.
+    /// let flat = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 0.0)];
+    /// let tilted = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 1.0)];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1,
+    ///     vec![flat(0.0), flat(1.0), tilted(2.0)],
+    ///     vec![0.0, 1.0, 2.0], vec![2, 1, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let below = surface.eval_d1_sided(1.0, 0.5, Side::Below, Side::Above);
+    /// let above = surface.eval_d1_sided(1.0, 0.5, Side::Above, Side::Above);
+    /// assert_eq!(below.1[0], Vector3D::new(1.0, 0.0, 0.0));
+    /// assert_eq!(above.1[0], Vector3D::new(1.0, 0.0, 0.5));
+    /// ```
+    pub fn eval_d1_sided(
+        &self,
+        u: f64,
+        v: f64,
+        u_side: Side,
+        v_side: Side,
+    ) -> (Point3D, [Vector3D; 2]) {
+        let (s, su, sv) = self.eval_surface_d1_sided(u, v, u_side, v_side);
+        (s, [su, sv])
+    }
+
+    /// Evaluates the derivative of order `(du, dv)` at `(u, v)`, each
+    /// direction from its own side, as
+    /// [`eval_d1_sided`](Self::eval_d1_sided).
+    ///
+    /// Only orders with `du + dv` of 1 or 2 are supported.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `du + dv == 0` or `du + dv > 2`, as
+    /// [`eval_derivative`](Self::eval_derivative).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Side, Vector3D};
+    /// // Two bilinear patches meeting at a crease along u = 1, flat then rising.
+    /// let flat = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 0.0)];
+    /// let tilted = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 1.0)];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1,
+    ///     vec![flat(0.0), flat(1.0), tilted(2.0)],
+    ///     vec![0.0, 1.0, 2.0], vec![2, 1, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// // The cross derivative is zero on the flat patch, (0, 0, 1) on the tilted one.
+    /// let below = surface.eval_derivative_sided(1.0, 0.5, 1, 1, Side::Below, Side::Above);
+    /// let above = surface.eval_derivative_sided(1.0, 0.5, 1, 1, Side::Above, Side::Above);
+    /// assert_eq!(below, Vector3D::new(0.0, 0.0, 0.0));
+    /// assert_eq!(above, Vector3D::new(0.0, 0.0, 1.0));
+    /// ```
+    pub fn eval_derivative_sided(
+        &self,
+        u: f64,
+        v: f64,
+        du: u32,
+        dv: u32,
+        u_side: Side,
+        v_side: Side,
+    ) -> Vector3D {
+        match (du, dv) {
+            (0, 0) => panic!(
+                "eval_derivative: du + dv must be >= 1 (use eval_point for the (0, 0) order)"
+            ),
+            (1, 0) | (0, 1) => {
+                let (_s, su, sv) = self.eval_surface_d1_sided(u, v, u_side, v_side);
+                if du == 1 { su } else { sv }
+            }
+            (2, 0) | (1, 1) | (0, 2) => {
+                let [_, _, _, suu, suv, svv] = self.eval_surface_d2_sided(u, v, u_side, v_side);
+                match du {
+                    2 => suu,
+                    1 => suv,
+                    _ => svv,
+                }
+            }
+            _ => panic!(
+                "eval_derivative: order du={du}, dv={dv} is not supported (du + dv must be <= 2)"
+            ),
+        }
+    }
+
+    /// Evaluates the point, the first and the second derivatives at
+    /// `(u, v)`, each direction from its own side, as
+    /// [`eval_d1_sided`](Self::eval_d1_sided).
+    pub fn eval_d2_sided(
+        &self,
+        u: f64,
+        v: f64,
+        u_side: Side,
+        v_side: Side,
+    ) -> (Point3D, [Vector3D; 2], [Vector3D; 3]) {
+        let [s, su, sv, suu, suv, svv] = self.eval_surface_d2_sided(u, v, u_side, v_side);
+        (Point3D::ORIGIN + s, [su, sv], [suu, suv, svv])
+    }
+
     /// Returns whether `point` lies on the surface: the surface is
     /// projected with [`BSplineSurface::project_point`] and the point
     /// counts as contained when the projected distance is within
@@ -1970,10 +2085,45 @@ impl BSplineSurface {
         (Point3D::ORIGIN + s, su, sv)
     }
 
+    /// Shared sided first-derivative evaluation: `u_side` selects the `u`
+    /// span, `v_side` the `v` span.
+    fn eval_surface_d1_sided(
+        &self,
+        u: f64,
+        v: f64,
+        u_side: Side,
+        v_side: Side,
+    ) -> (Point3D, Vector3D, Vector3D) {
+        let [s, su, sv, ..] = math::surface_derivatives_sided::<1>(
+            &self.u_knots,
+            &self.v_knots,
+            self.pole_view(),
+            u,
+            v,
+            u_side,
+            v_side,
+        );
+        (Point3D::ORIGIN + s, su, sv)
+    }
+
     /// Shared second-derivative evaluation, returning
     /// `[S, Su, Sv, Suu, Suv, Svv]` (the point as a vector).
     fn eval_surface_d2(&self, u: f64, v: f64) -> [Vector3D; 6] {
         math::surface_derivatives::<2>(&self.u_knots, &self.v_knots, self.pole_view(), u, v)
+    }
+
+    /// Shared sided second-derivative evaluation, as
+    /// [`eval_surface_d1_sided`](Self::eval_surface_d1_sided).
+    fn eval_surface_d2_sided(&self, u: f64, v: f64, u_side: Side, v_side: Side) -> [Vector3D; 6] {
+        math::surface_derivatives_sided::<2>(
+            &self.u_knots,
+            &self.v_knots,
+            self.pole_view(),
+            u,
+            v,
+            u_side,
+            v_side,
+        )
     }
 
     /// The poles as read by evaluation.
@@ -4423,5 +4573,164 @@ mod tests {
                 (0..original[0].len()).any(|k| column(&original, k) == column(&piece_net, j));
             assert!(kept, "column {j} not kept exactly");
         }
+    }
+
+    // ---- one-sided evaluation ----
+
+    fn creased_u_patch() -> BSplineSurface {
+        // Degree 2 in `u` with a double interior knot at 0.5 (C0 across
+        // it), degree 1 in `v`.
+        let row = |x: f64, z: f64| vec![Point3D::new(x, 0.0, z), Point3D::new(x, 2.0, z)];
+        BSplineSurface::new(
+            2,
+            1,
+            vec![
+                row(0.0, 0.0),
+                row(1.0, 0.0),
+                row(2.0, 1.0),
+                row(3.0, 1.0),
+                row(4.0, 0.0),
+            ],
+            vec![0.0, 0.5, 1.0],
+            vec![3, 2, 3],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_sided_derivatives_match_split_patches() {
+        let surface = creased_u_patch();
+        let (low, high) = surface.split_u_at(0.5).unwrap();
+        let v = 0.7;
+        let below = surface.eval_derivative_sided(0.5, v, 1, 0, Side::Below, Side::Above);
+        let above = surface.eval_derivative_sided(0.5, v, 1, 0, Side::Above, Side::Above);
+        // C0 in `u`: positions agree, first derivatives do not.
+        let (pb, _) = surface.eval_d1_sided(0.5, v, Side::Below, Side::Above);
+        let (pa, _) = surface.eval_d1_sided(0.5, v, Side::Above, Side::Above);
+        assert!(pb.distance(pa) < 1e-12);
+        assert!((below - above).magnitude() > 1e-6);
+        // Each side matches its split patch evaluated at the cut.
+        let (_, low_hi) = ParametricSurface::u_bounds(&low);
+        let (high_lo, _) = ParametricSurface::u_bounds(&high);
+        assert!((low.eval_derivative(low_hi, v, 1, 0) - below).magnitude() < 1e-9);
+        assert!((high.eval_derivative(high_lo, v, 1, 0) - above).magnitude() < 1e-9);
+        let below2 = surface.eval_derivative_sided(0.5, v, 2, 0, Side::Below, Side::Above);
+        let above2 = surface.eval_derivative_sided(0.5, v, 2, 0, Side::Above, Side::Above);
+        assert!((low.eval_derivative(low_hi, v, 2, 0) - below2).magnitude() < 1e-9);
+        assert!((high.eval_derivative(high_lo, v, 2, 0) - above2).magnitude() < 1e-9);
+    }
+
+    #[test]
+    fn test_sided_evaluation_agrees_off_knots() {
+        let surface = creased_u_patch();
+        for (u, v) in [(0.1, 0.2), (0.49, 0.7), (0.51, 0.3), (0.9, 0.9)] {
+            let (p, [su, sv]) = surface.eval_d1(u, v);
+            assert_eq!(
+                surface.eval_d1_sided(u, v, Side::Below, Side::Below),
+                (p, [su, sv])
+            );
+            assert_eq!(
+                surface.eval_d1_sided(u, v, Side::Above, Side::Above),
+                (p, [su, sv])
+            );
+        }
+    }
+
+    #[test]
+    fn test_sided_derivatives_at_creased_periodic_seam() {
+        // Periodic quadratic in `u`, C0 at its seam (multiplicity 2 at
+        // both ends), linear in `v`.
+        let rows = (0..6)
+            .map(|i| {
+                let angle = i as f64;
+                let (x, y) = (2.0 * angle.cos(), 2.0 * angle.sin());
+                let z = (i % 2) as f64;
+                vec![Point3D::new(x, y, z), Point3D::new(x, y, z + 3.0)]
+            })
+            .collect();
+        let surface = BSplineSurface::new(
+            2,
+            1,
+            rows,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![2, 1, 1, 1, 1, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            true,
+            false,
+        )
+        .unwrap();
+        let (v, step) = (0.4, 1e-9);
+        for seam in [0.0, 5.0] {
+            let below = surface.eval_derivative_sided(seam, v, 1, 0, Side::Below, Side::Above);
+            let above = surface.eval_derivative_sided(seam, v, 1, 0, Side::Above, Side::Above);
+            assert!((below - above).magnitude() > 0.1);
+            assert!((surface.eval_derivative(5.0 - step, v, 1, 0) - below).magnitude() < 1e-6);
+            assert!((surface.eval_derivative(step, v, 1, 0) - above).magnitude() < 1e-6);
+        }
+        // Plain evaluation at the lower bound takes the above side.
+        assert_eq!(
+            surface.eval_d2(0.0, v),
+            surface.eval_d2_sided(0.0, v, Side::Above, Side::Above)
+        );
+    }
+
+    #[test]
+    fn test_sided_evaluation_on_periodic_matches_plain() {
+        let surface = periodic_tube();
+        for (u, v) in [(0.0, 0.5), (3.0, 0.2)] {
+            let (p, [su, sv]) = surface.eval_d1(u, v);
+            assert_eq!(
+                surface.eval_d1_sided(u, v, Side::Below, Side::Above),
+                (p, [su, sv])
+            );
+        }
+    }
+
+    #[test]
+    fn test_sided_matches_neighbor_spans_and_point_is_exact() {
+        // Bicubic patch with a double u-knot at 0.6: sided derivatives
+        // match epsilon-step neighbors, positions are bitwise identical.
+        let net = |x: f64, z: f64| {
+            vec![
+                Point3D::new(x, 0.0, z),
+                Point3D::new(x, 1.0, z + 1.0),
+                Point3D::new(x, 2.0, z),
+            ]
+        };
+        let surface = BSplineSurface::new(
+            3,
+            2,
+            vec![
+                net(0.0, 0.0),
+                net(1.0, 1.0),
+                net(2.0, 0.0),
+                net(3.0, 2.0),
+                net(4.0, 1.0),
+                net(5.0, 0.0),
+            ],
+            vec![0.0, 0.6, 1.0],
+            vec![4, 2, 4],
+            vec![0.0, 1.0],
+            vec![3, 3],
+            false,
+            false,
+        )
+        .unwrap();
+        let v = 0.35;
+        let below = surface.eval_derivative_sided(0.6, v, 1, 0, Side::Below, Side::Above);
+        let above = surface.eval_derivative_sided(0.6, v, 1, 0, Side::Above, Side::Above);
+        let left = surface.eval_derivative(0.6 - 1e-13, v, 1, 0);
+        let right = surface.eval_derivative(0.6 + 1e-13, v, 1, 0);
+        assert!((below - left).magnitude() < 1e-8);
+        assert!((above - right).magnitude() < 1e-8);
+        assert_eq!(above, surface.eval_derivative(0.6, v, 1, 0));
+        let (pb, _) = surface.eval_d1_sided(0.6, v, Side::Below, Side::Above);
+        let (pa, _) = surface.eval_d1_sided(0.6, v, Side::Above, Side::Above);
+        assert_eq!(pb, pa);
     }
 }

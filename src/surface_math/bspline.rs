@@ -23,6 +23,7 @@
 
 use super::super::curve_math::bspline as curve;
 use crate::curve_math::bspline::{KnotVector, Poles};
+use crate::curves::Side;
 use crate::{Point3D, Vector3D};
 
 /// The surface point `S(u, v)`: the value-only path of
@@ -173,7 +174,38 @@ pub(crate) fn surface_derivatives<const ORDER: usize>(
     u: f64,
     v: f64,
 ) -> [Vector3D; 6] {
-    let sums = tensor::<ORDER>(u_knots, v_knots, poles, u, v);
+    surface_derivatives_from::<ORDER>(u_knots, v_knots, poles, u, v, None, None)
+}
+
+/// [`surface_derivatives`] from one side per direction: [`Side::Below`]
+/// evaluates the span ending at the parameter in that direction,
+/// [`Side::Above`] the span starting there (across the seam of a
+/// periodic direction too).
+pub(crate) fn surface_derivatives_sided<const ORDER: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
+    u: f64,
+    v: f64,
+    u_side: Side,
+    v_side: Side,
+) -> [Vector3D; 6] {
+    surface_derivatives_from::<ORDER>(u_knots, v_knots, poles, u, v, Some(u_side), Some(v_side))
+}
+
+/// [`surface_derivatives`] with an optional side per direction, `None`
+/// being plain evaluation.
+#[inline]
+fn surface_derivatives_from<const ORDER: usize>(
+    u_knots: &KnotVector,
+    v_knots: &KnotVector,
+    poles: Poles,
+    u: f64,
+    v: f64,
+    u_side: Option<Side>,
+    v_side: Option<Side>,
+) -> [Vector3D; 6] {
+    let sums = tensor::<ORDER>(u_knots, v_knots, poles, u, v, u_side, v_side);
     let [s, su, sv, suu, suv, svv] = sums.map(|a| Vector3D::new(a[0], a[1], a[2]));
     if poles.weights.is_none() {
         return [s, su, sv, suu, suv, svv];
@@ -792,6 +824,8 @@ fn tensor<const ORDER: usize>(
     poles: Poles,
     u: f64,
     v: f64,
+    u_side: Option<Side>,
+    v_side: Option<Side>,
 ) -> [[f64; 4]; 6] {
     fn sized<const N: usize, const ORDER: usize>(
         u_knots: &KnotVector,
@@ -799,11 +833,13 @@ fn tensor<const ORDER: usize>(
         poles: Poles,
         u: f64,
         v: f64,
+        u_side: Option<Side>,
+        v_side: Option<Side>,
     ) -> [[f64; 4]; 6] {
         let mut wu = curve::Window::<N>::new();
         let mut wv = curve::Window::<N>::new();
-        u_knots.window(u, ORDER, &mut wu);
-        v_knots.window(v, ORDER, &mut wv);
+        u_knots.window_sided(u, ORDER, u_side, &mut wu);
+        v_knots.window_sided(v, ORDER, v_side, &mut wv);
         match poles.weights {
             Some(weights) => {
                 sum::<N, ORDER, true>(&wu, &wv, u_knots, v_knots, poles.points, weights)
@@ -812,9 +848,9 @@ fn tensor<const ORDER: usize>(
         }
     }
     if u_knots.degree().max(v_knots.degree()) < curve::SMALL {
-        sized::<{ curve::SMALL }, ORDER>(u_knots, v_knots, poles, u, v)
+        sized::<{ curve::SMALL }, ORDER>(u_knots, v_knots, poles, u, v, u_side, v_side)
     } else {
-        sized::<{ curve::LARGE }, ORDER>(u_knots, v_knots, poles, u, v)
+        sized::<{ curve::LARGE }, ORDER>(u_knots, v_knots, poles, u, v, u_side, v_side)
     }
 }
 

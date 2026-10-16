@@ -6,6 +6,21 @@ use crate::projection::CurveProjection;
 use crate::{Point3D, Tolerance, Vector3D};
 use std::f64::consts::TAU;
 
+/// Which side of a parameter to evaluate from, for one-sided limits at
+/// knots and seams.
+///
+/// `Below` approaches from the span ending at the parameter, `Above`
+/// from the span starting there (the side plain evaluation takes,
+/// except at the upper bound). Away from knots and seams both sides
+/// agree. Shared by curve and surface sided-evaluation queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// Limit from parameters below (the span ending here).
+    Below,
+    /// Limit from parameters above (the span starting here).
+    Above,
+}
+
 /// Common interface for 3D parametric curves. Implement this to add a new
 /// curve type that can be used generically (see [`Curve3D`] for a
 /// heterogeneous-collection adaptor built on top of it).
