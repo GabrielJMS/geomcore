@@ -399,8 +399,11 @@ impl BSplineSurface {
     }
 
     /// Continuity order `C^n` in `u` at parameter `u` (`u32::MAX` =
-    /// smooth): `u_degree − multiplicity` at a `u` knot, smooth elsewhere
-    /// and at the bounds.
+    /// smooth): `u_degree − multiplicity` at a `u` knot within
+    /// `tol.parametric`, smooth elsewhere. This is the order the knots
+    /// guarantee; the surface may be smoother. A non-periodic direction
+    /// reports smooth at and beyond its bounds; a periodic one wraps `u`
+    /// into its period, so its seam is a knot like any other.
     ///
     /// # Examples
     ///
@@ -440,8 +443,9 @@ impl BSplineSurface {
         )
     }
 
-    /// Minimum continuity order in `u` over the domain: the worst
-    /// interior `u` knot (`u32::MAX` = smooth everywhere).
+    /// Minimum continuity order in `u` over the domain (`u32::MAX` =
+    /// smooth everywhere): the worst `u` knot strictly inside the bounds,
+    /// or, in a periodic direction, the worst `u` knot including the seam.
     pub fn min_continuity_u(&self) -> u32 {
         curve::min_continuity(
             self.u_degree(),

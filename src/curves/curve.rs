@@ -125,9 +125,14 @@ pub trait ParametricCurve3D {
 
     /// Continuity order `C^n` at parameter `u` (`u32::MAX` = smooth).
     ///
-    /// Elementary shapes are smooth everywhere; a B-spline reports
+    /// Elementary shapes are smooth everywhere. A B-spline reports
     /// `degree − multiplicity` at a knot (within `tol.parametric`) and
-    /// smooth elsewhere. Default implementation: smooth.
+    /// smooth elsewhere: the order its knots guarantee, which the shape may
+    /// exceed (a knot inserted into a smooth curve lowers the reported
+    /// order, not the curve's smoothness). The ends of a non-periodic
+    /// curve's bounds report smooth, the curve being seen from the inside
+    /// only; a periodic curve wraps `u` into its period, so its seam
+    /// counts as a knot. Default implementation: smooth.
     ///
     /// # Examples
     ///
@@ -143,8 +148,10 @@ pub trait ParametricCurve3D {
         u32::MAX
     }
 
-    /// Minimum continuity order over the domain (`u32::MAX` = smooth
-    /// everywhere). Default implementation: smooth.
+    /// Minimum continuity order over [`bounds`](Self::bounds), ends
+    /// excluded (`u32::MAX` = smooth everywhere): the lowest
+    /// [`continuity`](Self::continuity) anywhere on the curve. Default
+    /// implementation: smooth.
     fn min_continuity(&self) -> u32 {
         u32::MAX
     }
@@ -260,6 +267,14 @@ impl<C: ParametricCurve3D + ?Sized> ParametricCurve3D for &C {
 
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         (**self).eval_points(us)
+    }
+
+    fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        (**self).continuity(u, tol)
+    }
+
+    fn min_continuity(&self) -> u32 {
+        (**self).min_continuity()
     }
 
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
@@ -1285,6 +1300,90 @@ mod tests {
         assert_eq!(piece.continuity(0.5, tol), 0);
         assert_eq!(ParametricCurve3D::continuity(&piece, 0.5, tol), 0);
         assert_eq!(piece.min_continuity(), 0);
+    }
+
+    #[test]
+    fn test_borrowed_and_trimmed_bases_keep_their_kink() {
+        use crate::curves::TrimmedCurve3D;
+
+        let tol = Tolerance::DEFAULT;
+        let curve = kinked();
+        assert_eq!(ParametricCurve3D::continuity(&&curve, 0.5, tol), 0);
+        assert_eq!(ParametricCurve3D::min_continuity(&&curve), 0);
+        let borrowed = TrimmedCurve3D::new(&curve, 0.25, 0.75).unwrap();
+        assert_eq!(ParametricCurve3D::continuity(&borrowed, 0.5, tol), 0);
+        assert_eq!(ParametricCurve3D::min_continuity(&borrowed), 0);
+        // A piece that avoids the kink, or ends on it, is smooth.
+        for (first, last) in [(0.0, 0.4), (0.0, 0.5), (0.5, 1.0)] {
+            let piece = TrimmedCurve3D::new(&curve, first, last).unwrap();
+            assert_eq!(piece.min_continuity(), u32::MAX);
+            assert_eq!(piece.continuity(first, tol), u32::MAX);
+            assert_eq!(piece.continuity(last, tol), u32::MAX);
+        }
+        // Nested trims restrict further.
+        let outer = TrimmedCurve3D::new(TrimmedCurve3D::new(&curve, 0.1, 0.9).unwrap(), 0.2, 0.4);
+        assert_eq!(outer.unwrap().min_continuity(), u32::MAX);
+    }
+
+    #[test]
+    fn test_periodic_bspline_continuity_across_its_seam() {
+        use crate::curves::TrimmedCurve3D;
+
+        // Degree 2, period 4, double knot at 1 (a kink there).
+        let poles: Vec<Point3D> = (0..5)
+            .map(|i| {
+                let angle = i as f64;
+                Point3D::new(angle.cos(), angle.sin(), 0.0)
+            })
+            .collect();
+        let knots = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+        let curve = BSplineCurve3D::new(2, poles, knots, vec![1, 2, 1, 1, 1], true).unwrap();
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(curve.continuity(1.0, tol), 0);
+        assert_eq!(curve.continuity(5.0, tol), 0);
+        assert_eq!(curve.continuity(4.0, tol), 1);
+        assert_eq!(curve.min_continuity(), 0);
+        let across_seam = TrimmedCurve3D::new(&curve, 3.5, 4.5).unwrap();
+        assert_eq!(across_seam.min_continuity(), 1);
+        let around_kink = TrimmedCurve3D::new(&curve, 4.5, 5.5).unwrap();
+        assert_eq!(around_kink.min_continuity(), 0);
+    }
+
+    #[test]
+    fn test_reported_order_matches_the_derivative_jumps() {
+        // Degree 2: a single knot at 1 (C1) and a double knot at 2 (C0).
+        let poles: Vec<Point3D> = (0..6)
+            .map(|i| {
+                let x = i as f64;
+                Point3D::new(x, (x * 1.3).sin(), (x * 0.7).cos())
+            })
+            .collect();
+        let knots = vec![0.0, 1.0, 2.0, 3.0];
+        let curve = BSplineCurve3D::new(2, poles, knots, vec![3, 1, 2, 3], false).unwrap();
+        let tol = Tolerance::DEFAULT;
+        let h = 1e-9;
+        for knot in [1.0, 2.0] {
+            let order = curve.continuity(knot, tol);
+            for derivative in 1..=2 {
+                let left = curve.eval_derivative(knot - h, derivative);
+                let right = curve.eval_derivative(knot + h, derivative);
+                let jump = (right - left).magnitude();
+                if derivative <= order {
+                    assert!(
+                        jump < 1e-6,
+                        "D{derivative} jumps by {jump} at C{order} knot {knot}"
+                    );
+                } else if derivative == order + 1 {
+                    assert!(
+                        jump > 1e-3,
+                        "D{derivative} is continuous at C{order} knot {knot}"
+                    );
+                }
+            }
+        }
+        assert_eq!(curve.continuity(1.0, tol), 1);
+        assert_eq!(curve.continuity(2.0, tol), 0);
+        assert_eq!(curve.min_continuity(), 0);
     }
 
     #[test]

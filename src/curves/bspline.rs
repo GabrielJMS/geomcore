@@ -405,8 +405,12 @@ impl BSplineCurve3D {
     }
 
     /// Continuity order `C^n` at parameter `u` (`u32::MAX` = smooth):
-    /// `degree − multiplicity` at a knot, smooth elsewhere and at the
-    /// bounds, where the curve meets itself from the inside.
+    /// `degree − multiplicity` at a knot within `tol.parametric`, smooth
+    /// elsewhere. This is the order the knots guarantee; the curve may be
+    /// smoother (after knot insertion, for instance). A non-periodic curve
+    /// reports smooth at and beyond its bounds, being seen from the inside
+    /// only; a periodic one wraps `u` into its period, so its seam is a
+    /// knot like any other.
     ///
     /// # Examples
     ///
@@ -428,8 +432,9 @@ impl BSplineCurve3D {
         )
     }
 
-    /// Minimum continuity order over the domain: the worst interior knot
-    /// (`u32::MAX` = smooth everywhere).
+    /// Minimum continuity order over the domain (`u32::MAX` = smooth
+    /// everywhere): the worst knot strictly inside the bounds, or, on a
+    /// periodic curve, the worst knot including the seam.
     ///
     /// # Examples
     ///

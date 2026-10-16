@@ -116,9 +116,13 @@ pub trait ParametricSurface {
     /// Continuity order `C^n` in `u` at parameter `u` (`u32::MAX` =
     /// smooth).
     ///
-    /// Elementary shapes are smooth everywhere; a B-spline reports
+    /// Elementary shapes are smooth everywhere. A B-spline reports
     /// `u_degree − multiplicity` at a `u` knot (within `tol.parametric`)
-    /// and smooth elsewhere. Default implementation: smooth.
+    /// and smooth elsewhere: the order its knots guarantee, which the shape
+    /// may exceed. The ends of a non-periodic direction report smooth, the
+    /// surface being seen from the inside only; a periodic direction wraps
+    /// `u` into its period, so its seam counts as a knot. Default
+    /// implementation: smooth.
     ///
     /// # Examples
     ///
@@ -141,8 +145,10 @@ pub trait ParametricSurface {
         u32::MAX
     }
 
-    /// Minimum continuity order in `u` over the domain (`u32::MAX` =
-    /// smooth everywhere). Default implementation: smooth.
+    /// Minimum continuity order in `u` over the `u` range, ends excluded
+    /// (`u32::MAX` = smooth everywhere): the lowest
+    /// [`continuity_u`](Self::continuity_u) anywhere on the surface.
+    /// Default implementation: smooth.
     fn min_continuity_u(&self) -> u32 {
         u32::MAX
     }

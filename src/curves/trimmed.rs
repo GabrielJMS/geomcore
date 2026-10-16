@@ -5,6 +5,7 @@
 //! carries no vertices, orientation or tolerance; those belong to the
 //! topology (edges) of a kernel built on top of geomcore.
 
+use crate::curve_math::bspline as bspline_math;
 use crate::curves::{
     BSplineCurve3D, Curve2D, Curve3D, ElementaryCurve, Line2D, Line3D, LineConstructionError,
     ParametricCurve2D, ParametricCurve3D, PointExtrema2D, PointExtrema3D,
@@ -206,27 +207,73 @@ impl<C: ParametricCurve3D> TrimmedCurve3D<C> {
         self.basis.eval_point(self.last)
     }
 
-    /// Continuity order `C^n` at parameter `u`: the basis continuity
-    /// there (trimming never breaks continuity).
+    /// Continuity order `C^n` at parameter `u` (`u32::MAX` = smooth): the
+    /// basis continuity there, and smooth at the ends of the range (within
+    /// `tol.parametric`), where the piece is seen from the inside only, as
+    /// at the bounds of a non-periodic B-spline.
     ///
     /// # Examples
     ///
     /// ```
     /// use geomcore::curves::TrimmedCurve3D;
-    /// use geomcore::{Circle3D, Point3D, Tolerance, Vector3D};
+    /// use geomcore::{BSplineCurve3D, Point3D, Tolerance};
     ///
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
-    /// let arc = TrimmedCurve3D::new(circle, 0.0, 1.0).unwrap();
-    /// assert_eq!(arc.continuity(0.5, Tolerance::DEFAULT), u32::MAX);
+    /// // Degree 2 with a double knot at 0.5: a kink (C0) there.
+    /// let poles = vec![
+    ///     Point3D::ORIGIN,
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(2.0, 1.0, 0.0),
+    ///     Point3D::new(3.0, 1.0, 0.0),
+    ///     Point3D::new(4.0, 0.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(2, poles, vec![0.0, 0.5, 1.0], vec![3, 2, 3], false).unwrap();
+    /// let piece = TrimmedCurve3D::new(&curve, 0.25, 0.75).unwrap();
+    /// assert_eq!(piece.continuity(0.5, Tolerance::DEFAULT), 0);
+    /// let half = TrimmedCurve3D::new(&curve, 0.0, 0.5).unwrap();
+    /// assert_eq!(half.continuity(0.5, Tolerance::DEFAULT), u32::MAX);
     /// ```
     pub fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
+        let at_end = |end: f64| (u - end).abs() <= tol.parametric * (1.0 + end.abs());
+        if at_end(self.first) || at_end(self.last) {
+            return u32::MAX;
+        }
         self.basis.continuity(u, tol)
     }
 
-    /// Minimum continuity order over the piece's range: the basis minimum
-    /// (a conservative floor — the piece may avoid the worst knot).
+    /// Minimum continuity order over the range `[first, last]`
+    /// (`u32::MAX` = smooth everywhere): the worst B-spline knot strictly
+    /// inside the range, so a piece that avoids a kink of its basis is
+    /// smooth. A basis other than a B-spline reports its own minimum.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::TrimmedCurve3D;
+    /// use geomcore::{BSplineCurve3D, Point3D};
+    ///
+    /// // Degree 2 with a double knot at 0.5: a kink (C0) there.
+    /// let poles = vec![
+    ///     Point3D::ORIGIN,
+    ///     Point3D::new(1.0, 0.0, 0.0),
+    ///     Point3D::new(2.0, 1.0, 0.0),
+    ///     Point3D::new(3.0, 1.0, 0.0),
+    ///     Point3D::new(4.0, 0.0, 0.0),
+    /// ];
+    /// let curve = BSplineCurve3D::new(2, poles, vec![0.0, 0.5, 1.0], vec![3, 2, 3], false).unwrap();
+    /// assert_eq!(TrimmedCurve3D::new(&curve, 0.25, 0.75).unwrap().min_continuity(), 0);
+    /// assert_eq!(TrimmedCurve3D::new(&curve, 0.0, 0.5).unwrap().min_continuity(), u32::MAX);
+    /// ```
     pub fn min_continuity(&self) -> u32 {
-        self.basis.min_continuity()
+        match self.basis.as_bspline() {
+            Some(bspline) => bspline_math::min_continuity_within(
+                bspline.degree(),
+                bspline.knots(),
+                bspline.multiplicities(),
+                bspline.period(),
+                (self.first, self.last),
+            ),
+            None => self.basis.min_continuity(),
+        }
     }
 
     /// Evaluates the basis point at parameter `u`.
@@ -383,11 +430,11 @@ impl<C: ParametricCurve3D> ParametricCurve3D for TrimmedCurve3D<C> {
     }
 
     fn continuity(&self, u: f64, tol: Tolerance) -> u32 {
-        self.basis.continuity(u, tol)
+        TrimmedCurve3D::continuity(self, u, tol)
     }
 
     fn min_continuity(&self) -> u32 {
-        self.basis.min_continuity()
+        TrimmedCurve3D::min_continuity(self)
     }
 
     fn as_bspline(&self) -> Option<&BSplineCurve3D> {
