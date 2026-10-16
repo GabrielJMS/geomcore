@@ -17,7 +17,7 @@ The demo scene shows an ellipse, a circle, a hyperbola and a line, with the poin
     geomcore-viewer 0.2 has no dependencies and ships the built viewer
     in the wheel. It reads geomcore objects through their public
     getters rather than pinning a geomcore version, and works with
-    geomcore 0.33 and 0.34.
+    geomcore 0.33 to 0.35.
 
 === "Rust"
 

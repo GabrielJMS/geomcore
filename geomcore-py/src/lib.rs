@@ -685,6 +685,20 @@ impl PyPlane {
         ParametricSurface::v_bounds(&self.0)
     }
 
+    /// The `u` isoparametric line through `(u, 0)` along the plane's `v` axis, parametrized by `v` like the surface:
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn u_iso(&self, u: f64) -> PyResult<PyLine3D> {
+        Ok(PyLine3D(self.0.u_iso(u).map_err(val_err)?))
+    }
+
+    /// The `v` isoparametric line through `(0, v)` along the plane's `u` axis, parametrized by `u` like the surface:
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn v_iso(&self, v: f64) -> PyResult<PyLine3D> {
+        Ok(PyLine3D(self.0.v_iso(v).map_err(val_err)?))
+    }
+
     /// The axis-aligned box around the shape (`None` when unbounded).
     fn bounding_box(&self) -> Option<PyBoundingBox3D> {
         self.0.bounding_box().map(PyBoundingBox3D)
@@ -1057,6 +1071,20 @@ impl PyCylinder {
         ParametricSurface::v_bounds(&self.0)
     }
 
+    /// The `u` isoparametric generator line at angle `u`, parametrized by `v` like the surface:
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn u_iso(&self, u: f64) -> PyResult<PyLine3D> {
+        Ok(PyLine3D(self.0.u_iso(u).map_err(val_err)?))
+    }
+
+    /// The `v` isoparametric section circle at height `v`, parametrized by `u` like the surface:
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
+    }
+
     /// The axis-aligned box around the shape (`None` when unbounded).
     fn bounding_box(&self) -> Option<PyBoundingBox3D> {
         self.0.bounding_box().map(PyBoundingBox3D)
@@ -1305,6 +1333,20 @@ impl PyCone {
     /// The (first, last) `v` parameter bounds (unbounded here).
     fn v_bounds(&self) -> (f64, f64) {
         ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The `u` isoparametric generator line at angle `u`, parametrized by `v` like the surface:
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn u_iso(&self, u: f64) -> PyResult<PyLine3D> {
+        Ok(PyLine3D(self.0.u_iso(u).map_err(val_err)?))
+    }
+
+    /// The `v` isoparametric section circle at `v` (radius zero at the apex), parametrized by `u` like the surface:
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -1573,6 +1615,20 @@ impl PySphere {
     /// The (first, last) `v` parameter bounds.
     fn v_bounds(&self) -> (f64, f64) {
         ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The `u` isoparametric meridian circle at longitude `u`, parametrized by `v` like the surface:
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn u_iso(&self, u: f64) -> PyResult<PyCircle3D> {
+        Ok(PyCircle3D(self.0.u_iso(u).map_err(val_err)?))
+    }
+
+    /// The `v` isoparametric parallel circle at latitude `v` (radius zero at a pole), parametrized by `u` like the surface:
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -1879,6 +1935,20 @@ impl PyTorus {
     /// The (first, last) `v` parameter bounds (a whole turn).
     fn v_bounds(&self) -> (f64, f64) {
         ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The `u` isoparametric meridian circle of the tube at angle `u`, parametrized by `v` like the surface:
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn u_iso(&self, u: f64) -> PyResult<PyCircle3D> {
+        Ok(PyCircle3D(self.0.u_iso(u).map_err(val_err)?))
+    }
+
+    /// The `v` isoparametric parallel circle at tube angle `v` (radius zero at a pinch), parametrized by `u` like the surface:
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
+    /// a non-finite parameter).
+    fn v_iso(&self, v: f64) -> PyResult<PyCircle3D> {
+        Ok(PyCircle3D(self.0.v_iso(v).map_err(val_err)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).
@@ -2332,6 +2402,20 @@ impl PyBSplineSurface {
     /// The (first, last) `v` parameter bounds.
     fn v_bounds(&self) -> (f64, f64) {
         ParametricSurface::v_bounds(&self.0)
+    }
+
+    /// The `u` isoparametric B-spline curve at `u`, blended from the pole net, parametrized by `v` like the surface:
+    /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` (raises `ValueError` for
+    /// a non-finite parameter or one outside a non-periodic direction (a periodic one wraps)).
+    fn u_iso(&self, u: f64) -> PyResult<PyBSplineCurve3D> {
+        Ok(PyBSplineCurve3D(self.0.u_iso(u).map_err(val_err)?))
+    }
+
+    /// The `v` isoparametric B-spline curve at `v`, blended from the pole net, parametrized by `u` like the surface:
+    /// `v_iso(v).eval_point(t)` is `eval_point(t, v)` (raises `ValueError` for
+    /// a non-finite parameter or one outside a non-periodic direction (a periodic one wraps)).
+    fn v_iso(&self, v: f64) -> PyResult<PyBSplineCurve3D> {
+        Ok(PyBSplineCurve3D(self.0.v_iso(v).map_err(val_err)?))
     }
 
     /// The axis-aligned box around the shape (`None` when unbounded).

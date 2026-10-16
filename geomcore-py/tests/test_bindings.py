@@ -1399,9 +1399,12 @@ def test_discretize_2d_curves():
     assert d.chord_deviations == [0.0] and d.angle_deviations == [0.0]
     with pytest.raises(ValueError):
         segment.discretize(0.0)
-    # Below the confusion tolerance, segments already lie on the curve.
-    with pytest.raises(ValueError, match="confusion"):
-        segment.discretize(1e-9)
+    # Any positive deviation is accepted, however small; a segment stays two points.
+    assert len(segment.discretize(1e-9).points) == 2
+    arc = geomcore.curves.TrimmedCurve2D(geomcore.curves.Circle2D(Point2D(0.0, 0.0), 1.0), 0.0, 1.0)
+    fine = arc.discretize(1e-9)
+    assert all(dev <= 1e-9 for dev in fine.chord_deviations)
+    assert len(fine.points) > len(arc.discretize(1e-3).points)
 
 
 def _cubic_curve():
@@ -1674,3 +1677,61 @@ def test_surface_to_bspline_conversions():
         0.5, 1.0).distance(cone.eval_point(0.5, 1.0)) < 1e-9
     with pytest.raises(ValueError):
         plane.to_bspline_patch((0.0, 0.0), (0.0, 1.0))
+
+
+def _iso_surfaces():
+    from geomcore.surfaces import Cone, Plane, Torus
+
+    return [
+        Plane(Point3D(1.0, 2.0, 3.0), Vector3D(0.0, 0.0, 1.0)),
+        Cylinder(Point3D.origin(), Vector3D.z(), 2.0),
+        Cone(Point3D.origin(), Vector3D.z(), 0.4, 1.0),
+        Sphere(Point3D(1.0, 0.0, 0.0), 3.0),
+        Torus(Point3D.origin(), Vector3D.z(), 5.0, 1.5),
+        Sphere(Point3D.origin(), 2.0).to_bspline_patch((0.0, 3.0), (-1.0, 1.0)),
+    ]
+
+
+@pytest.mark.parametrize("index", range(6))
+def test_iso_curves_are_the_surface_with_one_parameter_fixed(index):
+    s = _iso_surfaces()[index]
+
+    def finite(lo, hi):
+        return (lo, hi) if math.isfinite(lo) and math.isfinite(hi) else (-2.0, 2.0)
+
+    u0, u1 = finite(*s.u_bounds())
+    v0, v1 = finite(*s.v_bounds())
+    for k in (0.2, 0.5, 0.9):
+        u, v = u0 + k * (u1 - u0), v0 + k * (v1 - v0)
+        for t in (0.1, 0.6):
+            tv, tu = v0 + t * (v1 - v0), u0 + t * (u1 - u0)
+            for got, want in (
+                (s.u_iso(u).eval_point(tv), s.eval_point(u, tv)),
+                (s.v_iso(v).eval_point(tu), s.eval_point(tu, v)),
+            ):
+                assert (got.x, got.y, got.z) == pytest.approx((want.x, want.y, want.z), abs=1e-9)
+
+
+def test_iso_curves_have_the_kernel_types():
+    from geomcore.curves import Line3D
+
+    plane, cylinder, cone, sphere, torus, patch = _iso_surfaces()
+    assert isinstance(plane.u_iso(0.0), Line3D) and isinstance(plane.v_iso(0.0), Line3D)
+    assert isinstance(cylinder.u_iso(0.0), Line3D) and isinstance(cylinder.v_iso(0.0), Circle3D)
+    assert isinstance(cone.u_iso(0.0), Line3D) and isinstance(cone.v_iso(0.0), Circle3D)
+    assert isinstance(sphere.u_iso(0.0), Circle3D) and isinstance(sphere.v_iso(0.0), Circle3D)
+    assert isinstance(torus.u_iso(0.0), Circle3D) and isinstance(torus.v_iso(0.0), Circle3D)
+    assert isinstance(patch.u_iso(1.0), BSplineCurve3D) and isinstance(patch.v_iso(0.0), BSplineCurve3D)
+
+
+def test_iso_curve_errors_are_value_errors():
+    with pytest.raises(ValueError):
+        Sphere(Point3D.origin(), 1.0).u_iso(math.nan)
+    with pytest.raises(ValueError):
+        Sphere(Point3D.origin(), 2.0).to_bspline_patch((0.0, 3.0), (-1.0, 1.0)).u_iso(10.0)
+
+
+def test_a_pole_iso_is_a_circle_of_radius_zero():
+    pole = Sphere(Point3D.origin(), 1.0).v_iso(math.pi / 2)
+    assert pole.radius() == pytest.approx(0.0, abs=1e-12)
+    assert pole.center().z == pytest.approx(1.0)
