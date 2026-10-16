@@ -102,6 +102,107 @@ pub trait ParametricCurve3D {
         )
     }
 
+    /// Unit tangent `C'/|C'|` at parameter `u`, or `None` where the speed
+    /// vanishes (a cusp or a stop). The speed counts as zero when the
+    /// distance `|C'| × width` it would cover across the parameter range
+    /// (`width = last - first` of [`bounds`](Self::bounds), the model size
+    /// `tol.confusion / tol.angular` when unbounded) is within
+    /// `tol.confusion`, so rescaling the parameter does not change the
+    /// result (see ADR 0010).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.tangent(5.0, Tolerance::DEFAULT), Some(Vector3D::X));
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.tangent(0.0, Tolerance::DEFAULT), Some(Vector3D::Y));
+    /// ```
+    fn tangent(&self, u: f64, tol: Tolerance) -> Option<Vector3D> {
+        let (_, first_derivative) = self.eval_d1(u);
+        let speed = regular_speed(first_derivative, tol.reference_width(self.bounds()), tol)?;
+        Some(first_derivative * (1.0 / speed))
+    }
+
+    /// Scalar curvature `|C' × C''| / |C'|³` (the turn rate `|dT/ds|` of
+    /// the unit tangent per unit arc length) at parameter `u`, or `None`
+    /// where the speed vanishes, by the same test as
+    /// [`tangent`](Self::tangent). Zero on a straight line.
+    ///
+    /// At an interior knot where a B-spline is only tangent-continuous,
+    /// the second derivative, hence the curvature, is the one of the piece
+    /// that starts there.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.curvature(5.0, Tolerance::DEFAULT), Some(0.0));
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(circle.curvature(0.0, Tolerance::DEFAULT), Some(0.5));
+    /// ```
+    fn curvature(&self, u: f64, tol: Tolerance) -> Option<f64> {
+        let (_, first_derivative, second_derivative) = self.eval_d2(u);
+        let speed = regular_speed(first_derivative, tol.reference_width(self.bounds()), tol)?;
+        let derivatives_cross = first_derivative.cross(second_derivative);
+        Some(derivatives_cross.magnitude() / (speed * speed * speed))
+    }
+
+    /// Centre of curvature `P + N/κ` at parameter `u` (`N` the principal
+    /// normal, `κ` the curvature), or `None` where the speed vanishes or
+    /// the curve runs straight, so the centre is at infinity. The curve
+    /// runs straight where its second derivative is parallel to the first
+    /// within `tol.angular`, or where the part of it that turns away from
+    /// the first, `|C' × C''| / |C'|`, is negligible: the distance it
+    /// would cover across the parameter range, times `width²`, is within
+    /// `tol.confusion`, by the rule of [`tangent`](Self::tangent). Both
+    /// tests are unchanged by rescaling the parameter. Together they catch
+    /// a straight B-spline whose rounding leaves a curvature of order
+    /// 1e-16 rather than zero, including where its second derivative is
+    /// small and its rounding error points in an arbitrary direction.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve3D;
+    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// assert_eq!(
+    ///     circle.curvature_center(0.0, Tolerance::DEFAULT),
+    ///     Some(Point3D::ORIGIN)
+    /// );
+    ///
+    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
+    /// assert_eq!(line.curvature_center(5.0, Tolerance::DEFAULT), None);
+    /// ```
+    fn curvature_center(&self, u: f64, tol: Tolerance) -> Option<Point3D> {
+        let (point, first_derivative, second_derivative) = self.eval_d2(u);
+        let width = tol.reference_width(self.bounds());
+        let speed = regular_speed(first_derivative, width, tol)?;
+        let derivatives_cross = first_derivative.cross(second_derivative);
+        let cross_length = derivatives_cross.magnitude();
+        // |C' × C''| / |C'| is the part of C'' that turns away from C'.
+        let normal_acceleration = cross_length / speed;
+        let curved = !tol.is_negligible_derivative(normal_acceleration, width * width)
+            && cross_length > tol.angular * speed * second_derivative.magnitude();
+        // (C' × C'') × C' points along the principal normal with length
+        // |C' × C''| |C'|; scaling by |C'|² / |C' × C''|² gives the
+        // radius |C'|³ / |C' × C''|.
+        curved.then(|| {
+            let toward_center = derivatives_cross.cross(first_derivative);
+            point + toward_center * (speed * speed / (cross_length * cross_length))
+        })
+    }
+
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn bounds(&self) -> (f64, f64);
@@ -176,6 +277,14 @@ pub trait ParametricCurve3D {
     fn as_elementary(&self) -> Option<ElementaryCurve> {
         None
     }
+}
+
+/// The speed `|C'|`, or `None` where it is negligible across the
+/// parameter range of reference width `width` (a cusp or a stop) or is
+/// not a number.
+fn regular_speed(first_derivative: Vector3D, width: f64, tol: Tolerance) -> Option<f64> {
+    let speed = first_derivative.magnitude();
+    (!tol.is_negligible_derivative(speed, width)).then_some(speed)
 }
 
 /// Distance extrema from a point to a 3D curve: what a
@@ -1175,5 +1284,311 @@ mod tests {
     #[test]
     fn test_bspline_curve_is_not_elementary() {
         assert_eq!(Curve3D::from(bspline()).as_elementary(), None);
+    }
+
+    // ---- tangent / curvature / centre ----
+
+    fn cusp() -> BSplineCurve3D {
+        // Quadratic Bezier out to (1,0,0) and back: the speed vanishes
+        // exactly at u = 0.5 while the second derivative does not.
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 0.0, 0.0),
+            Point3D::ORIGIN,
+        ];
+        BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap()
+    }
+
+    /// Curvature from the turn of the unit tangent between two nearby
+    /// parameters, divided by the arc length between them.
+    fn finite_difference_curvature<C: ParametricCurve3D>(curve: &C, u: f64) -> f64 {
+        let step = 1e-6;
+        let before = curve.eval_derivative(u - step, 1).normalized().unwrap();
+        let after = curve.eval_derivative(u + step, 1).normalized().unwrap();
+        let speed = curve.eval_derivative(u, 1).magnitude();
+        (after - before).magnitude() / (2.0 * step * speed)
+    }
+
+    /// Cubic through poles off one plane: a twisted, non-uniform curve.
+    fn twisted_cubic() -> BSplineCurve3D {
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(1.0, 2.0, 0.0),
+            Point3D::new(3.0, -1.0, 1.0),
+            Point3D::new(4.0, 1.0, 3.0),
+        ];
+        BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap()
+    }
+
+    /// Rational quadratic quarter of the circle of radius 2 about the origin.
+    fn rational_quarter_circle() -> BSplineCurve3D {
+        let poles = vec![
+            Point3D::new(2.0, 0.0, 0.0),
+            Point3D::new(2.0, 2.0, 0.0),
+            Point3D::new(0.0, 2.0, 0.0),
+        ];
+        let weights = vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0];
+        BSplineCurve3D::new_rational(2, poles, weights, vec![0.0, 1.0], vec![3, 3], false).unwrap()
+    }
+
+    #[test]
+    fn test_tangent_is_unit_along_motion() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricCurve3D::tangent(&line(), 5.0, tol),
+            Some(Vector3D::X)
+        );
+        assert_eq!(
+            ParametricCurve3D::tangent(&circle(), 0.0, tol),
+            Some(Vector3D::Y)
+        );
+        assert_eq!(ParametricCurve3D::tangent(&cusp(), 0.5, tol), None);
+    }
+
+    #[test]
+    fn test_curvature_line_zero_circle_inverse_radius_cusp_none() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(ParametricCurve3D::curvature(&line(), 5.0, tol), Some(0.0));
+        assert_eq!(ParametricCurve3D::curvature(&circle(), 0.0, tol), Some(0.5));
+        assert_eq!(ParametricCurve3D::curvature(&cusp(), 0.5, tol), None);
+    }
+
+    #[test]
+    fn test_curvature_center_circle_origin_line_none_cusp_none() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricCurve3D::curvature_center(&circle(), 0.0, tol),
+            Some(Point3D::ORIGIN)
+        );
+        assert_eq!(ParametricCurve3D::curvature_center(&line(), 5.0, tol), None);
+        assert_eq!(ParametricCurve3D::curvature_center(&cusp(), 0.5, tol), None);
+    }
+
+    #[test]
+    fn test_ellipse_vertex_curvature_matches_closed_form() {
+        // Vertex (a, 0): k = a/b^2, centre at (a - b^2/a, 0, 0).
+        let tol = Tolerance::DEFAULT;
+        let e = ellipse();
+        let k = ParametricCurve3D::curvature(&e, 0.0, tol).unwrap();
+        assert!((k - 3.0 / 1.5f64.powi(2)).abs() < 1e-12);
+        let c = ParametricCurve3D::curvature_center(&e, 0.0, tol).unwrap();
+        assert!((c - Point3D::new(3.0 - 1.5f64.powi(2) / 3.0, 0.0, 0.0)).magnitude() < 1e-12);
+    }
+
+    #[test]
+    fn test_ellipse_curvature_matches_closed_form_off_the_vertices() {
+        // k(u) = ab / (a² sin² u + b² cos² u)^(3/2).
+        let (major, minor) = (3.0f64, 1.5f64);
+        for u in [0.3f64, 1.2, 2.5, 4.0] {
+            let expected =
+                major * minor / ((major * u.sin()).powi(2) + (minor * u.cos()).powi(2)).powf(1.5);
+            let k = ParametricCurve3D::curvature(&ellipse(), u, Tolerance::DEFAULT).unwrap();
+            assert!((k - expected).abs() < 1e-14, "u = {u}: {k} vs {expected}");
+        }
+    }
+
+    #[test]
+    fn test_rational_quarter_circle_has_constant_curvature_and_fixed_centre() {
+        let tol = Tolerance::DEFAULT;
+        let arc = rational_quarter_circle();
+        for u in [0.0, 0.1, 0.37, 0.5, 0.9, 1.0] {
+            let k = arc.curvature(u, tol).unwrap();
+            assert!((k - 0.5).abs() < 1e-14, "u = {u}: {k}");
+            let centre = arc.curvature_center(u, tol).unwrap();
+            assert!((centre - Point3D::ORIGIN).magnitude() < 1e-14, "u = {u}");
+        }
+    }
+
+    #[test]
+    fn test_straight_bspline_with_uneven_speed_has_no_curvature_center() {
+        // Collinear poles, unevenly spaced: C'' is parallel to C' but
+        // rounding leaves a curvature of order 1e-16, not exactly zero.
+        let poles = vec![
+            Point3D::ORIGIN,
+            Point3D::new(0.1, 0.2, 0.3),
+            Point3D::new(1.7, 3.4, 5.1),
+            Point3D::new(2.0, 4.0, 6.0),
+        ];
+        let straight = BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+        let tol = Tolerance::DEFAULT;
+        for u in [0.13, 0.5, 0.77] {
+            assert!(straight.curvature(u, tol).unwrap() < 1e-12);
+            assert_eq!(straight.curvature_center(u, tol), None, "u = {u}");
+        }
+    }
+
+    #[test]
+    fn test_curvature_matches_finite_differences() {
+        let tol = Tolerance::DEFAULT;
+        for (curve, u) in [
+            (Curve3D::from(parabola()), 0.5),
+            (Curve3D::from(hyperbola()), 0.5),
+            (Curve3D::from(twisted_cubic()), 0.3),
+            (Curve3D::from(twisted_cubic()), 0.8),
+        ] {
+            let k = curve.curvature(u, tol).unwrap();
+            let expected = finite_difference_curvature(&curve, u);
+            assert!((k - expected).abs() < 1e-6, "u = {u}: {k} vs {expected}");
+        }
+    }
+
+    #[test]
+    fn test_curvature_center_is_one_radius_along_the_principal_normal() {
+        // On a twisted curve the centre lies in the osculating plane, at
+        // distance 1/k from the point, perpendicular to the tangent.
+        let tol = Tolerance::DEFAULT;
+        let curve = twisted_cubic();
+        for u in [0.2, 0.5, 0.9] {
+            let (point, first, second) = curve.eval_d2(u);
+            let k = curve.curvature(u, tol).unwrap();
+            let to_centre = curve.curvature_center(u, tol).unwrap() - point;
+            assert!((to_centre.magnitude() - 1.0 / k).abs() < 1e-12 / k);
+            assert!(to_centre.dot(first).abs() < 1e-12 * first.magnitude() / k);
+            assert!(to_centre.dot(first.cross(second)).abs() < 1e-10);
+            assert!(to_centre.dot(second) > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_local_properties_are_none_at_a_nan_parameter() {
+        let tol = Tolerance::DEFAULT;
+        for curve in [Curve3D::from(ellipse()), Curve3D::from(twisted_cubic())] {
+            assert_eq!(curve.tangent(f64::NAN, tol), None);
+            assert_eq!(curve.curvature(f64::NAN, tol), None);
+            assert_eq!(curve.curvature_center(f64::NAN, tol), None);
+        }
+    }
+
+    #[test]
+    fn test_curve3d_enum_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let curves: Vec<Curve3D> = vec![
+            line().into(),
+            circle().into(),
+            ellipse().into(),
+            parabola().into(),
+            hyperbola().into(),
+            bspline().into(),
+        ];
+        for curve in &curves {
+            let t = curve.tangent(0.5, tol).unwrap();
+            let expected = curve.eval_d1(0.5).1.normalized().unwrap();
+            assert!((t - expected).magnitude() < 1e-15);
+            assert!(curve.curvature(0.5, tol).is_some());
+        }
+        assert_eq!(cusp().tangent(0.5, tol), None);
+    }
+
+    /// The twisted cubic's poles on the knot range `[0, scale]`.
+    fn twisted_cubic_on(scale: f64) -> BSplineCurve3D {
+        let poles = twisted_cubic().poles().to_vec();
+        BSplineCurve3D::new(3, poles, vec![0.0, scale], vec![4, 4], false).unwrap()
+    }
+
+    #[test]
+    fn test_local_properties_do_not_depend_on_the_knot_scale() {
+        // A speed of about 1e-8 per knot unit on [0, 1e8] is a regular
+        // curve, not a stop; a speed of 1e8 on [0, 1e-8] is not a hint of
+        // a sharper curve.
+        let tol = Tolerance::DEFAULT;
+        let reference = twisted_cubic_on(1.0);
+        for scale in [1e8, 1e-8] {
+            let rescaled = twisted_cubic_on(scale);
+            for u in [0.0, 0.2, 0.5, 0.9, 1.0] {
+                let tangent = rescaled.tangent(u * scale, tol).unwrap();
+                let expected = reference.tangent(u, tol).unwrap();
+                assert!(
+                    (tangent - expected).magnitude() < 1e-12,
+                    "scale {scale}, u {u}"
+                );
+
+                let curvature = rescaled.curvature(u * scale, tol).unwrap();
+                let expected = reference.curvature(u, tol).unwrap();
+                assert!(
+                    (curvature / expected - 1.0).abs() < 1e-12,
+                    "scale {scale}, u {u}"
+                );
+
+                let centre = rescaled.curvature_center(u * scale, tol).unwrap();
+                let expected = reference.curvature_center(u, tol).unwrap();
+                let radius = 1.0 / reference.curvature(u, tol).unwrap();
+                assert!(
+                    centre.distance(expected) < 1e-12 * radius,
+                    "scale {scale}, u {u}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cusp_has_no_local_properties_at_any_knot_scale() {
+        let tol = Tolerance::DEFAULT;
+        for scale in [1.0, 1e8, 1e-8] {
+            let poles = cusp().poles().to_vec();
+            let curve = BSplineCurve3D::new(2, poles, vec![0.0, scale], vec![3, 3], false).unwrap();
+            let u = 0.5 * scale;
+            assert_eq!(curve.tangent(u, tol), None, "scale {scale}");
+            assert_eq!(curve.curvature(u, tol), None, "scale {scale}");
+            assert_eq!(curve.curvature_center(u, tol), None, "scale {scale}");
+        }
+    }
+
+    #[test]
+    fn test_straight_bspline_has_no_curvature_center_where_its_acceleration_is_small() {
+        // Collinear poles off the axes and off the origin. Where C'' is
+        // small its rounding error points anywhere, so the angle between
+        // C' and C'' says nothing; the turning part of C'' is negligible.
+        let origin = Point3D::new(5.1, -3.3, 7.7);
+        let direction = Vector3D::new(0.3, -1.7, 2.9);
+        let tol = Tolerance::DEFAULT;
+        for (first, second) in [(0.1, 1.7), (0.37, 0.61), (0.45, 0.55)] {
+            let poles = vec![
+                origin,
+                origin + direction * first,
+                origin + direction * second,
+                origin + direction,
+            ];
+            let straight =
+                BSplineCurve3D::new(3, poles, vec![0.0, 1.0], vec![4, 4], false).unwrap();
+            // C'' changes sign where (1 - u)(b - 2a) + u(1 - 2b + a) = 0.
+            let start_term = second - 2.0 * first;
+            let sign_change = start_term / (start_term - (1.0 - 2.0 * second + first));
+            let near_sign_change = (-200..=200).map(|step| sign_change + f64::from(step) * 1e-14);
+            let across_range = (0..=1000).map(|step| f64::from(step) / 1000.0);
+            for u in near_sign_change.chain(across_range) {
+                assert_eq!(
+                    straight.curvature_center(u, tol),
+                    None,
+                    "poles {first}, {second}; u = {u}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_parabola_vertex_curvature_matches_closed_form() {
+        // P(u) = (u²/4, u): vertex k = 1/(2f) = 0.5, centre (2f, 0, 0).
+        let tol = Tolerance::DEFAULT;
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        assert_eq!(p.tangent(0.0, tol), Some(Vector3D::Y));
+        assert_eq!(p.curvature(0.0, tol), Some(0.5));
+        assert_eq!(
+            p.curvature_center(0.0, tol),
+            Some(Point3D::new(2.0, 0.0, 0.0))
+        );
+        let k = p.curvature(2.0, tol).unwrap();
+        assert!((k - 0.5 / (2.0 * 2.0f64.sqrt())).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_hyperbola_apex_curvature_matches_closed_form() {
+        // P(u) = (a cosh u, b sinh u): apex k = a/b² = 0.75,
+        // centre (a + b²/a, 0, 0).
+        let tol = Tolerance::DEFAULT;
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
+        assert_eq!(h.tangent(0.0, tol), Some(Vector3D::Y));
+        assert_eq!(h.curvature(0.0, tol), Some(0.75));
+        let c = h.curvature_center(0.0, tol).unwrap();
+        assert!((c - Point3D::new(3.0 + 4.0 / 3.0, 0.0, 0.0)).magnitude() < 1e-12);
     }
 }
