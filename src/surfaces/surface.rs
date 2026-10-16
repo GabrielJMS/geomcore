@@ -1564,6 +1564,23 @@ mod tests {
     }
 
     #[test]
+    fn test_curvatures_torus_inner_equator_saddle() {
+        use std::f64::consts::PI;
+
+        // Inner equator (u=0, v=pi): tube k=-1/r, ring k=+1/(R-r) (the
+        // ring bends toward the normal there, flipping its sign).
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&torus(), 0.0, PI, tol).unwrap();
+        assert!((c.min_curvature + 2.0 / 3.0).abs() < 1e-12);
+        assert!((c.max_curvature - 2.0 / 7.0).abs() < 1e-12);
+        assert!((c.mean + 4.0 / 21.0).abs() < 1e-12);
+        assert!((c.gaussian + 4.0 / 21.0).abs() < 1e-12);
+        assert!((c.min_direction.dot(Vector3D::Z).abs() - 1.0).abs() < 1e-12);
+        assert!((c.max_direction.dot(Vector3D::Y).abs() - 1.0).abs() < 1e-12);
+        assert_frame(&c, -Vector3D::X);
+    }
+
+    #[test]
     fn test_curvatures_cone_developable() {
         let tol = Tolerance::DEFAULT;
         let c = ParametricSurface::curvatures(&cone(), 0.0, 0.0, tol).unwrap();
