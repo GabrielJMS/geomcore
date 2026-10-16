@@ -1,5 +1,5 @@
 //! Internal B-spline curve evaluation: basis functions with derivatives,
-//! rational (NURBS) support, and periodic (closed) curves.
+//! rational (NURBS) support, and periodic curves.
 //!
 //! A [`KnotVector`] holds one parametric direction: its degree, the flat
 //! knot sequence (its distinct knots and multiplicities derived from it on
@@ -174,7 +174,7 @@ impl KnotVector {
         self.degree
     }
 
-    /// Whether the direction is periodic (closed).
+    /// Whether the direction is periodic.
     pub(crate) fn is_periodic(&self) -> bool {
         self.periodic
     }

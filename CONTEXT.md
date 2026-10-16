@@ -18,6 +18,10 @@ A circle, ellipse, parabola or hyperbola: an elementary curve other than the lin
 **Quadric**:
 A plane, sphere, cylinder or cone: an elementary surface whose implicit equation has degree at most two, the plane being the degree-one case.
 
+**Closed**:
+A curve whose two ends meet, or a surface direction whose boundary curves at its two bounds coincide, so travelling along it returns to its start. Periodicity implies closedness, not conversely: a clamped shape with coincident ends is closed without a period.
+_Avoid_: periodic for merely closed shapes, seamless
+
 **Lies on**:
 A point lies on a curve or surface when it is within `tol.confusion` of it, tested by `contains`.
 _Avoid_: inside (reserved for polygons), containment for anything other than this test

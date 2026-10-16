@@ -1,5 +1,5 @@
 //! B-spline (NURBS) surfaces in 3D: tensor-product de Boor evaluation with
-//! first derivatives, rational (weighted) poles, and periodic (closed) surfaces
+//! first derivatives, rational (weighted) poles, and periodic surfaces
 //! in either direction, a thin wrapper over [`crate::surface_math::bspline`].
 //!
 //! Construction stores the pole grid row-major, with a separate weight per
@@ -362,7 +362,7 @@ impl BSplineSurface {
         self.v_knots.degree()
     }
 
-    /// Returns whether the surface is periodic (closed) in the `u` direction.
+    /// Returns whether the surface is periodic in the `u` direction.
     ///
     /// # Examples
     ///
@@ -380,7 +380,7 @@ impl BSplineSurface {
         self.u_knots.is_periodic()
     }
 
-    /// Returns whether the surface is periodic (closed) in the `v` direction.
+    /// Returns whether the surface is periodic in the `v` direction.
     ///
     /// # Examples
     ///
@@ -396,6 +396,73 @@ impl BSplineSurface {
     /// ```
     pub fn is_v_periodic(&self) -> bool {
         self.v_knots.is_periodic()
+    }
+
+    /// Returns whether travelling in `u` returns to its start: a periodic
+    /// surface, or one whose boundary curves at the two `u` bounds
+    /// coincide, their poles within `tol.confusion` (and their weights
+    /// proportional where rational).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::{Point3D, Tolerance};
+    /// # let row = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 0.0)];
+    /// # let surface = BSplineSurface::new(1, 1, vec![row(0.0), row(1.0), row(0.0)], vec![0.0, 1.0, 2.0], vec![2, 1, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert!(surface.is_u_closed(Tolerance::DEFAULT));
+    /// assert!(!surface.is_v_closed(Tolerance::DEFAULT));
+    /// ```
+    pub fn is_u_closed(&self, tol: Tolerance) -> bool {
+        self.is_u_periodic() || self.boundaries_meet(Direction::U, tol)
+    }
+
+    /// Returns whether travelling in `v` returns to its start: a periodic
+    /// surface, or one whose boundary curves at the two `v` bounds
+    /// coincide, their poles within `tol.confusion` (and their weights
+    /// proportional where rational).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use geomcore::surfaces::BSplineSurface;
+    /// # use geomcore::{Point3D, Tolerance};
+    /// # let surface = BSplineSurface::new(1, 1, vec![vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 1.0, 0.0)], vec![Point3D::new(1.0, 0.0, 0.0), Point3D::new(1.0, 1.0, 0.0)]], vec![0.0, 1.0], vec![2, 2], vec![0.0, 1.0], vec![2, 2], false, false).unwrap();
+    /// assert!(!surface.is_u_closed(Tolerance::DEFAULT));
+    /// assert!(!surface.is_v_closed(Tolerance::DEFAULT));
+    /// ```
+    pub fn is_v_closed(&self, tol: Tolerance) -> bool {
+        self.is_v_periodic() || self.boundaries_meet(Direction::V, tol)
+    }
+
+    /// Whether the isoparametric curves at the two bounds of `direction`
+    /// coincide. Both share the knot vector across `direction`, so they
+    /// are the same curve exactly when their poles match and their weights
+    /// are proportional; that holds for clamped and unclamped knots alike.
+    fn boundaries_meet(&self, direction: Direction, tol: Tolerance) -> bool {
+        let (first, last) = match direction {
+            Direction::U => self.u_knots.bounds(),
+            Direction::V => self.v_knots.bounds(),
+        };
+        let start = self.iso(direction, first);
+        let end = self.iso(direction, last);
+        let poles_meet = start
+            .poles()
+            .iter()
+            .zip(end.poles())
+            .all(|(a, b)| a.distance(*b) <= tol.confusion);
+        poles_meet
+            && match (start.weights(), end.weights()) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    let scale = a[0] / b[0];
+                    a.iter()
+                        .zip(b)
+                        .all(|(&wa, &wb)| (wa - wb * scale).abs() <= tol.confusion * wa)
+                }
+                // One boundary has uniform weights, the other does not.
+                _ => false,
+            }
     }
 
     /// Returns whether the surface is rational (has per-pole weights).
@@ -2087,6 +2154,14 @@ impl ParametricSurface for BSplineSurface {
         self.v_knots.period()
     }
 
+    fn is_u_closed(&self, tol: Tolerance) -> bool {
+        BSplineSurface::is_u_closed(self, tol)
+    }
+
+    fn is_v_closed(&self, tol: Tolerance) -> bool {
+        BSplineSurface::is_v_closed(self, tol)
+    }
+
     fn eval_points(&self, uvs: &[(f64, f64)]) -> Vec<Point3D> {
         BSplineSurface::eval_points(self, uvs)
     }
@@ -2896,6 +2971,16 @@ mod tests {
         assert_eq!(ParametricSurface::v_bounds(&s), (0.0, 1.0));
         assert_eq!(ParametricSurface::u_period(&s), Some(6.0));
         assert_eq!(ParametricSurface::v_period(&s), None);
+    }
+
+    #[test]
+    fn test_periodic_tube_is_u_closed_not_v() {
+        let s = periodic_tube();
+        assert!(s.is_u_periodic());
+        assert!(s.is_u_closed(Tolerance::DEFAULT));
+        assert!(ParametricSurface::is_u_closed(&s, Tolerance::DEFAULT));
+        assert!(!s.is_v_closed(Tolerance::DEFAULT));
+        assert!(!ParametricSurface::is_v_closed(&s, Tolerance::DEFAULT));
     }
 
     #[test]
