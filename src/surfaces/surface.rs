@@ -6,6 +6,26 @@ use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, SurfaceIsoE
 use crate::{Point3D, SurfaceProjection, Tolerance, Vector3D};
 use std::f64::consts::{FRAC_PI_2, TAU};
 
+/// Principal, mean and Gaussian curvatures at a surface point, with the
+/// principal directions. See
+/// [`ParametricSurface::curvatures`](ParametricSurface::curvatures).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceCurvatures {
+    /// Smaller principal curvature.
+    pub min_curvature: f64,
+    /// Larger principal curvature.
+    pub max_curvature: f64,
+    /// Unit tangent direction of [`min_curvature`](Self::min_curvature).
+    pub min_direction: Vector3D,
+    /// Unit tangent direction of [`max_curvature`](Self::max_curvature),
+    /// always perpendicular to [`min_direction`](Self::min_direction).
+    pub max_direction: Vector3D,
+    /// Mean curvature, `(min_curvature + max_curvature) / 2`.
+    pub mean: f64,
+    /// Gaussian curvature, `min_curvature * max_curvature`.
+    pub gaussian: f64,
+}
+
 /// Common interface for parametric surfaces. Implement this to add a new
 /// surface type that can be used generically (see [`Surface`] for a
 /// heterogeneous-collection adaptor built on top of it).
@@ -112,6 +132,90 @@ pub trait ParametricSurface {
     /// Returns the surface's period along `v`, or `None` if the surface is
     /// not periodic in `v`.
     fn v_period(&self) -> Option<f64>;
+
+    /// Principal, mean and Gaussian curvatures at parameters `(u, v)`,
+    /// or `None` where the unit normal degenerates (vanishing or
+    /// parallel partials, as at a sphere's poles or a cone's apex) or a
+    /// derivative is not finite.
+    ///
+    /// Curvatures are measured along the unit normal `Su × Sv`: negative
+    /// bends away from it, so an outward-normal sphere has `-1/radius`.
+    /// The principal directions are always a unit, mutually perpendicular
+    /// tangent pair. At an umbilical point (all directions principal, as
+    /// on a sphere or a plane) the minimum direction lies along `Su`;
+    /// near one, where the two curvatures agree to rounding, the pair is
+    /// arbitrary but still perpendicular. The sign of each direction is
+    /// not specified.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ParametricSurface;
+    /// use geomcore::{Cylinder, Point3D, Tolerance, Vector3D};
+    ///
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let c = ParametricSurface::curvatures(&cylinder, 0.0, 3.0, Tolerance::DEFAULT).unwrap();
+    /// assert_eq!((c.min_curvature, c.max_curvature), (-0.5, 0.0));
+    /// assert_eq!((c.mean, c.gaussian), (-0.25, 0.0));
+    /// assert_eq!(c.min_direction, Vector3D::Y);
+    /// assert_eq!(c.max_direction, Vector3D::Z);
+    /// ```
+    fn curvatures(&self, u: f64, v: f64, tol: Tolerance) -> Option<SurfaceCurvatures> {
+        let (_, [su, sv], [suu, suv, svv]) = self.eval_d2(u, v);
+        let (su_length, sv_length) = (su.magnitude(), sv.magnitude());
+        let cross = su.cross(sv);
+        let cross_length = cross.magnitude();
+        // Same degeneracy test as the unit normal; the negated form also
+        // rejects NaN derivatives.
+        let regular = su_length > tol.confusion
+            && sv_length > tol.confusion
+            && cross_length > tol.angular * su_length * sv_length;
+        if !regular {
+            return None;
+        }
+        let normal = cross * (1.0 / cross_length);
+        // Orthonormal tangent frame: `first` along Su, `second = normal ×
+        // first = (|Su|² Sv − (Su·Sv) Su) / (|Su| |Su × Sv|)`. Each frame
+        // vector is a parameter step `(du, dv)` mapped through the partials.
+        let first = su * (1.0 / su_length);
+        let second = normal.cross(first);
+        let first_du = 1.0 / su_length;
+        let second_du = -su.dot(sv) / (su_length * cross_length);
+        let second_dv = su_length / cross_length;
+        // Second fundamental form coefficients, then the shape operator in
+        // the orthonormal frame: the symmetric matrix [[a, b], [b, c]].
+        let (form_uu, form_uv, form_vv) = (suu.dot(normal), suv.dot(normal), svv.dot(normal));
+        let a = form_uu * first_du * first_du;
+        let b = first_du * (form_uu * second_du + form_uv * second_dv);
+        let c = form_uu * second_du * second_du
+            + 2.0 * form_uv * second_du * second_dv
+            + form_vv * second_dv * second_dv;
+        // Eigenvalues `mean ± half_gap`, free of the `H² − K` cancellation
+        // that leaks a spurious gap of order √ε at umbilical points.
+        let mean = 0.5 * (a + c);
+        let half_gap = (0.5 * (a - c)).hypot(b);
+        let (min_curvature, max_curvature) = (mean - half_gap, mean + half_gap);
+        // Eigenvectors in frame coordinates, perpendicular by construction.
+        // `offset = |a − c| / 2 + half_gap` sums non-negative terms, so it
+        // carries no cancellation and vanishes only at an exact umbilic.
+        let offset = 0.5 * (a - c).abs() + half_gap;
+        let ((min_x, min_y), (max_x, max_y)) = if offset == 0.0 {
+            ((1.0, 0.0), (0.0, 1.0))
+        } else if a >= c {
+            ((-b, offset), (offset, b))
+        } else {
+            ((offset, -b), (b, offset))
+        };
+        let scale = 1.0 / min_x.hypot(min_y);
+        Some(SurfaceCurvatures {
+            min_curvature,
+            max_curvature,
+            min_direction: (first * min_x + second * min_y) * scale,
+            max_direction: (first * max_x + second * max_y) * scale,
+            mean,
+            gaussian: a * c - b * b,
+        })
+    }
 
     /// Evaluates the points on the surface at each `(u, v)` in `uvs`.
     ///
@@ -629,6 +733,17 @@ impl ParametricSurface for Surface {
             Surface::Sphere(s) => s.eval_points(uvs),
             Surface::Torus(s) => s.eval_points(uvs),
             Surface::BSpline(s) => s.eval_points(uvs),
+        }
+    }
+
+    fn curvatures(&self, u: f64, v: f64, tol: Tolerance) -> Option<SurfaceCurvatures> {
+        match self {
+            Surface::Plane(s) => ParametricSurface::curvatures(s, u, v, tol),
+            Surface::Cylinder(s) => ParametricSurface::curvatures(s, u, v, tol),
+            Surface::Cone(s) => ParametricSurface::curvatures(s, u, v, tol),
+            Surface::Sphere(s) => ParametricSurface::curvatures(s, u, v, tol),
+            Surface::Torus(s) => ParametricSurface::curvatures(s, u, v, tol),
+            Surface::BSpline(s) => ParametricSurface::curvatures(s, u, v, tol),
         }
     }
 
@@ -1380,5 +1495,250 @@ mod tests {
     #[test]
     fn test_bspline_surface_is_not_elementary() {
         assert_eq!(Surface::from(bspline()).as_elementary(), None);
+    }
+
+    // ---- curvatures: principal, mean, Gaussian ----
+
+    fn assert_frame(c: &SurfaceCurvatures, normal: Vector3D) {
+        // Unit, orthonormal, tangent directions; k1 + k2 = 2H, k1*k2 = K.
+        for direction in [c.min_direction, c.max_direction] {
+            assert!((direction.magnitude() - 1.0).abs() < 1e-12);
+            assert!(direction.dot(normal).abs() < 1e-12);
+        }
+        assert!(c.min_direction.dot(c.max_direction).abs() < 1e-12);
+        assert!((c.min_curvature + c.max_curvature - 2.0 * c.mean).abs() < 1e-12);
+        assert!((c.min_curvature * c.max_curvature - c.gaussian).abs() < 1e-12);
+        assert!(c.min_curvature <= c.max_curvature);
+    }
+
+    #[test]
+    fn test_curvatures_plane_are_zero() {
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&plane(), 1.0, 2.0, tol).unwrap();
+        assert_eq!(
+            c,
+            SurfaceCurvatures {
+                min_curvature: 0.0,
+                max_curvature: 0.0,
+                min_direction: Vector3D::X,
+                max_direction: Vector3D::Y,
+                mean: 0.0,
+                gaussian: 0.0,
+            }
+        );
+    }
+
+    #[test]
+    fn test_curvatures_cylinder_hoop_and_ruling() {
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&cylinder(), 0.0, 3.0, tol).unwrap();
+        assert!((c.min_curvature + 0.5).abs() < 1e-12);
+        assert_eq!(c.max_curvature, 0.0);
+        assert_eq!((c.mean, c.gaussian), (-0.25, 0.0));
+        assert!((c.min_direction.dot(Vector3D::Y).abs() - 1.0).abs() < 1e-12);
+        assert!((c.max_direction.dot(Vector3D::Z).abs() - 1.0).abs() < 1e-12);
+        assert_frame(&c, Vector3D::X);
+    }
+
+    #[test]
+    fn test_curvatures_sphere_umbilic() {
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&sphere(), 0.0, 0.0, tol).unwrap();
+        assert!((c.min_curvature + 1.0 / 3.0).abs() < 1e-15);
+        assert!((c.max_curvature + 1.0 / 3.0).abs() < 1e-15);
+        assert!((c.mean + 1.0 / 3.0).abs() < 1e-15);
+        assert!((c.gaussian - 1.0 / 9.0).abs() < 1e-15);
+        assert_frame(&c, Vector3D::X);
+    }
+
+    #[test]
+    fn test_curvatures_torus_outer_equator() {
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&torus(), 0.0, 0.0, tol).unwrap();
+        assert!((c.min_curvature + 1.0 / 1.5).abs() < 1e-12);
+        assert!((c.max_curvature + 1.0 / 6.5).abs() < 1e-12);
+        assert!((c.gaussian - 1.0 / (6.5 * 1.5)).abs() < 1e-12);
+        assert!((c.min_direction.dot(Vector3D::Z).abs() - 1.0).abs() < 1e-12);
+        assert!((c.max_direction.dot(Vector3D::Y).abs() - 1.0).abs() < 1e-12);
+        assert_frame(&c, Vector3D::X);
+    }
+
+    #[test]
+    fn test_curvatures_torus_inner_equator_saddle() {
+        use std::f64::consts::PI;
+
+        // Inner equator (u=0, v=pi): tube k=-1/r, ring k=+1/(R-r) (the
+        // ring bends toward the normal there, flipping its sign).
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&torus(), 0.0, PI, tol).unwrap();
+        assert!((c.min_curvature + 2.0 / 3.0).abs() < 1e-12);
+        assert!((c.max_curvature - 2.0 / 7.0).abs() < 1e-12);
+        assert!((c.mean + 4.0 / 21.0).abs() < 1e-12);
+        assert!((c.gaussian + 4.0 / 21.0).abs() < 1e-12);
+        assert!((c.min_direction.dot(Vector3D::Z).abs() - 1.0).abs() < 1e-12);
+        assert!((c.max_direction.dot(Vector3D::Y).abs() - 1.0).abs() < 1e-12);
+        assert_frame(&c, -Vector3D::X);
+    }
+
+    #[test]
+    fn test_curvatures_cone_developable() {
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&cone(), 0.0, 0.0, tol).unwrap();
+        assert!((c.min_curvature + 0.4f64.cos() / 2.0).abs() < 1e-9);
+        assert!(c.max_curvature.abs() < 1e-9);
+        assert!(c.gaussian.abs() < 1e-9);
+        assert_frame(&c, Vector3D::new(0.4f64.cos(), 0.0, -0.4f64.sin()));
+    }
+
+    #[test]
+    fn test_curvatures_saddle_is_negative_gaussian() {
+        // Bilinear patch S(u, v) = (u, v, u*v): K = -1/(1+u²+v²)².
+        let tol = Tolerance::DEFAULT;
+        let c = ParametricSurface::curvatures(&bspline(), 0.5, 0.5, tol).unwrap();
+        assert!((c.gaussian + 1.0 / 2.25).abs() < 1e-9);
+        assert!((c.mean + 0.25 / 1.5f64.powf(1.5)).abs() < 1e-9);
+        let n = Vector3D::new(-0.5, -0.5, 1.0);
+        assert_frame(&c, n * (1.0 / n.magnitude()));
+    }
+
+    #[test]
+    fn test_curvatures_none_at_singular_points() {
+        use std::f64::consts::FRAC_PI_2;
+
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricSurface::curvatures(&sphere(), 0.0, FRAC_PI_2, tol),
+            None
+        );
+        let v_apex = -2.0 / 0.4f64.sin();
+        assert_eq!(
+            ParametricSurface::curvatures(&cone(), 0.0, v_apex, tol),
+            None
+        );
+    }
+
+    /// Normal curvature `II(d, d) / I(d, d)` along a tangent `direction`,
+    /// solved back to its parameter step, as an independent check that a
+    /// reported principal direction carries its principal curvature.
+    fn normal_curvature_along<S: ParametricSurface>(
+        surface: &S,
+        u: f64,
+        v: f64,
+        direction: Vector3D,
+    ) -> f64 {
+        let (_, [su, sv], [suu, suv, svv]) = surface.eval_d2(u, v);
+        let normal = su.cross(sv) * (1.0 / su.cross(sv).magnitude());
+        let (e, f, g) = (su.dot(su), su.dot(sv), sv.dot(sv));
+        let (along_u, along_v) = (direction.dot(su), direction.dot(sv));
+        let determinant = e * g - f * f;
+        let du = (g * along_u - f * along_v) / determinant;
+        let dv = (e * along_v - f * along_u) / determinant;
+        let second = suu * (du * du) + suv * (2.0 * du * dv) + svv * (dv * dv);
+        let tangent = su * du + sv * dv;
+        second.dot(normal) / tangent.dot(tangent)
+    }
+
+    #[test]
+    fn test_curvatures_saddle_directions_carry_principal_curvatures() {
+        // Skewed parametrization (Su·Sv ≠ 0): each direction's normal
+        // curvature matches its reported principal curvature.
+        let tol = Tolerance::DEFAULT;
+        let surface = bspline();
+        for (u, v) in [(0.5, 0.5), (0.1, 0.8), (0.9, 0.3)] {
+            let c = ParametricSurface::curvatures(&surface, u, v, tol).unwrap();
+            let along_min = normal_curvature_along(&surface, u, v, c.min_direction);
+            let along_max = normal_curvature_along(&surface, u, v, c.max_direction);
+            assert!((along_min - c.min_curvature).abs() < 1e-14);
+            assert!((along_max - c.max_curvature).abs() < 1e-14);
+            let squared = 1.0 + u * u + v * v;
+            assert!((c.gaussian + 1.0 / (squared * squared)).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn test_curvatures_sphere_everywhere_umbilic_with_orthonormal_directions() {
+        // Rounding splits the two curvatures by ~1e-16 away from the
+        // equator; the directions must stay a perpendicular unit pair and
+        // the curvatures must not pick up a spurious √ε gap.
+        let tol = Tolerance::DEFAULT;
+        let sphere = Sphere::new(Point3D::new(1.0, 2.0, 3.0), 3.0).unwrap();
+        for i in 0..40 {
+            let (u, v) = (0.157 * f64::from(i), -1.5 + 0.075 * f64::from(i));
+            let c = ParametricSurface::curvatures(&sphere, u, v, tol).unwrap();
+            assert!((c.min_curvature + 1.0 / 3.0).abs() < 1e-14, "{u}, {v}");
+            assert!((c.max_curvature + 1.0 / 3.0).abs() < 1e-14, "{u}, {v}");
+            let (_, [su, sv]) = sphere.eval_d1(u, v);
+            assert_frame(&c, su.cross(sv) * (1.0 / su.cross(sv).magnitude()));
+        }
+    }
+
+    #[test]
+    fn test_curvatures_rational_cylinder_patch() {
+        // Quarter circle of radius 2 swept along z: hoop curvature -1/2
+        // along the unit normal, zero along the ruling, at any weight.
+        let weight = std::f64::consts::FRAC_1_SQRT_2;
+        let poles = vec![
+            vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 1.0)],
+            vec![Point3D::new(2.0, 2.0, 0.0), Point3D::new(2.0, 2.0, 1.0)],
+            vec![Point3D::new(0.0, 2.0, 0.0), Point3D::new(0.0, 2.0, 1.0)],
+        ];
+        let weights = vec![vec![1.0, 1.0], vec![weight, weight], vec![1.0, 1.0]];
+        let surface = BSplineSurface::new_rational(
+            2,
+            1,
+            poles,
+            weights,
+            vec![0.0, 1.0],
+            vec![3, 3],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            false,
+            false,
+        )
+        .unwrap();
+        let tol = Tolerance::DEFAULT;
+        for u in [0.0, 0.3, 0.5, 1.0] {
+            let c = ParametricSurface::curvatures(&surface, u, 0.5, tol).unwrap();
+            assert!((c.min_curvature + 0.5).abs() < 1e-14);
+            assert!(c.max_curvature.abs() < 1e-14);
+            assert!((c.max_direction.dot(Vector3D::Z).abs() - 1.0).abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn test_curvatures_none_for_non_finite_parameters() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            ParametricSurface::curvatures(&torus(), f64::NAN, 0.0, tol),
+            None
+        );
+        assert_eq!(
+            ParametricSurface::curvatures(&cylinder(), f64::INFINITY, 0.0, tol),
+            None
+        );
+    }
+
+    #[test]
+    fn test_surface_enum_curvatures_dispatch_agrees_with_concrete() {
+        let tol = Tolerance::DEFAULT;
+        let surfaces: Vec<Surface> = vec![
+            plane().into(),
+            cylinder().into(),
+            cone().into(),
+            sphere().into(),
+            torus().into(),
+            bspline().into(),
+        ];
+        for surface in &surfaces {
+            let expected = match surface {
+                Surface::Plane(s) => ParametricSurface::curvatures(s, 0.3, 0.2, tol),
+                Surface::Cylinder(s) => ParametricSurface::curvatures(s, 0.3, 0.2, tol),
+                Surface::Cone(s) => ParametricSurface::curvatures(s, 0.3, 0.2, tol),
+                Surface::Sphere(s) => ParametricSurface::curvatures(s, 0.3, 0.2, tol),
+                Surface::Torus(s) => ParametricSurface::curvatures(s, 0.3, 0.2, tol),
+                Surface::BSpline(s) => ParametricSurface::curvatures(s, 0.3, 0.2, tol),
+            };
+            assert_eq!(surface.curvatures(0.3, 0.2, tol), expected);
+        }
     }
 }

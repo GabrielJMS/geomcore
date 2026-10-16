@@ -19,5 +19,5 @@ pub use cylinder::{Cylinder, CylinderConstructionError};
 pub use iso::SurfaceIsoError;
 pub use plane::{Plane, PlaneConstructionError};
 pub use sphere::{Sphere, SphereConstructionError};
-pub use surface::{ElementarySurface, ParametricSurface, Surface};
+pub use surface::{ElementarySurface, ParametricSurface, Surface, SurfaceCurvatures};
 pub use torus::{Torus, TorusConstructionError};
