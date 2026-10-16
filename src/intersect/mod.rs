@@ -489,7 +489,7 @@ pub enum LineCircle3DIntersection {
 /// crossing planes report [`CircleCircle3DIntersection::NotAnalytic`]: they
 /// meet in up to two points, one of which may be a lone crossing, which the
 /// variants here cannot hold. The routed
-/// [`Intersect::intersect`](crate::Intersect::intersect) solves them exactly
+/// [`Intersect::intersect`] solves them exactly
 /// as conics, on the line the planes share.
 /// Parameters are omitted (no natural primary curve); recover them with
 /// [`Circle3D::parameter_of`].
