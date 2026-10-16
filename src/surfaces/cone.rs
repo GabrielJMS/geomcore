@@ -397,10 +397,17 @@ impl Cone {
     /// similarity preserves angles), and the reference radius scales by
     /// the transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// with the handedness it had: the point set is preserved but the angular direction
-    /// reverses. Fails with [`ConeConstructionError::NullNormal`] only
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with [`ConeConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
+    /// `v` is a length along the generatrix, so under a scale `s` the
+    /// image of the point at `(u, v)` sits at `(u, s * v)`.
     ///
     /// # Examples
     ///

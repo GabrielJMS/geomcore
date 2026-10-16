@@ -362,12 +362,18 @@ impl Plane {
     /// Returns the image of this plane under `transform`: the frame origin
     /// and directions map point-wise.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// with the handedness it had (the normal maps onto the image's
-    /// normal): the point set is preserved but
-    /// the `(u, v)` orientation reverses. Fails with
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with
     /// [`PlaneConstructionError::NullNormal`] only when the transform
-    /// collapses the frame (a zero scale factor).
+    /// collapses the frame (a zero scale factor). `u` and `v` are
+    /// lengths, so under a scale `s` the image of the point at `(u, v)`
+    /// sits at `(s * u, s * v)`.
     ///
     /// # Examples
     ///

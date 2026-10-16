@@ -126,11 +126,16 @@ pub(crate) fn line_parameter(axis: &Axis3D, p: Point3D) -> f64 {
 /// Recovers the angular parameter of a point on (or near) the circle,
 /// wrapped into `[0, 2*PI)`.
 ///
-/// Projects `p - origin` onto the circle's plane implicitly by taking the
-/// signed angle from `x_dir` to `p - origin`, referenced against `z_dir`.
+/// Projects `p - origin` onto the circle's plane by taking its local x/y
+/// coordinates, then their angle. Measuring from the frame's own x and y
+/// directions (not about its z direction) keeps the result right for an
+/// indirect (left-handed) frame too.
 pub(crate) fn circle_parameter(frame: &Frame3D, p: Point3D) -> f64 {
     let op = p - frame.origin();
-    wrap_to_turn(frame.x_direction().angle_with_ref(op, frame.z_direction()))
+    wrap_to_turn(
+        op.dot(frame.y_direction())
+            .atan2(op.dot(frame.x_direction())),
+    )
 }
 
 /// Recovers the angular parameter of a point on (or near) the ellipse,
@@ -144,8 +149,7 @@ pub(crate) fn ellipse_parameter(frame: &Frame3D, maj: f64, min: f64, p: Point3D)
     let op = p - frame.origin();
     let nx = op.dot(frame.x_direction());
     let ny = op.dot(frame.y_direction());
-    let om = nx * frame.x_direction() + ny * (maj / min) * frame.y_direction();
-    wrap_to_turn(frame.x_direction().angle_with_ref(om, frame.z_direction()))
+    wrap_to_turn((ny * (maj / min)).atan2(nx))
 }
 
 /// Whether `p` is within `tol` of a conic in the frame's plane, decided

@@ -113,8 +113,9 @@ impl Axis3D {
 
 /// A 3D coordinate frame: an origin and three mutually orthogonal unit
 /// directions (x, y, z). It is direct (right-handed, `x × y = z`) unless
-/// built with [`Frame3D::from_axes`] or flipped (`flipped_x/y/z`), as a
-/// reversed surface's frame is; see [`Frame3D::is_direct`].
+/// built with [`Frame3D::from_axes`], flipped (`flipped_x/y/z`) as a
+/// reversed surface's frame is, or mirrored by a transform; see
+/// [`Frame3D::is_direct`].
 ///
 /// # Examples
 ///
@@ -336,7 +337,8 @@ impl Frame3D {
     /// [`Frame3D::new`] and [`Frame3D::from_z`] always build right-handed
     /// frames; [`Frame3D::from_axes`] accepts either handedness. Surface
     /// reversal flips a single axis, so a reversed surface's frame is
-    /// indirect and its normal points the other way.
+    /// indirect and its normal points the other way. A transform maps
+    /// every axis, so a mirror changes the handedness too.
     ///
     /// # Examples
     ///

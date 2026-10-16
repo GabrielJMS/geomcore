@@ -187,22 +187,22 @@ fn line_on_plane(line: &Line3D, frame: crate::Frame3D) -> Result<Line2D, Paramet
 
 /// 2D image of a circle lying in a plane: the circle's x direction mapped
 /// to local plane coordinates, its y direction the perpendicular on the
-/// side its normal makes it turn, radius preserved. The circle's normal
-/// must turn onto the plane's while moving it by at most the confusion
-/// tolerance.
+/// side the circle's own y direction maps to, radius preserved. The
+/// circle's normal must turn onto the plane's while moving it by at most
+/// the confusion tolerance. Either frame may be indirect.
 fn circle_on_plane(
     circle: &Circle3D,
     frame: crate::Frame3D,
     tol: Tolerance,
 ) -> Result<Circle2D, ParametrizeError> {
     let normal = circle.normal();
-    let along = normal.dot(frame.z_direction());
     if normal.cross(frame.z_direction()).magnitude() > tol.angular_for_extent(circle.radius()) {
         return Err(ParametrizeError::CurveNotOnSurface);
     }
     let center = eval_point2d_plane(frame, circle.center());
     let x_dir = eval_dir2d_plane(frame, circle.frame().x_direction());
-    let y_dir = if along > 0.0 {
+    let mapped_y = eval_dir2d_plane(frame, circle.frame().y_direction());
+    let y_dir = if mapped_y.dot(x_dir.perp()) > 0.0 {
         x_dir.perp()
     } else {
         -x_dir.perp()
@@ -261,13 +261,13 @@ fn circle_on_cylinder(
     if axis.cross(normal).magnitude() > tol.angular_for_extent(circle.radius()) {
         return Err(ParametrizeError::NotAnalytic);
     }
-    let u = wrap_to_turn(
-        frame
-            .x_direction()
-            .angle_with_ref(circle.frame().x_direction(), axis),
-    );
+    let u = frame_angle(frame, circle.frame().x_direction());
     let v = (circle.center() - frame.origin()).dot(axis);
-    let du = if normal.dot(axis) > 0.0 { 1.0 } else { -1.0 };
+    let du = if normal.dot(angular_axis(frame)) > 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
     Line2D::new(Point2D::new(u, v), Vector2D::new(du, 0.0))
         .map_err(|_| ParametrizeError::NotAnalytic)
 }
@@ -337,7 +337,11 @@ fn circle_on_cone(
         wrap_to_turn(y.atan2(x))
     };
     let v = z / semi_angle.cos();
-    let du = if normal.dot(axis) > 0.0 { 1.0 } else { -1.0 };
+    let du = if normal.dot(angular_axis(frame)) > 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
     Line2D::new(Point2D::new(u, v), Vector2D::new(du, 0.0))
         .map_err(|_| ParametrizeError::NotAnalytic)
 }
@@ -407,13 +411,13 @@ fn sphere_meridian(circle: &Circle3D, frame: crate::Frame3D) -> Line2D {
 fn sphere_parallel(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let cf = circle.frame();
-    let u = wrap_to_turn(frame.x_direction().angle_with_ref(cf.x_direction(), z));
+    let u = frame_angle(frame, cf.x_direction());
     // Recover the sphere radius from an actual on-surface point (the circle's
     // own radius is the parallel's radius, not the sphere's).
     let r = circle.eval_point(0.0).distance(frame.origin());
     let height = (circle.center() - frame.origin()).dot(z);
     let v = (height / r).clamp(-1.0, 1.0).asin();
-    let du = if circle.normal().dot(z) >= 0.0 {
+    let du = if circle.normal().dot(angular_axis(frame)) >= 0.0 {
         1.0
     } else {
         -1.0
@@ -545,7 +549,7 @@ fn torus_poloidal(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, Pa
     let z = frame.z_direction();
     let oc = circle.center() - frame.origin();
     let cf = circle.frame();
-    let u = wrap_to_turn(frame.x_direction().angle_with_ref(oc, z));
+    let u = frame_angle(frame, oc);
     let mut v1 = oc.angle_with_ref(cf.x_direction(), oc.cross(z));
     if v1 < 0.0 {
         v1 += TAU;
@@ -563,6 +567,25 @@ fn torus_eval_u(frame: crate::Frame3D, dir: Vector3D) -> Point2D {
     let x = dir.dot(frame.x_direction());
     let y = dir.dot(frame.y_direction());
     Point2D::new(angle_or_zero(y, x), 0.0)
+}
+
+// ---- frame angles ----
+
+/// The direction about which the angle `u` of a surface placed by `frame`
+/// turns counterclockwise: `x × y`, the frame's z direction on a direct
+/// frame and its negation on an indirect one.
+fn angular_axis(frame: crate::Frame3D) -> Vector3D {
+    frame.x_direction().cross(frame.y_direction())
+}
+
+/// The angle of `direction` about the frame's z axis, measured from its x
+/// direction towards its y direction and wrapped into `[0, 2π)`, whatever
+/// the frame's handedness.
+fn frame_angle(frame: crate::Frame3D, direction: Vector3D) -> f64 {
+    angle_or_zero(
+        direction.dot(frame.y_direction()),
+        direction.dot(frame.x_direction()),
+    )
 }
 
 // ---- normalization ----
