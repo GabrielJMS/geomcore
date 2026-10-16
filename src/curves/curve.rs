@@ -10,9 +10,9 @@ use std::f64::consts::TAU;
 /// knots and seams.
 ///
 /// `Below` approaches from the span ending at the parameter, `Above`
-/// from the span starting there (the side plain evaluation takes).
-/// Away from knots and seams both sides agree. Shared by curve and
-/// surface sided-evaluation queries.
+/// from the span starting there (the side plain evaluation takes,
+/// except at the upper bound). Away from knots and seams both sides
+/// agree. Shared by curve and surface sided-evaluation queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
     /// Limit from parameters below (the span ending here).

@@ -98,5 +98,5 @@ _Avoid_: containment, contains (reserved for a point that lies on a curve or sur
 ## Evaluation
 
 **Side**:
-Which span to evaluate at a knot: `Below` approaches from the span ending there, `Above` from the span starting there (the side plain evaluation takes). Both sides agree away from knots.
+Which span to evaluate at a knot or periodic seam: `Below` approaches from the span ending there, `Above` from the span starting there (the side plain evaluation takes, except at the upper bound). Both sides agree away from knots.
 _Avoid_: left/right (which flip with traversal direction), sidedness

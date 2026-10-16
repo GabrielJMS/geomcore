@@ -285,19 +285,12 @@ impl KnotVector {
         (span, u)
     }
 
-    /// Mirror of [`span`](Self::span) approaching from below: the
-    /// nonzero-width span ending at `u` where `u` sits exactly on a knot,
-    /// the holding span otherwise (both sides agree strictly inside a
-    /// span, and at the range start nothing lies below).
-    ///
-    /// Periodic directions fall back to [`span`](Self::span): selecting
-    /// the span below a periodic seam needs tiled-knot surgery, and
-    /// periodic seams are smooth in the common uniform case, where both
-    /// sides agree anyway.
+    /// Mirror of [`span`](Self::span) approaching from below, in a
+    /// non-periodic direction: the nonzero-width span ending at `u` where
+    /// `u` sits exactly on a knot, the holding span otherwise (both sides
+    /// agree strictly inside a span, and at the range start nothing lies
+    /// below).
     fn span_below(&self, u: f64) -> (usize, f64) {
-        if self.periodic {
-            return self.span(u);
-        }
         let (s, u) = self.span(u);
         let flat = &self.flat;
         let lo = self.degree;
@@ -311,8 +304,11 @@ impl KnotVector {
         if flat[t] < u { (t, u) } else { (s, u) }
     }
 
-    /// [`span_knots`](Self::span_knots) with a side selector: [`Side::Above`]
-    /// behaves identically, [`Side::Below`] locates the span ending at `u`.
+    /// [`span_knots`](Self::span_knots) with a side selector:
+    /// [`Side::Below`] locates the span ending at `u`, [`Side::Above`] the
+    /// span starting there. Both match `span_knots` except at a periodic
+    /// seam given as the upper bound, where `span_knots` closes the last
+    /// span and [`Side::Above`] takes the first one.
     pub(crate) fn span_knots_sided<const N: usize>(
         &self,
         u: f64,
@@ -320,7 +316,10 @@ impl KnotVector {
         left: &mut [f64; N],
         right: &mut [f64; N],
     ) -> usize {
-        if side == Side::Above || self.periodic {
+        if self.periodic {
+            return self.periodic_span_knots_sided(u, side, left, right);
+        }
+        if side == Side::Above {
             return self.span_knots(u, left, right);
         }
         let degree = self.degree;
@@ -394,7 +393,6 @@ impl KnotVector {
         right: &mut [f64; N],
     ) -> usize {
         let (first, last) = self.bounds();
-        let period = last - first;
         // Exactly `last` closes the last span instead of wrapping to the
         // first (they differ only in derivatives across the seam).
         let u = if u == last {
@@ -411,6 +409,54 @@ impl KnotVector {
             .partition_point(|&k| k <= u)
             .saturating_sub(1)
             .min(block.len() - 1);
+        self.periodic_span_at(u, local, left, right)
+    }
+
+    /// [`KnotVector::periodic_span_knots`] from one side: `u` is wrapped
+    /// into `[first, last)` so that the seam is a knot like any other,
+    /// then [`Side::Above`] takes the span starting at `u` and
+    /// [`Side::Below`] the span ending at it (at the seam, the last span
+    /// of the period).
+    fn periodic_span_knots_sided<const N: usize>(
+        &self,
+        u: f64,
+        side: Side,
+        left: &mut [f64; N],
+        right: &mut [f64; N],
+    ) -> usize {
+        let (first, last) = self.bounds();
+        let mut u = in_period(u, first, last);
+        if u >= last {
+            u = first;
+        }
+        let block = &self.flat[..self.pole_count];
+        let local = match side {
+            Side::Above => block.partition_point(|&k| k <= u),
+            Side::Below if u == first => {
+                u = last;
+                block.len()
+            }
+            Side::Below => block.partition_point(|&k| k < u),
+        }
+        .saturating_sub(1)
+        .min(block.len() - 1);
+        self.periodic_span_at(u, local, left, right)
+    }
+
+    /// Writes the knots around the periodic span opening at block knot
+    /// `local` relative to `u` (see [`KnotVector::span_knots`]) and
+    /// returns the index of the span's first pole.
+    #[inline(always)]
+    fn periodic_span_at<const N: usize>(
+        &self,
+        u: f64,
+        local: usize,
+        left: &mut [f64; N],
+        right: &mut [f64; N],
+    ) -> usize {
+        let (first, last) = self.bounds();
+        let period = last - first;
+        let block = &self.flat[..self.pole_count];
         let len = block.len() as isize;
         let knot = |offset: isize| {
             let k = local as isize + offset;
@@ -442,19 +488,22 @@ impl KnotVector {
         }
     }
 
-    /// [`window`](Self::window) with a side selector: [`Side::Above`]
-    /// behaves identically, [`Side::Below`] evaluates the span ending at
-    /// `u` (periodic directions always take the above span).
+    /// [`window`](Self::window) from one side of `u`, the span located
+    /// by [`span_knots_sided`](Self::span_knots_sided); `None` is plain
+    /// [`window`](Self::window).
+    #[inline]
     pub(crate) fn window_sided<const N: usize>(
         &self,
         u: f64,
         order: usize,
-        side: Side,
+        side: Option<Side>,
         w: &mut Window<N>,
     ) {
-        if side == Side::Above {
-            return self.window(u, order, w);
-        }
+        let side = match side {
+            None => return self.window(u, order, w),
+            Some(Side::Above) if !self.periodic => return self.window(u, order, w),
+            Some(side) => side,
+        };
         let mut left = [0.0f64; N];
         let mut right = [0.0f64; N];
         w.pole_count = self.pole_count;
@@ -1056,13 +1105,17 @@ pub(crate) fn derivatives<const ORDER: usize>(
     poles: Poles,
     u: f64,
 ) -> [Vector3D; 3] {
-    derivatives_sided::<ORDER>(knots, poles, u, Side::Above)
+    if knots.degree < SMALL {
+        derivatives_sized::<SMALL, ORDER>(knots, poles, u, None)
+    } else {
+        derivatives_sized::<LARGE, ORDER>(knots, poles, u, None)
+    }
 }
 
 /// [`derivatives`] from one side of `u`: [`Side::Below`] evaluates the
-/// span ending at `u` (the span starting there is [`Side::Above`); both
-/// agree strictly inside a span, and periodic directions always take the
-/// above span.
+/// span ending at `u`, [`Side::Above`] the span starting there (across
+/// the seam of a periodic direction too); both agree strictly inside a
+/// span.
 #[inline]
 pub(crate) fn derivatives_sided<const ORDER: usize>(
     knots: &KnotVector,
@@ -1071,9 +1124,9 @@ pub(crate) fn derivatives_sided<const ORDER: usize>(
     side: Side,
 ) -> [Vector3D; 3] {
     if knots.degree < SMALL {
-        derivatives_sized::<SMALL, ORDER>(knots, poles, u, side)
+        derivatives_sized::<SMALL, ORDER>(knots, poles, u, Some(side))
     } else {
-        derivatives_sized::<LARGE, ORDER>(knots, poles, u, side)
+        derivatives_sized::<LARGE, ORDER>(knots, poles, u, Some(side))
     }
 }
 
@@ -1082,7 +1135,7 @@ fn derivatives_sized<const N: usize, const ORDER: usize>(
     knots: &KnotVector,
     poles: Poles,
     u: f64,
-    side: Side,
+    side: Option<Side>,
 ) -> [Vector3D; 3] {
     debug_assert!(
         ORDER <= MAX_DERIVATIVE,

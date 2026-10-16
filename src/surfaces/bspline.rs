@@ -1687,9 +1687,13 @@ impl BSplineSurface {
 
     /// Evaluates the point and the first derivatives at `(u, v)`, each
     /// direction from its own side: [`Side::Below`] takes the span ending
-    /// at the parameter (the span starting there is [`Side::Above`], the
-    /// side plain evaluation takes). Periodic directions always take the
-    /// above span.
+    /// at the parameter, [`Side::Above`] the span starting there. Both
+    /// sides agree strictly inside a span. Plain evaluation takes the
+    /// above side, except at the upper bound, where nothing lies above a
+    /// non-periodic direction and both sides take the last span. A
+    /// periodic direction's seam is a knot like any other: at either
+    /// bound, [`Side::Below`] takes the last span of the period and
+    /// [`Side::Above`] the first.
     ///
     /// # Examples
     ///
@@ -1723,6 +1727,33 @@ impl BSplineSurface {
     /// Evaluates the derivative of order `(du, dv)` at `(u, v)`, each
     /// direction from its own side, as
     /// [`eval_d1_sided`](Self::eval_d1_sided).
+    ///
+    /// Only orders with `du + dv` of 1 or 2 are supported.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `du + dv == 0` or `du + dv > 2`, as
+    /// [`eval_derivative`](Self::eval_derivative).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D, Side, Vector3D};
+    /// // Two bilinear patches meeting at a crease along u = 1, flat then rising.
+    /// let flat = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 0.0)];
+    /// let tilted = |x: f64| vec![Point3D::new(x, 0.0, 0.0), Point3D::new(x, 1.0, 1.0)];
+    /// let surface = BSplineSurface::new(
+    ///     1, 1,
+    ///     vec![flat(0.0), flat(1.0), tilted(2.0)],
+    ///     vec![0.0, 1.0, 2.0], vec![2, 1, 2], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// // The cross derivative is zero on the flat patch, (0, 0, 1) on the tilted one.
+    /// let below = surface.eval_derivative_sided(1.0, 0.5, 1, 1, Side::Below, Side::Above);
+    /// let above = surface.eval_derivative_sided(1.0, 0.5, 1, 1, Side::Above, Side::Above);
+    /// assert_eq!(below, Vector3D::new(0.0, 0.0, 0.0));
+    /// assert_eq!(above, Vector3D::new(0.0, 0.0, 1.0));
+    /// ```
     pub fn eval_derivative_sided(
         &self,
         u: f64,
@@ -2055,8 +2086,7 @@ impl BSplineSurface {
     }
 
     /// Shared sided first-derivative evaluation: `u_side` selects the `u`
-    /// span, `v_side` the `v` span. Periodic directions always take the
-    /// above span.
+    /// span, `v_side` the `v` span.
     fn eval_surface_d1_sided(
         &self,
         u: f64,
@@ -4608,6 +4638,45 @@ mod tests {
                 (p, [su, sv])
             );
         }
+    }
+
+    #[test]
+    fn test_sided_derivatives_at_creased_periodic_seam() {
+        // Periodic quadratic in `u`, C0 at its seam (multiplicity 2 at
+        // both ends), linear in `v`.
+        let rows = (0..6)
+            .map(|i| {
+                let angle = i as f64;
+                let (x, y) = (2.0 * angle.cos(), 2.0 * angle.sin());
+                let z = (i % 2) as f64;
+                vec![Point3D::new(x, y, z), Point3D::new(x, y, z + 3.0)]
+            })
+            .collect();
+        let surface = BSplineSurface::new(
+            2,
+            1,
+            rows,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![2, 1, 1, 1, 1, 2],
+            vec![0.0, 1.0],
+            vec![2, 2],
+            true,
+            false,
+        )
+        .unwrap();
+        let (v, step) = (0.4, 1e-9);
+        for seam in [0.0, 5.0] {
+            let below = surface.eval_derivative_sided(seam, v, 1, 0, Side::Below, Side::Above);
+            let above = surface.eval_derivative_sided(seam, v, 1, 0, Side::Above, Side::Above);
+            assert!((below - above).magnitude() > 0.1);
+            assert!((surface.eval_derivative(5.0 - step, v, 1, 0) - below).magnitude() < 1e-6);
+            assert!((surface.eval_derivative(step, v, 1, 0) - above).magnitude() < 1e-6);
+        }
+        // Plain evaluation at the lower bound takes the above side.
+        assert_eq!(
+            surface.eval_d2(0.0, v),
+            surface.eval_d2_sided(0.0, v, Side::Above, Side::Above)
+        );
     }
 
     #[test]
