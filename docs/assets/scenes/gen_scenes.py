@@ -216,8 +216,8 @@ def uniform_grid_scene() -> None:
             v=(v0, v1),
             group="cells",
         )
-        edge = [(u0, v0), (u1, v0), (u1, v1), (u0, v1), (u0, v0)]
-        view.pcurve(edge, s, label=f"{where} cell", color=B, width=3, group="cells")
+        outline = [(u0, v0), (u1, v0), (u1, v1), (u0, v1), (u0, v0)]
+        view.pcurve(outline, s, label=f"{where} cell", color=B, width=3, group="cells")
     save(view, "param-grid.json")
 
 
@@ -297,8 +297,10 @@ def plane_sphere_scene() -> None:
 
 def raised_pole_scene() -> None:
     """A flat bicubic patch with one pole raised: only the cells the pole supports move."""
-    nu, nv = 7, 6
-    poles = [[Point3D(i, j, 0) for j in range(nv)] for i in range(nu)]
+    u_pole_count, v_pole_count = 7, 6
+    poles = [
+        [Point3D(i, j, 0) for j in range(v_pole_count)] for i in range(u_pole_count)
+    ]
     poles[4][4] = Point3D(4, 4, 2.5)
     surface = BSplineSurface(
         3,
@@ -321,7 +323,9 @@ def raised_pole_scene() -> None:
         u=(0.25, 1),
         v=(1 / 3, 1),
     )
-    net = poles + [[poles[i][j] for i in range(nu)] for j in range(nv)]
+    net = poles + [
+        [poles[i][j] for i in range(u_pole_count)] for j in range(v_pole_count)
+    ]
     for k, row in enumerate(net):
         view.polyline(
             row, label=f"net {k}", color="#5f6673", dashed=True, group="control net"
