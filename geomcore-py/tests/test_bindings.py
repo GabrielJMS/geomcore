@@ -159,6 +159,21 @@ def test_sphere_parameters_round_trip():
     assert v == pytest.approx(0.4)
 
 
+def test_surface_normal_is_unit_and_recovers_at_singular_points():
+    sphere = Sphere(Point3D.origin(), 3.0)
+    assert sphere.normal(0.0, 0.0).components() == pytest.approx((1.0, 0.0, 0.0))
+    pole = sphere.normal(0.3, math.pi / 2, Tolerance.default())
+    assert pole.components() == pytest.approx((0.0, 0.0, 1.0), abs=1e-12)
+    cone = geomcore.surfaces.Cone(Point3D.origin(), Vector3D.z(), 0.4, 2.0)
+    apex = cone.normal(0.0, -2.0 / math.sin(0.4))
+    assert apex.components() == pytest.approx(
+        (math.cos(0.4), 0.0, -math.sin(0.4)), abs=1e-9
+    )
+    cylinder = Cylinder(Point3D.origin(), Vector3D.z(), 1.0)
+    assert cylinder.normal(0.0, 5.0).components() == pytest.approx((1.0, 0.0, 0.0))
+    assert sphere.normal(float("nan"), 0.0) is None
+
+
 def test_frame3_accessors():
     frame = Frame3D(Point3D.origin(), Vector3D.z(), Vector3D.x())
     assert frame.z_direction().components() == pytest.approx((0.0, 0.0, 1.0))

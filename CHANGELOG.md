@@ -9,6 +9,19 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Unit surface normal: `ParametricSurface::normal(u, v, tol)` returns the
+  unit `Su × Sv`, recovering the limiting normal at singular points (a
+  sphere's poles, a cone's apex, a collapsed B-spline row) from second
+  derivatives, then from nearby parameters; `None` only where no normal
+  can be recovered. A partial counts as zero when the distance it would
+  cover across its parameter range is within `tol.confusion`, so
+  rescaling a surface's knots does not change its normals. In Python,
+  `normal(u, v, tol=None)` on `Cylinder`, `Cone`, `Sphere`, `Torus` and
+  `BSplineSurface` (`Plane.normal()` keeps returning its constant
+  normal). ADR 0010 records the design.
+
 ## [0.35.0] - 2026-10-13
 
 ### Added

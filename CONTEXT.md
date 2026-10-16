@@ -23,7 +23,7 @@ A point lies on a curve or surface when it is within `tol.confusion` of it, test
 _Avoid_: inside (reserved for polygons), containment for anything other than this test
 
 **Normal**:
-The unit direction of `Su × Sv` at a surface's parameters. Singular points such as a sphere's poles or a cone's apex still resolve their limiting normal; it stays undefined only where no direction can be recovered.
+The unit direction of `Su × Sv` at a surface's parameters. A partial counts as zero when the distance it would cover across its parameter range is within `tol.confusion`, so the normal does not depend on how the surface is parametrized. Singular points such as a sphere's poles, a cone's apex or a collapsed B-spline row still resolve their limiting normal; it stays undefined only where no direction can be recovered.
 _Avoid_: raw cross product for the normal, tangent for either partial derivative
 
 **B-spline**:

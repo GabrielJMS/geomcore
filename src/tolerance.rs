@@ -109,6 +109,35 @@ impl Tolerance {
     pub fn angular_for_extent(&self, extent: f64) -> f64 {
         (self.confusion / extent).max(self.angular)
     }
+
+    /// The parameter width `last - first` of `bounds`, over which a
+    /// derivative is measured by [`Self::is_negligible_derivative`]. An
+    /// unbounded range is measured across the model instead: the model
+    /// size `confusion / angular` that the angular tolerance encodes
+    /// (ADR 0006), so the reach of an unbounded direction's derivative is
+    /// the largest one any part of the model can use.
+    pub(crate) fn reference_width(&self, (first, last): (f64, f64)) -> f64 {
+        let width = last - first;
+        if width.is_finite() {
+            width
+        } else {
+            self.confusion / self.angular
+        }
+    }
+
+    /// Whether a derivative of length `length` gives no direction: the
+    /// distance `length × reach` it would cover across the parameter
+    /// range is within `confusion`. `reach` is the
+    /// [`reference_width`](Self::reference_width) raised to the
+    /// derivative's order in each direction (`width_u × width_v` for a
+    /// mixed second derivative), which makes the test independent of the
+    /// parametrization: rescaling a parameter by `k` divides the
+    /// derivative by `k` and multiplies the width by `k`. `NaN` counts as
+    /// negligible.
+    pub(crate) fn is_negligible_derivative(&self, length: f64, reach: f64) -> bool {
+        let distance = length * reach;
+        distance.is_nan() || distance <= self.confusion
+    }
 }
 
 impl Default for Tolerance {
@@ -141,6 +170,30 @@ mod tests {
         assert_eq!(tol.angular_for_extent(1.0), 1e-7);
         assert_eq!(tol.angular_for_extent(1e9), tol.angular);
         assert_eq!(tol.angular_for_extent(0.0), f64::INFINITY);
+    }
+
+    #[test]
+    fn test_reference_width_is_the_range_or_the_model_size() {
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(tol.reference_width((-1.0, 3.0)), 4.0);
+        let model_size = tol.reference_width((f64::NEG_INFINITY, f64::INFINITY));
+        assert!((model_size / Tolerance::MODEL_SIZE - 1.0).abs() < 1e-12);
+        assert_eq!(tol.reference_width((0.0, f64::INFINITY)), model_size);
+    }
+
+    #[test]
+    fn test_negligible_derivative_does_not_depend_on_the_parametrization() {
+        let tol = Tolerance::DEFAULT;
+        // A unit-length direction over [0, 1], rescaled by 1e8 and 1e-8.
+        for scale in [1.0, 1e8, 1e-8] {
+            let width = tol.reference_width((0.0, scale));
+            assert!(!tol.is_negligible_derivative(1.0 / scale, width));
+            assert!(tol.is_negligible_derivative(1e-8 / scale, width));
+            // Second order: the width counts twice.
+            assert!(!tol.is_negligible_derivative(1.0 / (scale * scale), width * width));
+        }
+        assert!(tol.is_negligible_derivative(f64::NAN, 1.0));
+        assert!(tol.is_negligible_derivative(0.0, f64::INFINITY));
     }
 
     #[test]

@@ -1057,7 +1057,8 @@ impl PyCylinder {
     }
 
     /// Unit normal at surface parameters `(u, v)` (`Tolerance.default()`
-    /// when omitted). Returns `None` where the normal degenerates.
+    /// when omitted). Singular points such as poles and apexes give their
+    /// limiting normal; returns `None` where no normal can be recovered.
     #[pyo3(signature = (u, v, tol = None))]
     fn normal(&self, u: f64, v: f64, tol: Option<PyTolerance>) -> Option<PyVector3D> {
         ParametricSurface::normal(&self.0, u, v, tol.map(|t| t.0).unwrap_or_default())
@@ -1329,7 +1330,8 @@ impl PyCone {
     }
 
     /// Unit normal at surface parameters `(u, v)` (`Tolerance.default()`
-    /// when omitted). Returns `None` where the normal degenerates.
+    /// when omitted). Singular points such as poles and apexes give their
+    /// limiting normal; returns `None` where no normal can be recovered.
     #[pyo3(signature = (u, v, tol = None))]
     fn normal(&self, u: f64, v: f64, tol: Option<PyTolerance>) -> Option<PyVector3D> {
         ParametricSurface::normal(&self.0, u, v, tol.map(|t| t.0).unwrap_or_default())
@@ -1619,7 +1621,8 @@ impl PySphere {
     }
 
     /// Unit normal at surface parameters `(u, v)` (`Tolerance.default()`
-    /// when omitted). Returns `None` where the normal degenerates.
+    /// when omitted). Singular points such as poles and apexes give their
+    /// limiting normal; returns `None` where no normal can be recovered.
     #[pyo3(signature = (u, v, tol = None))]
     fn normal(&self, u: f64, v: f64, tol: Option<PyTolerance>) -> Option<PyVector3D> {
         ParametricSurface::normal(&self.0, u, v, tol.map(|t| t.0).unwrap_or_default())
@@ -1947,7 +1950,8 @@ impl PyTorus {
     }
 
     /// Unit normal at surface parameters `(u, v)` (`Tolerance.default()`
-    /// when omitted). Returns `None` where the normal degenerates.
+    /// when omitted). Singular points such as poles and apexes give their
+    /// limiting normal; returns `None` where no normal can be recovered.
     #[pyo3(signature = (u, v, tol = None))]
     fn normal(&self, u: f64, v: f64, tol: Option<PyTolerance>) -> Option<PyVector3D> {
         ParametricSurface::normal(&self.0, u, v, tol.map(|t| t.0).unwrap_or_default())
@@ -2734,7 +2738,8 @@ impl PyBSplineSurface {
     }
 
     /// Unit normal at surface parameters `(u, v)` (`Tolerance.default()`
-    /// when omitted). Returns `None` where the normal degenerates.
+    /// when omitted). Singular points such as poles and apexes give their
+    /// limiting normal; returns `None` where no normal can be recovered.
     #[pyo3(signature = (u, v, tol = None))]
     fn normal(&self, u: f64, v: f64, tol: Option<PyTolerance>) -> Option<PyVector3D> {
         ParametricSurface::normal(&self.0, u, v, tol.map(|t| t.0).unwrap_or_default())
