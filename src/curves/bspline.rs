@@ -3797,4 +3797,34 @@ mod tests {
             curve.eval_derivative_sided(5.0, 1, Side::Below)
         );
     }
+
+    #[test]
+    fn test_sided_matches_neighbor_spans_at_knot() {
+        // Below/Above at a knot agree with evaluations one epsilon-step
+        // into each adjacent span (up to the local slope times the step),
+        // and Above equals plain evaluation at the knot itself.
+        let poles = vec![
+            Point3D::new(0.0, 1.0, 0.0),
+            Point3D::new(2.0, 3.0, 1.0),
+            Point3D::new(4.0, 0.0, 2.0),
+            Point3D::new(5.0, 2.0, 0.0),
+            Point3D::new(7.0, 1.0, 3.0),
+            Point3D::new(8.0, 4.0, 1.0),
+        ];
+        let curve =
+            BSplineCurve3D::new(3, poles, vec![0.0, 0.4, 1.0], vec![4, 2, 4], false).unwrap();
+        for order in [1u32, 2] {
+            let below = curve.eval_derivative_sided(0.4, order, Side::Below);
+            let above = curve.eval_derivative_sided(0.4, order, Side::Above);
+            let left = curve.eval_derivative(0.4 - 1e-13, order);
+            let right = curve.eval_derivative(0.4 + 1e-13, order);
+            assert!((below - left).magnitude() < 1e-9, "order {order}");
+            assert!((above - right).magnitude() < 1e-9, "order {order}");
+            assert_eq!(above, curve.eval_derivative(0.4, order));
+        }
+        // Positions are continuous: bitwise identical from either span.
+        let (pb, _) = curve.eval_d1_sided(0.4, Side::Below);
+        let (pa, _) = curve.eval_d1_sided(0.4, Side::Above);
+        assert_eq!(pb, pa);
+    }
 }

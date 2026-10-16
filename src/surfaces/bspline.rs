@@ -4690,4 +4690,47 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_sided_matches_neighbor_spans_and_point_is_exact() {
+        // Bicubic patch with a double u-knot at 0.6: sided derivatives
+        // match epsilon-step neighbors, positions are bitwise identical.
+        let net = |x: f64, z: f64| {
+            vec![
+                Point3D::new(x, 0.0, z),
+                Point3D::new(x, 1.0, z + 1.0),
+                Point3D::new(x, 2.0, z),
+            ]
+        };
+        let surface = BSplineSurface::new(
+            3,
+            2,
+            vec![
+                net(0.0, 0.0),
+                net(1.0, 1.0),
+                net(2.0, 0.0),
+                net(3.0, 2.0),
+                net(4.0, 1.0),
+                net(5.0, 0.0),
+            ],
+            vec![0.0, 0.6, 1.0],
+            vec![4, 2, 4],
+            vec![0.0, 1.0],
+            vec![3, 3],
+            false,
+            false,
+        )
+        .unwrap();
+        let v = 0.35;
+        let below = surface.eval_derivative_sided(0.6, v, 1, 0, Side::Below, Side::Above);
+        let above = surface.eval_derivative_sided(0.6, v, 1, 0, Side::Above, Side::Above);
+        let left = surface.eval_derivative(0.6 - 1e-13, v, 1, 0);
+        let right = surface.eval_derivative(0.6 + 1e-13, v, 1, 0);
+        assert!((below - left).magnitude() < 1e-8);
+        assert!((above - right).magnitude() < 1e-8);
+        assert_eq!(above, surface.eval_derivative(0.6, v, 1, 0));
+        let (pb, _) = surface.eval_d1_sided(0.6, v, Side::Below, Side::Above);
+        let (pa, _) = surface.eval_d1_sided(0.6, v, Side::Above, Side::Above);
+        assert_eq!(pb, pa);
+    }
 }
