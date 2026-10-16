@@ -359,12 +359,9 @@ where
     A: ParametricSurface,
     B: ParametricSurface,
 {
-    let (_, [au, av]) = a.eval_d1(x[0], x[1]);
-    let (_, [bu, bv]) = b.eval_d1(x[2], x[3]);
-    let (na, nb) = (au.cross(av), bu.cross(bv));
+    let (na, nb) = (a.normal(x[0], x[1], tol)?, b.normal(x[2], x[3], tol)?);
     let t = na.cross(nb);
-    let scale = na.magnitude() * nb.magnitude();
-    if t.magnitude() <= tol.angular * scale.max(f64::MIN_POSITIVE) {
+    if t.magnitude() <= tol.angular {
         None
     } else {
         Some(t * (1.0 / t.magnitude()))

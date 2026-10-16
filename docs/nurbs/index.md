@@ -47,6 +47,16 @@ local:
 <figcaption>Local control: one pole moves its neighbourhood, the rest of the curve keeps its shape bit for bit.</figcaption>
 </figure>
 
+The same holds on a surface: a pole of a bicubic patch moves only the
+cells it supports — here 3 × 2 of the 4 × 3 spans — and the rest stays flat.
+
+<figure class="geom-fig">
+<img src="../assets/figures/free-form-geometry/13-a-surface-and-one-raised-point.svg" alt="A surface and one raised point">
+<figcaption>Raising P₄,₄ moves only u in [¼, 1) by v in [⅓, 1); the rest of the patch keeps its shape.</figcaption>
+</figure>
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/nurbs-raised-pole.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="A bicubic B-spline surface with one raised control point and its control net"></iframe>
+
 ## Rational curves
 
 Give each pole a weight and the curve is pulled toward the heavy ones.

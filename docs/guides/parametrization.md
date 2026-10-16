@@ -19,6 +19,8 @@ what the parameters measure (see [Elementary](../geometry/elementary.md#what-the
 <figcaption>A uniform grid in (u, v) is not uniform on the surface: the metric stretches it.</figcaption>
 </figure>
 
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/param-grid.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="A uniform (u, v) grid on a sphere, one cell at the equator and one against the pole"></iframe>
+
 ## Analytic pcurves
 
 A circle coaxial with a cylinder is a horizontal line in $(u, v)$; a
@@ -46,20 +48,28 @@ A few images across the surfaces:
 <figcaption>On a cylinder: coaxial circles are horizontal lines, generators vertical ones.</figcaption>
 </figure>
 
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/param-cylinder.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Three curves on a cylinder and their images in (u, v)"></iframe>
+
 <figure class="geom-fig">
 <img src="../../assets/figures/parametric-domain/04-three-curves-on-a-cone.svg" alt="Curves on a cone">
 <figcaption>On a cone the same construction winds with the growing radius.</figcaption>
 </figure>
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/param-cone.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Three curves on a cone and their images in (u, v)"></iframe>
 
 <figure class="geom-fig">
 <img src="../../assets/figures/parametric-domain/05-three-curves-on-a-sphere.svg" alt="Curves on a sphere">
 <figcaption>On a sphere: parallels are horizontal, meridians vertical — and both pinch at the poles.</figcaption>
 </figure>
 
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/param-sphere.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Three curves on a sphere and their images in (u, v)"></iframe>
+
 <figure class="geom-fig">
 <img src="../../assets/figures/parametric-domain/06-three-curves-on-a-torus.svg" alt="Curves on a torus">
 <figcaption>On a torus both families close: the rectangle glues into the surface itself.</figcaption>
 </figure>
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/param-torus.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="Three curves on a torus and their images in (u, v)"></iframe>
 
 ## Numeric fallback
 

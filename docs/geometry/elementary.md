@@ -404,6 +404,8 @@ The way back: $u = \mathrm{atan2}(y, x),\; v = \mathrm{atan2}(z, \rho)$.
 <figcaption>A sphere. The red dots are the poles, where a whole circle of u is one point.</figcaption>
 </figure>
 
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/elem-sphere.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="A sphere, a point P(u, v) and the two iso curves through it"></iframe>
+
 ### Torus
 
 The cone's shape with $v$ turning the radius instead of growing it:
@@ -446,6 +448,8 @@ says which.
 <img src="../../assets/figures/elementary-geometry/16-a-torus-with-a-point-resolved.svg" alt="A torus with a point resolved into its coordinates">
 <figcaption>A torus. v rounds the tube, changing the radius that u sweeps about the axis.</figcaption>
 </figure>
+
+<iframe src="https://geomcore.github.io/geomcore-viewer/?scene=https://geomcore.github.io/geomcore/assets/scenes/elem-torus.json" width="100%" height="480" style="border: 1px solid #333; border-radius: 8px;" allow="fullscreen" title="A torus, a point P(u, v) and the two iso curves through it"></iframe>
 
 ## What the parameters measure
 
