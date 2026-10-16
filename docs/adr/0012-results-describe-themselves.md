@@ -1,0 +1,20 @@
+# Results describe themselves
+
+An intersection or projection result carries what a caller needs to use it without recomputing: the point on every hit, the closest point on every projection, the method and completeness on every intersection, and the overlaps as parameter ranges. The family results (`CurveCurveIntersection`, `CurveCurveIntersection2D`, `CurveSurfaceIntersection`, `SurfaceSurfaceIntersection`) are structs with private fields read through accessors returning slices, so their storage can change after profiling (hits inline for exact pairs, overlaps in a plain `Vec` since coincidence is rare) without breaking a caller. Hits and overlaps are plain `Copy` structs with public fields.
+
+A hit stores a parameter only when the solver computed it on its way to the point: every parameter on the numeric path, the line's parameter for a line against a quadric, both for two 2D lines, and always the parameter of a trimmed operand, since its range test needs it. The others are `None`. A caller that needs one recovers it from the operand it already holds, `curve.parameter_of(hit.point)` or `surface.parameters_of(hit.point)`, available on every elementary curve and surface and on the `Curve3D`, `Curve2D`, `ElementaryCurve`, `Surface` and `ElementarySurface` enums (a B-spline variant projects the point with `Tolerance::DEFAULT`). Recovering every parameter eagerly cost an `atan2` or more per hit that most callers never read: dropping it took routed circle–circle from about 145 to 76 ns per pair, 2D circle–circle from 111 to 35 ns. Hits are sorted by parameter when every hit has one, and otherwise keep the solver's order.
+
+A projection gives the closest point next to its parameters and distance (`CurveProjection`, `CurveProjection2D`, `SurfaceProjection`): every algorithm evaluates it while converging, so it costs 24 bytes and no evaluation.
+
+An overlap of two curves, `CurveCurveOverlap`, is a parameter range on each curve plus `same_direction`, whether both curves run the same way along it. Each range is increasing in its own curve's parameter, so a coincidence that crosses the seam of either curve is split there into one overlap per piece; with opposite directions, the start of one range meets the end of the other, and `same_direction` is the only way to tell. A curve lying on a surface gives its parameter ranges on the curve.
+
+Rust results do not hold their operands. Borrowing them would make every result generic over the operand types and tied to their lifetime; cloning them would allocate for B-splines. Results stay plain owned data that a caller can store, collect across mixed pairs and send between threads, and the caller already has the operands. Python results do hold them (`first` and `second` on intersections, `target` and `query_point` on projections): there an operand reference is one reference count, with no copy and no lifetime, and it lets a display draw a result from the result alone. Python hit parameters mirror Rust: `None` when not computed.
+
+## Considered options
+
+- **Recovering every parameter on every hit** (non-optional fields): rejected. It is the cost most callers do not need, on the hot path of the cheapest pairs.
+- **Methods or traits that recover a parameter from an operand passed in** (`hit.first_parameter_on(&curve)`, backed by public parameter-recovery traits): rejected. The operand's own `parameter_of` / `parameters_of` already does it in one call; two traits and four methods would be a second way to say the same thing.
+- **A NaN niche instead of `Option`**: rejected for now. It saves 16 bytes per hit but makes a missing value look like a number; it can be revisited with a profile of result building.
+- **Overlap ranges that cross a seam, with an end beyond the period**: rejected. Such a range is not an interval of the curve's parameter, and every caller would have to unwrap it.
+- **Surface parameters left out of curve–surface hits**: rejected. A caller needs the hit's position on both operands; they are stored when the solver has them and recoverable in one call otherwise.
+- **Operands held by Rust results**: rejected, for the lifetimes or allocations above.

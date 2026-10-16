@@ -2,11 +2,11 @@
 //! center+two-points construction, a thin wrapper over
 //! [`crate::curve_math::analytic`].
 
-use crate::Intersect;
+use crate::IntersectExact;
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
-use crate::intersect::{ConicConicIntersection, ConicSurfaceIntersection, intersect_conic_quadric};
+use crate::intersect::{ConicSurfaceIntersection, intersect_conic_quadric};
 use crate::math::{polish_root, real_roots};
 use crate::projection::{self, CurveProjection};
 use crate::surfaces::Surface;
@@ -482,7 +482,7 @@ impl Ellipse3D {
         ];
         // s = -1/r maps the quartic to its reversal with alternating signs.
         let reversed = [coeffs[4], -coeffs[3], coeffs[2], -coeffs[1], coeffs[0]];
-        let mut ts: Vec<(f64, f64)> = real_roots(&coeffs, tol.confusion)
+        let mut ts: Vec<(f64, Point3D, f64)> = real_roots(&coeffs, tol.confusion)
             .into_iter()
             .map(|r| 2.0 * r.value.atan())
             .chain(
@@ -494,13 +494,13 @@ impl Ellipse3D {
             .map(|t| {
                 let t = polish_root(g, dg, t, 8);
                 // Measured at the polished parameter, reported in bounds.
-                let distance = self.eval_point(t).distance(point);
-                (self.parameter_in_bounds(t, tol), distance)
+                let foot = self.eval_point(t);
+                (self.parameter_in_bounds(t, tol), foot, foot.distance(point))
             })
             .collect();
         ts.sort_by(|x, y| x.0.total_cmp(&y.0));
         let mut out: Vec<CurveProjection> = Vec::with_capacity(ts.len());
-        for (t, distance) in ts {
+        for (t, foot, distance) in ts {
             let fresh = match out.last() {
                 Some(last) => (t - last.parameter).abs() > tol.parametric * (1.0 + t.abs()),
                 None => true,
@@ -508,6 +508,7 @@ impl Ellipse3D {
             if fresh {
                 out.push(CurveProjection {
                     parameter: t,
+                    point: foot,
                     distance: projection::snap_distance(distance, tol.confusion),
                 });
             }
@@ -547,40 +548,6 @@ impl Ellipse3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
-    /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
-        self.intersect(plane, tol)
-    }
-
-    /// Intersects with a [`Sphere`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        self.intersect(sphere, tol)
-    }
-
-    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cylinder(
-        &self,
-        cylinder: &Cylinder,
-        tol: Tolerance,
-    ) -> ConicSurfaceIntersection {
-        self.intersect(cylinder, tol)
-    }
-
-    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        self.intersect(cone, tol)
-    }
-
-    /// Intersects with an [`Ellipse3D`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_ellipse(&self, other: &Ellipse3D, tol: Tolerance) -> ConicConicIntersection {
-        self.intersect(other, tol)
-    }
-
     /// Computes the exact 2D representation of this ellipse in a surface's
     /// parameter space.
     ///
@@ -610,7 +577,7 @@ impl Ellipse3D {
     }
 }
 
-impl Intersect<Plane> for Ellipse3D {
+impl IntersectExact<Plane> for Ellipse3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this ellipse with a plane.
@@ -621,22 +588,22 @@ impl Intersect<Plane> for Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{ConicSurfaceIntersection, Ellipse3D, Plane, Point3D, Tolerance, Vector3D};
     /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect(&plane, tol) {
+    /// match ellipse.intersect_exact(&plane, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, plane, tol)
     }
 }
 
-impl Intersect<Sphere> for Ellipse3D {
+impl IntersectExact<Sphere> for Ellipse3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this ellipse with a sphere.
@@ -647,12 +614,12 @@ impl Intersect<Sphere> for Ellipse3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{ConicSurfaceIntersection, Ellipse3D, Point3D, Sphere, Tolerance, Vector3D};
     /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// let sphere = Sphere::new(Point3D::ORIGIN, 3.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect(&sphere, tol) {
+    /// match ellipse.intersect_exact(&sphere, tol) {
     ///     // Both major vertices graze the sphere: two tangent hits.
     ///     ConicSurfaceIntersection::Hits(hits) => {
     ///         assert_eq!(hits.len(), 2);
@@ -661,67 +628,67 @@ impl Intersect<Sphere> for Ellipse3D {
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, sphere, tol)
     }
 }
 
-impl Intersect<Cylinder> for Ellipse3D {
+impl IntersectExact<Cylinder> for Ellipse3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this ellipse with a cylinder; hits verified on the
-    /// cylinder. See [`Ellipse3D::intersect_plane`] for the calling shape.
+    /// cylinder. See [`Ellipse3D::intersect_exact`] for the calling shape.
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{ConicSurfaceIntersection, Cylinder, Ellipse3D, Point3D, Tolerance, Vector3D};
     /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::X, 1.5).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect(&cylinder, tol) {
+    /// match ellipse.intersect_exact(&cylinder, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, cylinder, tol)
     }
 }
 
-impl Intersect<Cone> for Ellipse3D {
+impl IntersectExact<Cone> for Ellipse3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this ellipse with a cone (both nappes); hits verified on
-    /// the cone. See [`Ellipse3D::intersect_plane`] for the
+    /// the cone. See [`Ellipse3D::intersect_exact`] for the
     /// calling shape.
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Cone, ConicSurfaceIntersection, Ellipse3D, Frame3D, Point3D, Tolerance, Vector3D};
     /// let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
     /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match ellipse.intersect(&cone, tol) {
+    /// match ellipse.intersect_exact(&cone, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, cone, tol)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::Intersect;
+    use crate::IntersectExact;
     use crate::{
         Axis3D, ConicConicIntersection, ConicSurfaceIntersection, Ellipse3D,
         EllipseConstructionError, Frame3D, Point3D, Sphere, Tolerance, Transform, Vector3D,
-        intersect_curve_curve, intersect_curve_surface,
+        search_curve_curve, search_curve_surface,
     };
 
     /// A tangent contact at `t = π` reports multiplicity 2, like its mirror
@@ -742,12 +709,15 @@ mod tests {
         let right = Ellipse3D::new(Point3D::new(0.5, 0.0, 0.0), z, x, 1.5, 1.0).unwrap();
         let left = Ellipse3D::new(Point3D::new(-0.5, 0.0, 0.0), z, x, 1.5, 1.0).unwrap();
         let both = Ellipse3D::new(o, z, x, 2.0, 1.0).unwrap();
-        assert_eq!(multiplicities(right.intersect(&sphere, tol)), [(0.0, 2)]);
-        let hits = multiplicities(left.intersect(&sphere, tol));
+        assert_eq!(
+            multiplicities(right.intersect_exact(&sphere, tol)),
+            [(0.0, 2)]
+        );
+        let hits = multiplicities(left.intersect_exact(&sphere, tol));
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert!((hits[0].0.abs() - std::f64::consts::PI).abs() < 1e-9);
         assert_eq!(hits[0].1, 2);
-        let hits = multiplicities(both.intersect(&sphere, tol));
+        let hits = multiplicities(both.intersect_exact(&sphere, tol));
         assert_eq!(
             hits.iter().map(|h| h.1).collect::<Vec<_>>(),
             [2, 2],
@@ -756,7 +726,7 @@ mod tests {
 
         let cylinder = Cylinder::new(o, z, 1.0).unwrap();
         let upright = Ellipse3D::new(o, x, Vector3D::Y, 1.0, 0.5).unwrap();
-        let hits = multiplicities(upright.intersect(&cylinder, tol));
+        let hits = multiplicities(upright.intersect_exact(&cylinder, tol));
         assert_eq!(
             hits.iter().map(|h| h.1).collect::<Vec<_>>(),
             [2, 2],
@@ -1033,19 +1003,21 @@ mod tests {
             2.0,
         )
         .unwrap();
-        match e1.intersect(&e2, tol) {
+        match e1.intersect_exact(&e2, tol) {
             ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 4);
                 for h in &hits {
                     assert!(e1.contains(h.point, tol));
                     assert!(e2.contains(h.point, tol));
-                    assert_eq!(h.first_param, e1.parameter_of(h.point));
-                    assert_eq!(h.second_param, e2.parameter_of(h.point));
+                    let angle = h.first_parameter.unwrap();
+                    assert!(e1.eval_point(angle).distance(h.point) < 1e-9);
+                    assert_eq!(h.second_parameter, None);
                 }
-                let mut ordered: Vec<f64> = hits.iter().map(|h| h.first_param).collect();
+                let mut ordered: Vec<Option<f64>> =
+                    hits.iter().map(|h| h.first_parameter).collect();
                 ordered.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 assert_eq!(
-                    hits.iter().map(|h| h.first_param).collect::<Vec<_>>(),
+                    hits.iter().map(|h| h.first_parameter).collect::<Vec<_>>(),
                     ordered
                 );
             }
@@ -1060,14 +1032,15 @@ mod tests {
             2.0,
         )
         .unwrap();
-        match e1.intersect(&grazing, tol) {
+        match e1.intersect_exact(&grazing, tol) {
             ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 1);
                 let hit = hits[0];
                 assert_eq!(hit.multiplicity, 2);
                 assert!(hit.point.distance(Point3D::new(3.0, 0.0, 0.0)) < 1e-12);
-                assert_eq!(hit.first_param, e1.parameter_of(hit.point));
-                assert_eq!(hit.second_param, grazing.parameter_of(hit.point));
+                let angle = hit.first_parameter.unwrap();
+                assert!(e1.eval_point(angle).distance(hit.point) < 1e-9);
+                assert_eq!(hit.second_parameter, None);
             }
             other => panic!("expected a tangent, got {other:?}"),
         }
@@ -1080,19 +1053,25 @@ mod tests {
             1.5,
         )
         .unwrap();
-        assert_eq!(e1.intersect(&far, tol), ConicConicIntersection::Empty);
+        assert_eq!(e1.intersect_exact(&far, tol), ConicConicIntersection::Empty);
         // Same center, plane, and radii: coincident.
-        assert_eq!(e1.intersect(&e1, tol), ConicConicIntersection::Coincident);
+        assert_eq!(
+            e1.intersect_exact(&e1, tol),
+            ConicConicIntersection::Coincident
+        );
         // Crossing planes: both pass through (0, ±1.5, 0) on the line the
         // planes share, crossing there.
         let tilted = Ellipse3D::new(Point3D::ORIGIN, Vector3D::X, Vector3D::Z, 3.0, 1.5).unwrap();
-        match e1.intersect(&tilted, tol) {
+        match e1.intersect_exact(&tilted, tol) {
             ConicConicIntersection::Hits(hits) => {
                 assert_eq!(hits.len(), 2);
                 for (h, y) in hits.iter().zip([1.5, -1.5]) {
                     assert!(h.point.distance(Point3D::new(0.0, y, 0.0)) < 1e-12);
                     assert_eq!(h.multiplicity, 1);
-                    assert!(tilted.eval_point(h.second_param).distance(h.point) < 1e-12);
+                    let angle = h
+                        .second_parameter
+                        .unwrap_or_else(|| tilted.parameter_of(h.point));
+                    assert!(tilted.eval_point(angle).distance(h.point) < 1e-12);
                 }
             }
             other => panic!("expected two crossings, got {other:?}"),
@@ -1106,7 +1085,10 @@ mod tests {
             1.5,
         )
         .unwrap();
-        assert_eq!(e1.intersect(&lifted, tol), ConicConicIntersection::Empty);
+        assert_eq!(
+            e1.intersect_exact(&lifted, tol),
+            ConicConicIntersection::Empty
+        );
     }
 
     #[test]
@@ -1142,8 +1124,8 @@ mod tests {
             .unwrap();
             let major = 1.0 + 2.0 * next();
             let e2 = Ellipse3D::from_frame(frame, major, (0.5 + next()).min(major)).unwrap();
-            let analytic = e1.intersect(&e2, tol);
-            let generic = intersect_curve_curve(&e1, &e2, tol);
+            let analytic = e1.intersect_exact(&e2, tol);
+            let generic = search_curve_curve(&e1, &e2, tol);
             match analytic {
                 ConicConicIntersection::Hits(hits) => {
                     assert_eq!(
@@ -1172,7 +1154,7 @@ mod tests {
         let e = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         // Tilted sphere cutting the ring twice per side.
         let sphere = Sphere::new(Point3D::new(0.0, 0.0, 1.0), 2.5).unwrap();
-        match e.intersect(&sphere, tol) {
+        match e.intersect_exact(&sphere, tol) {
             ConicSurfaceIntersection::Hits(hits) => {
                 assert!(!hits.is_empty());
                 for h in &hits {
@@ -1180,7 +1162,7 @@ mod tests {
                     assert!(sphere.contains(h.point, tol));
                 }
                 // Generic solver agrees on the count.
-                let generic = intersect_curve_surface(&e, &sphere, tol);
+                let generic = search_curve_surface(&e, &sphere, tol);
                 assert_eq!(generic.len(), hits.len());
             }
             _ => panic!("expected hits"),

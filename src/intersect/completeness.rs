@@ -16,13 +16,14 @@ use crate::Point3D;
 /// # Examples
 ///
 /// ```
-/// use geomcore::{Completeness, Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-/// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-/// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
-/// // Neither shape is a B-spline: the hits come from samples.
-/// assert_eq!(hits.completeness(), &Completeness::Sampled);
-/// assert!(!hits.is_complete());
+/// use geomcore::{Completeness, Ellipse3D, Frame3D, Intersect, Point3D, Tolerance, Torus, Vector3D};
+/// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 5.0, 1.0).unwrap();
+/// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 3.0, 1.0).unwrap();
+/// let result = ellipse.intersect(&torus, Tolerance::DEFAULT);
+/// // An ellipse and a torus have no closed form, and neither is a
+/// // B-spline: the hits come from samples.
+/// assert_eq!(result.completeness(), &Completeness::Sampled);
+/// assert!(!result.is_complete());
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Completeness<R> {
@@ -132,7 +133,7 @@ pub(super) fn box_union(
 
 /// `regions` with every group of touching ones merged into one, ordered
 /// by the start of their first parameter ranges.
-fn merged<R: Region>(mut regions: Vec<R>) -> Vec<R> {
+pub(super) fn merged<R: Region>(mut regions: Vec<R>) -> Vec<R> {
     let mut out: Vec<R> = Vec::new();
     while let Some(mut region) = regions.pop() {
         loop {
@@ -160,8 +161,8 @@ fn merged<R: Region>(mut regions: Vec<R>) -> Vec<R> {
 ///
 /// ```
 /// use geomcore::{
-///     BSplineCurve3D, BSplineSurface, Completeness, IncompleteReason, Point3D, Tolerance,
-///     intersect_curve_surface,
+///     BSplineCurve3D, BSplineSurface, Completeness, IncompleteReason, Intersect, Point3D,
+///     Tolerance,
 /// };
 /// let poles = vec![
 ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
@@ -175,8 +176,8 @@ fn merged<R: Region>(mut regions: Vec<R>) -> Vec<R> {
 /// // A segment lying on the square never separates from it.
 /// let ends = vec![Point3D::new(0.5, 0.5, 0.0), Point3D::new(1.5, 1.0, 0.0)];
 /// let segment = BSplineCurve3D::new(1, ends, knots, mults, false).unwrap();
-/// let hits = intersect_curve_surface(&segment, &square, Tolerance::DEFAULT);
-/// match hits.completeness() {
+/// let result = segment.intersect(&square, Tolerance::DEFAULT);
+/// match result.completeness() {
 ///     Completeness::Incomplete { reason, regions } => {
 ///         assert_eq!(*reason, IncompleteReason::Unseparated);
 ///         assert_eq!(regions[0].curve_range, (0.0, 1.0));

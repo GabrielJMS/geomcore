@@ -25,15 +25,18 @@ changes are flagged in the changelog). Implemented:
   `transformed`.
 - **Containment, projection and extrema** on every curve and surface:
   closed form on the analytic types, exact subdivision on B-splines.
-- **Analytic intersections** with tangency and coincidence
-  classification: plane, quadric and torus pairs, and lines, circles and
-  conics against each other and against the elementary surfaces, all
-  through one `a.intersect(&b, tol)` call that works in either order and
-  on shapes whose type is only known at run time. A configuration with no
-  closed form reports `NotAnalytic` instead of guessing.
-- **Numeric intersections** over any curve or surface: curve–surface and
-  curve–curve intersection and extrema, and marching surface–surface
-  intersection fitted with B-splines.
+- **Intersections** of any two curves or surfaces, B-splines and trimmed
+  curves included, through one `a.intersect(&b, tol)` call that works in
+  either order and on shapes whose type is only known at run time. It
+  solves the pair exactly when a closed form exists (plane, quadric and
+  torus pairs; lines, circles and conics against each other and against
+  the elementary surfaces), with tangency and coincidence classification,
+  and runs a numeric search otherwise (curve–curve and curve–surface
+  subdivision, marching surface–surface fitted with B-splines). Every
+  result says which method ran and whether every hit was found. The
+  typed `intersect_exact` returns each pair's own exact result, for hot
+  loops over elementary shapes.
+- **Curve–curve extrema**: the local distance minima between two curves.
 - **Curve-on-surface parametrization**: analytic for lines and circles on
   the five elementary surfaces, numeric everywhere else.
 - **B-spline fitting**: interpolation and least-squares approximation.
@@ -66,7 +69,7 @@ from geomcore import Point3D, Vector3D
 from geomcore.curves import Circle3D
 import math
 
-circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
 point = circle.eval_point(math.pi / 4)
 ```
 

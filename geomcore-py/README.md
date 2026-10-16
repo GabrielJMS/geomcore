@@ -10,7 +10,7 @@ from geomcore import Point3D, Vector3D
 from geomcore.curves import Circle3D
 import math
 
-circle = Circle3D(Point3D.origin(), Vector3D.z(), 2.0)
+circle = Circle3D(Point3D.origin(), Vector3D.unit_z(), 2.0)
 point = circle.eval_point(math.pi / 4)
 ```
 
@@ -31,14 +31,15 @@ Windows, for Python 3.9+ (abi3 — one wheel covers all versions).
   native call per batch.
 - Rigid transformations via a single `Transform` type, applied with
   `transformed`.
-- Containment, `project_point` and `extrema` on every curve and surface.
-- Analytic intersections with `a.intersect(b)`, in either order, returning
-  `(kind, payload)` tuples, with tangency and coincidence reported, and
-  `"not_analytic"` when there is no closed form. A pair without an exact
-  solver raises `TypeError`.
-- Numeric intersections over any curve or surface:
-  `intersect_curve_surface`, `intersect_curve_curve`,
-  `curve_curve_extrema` and `intersect_marching`.
+- Containment on every curve and surface; `project_point` and `extrema`
+  return projection objects with the parameters, the closest point and
+  the distance.
+- Intersections with `a.intersect(b)` between any two curves or surfaces
+  (B-splines and trimmed curves included), in either order. The result is
+  an object: hits with their parameters, point and multiplicity, overlaps,
+  curves and contact points, the `method` that ran (`EXACT` closed form or
+  `NUMERIC` search) and its `completeness`. Numeric `curve_curve_extrema`
+  returns its distance minima and completeness.
 - Curve-on-surface parametrization: `parametrize_on` (analytic) and
   `parametrize_numeric`.
 - B-spline `interpolate` and least-squares `approximate`.

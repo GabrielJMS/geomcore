@@ -1,7 +1,7 @@
 //! Tori in 3D: parametric evaluation and parameter inversion, thin wrappers
 //! over [`crate::surface_math::analytic`].
 
-use crate::Intersect;
+use crate::IntersectExact;
 use crate::frame::frame_error;
 use crate::math::{QuadraticSolution, solve_quadratic};
 use crate::projection::{self, SurfaceProjection};
@@ -385,10 +385,12 @@ impl Torus {
     /// ```
     pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
         let (u, v) = self.parameters_of(point);
-        let distance = self.eval_point(u, v).distance(point);
+        let foot = self.eval_point(u, v);
+        let distance = foot.distance(point);
         SurfaceProjection {
             u,
             v,
+            point: foot,
             distance: projection::snap_distance(distance, tol.confusion),
         }
     }
@@ -406,43 +408,9 @@ impl Torus {
     fn analytic_ok(&self, tol: Tolerance) -> bool {
         self.major_radius() > tol.confusion && self.minor_radius() > tol.confusion
     }
-
-    /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> TorusPlaneIntersection {
-        self.intersect(plane, tol)
-    }
-
-    /// Intersects with a [`Sphere`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> TorusSphereIntersection {
-        self.intersect(sphere, tol)
-    }
-
-    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cylinder(
-        &self,
-        cylinder: &Cylinder,
-        tol: Tolerance,
-    ) -> TorusCylinderIntersection {
-        self.intersect(cylinder, tol)
-    }
-
-    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> TorusConeIntersection {
-        self.intersect(cone, tol)
-    }
-
-    /// Intersects with a [`Torus`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_torus(&self, other: &Torus, tol: Tolerance) -> TorusTorusIntersection {
-        self.intersect(other, tol)
-    }
 }
 
-impl Intersect<Plane> for Torus {
+impl IntersectExact<Plane> for Torus {
     type Output = TorusPlaneIntersection;
 
     /// Intersects this torus with a plane.
@@ -457,17 +425,17 @@ impl Intersect<Plane> for Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Point3D, Tolerance, Torus, TorusPlaneIntersection, Vector3D};
     /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
     /// let plane = geomcore::Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match torus.intersect(&plane, tol) {
+    /// match torus.intersect_exact(&plane, tol) {
     ///     TorusPlaneIntersection::TwoCircles(_, _) => {}
     ///     _ => panic!("expected two circles"),
     /// }
     /// ```
-    fn intersect(&self, plane: &Plane, tol: Tolerance) -> TorusPlaneIntersection {
+    fn intersect_exact(&self, plane: &Plane, tol: Tolerance) -> TorusPlaneIntersection {
         let (major, minor) = (self.major_radius(), self.minor_radius());
         if !self.analytic_ok(tol) {
             return TorusPlaneIntersection::NotAnalytic;
@@ -536,7 +504,7 @@ impl Intersect<Plane> for Torus {
     }
 }
 
-impl Intersect<Sphere> for Torus {
+impl IntersectExact<Sphere> for Torus {
     type Output = TorusSphereIntersection;
 
     /// Intersects this torus with a sphere.
@@ -550,17 +518,17 @@ impl Intersect<Sphere> for Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Point3D, Sphere, Tolerance, Torus, TorusSphereIntersection, Vector3D};
     /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
     /// let sphere = Sphere::new(Point3D::ORIGIN, 5.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match torus.intersect(&sphere, tol) {
+    /// match torus.intersect_exact(&sphere, tol) {
     ///     TorusSphereIntersection::TangentCircle(_) => {}
     ///     _ => panic!("expected a tangent circle"),
     /// }
     /// ```
-    fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> TorusSphereIntersection {
+    fn intersect_exact(&self, sphere: &Sphere, tol: Tolerance) -> TorusSphereIntersection {
         let (major, _) = (self.major_radius(), self.minor_radius());
         if !self.analytic_ok(tol) {
             return TorusSphereIntersection::NotAnalytic;
@@ -604,7 +572,7 @@ impl Intersect<Sphere> for Torus {
     }
 }
 
-impl Intersect<Cylinder> for Torus {
+impl IntersectExact<Cylinder> for Torus {
     type Output = TorusCylinderIntersection;
 
     /// Intersects this torus with a cylinder.
@@ -617,17 +585,17 @@ impl Intersect<Cylinder> for Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Cylinder, Point3D, Tolerance, Torus, TorusCylinderIntersection, Vector3D};
     /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 4.5).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match torus.intersect(&cylinder, tol) {
+    /// match torus.intersect_exact(&cylinder, tol) {
     ///     TorusCylinderIntersection::TwoCircles(_, _) => {}
     ///     _ => panic!("expected two circles"),
     /// }
     /// ```
-    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> TorusCylinderIntersection {
+    fn intersect_exact(&self, cylinder: &Cylinder, tol: Tolerance) -> TorusCylinderIntersection {
         let (major, minor) = (self.major_radius(), self.minor_radius());
         if !self.analytic_ok(tol) {
             return TorusCylinderIntersection::NotAnalytic;
@@ -664,7 +632,7 @@ impl Intersect<Cylinder> for Torus {
     }
 }
 
-impl Intersect<Cone> for Torus {
+impl IntersectExact<Cone> for Torus {
     type Output = TorusConeIntersection;
 
     /// Intersects this torus with a cone.
@@ -679,17 +647,17 @@ impl Intersect<Cone> for Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Cone, Frame3D, Point3D, Tolerance, Torus, TorusConeIntersection, Vector3D};
     /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
     /// let cone = Cone::from_frame(Frame3D::WORLD, 1.1, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match torus.intersect(&cone, tol) {
+    /// match torus.intersect_exact(&cone, tol) {
     ///     TorusConeIntersection::Rings(rings) => assert_eq!(rings.len(), 2),
     ///     _ => panic!("expected rings"),
     /// }
     /// ```
-    fn intersect(&self, cone: &Cone, tol: Tolerance) -> TorusConeIntersection {
+    fn intersect_exact(&self, cone: &Cone, tol: Tolerance) -> TorusConeIntersection {
         let (major, minor) = (self.major_radius(), self.minor_radius());
         if !self.analytic_ok(tol) {
             return TorusConeIntersection::NotAnalytic;
@@ -750,7 +718,7 @@ impl Intersect<Cone> for Torus {
     }
 }
 
-impl Intersect<Torus> for Torus {
+impl IntersectExact<Torus> for Torus {
     type Output = TorusTorusIntersection;
 
     /// Intersects this torus with another torus.
@@ -763,17 +731,17 @@ impl Intersect<Torus> for Torus {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Point3D, Tolerance, Torus, TorusTorusIntersection, Vector3D};
     /// let t1 = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
     /// let t2 = Torus::new(Point3D::new(0.0, 0.0, 1.5), Vector3D::Z, 4.0, 1.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match t1.intersect(&t2, tol) {
+    /// match t1.intersect_exact(&t2, tol) {
     ///     TorusTorusIntersection::TwoCircles(_, _) => {}
     ///     _ => panic!("expected two circles"),
     /// }
     /// ```
-    fn intersect(&self, other: &Torus, tol: Tolerance) -> TorusTorusIntersection {
+    fn intersect_exact(&self, other: &Torus, tol: Tolerance) -> TorusTorusIntersection {
         let (r1, s1) = (self.major_radius(), self.minor_radius());
         let (r2, s2) = (other.major_radius(), other.minor_radius());
         if !self.analytic_ok(tol) || !other.analytic_ok(tol) {
@@ -996,7 +964,7 @@ mod tests {
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         // Perpendicular: latitude rings of radii 5 and 3.
         let flat = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
-        match torus.intersect(&flat, tol) {
+        match torus.intersect_exact(&flat, tol) {
             TorusPlaneIntersection::TwoCircles(c1, c2) => {
                 let mut radii = [c1.radius(), c2.radius()];
                 radii.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -1010,7 +978,7 @@ mod tests {
         }
         // Axis-containing: two meridian rings.
         let meridional = Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-        match torus.intersect(&meridional, tol) {
+        match torus.intersect_exact(&meridional, tol) {
             TorusPlaneIntersection::TwoCircles(c1, c2) => {
                 assert_eq!(c1.radius(), 1.0);
                 assert_eq!(c2.radius(), 1.0);
@@ -1023,7 +991,7 @@ mod tests {
         }
         // Grazing the tube top.
         let grazing = Plane::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Z).unwrap();
-        match torus.intersect(&grazing, tol) {
+        match torus.intersect_exact(&grazing, tol) {
             TorusPlaneIntersection::TangentCircle(c) => {
                 assert_eq!(c.center(), Point3D::new(0.0, 0.0, 1.0));
                 assert_eq!(c.radius(), 4.0);
@@ -1032,11 +1000,14 @@ mod tests {
         }
         // Clear miss above the tube.
         let miss = Plane::new(Point3D::new(0.0, 0.0, 2.0), Vector3D::Z).unwrap();
-        assert_eq!(torus.intersect(&miss, tol), TorusPlaneIntersection::Empty);
+        assert_eq!(
+            torus.intersect_exact(&miss, tol),
+            TorusPlaneIntersection::Empty
+        );
         // Tilted: quartic spiric section, no closed form.
         let tilted = Plane::new(Point3D::ORIGIN, Vector3D::new(0.0, 1.0, 1.0)).unwrap();
         assert_eq!(
-            torus.intersect(&tilted, tol),
+            torus.intersect_exact(&tilted, tol),
             TorusPlaneIntersection::NotAnalytic
         );
     }
@@ -1057,7 +1028,7 @@ mod tests {
     fn test_torus_plane_villarceau_circles() {
         let tol = Tolerance::DEFAULT;
         let (torus, plane, side) = tilted_torus_and_plane(0.0);
-        match torus.intersect(&plane, tol) {
+        match torus.intersect_exact(&plane, tol) {
             TorusPlaneIntersection::TwoCircles(c1, c2) => {
                 for c in [c1, c2] {
                     assert!((c.radius() - 3.0).abs() < 1e-12);
@@ -1081,7 +1052,7 @@ mod tests {
         // Tilted the other way.
         let (torus, plane, _) = tilted_torus_and_plane(-2.0 * (1.0f64 / 3.0).asin());
         assert!(matches!(
-            torus.intersect(&plane, tol),
+            torus.intersect_exact(&plane, tol),
             TorusPlaneIntersection::TwoCircles(..)
         ));
     }
@@ -1091,13 +1062,13 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let (torus, plane, _) = tilted_torus_and_plane(1e-4);
         assert_eq!(
-            torus.intersect(&plane, tol),
+            torus.intersect_exact(&plane, tol),
             TorusPlaneIntersection::NotAnalytic
         );
         let (torus, plane, _) = tilted_torus_and_plane(0.0);
         let shifted = Plane::new(torus.center() + plane.normal() * 1e-4, plane.normal()).unwrap();
         assert_eq!(
-            torus.intersect(&shifted, tol),
+            torus.intersect_exact(&shifted, tol),
             TorusPlaneIntersection::NotAnalytic
         );
     }
@@ -1107,7 +1078,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         let sphere = Sphere::new(Point3D::new(0.0, 0.0, 1.0), 4.0).unwrap();
-        match torus.intersect(&sphere, tol) {
+        match torus.intersect_exact(&sphere, tol) {
             TorusSphereIntersection::TwoCircles(c1, c2) => {
                 for p in c1.eval_points(&[0.0, 2.0]) {
                     assert!(torus.contains(p, tol));
@@ -1122,7 +1093,7 @@ mod tests {
         }
         // Enclosing sphere grazing the outer equator.
         let big = Sphere::new(Point3D::ORIGIN, 5.0).unwrap();
-        match torus.intersect(&big, tol) {
+        match torus.intersect_exact(&big, tol) {
             TorusSphereIntersection::TangentCircle(c) => {
                 assert_eq!(c.center(), Point3D::ORIGIN);
                 assert_eq!(c.radius(), 5.0);
@@ -1131,11 +1102,14 @@ mod tests {
         }
         // Small sphere in the hole.
         let small = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-        assert_eq!(torus.intersect(&small, tol), TorusSphereIntersection::Empty);
+        assert_eq!(
+            torus.intersect_exact(&small, tol),
+            TorusSphereIntersection::Empty
+        );
         // Off-axis center: no closed form.
         let off = Sphere::new(Point3D::new(1.0, 0.0, 0.0), 4.0).unwrap();
         assert_eq!(
-            torus.intersect(&off, tol),
+            torus.intersect_exact(&off, tol),
             TorusSphereIntersection::NotAnalytic
         );
     }
@@ -1145,7 +1119,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 4.5).unwrap();
-        match torus.intersect(&cylinder, tol) {
+        match torus.intersect_exact(&cylinder, tol) {
             TorusCylinderIntersection::TwoCircles(c1, c2) => {
                 assert_eq!(c1.radius(), 4.5);
                 assert!((c1.center().z - 0.8660254037844386).abs() < 1e-9);
@@ -1159,7 +1133,7 @@ mod tests {
         }
         // Grazing the outer equator.
         let grazing = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 5.0).unwrap();
-        match torus.intersect(&grazing, tol) {
+        match torus.intersect_exact(&grazing, tol) {
             TorusCylinderIntersection::TangentCircle(c) => {
                 assert_eq!(c.center(), Point3D::ORIGIN);
                 assert_eq!(c.radius(), 5.0);
@@ -1168,11 +1142,14 @@ mod tests {
         }
         // Oversize tube misses.
         let fat = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 6.0).unwrap();
-        assert_eq!(torus.intersect(&fat, tol), TorusCylinderIntersection::Empty);
+        assert_eq!(
+            torus.intersect_exact(&fat, tol),
+            TorusCylinderIntersection::Empty
+        );
         // Offset axis: no closed form.
         let off = Cylinder::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z, 4.5).unwrap();
         assert_eq!(
-            torus.intersect(&off, tol),
+            torus.intersect_exact(&off, tol),
             TorusCylinderIntersection::NotAnalytic
         );
     }
@@ -1192,7 +1169,7 @@ mod tests {
             let heights: Vec<f64> = rings.iter().map(|r| r.circle.center().z).collect();
             assert!(heights.windows(2).all(|w| w[0] < w[1]), "{heights:?}");
         };
-        match torus.intersect(&cone, tol) {
+        match torus.intersect_exact(&cone, tol) {
             TorusConeIntersection::Rings(rings) => {
                 assert_eq!(rings.len(), 2);
                 assert!(rings.iter().all(|r| !r.tangent));
@@ -1203,7 +1180,7 @@ mod tests {
         // Apex at the centre, generators through the tube: two rings on
         // each nappe.
         let flat = Cone::from_frame(Frame3D::WORLD, 1.4, 0.0).unwrap();
-        match torus.intersect(&flat, tol) {
+        match torus.intersect_exact(&flat, tol) {
             TorusConeIntersection::Rings(rings) => {
                 assert_eq!(rings.len(), 4);
                 check(&rings, &flat);
@@ -1213,7 +1190,7 @@ mod tests {
         }
         // Generators tangent to the tube: one grazing ring per nappe.
         let grazing = Cone::from_frame(Frame3D::WORLD, 15f64.sqrt().atan(), 0.0).unwrap();
-        match torus.intersect(&grazing, tol) {
+        match torus.intersect_exact(&grazing, tol) {
             TorusConeIntersection::Rings(rings) => {
                 assert_eq!(rings.len(), 2);
                 assert!(rings.iter().all(|r| r.tangent));
@@ -1224,7 +1201,7 @@ mod tests {
         // Tilted cone axis: no closed form.
         let tilted = Cone::new(Point3D::ORIGIN, Vector3D::X, 1.1, 2.0).unwrap();
         assert_eq!(
-            torus.intersect(&tilted, tol),
+            torus.intersect_exact(&tilted, tol),
             TorusConeIntersection::NotAnalytic
         );
     }
@@ -1234,7 +1211,7 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let t1 = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         let t2 = Torus::new(Point3D::new(0.0, 0.0, 1.5), Vector3D::Z, 4.0, 1.0).unwrap();
-        match t1.intersect(&t2, tol) {
+        match t1.intersect_exact(&t2, tol) {
             TorusTorusIntersection::TwoCircles(c1, c2) => {
                 for p in c1.eval_points(&[0.0, 2.0]) {
                     assert!(t1.contains(p, tol));
@@ -1248,11 +1225,14 @@ mod tests {
             _ => panic!("expected two circles"),
         }
         // Coincident.
-        assert_eq!(t1.intersect(&t1, tol), TorusTorusIntersection::Coincident);
+        assert_eq!(
+            t1.intersect_exact(&t1, tol),
+            TorusTorusIntersection::Coincident
+        );
         // Crossed axes: up to degree 16, no closed form.
         let crossed = Torus::new(Point3D::ORIGIN, Vector3D::X, 4.0, 1.0).unwrap();
         assert_eq!(
-            t1.intersect(&crossed, tol),
+            t1.intersect_exact(&crossed, tol),
             TorusTorusIntersection::NotAnalytic
         );
     }

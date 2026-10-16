@@ -1,11 +1,15 @@
-//! The single intersection entry point.
+//! The exact intersection entry point.
 //!
-//! [`Intersect`] is implemented once per exact pair, in both argument
+//! [`IntersectExact`] is the zero-cost typed path, implemented once per exact pair, in both argument
 //! orders, with the pair's own result type as its output. The general
-//! results of the untyped path hold their pieces in an [`InlineList`], so
-//! no intersection result allocates.
+//! results of the untyped path hold their hits in an [`InlineList`], so
+//! a result made of hits does not allocate. The results that hold curves
+//! or a variable number of hits do: [`LineTorusIntersection`],
+//! [`TorusConeIntersection::Rings`], [`CircleSurfaceIntersection`] and
+//! [`ConicConicIntersection`] hold a `Vec`.
 
 use crate::curves::{Curve3D, ElementaryCurve};
+use crate::intersect::results::sort_by_known_parameter;
 use crate::intersect::{Conic, intersect_conic_conic};
 use crate::surfaces::{ElementarySurface, Surface};
 use crate::{
@@ -24,31 +28,32 @@ use crate::{
 };
 use std::ops::{Deref, DerefMut};
 
-/// Exact intersection of two shapes.
+/// Exact intersection of two shapes: the typed, stack-only path.
 ///
 /// Each implementation returns the result type of its pair, so the
 /// compiler knows which outcomes a pair can produce, and dispatch is
-/// static. A configuration with no closed form reports "not analytic":
-/// no implementation falls back to a numeric intersection on its own.
-pub trait Intersect<Rhs: ?Sized = Self> {
+/// static. A configuration with no closed form reports "not analytic";
+/// this trait never runs a numeric intersection. To get an answer for
+/// every pair, with the method that produced it, use [`Intersect`](crate::intersect::Intersect).
+pub trait IntersectExact<Rhs: ?Sized = Self> {
     /// The result of intersecting `Self` with `Rhs`.
     type Output;
 
     /// Intersects `self` with `other`, deciding tangency and coincidence
     /// with `tol`.
-    fn intersect(&self, other: &Rhs, tol: Tolerance) -> Self::Output;
+    fn intersect_exact(&self, other: &Rhs, tol: Tolerance) -> Self::Output;
 }
 
 /// Implements the reversed argument order of a pair whose result does
 /// not depend on the order, by swapping the arguments.
 macro_rules! reversed {
     ($($a:ty => $b:ty),* $(,)?) => {$(
-        impl Intersect<$b> for $a {
-            type Output = <$b as Intersect<$a>>::Output;
+        impl IntersectExact<$b> for $a {
+            type Output = <$b as IntersectExact<$a>>::Output;
 
             /// The same result as in the other argument order.
-            fn intersect(&self, other: &$b, tol: Tolerance) -> Self::Output {
-                other.intersect(self, tol)
+            fn intersect_exact(&self, other: &$b, tol: Tolerance) -> Self::Output {
+                other.intersect_exact(self, tol)
             }
         }
     )*};
@@ -76,11 +81,11 @@ reversed!(
 ///
 /// ```
 /// use geomcore::surfaces::Surface;
-/// use geomcore::{Intersect, Plane, Point3D, Sphere, SurfaceIntersection, Tolerance, Vector3D};
+/// use geomcore::{IntersectExact, Plane, Point3D, Sphere, ExactSurfaceIntersection, Tolerance, Vector3D};
 /// let plane = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
 /// let sphere = Surface::from(Sphere::new(Point3D::ORIGIN, 2.0).unwrap());
-/// match plane.intersect(&sphere, Tolerance::DEFAULT) {
-///     SurfaceIntersection::Meets { curves, points } => {
+/// match plane.intersect_exact(&sphere, Tolerance::DEFAULT) {
+///     ExactSurfaceIntersection::Meets { curves, points } => {
 ///         assert_eq!((curves.len(), points.len()), (1, 0));
 ///         let (_circle, tangent) = curves[0];
 ///         assert!(!tangent);
@@ -93,7 +98,7 @@ reversed!(
     clippy::large_enum_variant,
     reason = "results are held inline instead of boxed (docs/adr/0001)"
 )]
-pub enum SurfaceIntersection {
+pub enum ExactSurfaceIntersection {
     /// The surfaces do not meet.
     Empty,
     /// The surfaces coincide.
@@ -113,284 +118,300 @@ pub enum SurfaceIntersection {
     },
 }
 
-impl SurfaceIntersection {
+impl ExactSurfaceIntersection {
     /// Curves, each with its tangency flag.
     fn curves<C: Into<ElementaryCurve>, const K: usize>(
         curves: [(C, bool); K],
-    ) -> SurfaceIntersection {
+    ) -> ExactSurfaceIntersection {
         let mut list = InlineList::new();
         for (curve, tangent) in curves {
             list.push((curve.into(), tangent));
         }
-        SurfaceIntersection::Meets {
+        ExactSurfaceIntersection::Meets {
             curves: list,
             points: InlineList::new(),
         }
     }
 
     /// A single contact point.
-    fn point(point: Point3D) -> SurfaceIntersection {
+    fn point(point: Point3D) -> ExactSurfaceIntersection {
         let mut points = InlineList::new();
         points.push(point);
-        SurfaceIntersection::Meets {
+        ExactSurfaceIntersection::Meets {
             curves: InlineList::new(),
             points,
         }
     }
 }
 
-impl From<PlanePlaneIntersection> for SurfaceIntersection {
-    fn from(result: PlanePlaneIntersection) -> SurfaceIntersection {
+impl From<PlanePlaneIntersection> for ExactSurfaceIntersection {
+    fn from(result: PlanePlaneIntersection) -> ExactSurfaceIntersection {
         match result {
-            PlanePlaneIntersection::Line(l) => SurfaceIntersection::curves([(l, false)]),
-            PlanePlaneIntersection::Parallel => SurfaceIntersection::Empty,
-            PlanePlaneIntersection::Coincident => SurfaceIntersection::Coincident,
+            PlanePlaneIntersection::Line(l) => ExactSurfaceIntersection::curves([(l, false)]),
+            PlanePlaneIntersection::Parallel => ExactSurfaceIntersection::Empty,
+            PlanePlaneIntersection::Coincident => ExactSurfaceIntersection::Coincident,
         }
     }
 }
 
-impl From<PlaneSphereIntersection> for SurfaceIntersection {
-    fn from(result: PlaneSphereIntersection) -> SurfaceIntersection {
+impl From<PlaneSphereIntersection> for ExactSurfaceIntersection {
+    fn from(result: PlaneSphereIntersection) -> ExactSurfaceIntersection {
         match result {
-            PlaneSphereIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
-            PlaneSphereIntersection::TangentPoint(p) => SurfaceIntersection::point(p),
-            PlaneSphereIntersection::Empty => SurfaceIntersection::Empty,
+            PlaneSphereIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
+            PlaneSphereIntersection::TangentPoint(p) => ExactSurfaceIntersection::point(p),
+            PlaneSphereIntersection::Empty => ExactSurfaceIntersection::Empty,
         }
     }
 }
 
-impl From<SphereSphereIntersection> for SurfaceIntersection {
-    fn from(result: SphereSphereIntersection) -> SurfaceIntersection {
+impl From<SphereSphereIntersection> for ExactSurfaceIntersection {
+    fn from(result: SphereSphereIntersection) -> ExactSurfaceIntersection {
         match result {
-            SphereSphereIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
-            SphereSphereIntersection::TangentPoint(p) => SurfaceIntersection::point(p),
-            SphereSphereIntersection::Empty => SurfaceIntersection::Empty,
-            SphereSphereIntersection::Coincident => SurfaceIntersection::Coincident,
+            SphereSphereIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
+            SphereSphereIntersection::TangentPoint(p) => ExactSurfaceIntersection::point(p),
+            SphereSphereIntersection::Empty => ExactSurfaceIntersection::Empty,
+            SphereSphereIntersection::Coincident => ExactSurfaceIntersection::Coincident,
         }
     }
 }
 
-impl From<PlaneCylinderIntersection> for SurfaceIntersection {
-    fn from(result: PlaneCylinderIntersection) -> SurfaceIntersection {
+impl From<PlaneCylinderIntersection> for ExactSurfaceIntersection {
+    fn from(result: PlaneCylinderIntersection) -> ExactSurfaceIntersection {
         match result {
-            PlaneCylinderIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
-            PlaneCylinderIntersection::Ellipse(e) => SurfaceIntersection::curves([(e, false)]),
+            PlaneCylinderIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
+            PlaneCylinderIntersection::Ellipse(e) => ExactSurfaceIntersection::curves([(e, false)]),
             PlaneCylinderIntersection::TwoLines(l1, l2) => {
-                SurfaceIntersection::curves([(l1, false), (l2, false)])
+                ExactSurfaceIntersection::curves([(l1, false), (l2, false)])
             }
-            PlaneCylinderIntersection::TangentLine(l) => SurfaceIntersection::curves([(l, true)]),
-            PlaneCylinderIntersection::Empty => SurfaceIntersection::Empty,
+            PlaneCylinderIntersection::TangentLine(l) => {
+                ExactSurfaceIntersection::curves([(l, true)])
+            }
+            PlaneCylinderIntersection::Empty => ExactSurfaceIntersection::Empty,
         }
     }
 }
 
-impl From<PlaneConeIntersection> for SurfaceIntersection {
-    fn from(result: PlaneConeIntersection) -> SurfaceIntersection {
+impl From<PlaneConeIntersection> for ExactSurfaceIntersection {
+    fn from(result: PlaneConeIntersection) -> ExactSurfaceIntersection {
         match result {
-            PlaneConeIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
-            PlaneConeIntersection::Ellipse(e) => SurfaceIntersection::curves([(e, false)]),
-            PlaneConeIntersection::Parabola(p) => SurfaceIntersection::curves([(p, false)]),
+            PlaneConeIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
+            PlaneConeIntersection::Ellipse(e) => ExactSurfaceIntersection::curves([(e, false)]),
+            PlaneConeIntersection::Parabola(p) => ExactSurfaceIntersection::curves([(p, false)]),
             PlaneConeIntersection::Hyperbola(h1, h2) => {
-                SurfaceIntersection::curves([(h1, false), (h2, false)])
+                ExactSurfaceIntersection::curves([(h1, false), (h2, false)])
             }
             PlaneConeIntersection::TwoLines(l1, l2) => {
-                SurfaceIntersection::curves([(l1, false), (l2, false)])
+                ExactSurfaceIntersection::curves([(l1, false), (l2, false)])
             }
-            PlaneConeIntersection::TangentLine(l) => SurfaceIntersection::curves([(l, true)]),
-            PlaneConeIntersection::ApexPoint(p) => SurfaceIntersection::point(p),
+            PlaneConeIntersection::TangentLine(l) => ExactSurfaceIntersection::curves([(l, true)]),
+            PlaneConeIntersection::ApexPoint(p) => ExactSurfaceIntersection::point(p),
         }
     }
 }
 
-impl From<SphereCylinderIntersection> for SurfaceIntersection {
-    fn from(result: SphereCylinderIntersection) -> SurfaceIntersection {
+impl From<SphereCylinderIntersection> for ExactSurfaceIntersection {
+    fn from(result: SphereCylinderIntersection) -> ExactSurfaceIntersection {
         match result {
             // A single ring is the equator of a tube as wide as the sphere.
-            SphereCylinderIntersection::Circle(c) => SurfaceIntersection::curves([(c, true)]),
+            SphereCylinderIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, true)]),
             SphereCylinderIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            SphereCylinderIntersection::Empty => SurfaceIntersection::Empty,
-            SphereCylinderIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            SphereCylinderIntersection::Empty => ExactSurfaceIntersection::Empty,
+            SphereCylinderIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<SphereConeIntersection> for SurfaceIntersection {
-    fn from(result: SphereConeIntersection) -> SurfaceIntersection {
+impl From<SphereConeIntersection> for ExactSurfaceIntersection {
+    fn from(result: SphereConeIntersection) -> ExactSurfaceIntersection {
         match result {
             SphereConeIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            SphereConeIntersection::TangentCircle(c) => SurfaceIntersection::curves([(c, true)]),
-            SphereConeIntersection::Empty => SurfaceIntersection::Empty,
-            SphereConeIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            SphereConeIntersection::TangentCircle(c) => {
+                ExactSurfaceIntersection::curves([(c, true)])
+            }
+            SphereConeIntersection::Empty => ExactSurfaceIntersection::Empty,
+            SphereConeIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<CylinderCylinderIntersection> for SurfaceIntersection {
-    fn from(result: CylinderCylinderIntersection) -> SurfaceIntersection {
+impl From<CylinderCylinderIntersection> for ExactSurfaceIntersection {
+    fn from(result: CylinderCylinderIntersection) -> ExactSurfaceIntersection {
         match result {
             CylinderCylinderIntersection::TwoLines(l1, l2) => {
-                SurfaceIntersection::curves([(l1, false), (l2, false)])
+                ExactSurfaceIntersection::curves([(l1, false), (l2, false)])
             }
             CylinderCylinderIntersection::TangentLine(l) => {
-                SurfaceIntersection::curves([(l, true)])
+                ExactSurfaceIntersection::curves([(l, true)])
             }
-            CylinderCylinderIntersection::Empty => SurfaceIntersection::Empty,
-            CylinderCylinderIntersection::Coincident => SurfaceIntersection::Coincident,
-            CylinderCylinderIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            CylinderCylinderIntersection::Empty => ExactSurfaceIntersection::Empty,
+            CylinderCylinderIntersection::Coincident => ExactSurfaceIntersection::Coincident,
+            CylinderCylinderIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<ConeCylinderIntersection> for SurfaceIntersection {
-    fn from(result: ConeCylinderIntersection) -> SurfaceIntersection {
+impl From<ConeCylinderIntersection> for ExactSurfaceIntersection {
+    fn from(result: ConeCylinderIntersection) -> ExactSurfaceIntersection {
         match result {
             ConeCylinderIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            ConeCylinderIntersection::ApexPoint(p) => SurfaceIntersection::point(p),
-            ConeCylinderIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            ConeCylinderIntersection::ApexPoint(p) => ExactSurfaceIntersection::point(p),
+            ConeCylinderIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<TorusPlaneIntersection> for SurfaceIntersection {
-    fn from(result: TorusPlaneIntersection) -> SurfaceIntersection {
+impl From<TorusPlaneIntersection> for ExactSurfaceIntersection {
+    fn from(result: TorusPlaneIntersection) -> ExactSurfaceIntersection {
         match result {
             TorusPlaneIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            TorusPlaneIntersection::TangentCircle(c) => SurfaceIntersection::curves([(c, true)]),
-            TorusPlaneIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
-            TorusPlaneIntersection::Empty => SurfaceIntersection::Empty,
-            TorusPlaneIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            TorusPlaneIntersection::TangentCircle(c) => {
+                ExactSurfaceIntersection::curves([(c, true)])
+            }
+            TorusPlaneIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
+            TorusPlaneIntersection::Empty => ExactSurfaceIntersection::Empty,
+            TorusPlaneIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<TorusSphereIntersection> for SurfaceIntersection {
-    fn from(result: TorusSphereIntersection) -> SurfaceIntersection {
+impl From<TorusSphereIntersection> for ExactSurfaceIntersection {
+    fn from(result: TorusSphereIntersection) -> ExactSurfaceIntersection {
         match result {
-            TorusSphereIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
+            TorusSphereIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
             TorusSphereIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            TorusSphereIntersection::TangentCircle(c) => SurfaceIntersection::curves([(c, true)]),
-            TorusSphereIntersection::Empty => SurfaceIntersection::Empty,
-            TorusSphereIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            TorusSphereIntersection::TangentCircle(c) => {
+                ExactSurfaceIntersection::curves([(c, true)])
+            }
+            TorusSphereIntersection::Empty => ExactSurfaceIntersection::Empty,
+            TorusSphereIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<TorusCylinderIntersection> for SurfaceIntersection {
-    fn from(result: TorusCylinderIntersection) -> SurfaceIntersection {
+impl From<TorusCylinderIntersection> for ExactSurfaceIntersection {
+    fn from(result: TorusCylinderIntersection) -> ExactSurfaceIntersection {
         match result {
             TorusCylinderIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            TorusCylinderIntersection::TangentCircle(c) => SurfaceIntersection::curves([(c, true)]),
-            TorusCylinderIntersection::Empty => SurfaceIntersection::Empty,
-            TorusCylinderIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            TorusCylinderIntersection::TangentCircle(c) => {
+                ExactSurfaceIntersection::curves([(c, true)])
+            }
+            TorusCylinderIntersection::Empty => ExactSurfaceIntersection::Empty,
+            TorusCylinderIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<TorusConeIntersection> for SurfaceIntersection {
-    fn from(result: TorusConeIntersection) -> SurfaceIntersection {
+impl From<TorusConeIntersection> for ExactSurfaceIntersection {
+    fn from(result: TorusConeIntersection) -> ExactSurfaceIntersection {
         match result {
             TorusConeIntersection::Rings(rings) => {
                 let mut curves = InlineList::new();
                 for ring in rings {
                     curves.push((ring.circle.into(), ring.tangent));
                 }
-                SurfaceIntersection::Meets {
+                ExactSurfaceIntersection::Meets {
                     curves,
                     points: InlineList::new(),
                 }
             }
-            TorusConeIntersection::Empty => SurfaceIntersection::Empty,
-            TorusConeIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            TorusConeIntersection::Empty => ExactSurfaceIntersection::Empty,
+            TorusConeIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<TorusTorusIntersection> for SurfaceIntersection {
-    fn from(result: TorusTorusIntersection) -> SurfaceIntersection {
+impl From<TorusTorusIntersection> for ExactSurfaceIntersection {
+    fn from(result: TorusTorusIntersection) -> ExactSurfaceIntersection {
         match result {
-            TorusTorusIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
+            TorusTorusIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
             TorusTorusIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            TorusTorusIntersection::TangentCircle(c) => SurfaceIntersection::curves([(c, true)]),
-            TorusTorusIntersection::Empty => SurfaceIntersection::Empty,
-            TorusTorusIntersection::Coincident => SurfaceIntersection::Coincident,
-            TorusTorusIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            TorusTorusIntersection::TangentCircle(c) => {
+                ExactSurfaceIntersection::curves([(c, true)])
+            }
+            TorusTorusIntersection::Empty => ExactSurfaceIntersection::Empty,
+            TorusTorusIntersection::Coincident => ExactSurfaceIntersection::Coincident,
+            TorusTorusIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl From<ConeConeIntersection> for SurfaceIntersection {
-    fn from(result: ConeConeIntersection) -> SurfaceIntersection {
+impl From<ConeConeIntersection> for ExactSurfaceIntersection {
+    fn from(result: ConeConeIntersection) -> ExactSurfaceIntersection {
         match result {
-            ConeConeIntersection::Circle(c) => SurfaceIntersection::curves([(c, false)]),
+            ConeConeIntersection::Circle(c) => ExactSurfaceIntersection::curves([(c, false)]),
             ConeConeIntersection::TwoCircles(c1, c2) => {
-                SurfaceIntersection::curves([(c1, false), (c2, false)])
+                ExactSurfaceIntersection::curves([(c1, false), (c2, false)])
             }
-            ConeConeIntersection::ApexPoint(p) => SurfaceIntersection::point(p),
-            ConeConeIntersection::Coincident => SurfaceIntersection::Coincident,
-            ConeConeIntersection::NotAnalytic => SurfaceIntersection::NotAnalytic,
+            ConeConeIntersection::ApexPoint(p) => ExactSurfaceIntersection::point(p),
+            ConeConeIntersection::Coincident => ExactSurfaceIntersection::Coincident,
+            ConeConeIntersection::NotAnalytic => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl Intersect for ElementarySurface {
-    type Output = SurfaceIntersection;
+impl IntersectExact for ElementarySurface {
+    type Output = ExactSurfaceIntersection;
 
     /// Dispatches to the exact intersection of the pair.
-    fn intersect(&self, other: &ElementarySurface, tol: Tolerance) -> SurfaceIntersection {
+    fn intersect_exact(
+        &self,
+        other: &ElementarySurface,
+        tol: Tolerance,
+    ) -> ExactSurfaceIntersection {
         use ElementarySurface as S;
         match (self, other) {
-            (S::Plane(a), S::Plane(b)) => a.intersect(b, tol).into(),
-            (S::Plane(a), S::Cylinder(b)) => a.intersect(b, tol).into(),
-            (S::Plane(a), S::Cone(b)) => a.intersect(b, tol).into(),
-            (S::Plane(a), S::Sphere(b)) => a.intersect(b, tol).into(),
-            (S::Plane(a), S::Torus(b)) => a.intersect(b, tol).into(),
-            (S::Cylinder(a), S::Plane(b)) => a.intersect(b, tol).into(),
-            (S::Cylinder(a), S::Cylinder(b)) => a.intersect(b, tol).into(),
-            (S::Cylinder(a), S::Cone(b)) => a.intersect(b, tol).into(),
-            (S::Cylinder(a), S::Sphere(b)) => a.intersect(b, tol).into(),
-            (S::Cylinder(a), S::Torus(b)) => a.intersect(b, tol).into(),
-            (S::Cone(a), S::Plane(b)) => a.intersect(b, tol).into(),
-            (S::Cone(a), S::Cylinder(b)) => a.intersect(b, tol).into(),
-            (S::Cone(a), S::Cone(b)) => a.intersect(b, tol).into(),
-            (S::Cone(a), S::Sphere(b)) => a.intersect(b, tol).into(),
-            (S::Cone(a), S::Torus(b)) => a.intersect(b, tol).into(),
-            (S::Sphere(a), S::Plane(b)) => a.intersect(b, tol).into(),
-            (S::Sphere(a), S::Cylinder(b)) => a.intersect(b, tol).into(),
-            (S::Sphere(a), S::Cone(b)) => a.intersect(b, tol).into(),
-            (S::Sphere(a), S::Sphere(b)) => a.intersect(b, tol).into(),
-            (S::Sphere(a), S::Torus(b)) => a.intersect(b, tol).into(),
-            (S::Torus(a), S::Plane(b)) => a.intersect(b, tol).into(),
-            (S::Torus(a), S::Cylinder(b)) => a.intersect(b, tol).into(),
-            (S::Torus(a), S::Cone(b)) => a.intersect(b, tol).into(),
-            (S::Torus(a), S::Sphere(b)) => a.intersect(b, tol).into(),
-            (S::Torus(a), S::Torus(b)) => a.intersect(b, tol).into(),
+            (S::Plane(a), S::Plane(b)) => a.intersect_exact(b, tol).into(),
+            (S::Plane(a), S::Cylinder(b)) => a.intersect_exact(b, tol).into(),
+            (S::Plane(a), S::Cone(b)) => a.intersect_exact(b, tol).into(),
+            (S::Plane(a), S::Sphere(b)) => a.intersect_exact(b, tol).into(),
+            (S::Plane(a), S::Torus(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cylinder(a), S::Plane(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cylinder(a), S::Cylinder(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cylinder(a), S::Cone(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cylinder(a), S::Sphere(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cylinder(a), S::Torus(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cone(a), S::Plane(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cone(a), S::Cylinder(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cone(a), S::Cone(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cone(a), S::Sphere(b)) => a.intersect_exact(b, tol).into(),
+            (S::Cone(a), S::Torus(b)) => a.intersect_exact(b, tol).into(),
+            (S::Sphere(a), S::Plane(b)) => a.intersect_exact(b, tol).into(),
+            (S::Sphere(a), S::Cylinder(b)) => a.intersect_exact(b, tol).into(),
+            (S::Sphere(a), S::Cone(b)) => a.intersect_exact(b, tol).into(),
+            (S::Sphere(a), S::Sphere(b)) => a.intersect_exact(b, tol).into(),
+            (S::Sphere(a), S::Torus(b)) => a.intersect_exact(b, tol).into(),
+            (S::Torus(a), S::Plane(b)) => a.intersect_exact(b, tol).into(),
+            (S::Torus(a), S::Cylinder(b)) => a.intersect_exact(b, tol).into(),
+            (S::Torus(a), S::Cone(b)) => a.intersect_exact(b, tol).into(),
+            (S::Torus(a), S::Sphere(b)) => a.intersect_exact(b, tol).into(),
+            (S::Torus(a), S::Torus(b)) => a.intersect_exact(b, tol).into(),
         }
     }
 }
 
-impl Intersect for Surface {
-    type Output = SurfaceIntersection;
+impl IntersectExact for Surface {
+    type Output = ExactSurfaceIntersection;
 
     /// Dispatches to the exact intersection of the pair, or reports
-    /// [`SurfaceIntersection::NotAnalytic`] when either is a B-spline.
-    fn intersect(&self, other: &Surface, tol: Tolerance) -> SurfaceIntersection {
+    /// [`ExactSurfaceIntersection::NotAnalytic`] when either is a B-spline.
+    fn intersect_exact(&self, other: &Surface, tol: Tolerance) -> ExactSurfaceIntersection {
         match (self.as_elementary(), other.as_elementary()) {
-            (Some(a), Some(b)) => a.intersect(&b, tol),
-            _ => SurfaceIntersection::NotAnalytic,
+            (Some(a), Some(b)) => a.intersect_exact(&b, tol),
+            _ => ExactSurfaceIntersection::NotAnalytic,
         }
     }
 }
@@ -429,17 +450,17 @@ reversed!(
 /// ```
 /// use geomcore::curves::Curve3D;
 /// use geomcore::surfaces::Surface;
-/// use geomcore::{CurveSurfaceIntersection, Intersect, Line3D, Point3D, Sphere, Tolerance, Vector3D};
+/// use geomcore::{ExactCurveSurfaceIntersection, IntersectExact, Line3D, Point3D, Sphere, Tolerance, Vector3D};
 /// let line = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
 /// let sphere = Surface::from(Sphere::new(Point3D::ORIGIN, 2.0).unwrap());
-/// let CurveSurfaceIntersection::Points(hits) = line.intersect(&sphere, Tolerance::DEFAULT) else {
+/// let ExactCurveSurfaceIntersection::Points(hits) = line.intersect_exact(&sphere, Tolerance::DEFAULT) else {
 ///     panic!("expected hits");
 /// };
 /// let parameters: Vec<f64> = hits.iter().map(|hit| hit.parameter).collect();
 /// assert_eq!(parameters, [-2.0, 2.0]);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CurveSurfaceIntersection {
+pub enum ExactCurveSurfaceIntersection {
     /// The curve misses the surface.
     Empty,
     /// The whole curve lies on the surface.
@@ -452,18 +473,18 @@ pub enum CurveSurfaceIntersection {
     Points(InlineList<ConicSurfaceHit, 4>),
 }
 
-impl CurveSurfaceIntersection {
+impl ExactCurveSurfaceIntersection {
     /// The hits ordered by curve parameter, or `Empty` when there are none.
-    fn points(hits: impl IntoIterator<Item = ConicSurfaceHit>) -> CurveSurfaceIntersection {
+    fn points(hits: impl IntoIterator<Item = ConicSurfaceHit>) -> ExactCurveSurfaceIntersection {
         let mut list = InlineList::new();
         for hit in hits {
             list.push(hit);
         }
         if list.is_empty() {
-            return CurveSurfaceIntersection::Empty;
+            return ExactCurveSurfaceIntersection::Empty;
         }
         list.sort_by(|a, b| a.parameter.total_cmp(&b.parameter));
-        CurveSurfaceIntersection::Points(list)
+        ExactCurveSurfaceIntersection::Points(list)
     }
 }
 
@@ -476,131 +497,230 @@ fn hit(parameter: f64, point: Point3D, multiplicity: u32) -> ConicSurfaceHit {
     }
 }
 
-impl From<LinePlaneIntersection> for CurveSurfaceIntersection {
-    fn from(result: LinePlaneIntersection) -> CurveSurfaceIntersection {
+impl From<LinePlaneIntersection> for ExactCurveSurfaceIntersection {
+    fn from(result: LinePlaneIntersection) -> ExactCurveSurfaceIntersection {
         match result {
-            LinePlaneIntersection::Point(t, p) => CurveSurfaceIntersection::points([hit(t, p, 1)]),
-            LinePlaneIntersection::Parallel => CurveSurfaceIntersection::Empty,
-            LinePlaneIntersection::Coincident => CurveSurfaceIntersection::Coincident,
+            LinePlaneIntersection::Point(t, p) => {
+                ExactCurveSurfaceIntersection::points([hit(t, p, 1)])
+            }
+            LinePlaneIntersection::Parallel => ExactCurveSurfaceIntersection::Empty,
+            LinePlaneIntersection::Coincident => ExactCurveSurfaceIntersection::Coincident,
         }
     }
 }
 
-impl From<LineQuadricIntersection> for CurveSurfaceIntersection {
-    fn from(result: LineQuadricIntersection) -> CurveSurfaceIntersection {
+impl From<LineQuadricIntersection> for ExactCurveSurfaceIntersection {
+    fn from(result: LineQuadricIntersection) -> ExactCurveSurfaceIntersection {
         match result {
             LineQuadricIntersection::TwoPoints((t1, p1), (t2, p2)) => {
-                CurveSurfaceIntersection::points([hit(t1, p1, 1), hit(t2, p2, 1)])
+                ExactCurveSurfaceIntersection::points([hit(t1, p1, 1), hit(t2, p2, 1)])
             }
             LineQuadricIntersection::OnePoint(t, p) => {
-                CurveSurfaceIntersection::points([hit(t, p, 1)])
+                ExactCurveSurfaceIntersection::points([hit(t, p, 1)])
             }
             LineQuadricIntersection::Tangent(t, p) => {
-                CurveSurfaceIntersection::points([hit(t, p, 2)])
+                ExactCurveSurfaceIntersection::points([hit(t, p, 2)])
             }
-            LineQuadricIntersection::Empty => CurveSurfaceIntersection::Empty,
-            LineQuadricIntersection::Coincident => CurveSurfaceIntersection::Coincident,
+            LineQuadricIntersection::Empty => ExactCurveSurfaceIntersection::Empty,
+            LineQuadricIntersection::Coincident => ExactCurveSurfaceIntersection::Coincident,
         }
     }
 }
 
-impl From<LineTorusIntersection> for CurveSurfaceIntersection {
-    fn from(result: LineTorusIntersection) -> CurveSurfaceIntersection {
+impl From<LineTorusIntersection> for ExactCurveSurfaceIntersection {
+    fn from(result: LineTorusIntersection) -> ExactCurveSurfaceIntersection {
         match result {
-            LineTorusIntersection::Hits(hits) => CurveSurfaceIntersection::points(
+            LineTorusIntersection::Hits(hits) => ExactCurveSurfaceIntersection::points(
                 hits.into_iter()
-                    .map(|h| hit(h.line_param, h.point, h.multiplicity)),
+                    .map(|h| hit(h.line_parameter, h.point, h.multiplicity)),
             ),
-            LineTorusIntersection::Empty => CurveSurfaceIntersection::Empty,
+            LineTorusIntersection::Empty => ExactCurveSurfaceIntersection::Empty,
         }
     }
 }
 
-impl From<CircleSurfaceIntersection> for CurveSurfaceIntersection {
-    fn from(result: CircleSurfaceIntersection) -> CurveSurfaceIntersection {
+impl From<CircleSurfaceIntersection> for ExactCurveSurfaceIntersection {
+    fn from(result: CircleSurfaceIntersection) -> ExactCurveSurfaceIntersection {
         match result {
-            CircleSurfaceIntersection::Circle(_) => CurveSurfaceIntersection::Coincident,
-            CircleSurfaceIntersection::Hits(hits) => CurveSurfaceIntersection::points(hits),
-            CircleSurfaceIntersection::Empty => CurveSurfaceIntersection::Empty,
+            CircleSurfaceIntersection::Circle(_) => ExactCurveSurfaceIntersection::Coincident,
+            CircleSurfaceIntersection::Hits(hits) => ExactCurveSurfaceIntersection::points(hits),
+            CircleSurfaceIntersection::Empty => ExactCurveSurfaceIntersection::Empty,
         }
     }
 }
 
-impl From<ConicSurfaceIntersection> for CurveSurfaceIntersection {
-    fn from(result: ConicSurfaceIntersection) -> CurveSurfaceIntersection {
+impl From<ConicSurfaceIntersection> for ExactCurveSurfaceIntersection {
+    fn from(result: ConicSurfaceIntersection) -> ExactCurveSurfaceIntersection {
         match result {
-            ConicSurfaceIntersection::Hits(hits) => CurveSurfaceIntersection::points(hits),
-            ConicSurfaceIntersection::Coincident => CurveSurfaceIntersection::Coincident,
-            ConicSurfaceIntersection::Empty => CurveSurfaceIntersection::Empty,
+            ConicSurfaceIntersection::Hits(hits) => ExactCurveSurfaceIntersection::points(hits),
+            ConicSurfaceIntersection::Coincident => ExactCurveSurfaceIntersection::Coincident,
+            ConicSurfaceIntersection::Empty => ExactCurveSurfaceIntersection::Empty,
         }
     }
 }
 
-impl Intersect<ElementarySurface> for ElementaryCurve {
-    type Output = CurveSurfaceIntersection;
+/// The exact intersection of a curve with a surface of type `S` in the
+/// general form, solved by the pair's typed solver.
+///
+/// The router calls it on the concrete types of a pair, so a pair known at
+/// compile time skips the untyped enums and their dispatch. The untyped
+/// [`IntersectExact`] goes through the same implementations, so both paths
+/// return the same result.
+pub(crate) trait ExactCurveSurface<S> {
+    /// Intersects `self` with `surface`, deciding tangency and coincidence
+    /// with `tol`.
+    fn exact_curve_surface(&self, surface: &S, tol: Tolerance) -> ExactCurveSurfaceIntersection;
+}
+
+/// Implements [`ExactCurveSurface`] for each pair with a closed form
+/// (`solved`) through its typed solver, and for each pair without one
+/// (`not_analytic`) as [`ExactCurveSurfaceIntersection::NotAnalytic`].
+macro_rules! exact_curve_surface {
+    (solved: $($curve:ty => [$($surface:ty),*]),*) => {
+        $($(
+            impl ExactCurveSurface<$surface> for $curve {
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    surface: &$surface,
+                    tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    self.intersect_exact(surface, tol).into()
+                }
+            }
+        )*)*
+    };
+    (not_analytic: $($other:ty => $torus:ty),*) => {
+        $(
+            impl ExactCurveSurface<$torus> for $other {
+                /// A circle or conic against a torus has no closed form.
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    _surface: &$torus,
+                    _tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    ExactCurveSurfaceIntersection::NotAnalytic
+                }
+            }
+        )*
+    };
+}
+
+exact_curve_surface!(
+    solved:
+    Line3D => [Plane, Cylinder, Cone, Sphere, Torus],
+    Circle3D => [Plane, Cylinder, Cone, Sphere],
+    Ellipse3D => [Plane, Cylinder, Cone, Sphere],
+    Parabola3D => [Plane, Cylinder, Cone, Sphere],
+    Hyperbola3D => [Plane, Cylinder, Cone, Sphere]
+);
+
+exact_curve_surface!(
+    not_analytic:
+    Circle3D => Torus,
+    Ellipse3D => Torus,
+    Parabola3D => Torus,
+    Hyperbola3D => Torus
+);
+
+/// Implements [`ExactCurveSurface`] between each concrete curve and the
+/// untyped [`ElementarySurface`], and between [`ElementaryCurve`] and each
+/// concrete surface, by dispatching on the untyped operand.
+macro_rules! exact_curve_surface_untyped {
+    (curves: $($curve:ty),*; surfaces: $($surface:ty),*) => {
+        $(
+            impl ExactCurveSurface<ElementarySurface> for $curve {
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    surface: &ElementarySurface,
+                    tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    match surface {
+                        ElementarySurface::Plane(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Cylinder(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Cone(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Sphere(s) => self.exact_curve_surface(s, tol),
+                        ElementarySurface::Torus(s) => self.exact_curve_surface(s, tol),
+                    }
+                }
+            }
+        )*
+        $(
+            impl ExactCurveSurface<$surface> for ElementaryCurve {
+                #[inline]
+                fn exact_curve_surface(
+                    &self,
+                    surface: &$surface,
+                    tol: Tolerance,
+                ) -> ExactCurveSurfaceIntersection {
+                    match self {
+                        ElementaryCurve::Line(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Circle(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Ellipse(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Parabola(c) => c.exact_curve_surface(surface, tol),
+                        ElementaryCurve::Hyperbola(c) => c.exact_curve_surface(surface, tol),
+                    }
+                }
+            }
+        )*
+    };
+}
+
+exact_curve_surface_untyped!(
+    curves: Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D;
+    surfaces: Plane, Cylinder, Cone, Sphere, Torus, ElementarySurface
+);
+
+impl IntersectExact<ElementarySurface> for ElementaryCurve {
+    type Output = ExactCurveSurfaceIntersection;
 
     /// Dispatches to the exact intersection of the pair, or reports
-    /// [`CurveSurfaceIntersection::NotAnalytic`] for a circle or conic
+    /// [`ExactCurveSurfaceIntersection::NotAnalytic`] for a circle or conic
     /// against a torus, which has no closed form.
-    fn intersect(&self, other: &ElementarySurface, tol: Tolerance) -> CurveSurfaceIntersection {
-        use ElementaryCurve as C;
-        use ElementarySurface as S;
-        match (self, other) {
-            (C::Line(c), S::Torus(s)) => c.intersect(s, tol).into(),
-            (_, S::Torus(_)) => CurveSurfaceIntersection::NotAnalytic,
-            (C::Line(c), S::Plane(s)) => c.intersect(s, tol).into(),
-            (C::Line(c), S::Cylinder(s)) => c.intersect(s, tol).into(),
-            (C::Line(c), S::Cone(s)) => c.intersect(s, tol).into(),
-            (C::Line(c), S::Sphere(s)) => c.intersect(s, tol).into(),
-            (C::Circle(c), S::Plane(s)) => c.intersect(s, tol).into(),
-            (C::Circle(c), S::Cylinder(s)) => c.intersect(s, tol).into(),
-            (C::Circle(c), S::Cone(s)) => c.intersect(s, tol).into(),
-            (C::Circle(c), S::Sphere(s)) => c.intersect(s, tol).into(),
-            (C::Ellipse(c), S::Plane(s)) => c.intersect(s, tol).into(),
-            (C::Ellipse(c), S::Cylinder(s)) => c.intersect(s, tol).into(),
-            (C::Ellipse(c), S::Cone(s)) => c.intersect(s, tol).into(),
-            (C::Ellipse(c), S::Sphere(s)) => c.intersect(s, tol).into(),
-            (C::Parabola(c), S::Plane(s)) => c.intersect(s, tol).into(),
-            (C::Parabola(c), S::Cylinder(s)) => c.intersect(s, tol).into(),
-            (C::Parabola(c), S::Cone(s)) => c.intersect(s, tol).into(),
-            (C::Parabola(c), S::Sphere(s)) => c.intersect(s, tol).into(),
-            (C::Hyperbola(c), S::Plane(s)) => c.intersect(s, tol).into(),
-            (C::Hyperbola(c), S::Cylinder(s)) => c.intersect(s, tol).into(),
-            (C::Hyperbola(c), S::Cone(s)) => c.intersect(s, tol).into(),
-            (C::Hyperbola(c), S::Sphere(s)) => c.intersect(s, tol).into(),
-        }
+    fn intersect_exact(
+        &self,
+        other: &ElementarySurface,
+        tol: Tolerance,
+    ) -> ExactCurveSurfaceIntersection {
+        self.exact_curve_surface(other, tol)
     }
 }
 
-impl Intersect<ElementaryCurve> for ElementarySurface {
-    type Output = CurveSurfaceIntersection;
+impl IntersectExact<ElementaryCurve> for ElementarySurface {
+    type Output = ExactCurveSurfaceIntersection;
 
     /// The same result as in the other argument order.
-    fn intersect(&self, other: &ElementaryCurve, tol: Tolerance) -> CurveSurfaceIntersection {
-        other.intersect(self, tol)
+    fn intersect_exact(
+        &self,
+        other: &ElementaryCurve,
+        tol: Tolerance,
+    ) -> ExactCurveSurfaceIntersection {
+        other.intersect_exact(self, tol)
     }
 }
 
-impl Intersect<Surface> for Curve3D {
-    type Output = CurveSurfaceIntersection;
+impl IntersectExact<Surface> for Curve3D {
+    type Output = ExactCurveSurfaceIntersection;
 
     /// Dispatches to the exact intersection of the pair, or reports
-    /// [`CurveSurfaceIntersection::NotAnalytic`] when either is a
+    /// [`ExactCurveSurfaceIntersection::NotAnalytic`] when either is a
     /// B-spline.
-    fn intersect(&self, other: &Surface, tol: Tolerance) -> CurveSurfaceIntersection {
+    fn intersect_exact(&self, other: &Surface, tol: Tolerance) -> ExactCurveSurfaceIntersection {
         match (self.as_elementary(), other.as_elementary()) {
-            (Some(c), Some(s)) => c.intersect(&s, tol),
-            _ => CurveSurfaceIntersection::NotAnalytic,
+            (Some(c), Some(s)) => c.intersect_exact(&s, tol),
+            _ => ExactCurveSurfaceIntersection::NotAnalytic,
         }
     }
 }
 
-impl Intersect<Curve3D> for Surface {
-    type Output = CurveSurfaceIntersection;
+impl IntersectExact<Curve3D> for Surface {
+    type Output = ExactCurveSurfaceIntersection;
 
     /// The same result as in the other argument order.
-    fn intersect(&self, other: &Curve3D, tol: Tolerance) -> CurveSurfaceIntersection {
-        other.intersect(self, tol)
+    fn intersect_exact(&self, other: &Curve3D, tol: Tolerance) -> ExactCurveSurfaceIntersection {
+        other.intersect_exact(self, tol)
     }
 }
 
@@ -619,17 +739,22 @@ reversed!(
 ///
 /// ```
 /// use geomcore::curves::Curve3D;
-/// use geomcore::{Circle3D, CurveCurveIntersection, Intersect, Line3D, Point3D, Tolerance, Vector3D};
+/// use geomcore::{Circle3D, ExactCurveCurveIntersection, IntersectExact, Line3D, Point3D, Tolerance, Vector3D};
 /// let line = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
 /// let circle = Curve3D::from(Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
-/// let CurveCurveIntersection::Points(hits) = line.intersect(&circle, Tolerance::DEFAULT) else {
+/// let ExactCurveCurveIntersection::Points(hits) = line.intersect_exact(&circle, Tolerance::DEFAULT) else {
 ///     panic!("expected hits");
 /// };
-/// let on_line: Vec<f64> = hits.iter().map(|hit| hit.first_param).collect();
-/// assert_eq!(on_line, [-2.0, 2.0]);
+/// let on_line: Vec<Option<f64>> = hits.iter().map(|hit| hit.first_parameter).collect();
+/// assert_eq!(on_line, [Some(-2.0), Some(2.0)]);
+/// // The circle's angles are not computed.
+/// assert_eq!(hits[0].second_parameter, None);
 /// ```
+// The hits are stored inline so an exact result never allocates; boxing
+// them would allocate on every call.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CurveCurveIntersection {
+pub enum ExactCurveCurveIntersection {
     /// The curves do not meet.
     Empty,
     /// The curves coincide.
@@ -638,32 +763,35 @@ pub enum CurveCurveIntersection {
     /// is a B-spline. The caller decides whether to run a numeric
     /// intersection.
     NotAnalytic,
-    /// The hits, ordered by parameter on the first curve; a multiplicity
-    /// of 2 or more marks a tangency.
+    /// The hits, ordered by parameter on the first curve when every hit
+    /// stores one, in the solver's order otherwise; a multiplicity of 2 or
+    /// more marks a tangency. A parameter the solver did not compute is
+    /// `None`.
     Points(InlineList<CurveCurveHit, 4>),
 }
 
-impl CurveCurveIntersection {
-    /// The hits ordered by first parameter, or `Empty` when there are none.
-    fn points(hits: impl IntoIterator<Item = CurveCurveHit>) -> CurveCurveIntersection {
+impl ExactCurveCurveIntersection {
+    /// The hits ordered by first parameter when every hit has one (in the
+    /// solver's order otherwise), or `Empty` when there are none.
+    fn points(hits: impl IntoIterator<Item = CurveCurveHit>) -> ExactCurveCurveIntersection {
         let mut list = InlineList::new();
         for hit in hits {
             list.push(hit);
         }
         if list.is_empty() {
-            return CurveCurveIntersection::Empty;
+            return ExactCurveCurveIntersection::Empty;
         }
-        list.sort_by(|a, b| a.first_param.total_cmp(&b.first_param));
-        CurveCurveIntersection::Points(list)
+        sort_by_known_parameter(&mut list, |hit| hit.first_parameter);
+        ExactCurveCurveIntersection::Points(list)
     }
 
     /// The same intersection seen from the second curve.
-    fn swapped(self) -> CurveCurveIntersection {
+    fn swapped(self) -> ExactCurveCurveIntersection {
         match self {
-            CurveCurveIntersection::Points(hits) => {
-                CurveCurveIntersection::points(hits.iter().map(|h| CurveCurveHit {
-                    first_param: h.second_param,
-                    second_param: h.first_param,
+            ExactCurveCurveIntersection::Points(hits) => {
+                ExactCurveCurveIntersection::points(hits.iter().map(|h| CurveCurveHit {
+                    first_parameter: h.second_parameter,
+                    second_parameter: h.first_parameter,
                     ..*h
                 }))
             }
@@ -672,25 +800,31 @@ impl CurveCurveIntersection {
     }
 }
 
-/// A hit at `first` on the first curve and `second` on the second.
-fn pair(first: f64, point: Point3D, second: f64, multiplicity: u32) -> CurveCurveHit {
+/// A hit at `first` on the first curve and `second` on the second, each
+/// `None` when the solver did not compute it.
+fn pair(
+    first: Option<f64>,
+    point: Point3D,
+    second: Option<f64>,
+    multiplicity: u32,
+) -> CurveCurveHit {
     CurveCurveHit {
-        first_param: first,
+        first_parameter: first,
         point,
-        second_param: second,
+        second_parameter: second,
         multiplicity,
     }
 }
 
-fn line_line(result: LineLine3DIntersection) -> CurveCurveIntersection {
+fn line_line(result: LineLine3DIntersection) -> ExactCurveCurveIntersection {
     match result {
         LineLine3DIntersection::Point(s, p, t) => {
-            CurveCurveIntersection::points([pair(s, p, t, 1)])
+            ExactCurveCurveIntersection::points([pair(Some(s), p, Some(t), 1)])
         }
         LineLine3DIntersection::Parallel(_) | LineLine3DIntersection::Skew { .. } => {
-            CurveCurveIntersection::Empty
+            ExactCurveCurveIntersection::Empty
         }
-        LineLine3DIntersection::Coincident => CurveCurveIntersection::Coincident,
+        LineLine3DIntersection::Coincident => ExactCurveCurveIntersection::Coincident,
     }
 }
 
@@ -716,28 +850,21 @@ fn line_circle(
     line: &Line3D,
     circle: &Circle3D,
     tol: Tolerance,
-) -> CurveCurveIntersection {
-    let on_circle = |t: f64, p: Point3D| {
-        pair(
-            t,
-            p,
-            circle.parameter_in_bounds(circle.parameter_of(p), tol),
-            1,
-        )
-    };
+) -> ExactCurveCurveIntersection {
     match result {
         LineCircle3DIntersection::Points((t1, p1), (t2, p2)) => {
-            CurveCurveIntersection::points([on_circle(t1, p1), on_circle(t2, p2)])
+            ExactCurveCurveIntersection::points([
+                pair(Some(t1), p1, None, 1),
+                pair(Some(t2), p2, None, 1),
+            ])
         }
+        // The tangency test needs the circle's parameter, so it is kept.
         LineCircle3DIntersection::Tangent(t, p) => {
-            let hit = on_circle(t, p);
-            let multiplicity = lone_hit_multiplicity(line, circle, hit.second_param, tol);
-            CurveCurveIntersection::points([CurveCurveHit {
-                multiplicity,
-                ..hit
-            }])
+            let angle = circle.parameter_in_bounds(circle.parameter_of(p), tol);
+            let multiplicity = lone_hit_multiplicity(line, circle, angle, tol);
+            ExactCurveCurveIntersection::points([pair(Some(t), p, Some(angle), multiplicity)])
         }
-        LineCircle3DIntersection::Empty => CurveCurveIntersection::Empty,
+        LineCircle3DIntersection::Empty => ExactCurveCurveIntersection::Empty,
     }
 }
 
@@ -746,17 +873,18 @@ fn line_conic(
     line: &Line3D,
     conic: &impl Conic,
     tol: Tolerance,
-) -> CurveCurveIntersection {
-    let from = |h: LineConicHit, m: u32| pair(h.line_param, h.point, h.conic_param, m);
+) -> ExactCurveCurveIntersection {
+    let from =
+        |h: LineConicHit, m: u32| pair(Some(h.line_parameter), h.point, Some(h.conic_parameter), m);
     match result {
         LineConic3DIntersection::Points(h1, h2) => {
-            CurveCurveIntersection::points([from(h1, 1), from(h2, 1)])
+            ExactCurveCurveIntersection::points([from(h1, 1), from(h2, 1)])
         }
         LineConic3DIntersection::Tangent(h) => {
-            let multiplicity = lone_hit_multiplicity(line, conic, h.conic_param, tol);
-            CurveCurveIntersection::points([from(h, multiplicity)])
+            let multiplicity = lone_hit_multiplicity(line, conic, h.conic_parameter, tol);
+            ExactCurveCurveIntersection::points([from(h, multiplicity)])
         }
-        LineConic3DIntersection::Empty => CurveCurveIntersection::Empty,
+        LineConic3DIntersection::Empty => ExactCurveCurveIntersection::Empty,
     }
 }
 
@@ -765,72 +893,173 @@ fn circle_circle(
     a: &Circle3D,
     b: &Circle3D,
     tol: Tolerance,
-) -> CurveCurveIntersection {
-    let on = |c: &Circle3D, p: Point3D| c.parameter_in_bounds(c.parameter_of(p), tol);
-    let at = |p: Point3D, m: u32| pair(on(a, p), p, on(b, p), m);
+) -> ExactCurveCurveIntersection {
+    // The solver finds the points only: the angles are left to the caller.
+    let at = |p: Point3D, m: u32| pair(None, p, None, m);
     match result {
         CircleCircle3DIntersection::Points(p, q) => {
-            CurveCurveIntersection::points([at(p, 1), at(q, 1)])
+            ExactCurveCurveIntersection::points([at(p, 1), at(q, 1)])
         }
-        CircleCircle3DIntersection::Tangent(p) => CurveCurveIntersection::points([at(p, 2)]),
-        CircleCircle3DIntersection::Empty => CurveCurveIntersection::Empty,
-        CircleCircle3DIntersection::Coincident => CurveCurveIntersection::Coincident,
+        CircleCircle3DIntersection::Tangent(p) => ExactCurveCurveIntersection::points([at(p, 2)]),
+        CircleCircle3DIntersection::Empty => ExactCurveCurveIntersection::Empty,
+        CircleCircle3DIntersection::Coincident => ExactCurveCurveIntersection::Coincident,
         // Crossing planes: every hit lies on the line the planes share.
         CircleCircle3DIntersection::NotAnalytic => conic_conic(intersect_conic_conic(a, b, tol)),
     }
 }
 
-fn conic_conic(result: ConicConicIntersection) -> CurveCurveIntersection {
+fn conic_conic(result: ConicConicIntersection) -> ExactCurveCurveIntersection {
     match result {
-        ConicConicIntersection::Hits(hits) => CurveCurveIntersection::points(hits),
-        ConicConicIntersection::Coincident => CurveCurveIntersection::Coincident,
-        ConicConicIntersection::Empty => CurveCurveIntersection::Empty,
+        ConicConicIntersection::Hits(hits) => ExactCurveCurveIntersection::points(hits),
+        ConicConicIntersection::Coincident => ExactCurveCurveIntersection::Coincident,
+        ConicConicIntersection::Empty => ExactCurveCurveIntersection::Empty,
     }
 }
 
-impl Intersect for ElementaryCurve {
-    type Output = CurveCurveIntersection;
+/// The exact intersection of a curve with a curve of type `B` in the
+/// general form, solved by the pair's typed solver. A hit stores the
+/// parameters the solver computed and leaves the others `None`: no
+/// parameter is recovered from a point only to be reported.
+///
+/// The router calls it on the concrete types of a pair, so a pair known at
+/// compile time skips the untyped enums and their dispatch. The untyped
+/// [`IntersectExact`] goes through the same implementations, so both paths
+/// return the same result.
+pub(crate) trait ExactCurveCurve<B> {
+    /// Intersects `self` with `other`, deciding tangency and coincidence
+    /// with `tol`.
+    fn exact_curve_curve(&self, other: &B, tol: Tolerance) -> ExactCurveCurveIntersection;
+}
 
-    /// Dispatches to the exact intersection of the pair; every pair of
-    /// lines, circles and conics has one.
-    fn intersect(&self, other: &ElementaryCurve, tol: Tolerance) -> CurveCurveIntersection {
-        use ElementaryCurve as C;
-        match (self, other) {
-            (C::Line(a), C::Line(b)) => line_line(a.intersect(b, tol)),
-            (C::Line(a), C::Circle(b)) => line_circle(a.intersect(b, tol), a, b, tol),
-            (C::Line(a), C::Ellipse(b)) => line_conic(a.intersect(b, tol), a, b, tol),
-            (C::Line(a), C::Parabola(b)) => line_conic(a.intersect(b, tol), a, b, tol),
-            (C::Line(a), C::Hyperbola(b)) => line_conic(a.intersect(b, tol), a, b, tol),
-            (C::Circle(a), C::Circle(b)) => circle_circle(a.intersect(b, tol), a, b, tol),
-            (C::Circle(a), C::Ellipse(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Circle(a), C::Parabola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Circle(a), C::Hyperbola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Ellipse(a), C::Circle(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Ellipse(a), C::Ellipse(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Ellipse(a), C::Parabola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Ellipse(a), C::Hyperbola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Parabola(a), C::Circle(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Parabola(a), C::Ellipse(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Parabola(a), C::Parabola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Parabola(a), C::Hyperbola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Hyperbola(a), C::Circle(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Hyperbola(a), C::Ellipse(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Hyperbola(a), C::Parabola(b)) => conic_conic(a.intersect(b, tol)),
-            (C::Hyperbola(a), C::Hyperbola(b)) => conic_conic(a.intersect(b, tol)),
-            (_, C::Line(_)) => other.intersect(self, tol).swapped(),
+/// Implements [`ExactCurveCurve`] for each listed pair with the given body,
+/// which reads the pair as `(a, b)`.
+macro_rules! exact_curve_curve {
+    ($(($first:ty, $second:ty) => |$a:ident, $b:ident, $tol:ident| $body:expr;)*) => {$(
+        impl ExactCurveCurve<$second> for $first {
+            #[inline]
+            fn exact_curve_curve(
+                &self,
+                other: &$second,
+                $tol: Tolerance,
+            ) -> ExactCurveCurveIntersection {
+                let ($a, $b) = (self, other);
+                $body
+            }
+        }
+    )*};
+}
+
+exact_curve_curve!(
+    (Line3D, Line3D) => |a, b, tol| line_line(a.intersect_exact(b, tol));
+    (Line3D, Circle3D) => |a, b, tol| line_circle(a.intersect_exact(b, tol), a, b, tol);
+    (Line3D, Ellipse3D) => |a, b, tol| line_conic(a.intersect_exact(b, tol), a, b, tol);
+    (Line3D, Parabola3D) => |a, b, tol| line_conic(a.intersect_exact(b, tol), a, b, tol);
+    (Line3D, Hyperbola3D) => |a, b, tol| line_conic(a.intersect_exact(b, tol), a, b, tol);
+    (Circle3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Ellipse3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Parabola3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Hyperbola3D, Line3D) => |a, b, tol| b.exact_curve_curve(a, tol).swapped();
+    (Circle3D, Circle3D) => |a, b, tol| circle_circle(a.intersect_exact(b, tol), a, b, tol);
+    (Circle3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Circle3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Circle3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Circle3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Ellipse3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Circle3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Parabola3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Circle3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Ellipse3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Parabola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+    (Hyperbola3D, Hyperbola3D) => |a, b, tol| conic_conic(a.intersect_exact(b, tol));
+);
+
+/// Implements [`ExactCurveCurve`] between each concrete curve and the
+/// untyped [`ElementaryCurve`], in both orders, by dispatching on the
+/// untyped operand.
+macro_rules! exact_curve_curve_untyped {
+    ($($curve:ty),*) => {$(
+        impl ExactCurveCurve<ElementaryCurve> for $curve {
+            #[inline]
+            fn exact_curve_curve(
+                &self,
+                other: &ElementaryCurve,
+                tol: Tolerance,
+            ) -> ExactCurveCurveIntersection {
+                match other {
+                    ElementaryCurve::Line(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Circle(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Ellipse(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Parabola(b) => self.exact_curve_curve(b, tol),
+                    ElementaryCurve::Hyperbola(b) => self.exact_curve_curve(b, tol),
+                }
+            }
+        }
+
+        impl ExactCurveCurve<$curve> for ElementaryCurve {
+            #[inline]
+            fn exact_curve_curve(
+                &self,
+                other: &$curve,
+                tol: Tolerance,
+            ) -> ExactCurveCurveIntersection {
+                match self {
+                    ElementaryCurve::Line(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Circle(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Ellipse(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Parabola(a) => a.exact_curve_curve(other, tol),
+                    ElementaryCurve::Hyperbola(a) => a.exact_curve_curve(other, tol),
+                }
+            }
+        }
+    )*};
+}
+
+exact_curve_curve_untyped!(Line3D, Circle3D, Ellipse3D, Parabola3D, Hyperbola3D);
+
+impl ExactCurveCurve<ElementaryCurve> for ElementaryCurve {
+    #[inline]
+    fn exact_curve_curve(
+        &self,
+        other: &ElementaryCurve,
+        tol: Tolerance,
+    ) -> ExactCurveCurveIntersection {
+        match self {
+            ElementaryCurve::Line(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Circle(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Ellipse(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Parabola(a) => a.exact_curve_curve(other, tol),
+            ElementaryCurve::Hyperbola(a) => a.exact_curve_curve(other, tol),
         }
     }
 }
 
-impl Intersect for Curve3D {
-    type Output = CurveCurveIntersection;
+impl IntersectExact for ElementaryCurve {
+    type Output = ExactCurveCurveIntersection;
+
+    /// Dispatches to the exact intersection of the pair; every pair of
+    /// lines, circles and conics has one.
+    fn intersect_exact(
+        &self,
+        other: &ElementaryCurve,
+        tol: Tolerance,
+    ) -> ExactCurveCurveIntersection {
+        self.exact_curve_curve(other, tol)
+    }
+}
+
+impl IntersectExact for Curve3D {
+    type Output = ExactCurveCurveIntersection;
 
     /// Dispatches to the exact intersection of the pair, or reports
-    /// [`CurveCurveIntersection::NotAnalytic`] when either is a B-spline.
-    fn intersect(&self, other: &Curve3D, tol: Tolerance) -> CurveCurveIntersection {
+    /// [`ExactCurveCurveIntersection::NotAnalytic`] when either is a B-spline.
+    fn intersect_exact(&self, other: &Curve3D, tol: Tolerance) -> ExactCurveCurveIntersection {
         match (self.as_elementary(), other.as_elementary()) {
-            (Some(a), Some(b)) => a.intersect(&b, tol),
-            _ => CurveCurveIntersection::NotAnalytic,
+            (Some(a), Some(b)) => a.intersect_exact(&b, tol),
+            _ => ExactCurveCurveIntersection::NotAnalytic,
         }
     }
 }
@@ -934,12 +1163,13 @@ mod tests {
     use super::*;
 
     use crate::curves::{Curve3D, ParametricCurve3D, PointExtrema3D};
+    use crate::intersect::marching::marched_curves;
     use crate::surfaces::{ElementarySurface, ParametricSurface};
-    use crate::{Circle2D, Line2D, Point2D, Vector2D};
+
     use crate::{
         Circle3D, Cone, Cylinder, Ellipse3D, Frame3D, Hyperbola3D, Line3D, Parabola3D, Plane,
-        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, intersect_curve_curve,
-        intersect_curve_surface, marching_intersection,
+        Point3D, Sphere, Torus, TorusConeIntersection, Vector3D, search_curve_curve,
+        search_curve_surface,
     };
 
     const TOL: Tolerance = Tolerance::DEFAULT;
@@ -1005,8 +1235,12 @@ mod tests {
     }
 
     /// Every curve and contact point of the result lies on both surfaces.
-    fn assert_on_both(result: &SurfaceIntersection, a: &ElementarySurface, b: &ElementarySurface) {
-        if let SurfaceIntersection::Meets { curves, points } = result {
+    fn assert_on_both(
+        result: &ExactSurfaceIntersection,
+        a: &ElementarySurface,
+        b: &ElementarySurface,
+    ) {
+        if let ExactSurfaceIntersection::Meets { curves, points } = result {
             assert!(!curves.is_empty() || !points.is_empty());
             let on_both = |p: Point3D| a.contains(p, TOL) && b.contains(p, TOL);
             for (curve, _) in curves {
@@ -1021,14 +1255,14 @@ mod tests {
     }
 
     /// The two results have the same outcome and the same geometry.
-    fn assert_same(ab: &SurfaceIntersection, ba: &SurfaceIntersection) {
+    fn assert_same(ab: &ExactSurfaceIntersection, ba: &ExactSurfaceIntersection) {
         match (ab, ba) {
             (
-                SurfaceIntersection::Meets {
+                ExactSurfaceIntersection::Meets {
                     curves: c1,
                     points: p1,
                 },
-                SurfaceIntersection::Meets {
+                ExactSurfaceIntersection::Meets {
                     curves: c2,
                     points: p2,
                 },
@@ -1060,8 +1294,8 @@ mod tests {
         let all = surfaces();
         for a in &all {
             for b in &all {
-                let ab = a.intersect(b, TOL);
-                assert_same(&ab, &b.intersect(a, TOL));
+                let ab = a.intersect_exact(b, TOL);
+                assert_same(&ab, &b.intersect_exact(a, TOL));
                 assert_on_both(&ab, a, b);
             }
         }
@@ -1071,8 +1305,8 @@ mod tests {
     fn test_surface_intersection_of_a_surface_with_itself_is_coincident() {
         for s in surfaces() {
             assert_eq!(
-                s.intersect(&s, TOL),
-                SurfaceIntersection::Coincident,
+                s.intersect_exact(&s, TOL),
+                ExactSurfaceIntersection::Coincident,
                 "{s:?}"
             );
         }
@@ -1095,13 +1329,14 @@ mod tests {
                 if !(closed(a) || closed(b)) {
                     continue;
                 }
-                let SurfaceIntersection::Meets { curves, .. } = a.intersect(b, TOL) else {
+                let ExactSurfaceIntersection::Meets { curves, .. } = a.intersect_exact(b, TOL)
+                else {
                     continue;
                 };
                 if curves.is_empty() || curves.iter().any(|(_, tangent)| *tangent) {
                     continue;
                 }
-                let traced = marching_intersection(a, b, TOL);
+                let traced = marched_curves(a, b, TOL);
                 assert!(
                     !traced.is_empty(),
                     "marching found nothing for {a:?} and {b:?}"
@@ -1128,79 +1363,12 @@ mod tests {
         let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         assert_eq!(
-            ElementarySurface::from(plane).intersect(&ElementarySurface::from(sphere), TOL),
-            SurfaceIntersection::from(plane.intersect(&sphere, TOL))
+            ElementarySurface::from(plane).intersect_exact(&ElementarySurface::from(sphere), TOL),
+            ExactSurfaceIntersection::from(plane.intersect_exact(&sphere, TOL))
         );
         assert_eq!(
-            ElementarySurface::from(sphere).intersect(&ElementarySurface::from(torus), TOL),
-            SurfaceIntersection::from(sphere.intersect(&torus, TOL))
-        );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_deprecated_surface_methods_match_the_trait() {
-        let plane = Plane::new(Point3D::new(0.0, 0.0, 0.5), Vector3D::Z).unwrap();
-        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
-        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 0.0).unwrap();
-        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
-        assert_eq!(
-            plane.intersect_plane(&plane, TOL),
-            plane.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            plane.intersect_sphere(&sphere, TOL),
-            plane.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            plane.intersect_cylinder(&cylinder, TOL),
-            plane.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            plane.intersect_cone(&cone, TOL),
-            plane.intersect(&cone, TOL)
-        );
-        assert_eq!(
-            sphere.intersect_sphere(&sphere, TOL),
-            sphere.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            sphere.intersect_cylinder(&cylinder, TOL),
-            sphere.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            sphere.intersect_cone(&cone, TOL),
-            sphere.intersect(&cone, TOL)
-        );
-        assert_eq!(
-            cylinder.intersect_cylinder(&cylinder, TOL),
-            cylinder.intersect(&cylinder, TOL)
-        );
-        assert_eq!(cone.intersect_cone(&cone, TOL), cone.intersect(&cone, TOL));
-        assert_eq!(
-            cone.intersect_cylinder(&cylinder, TOL),
-            cone.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            torus.intersect_plane(&plane, TOL),
-            torus.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            torus.intersect_sphere(&sphere, TOL),
-            torus.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            torus.intersect_cylinder(&cylinder, TOL),
-            torus.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            torus.intersect_cone(&cone, TOL),
-            torus.intersect(&cone, TOL)
-        );
-        assert_eq!(
-            torus.intersect_torus(&torus, TOL),
-            torus.intersect(&torus, TOL)
+            ElementarySurface::from(sphere).intersect_exact(&ElementarySurface::from(torus), TOL),
+            ExactSurfaceIntersection::from(sphere.intersect_exact(&torus, TOL))
         );
     }
 
@@ -1209,12 +1377,12 @@ mod tests {
         // Each nappe of a wide cone crosses the tube twice.
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 1.4, 0.0).unwrap();
-        let TorusConeIntersection::Rings(rings) = torus.intersect(&cone, TOL) else {
+        let TorusConeIntersection::Rings(rings) = torus.intersect_exact(&cone, TOL) else {
             panic!("expected rings");
         };
         assert_eq!(rings.len(), 4);
-        let SurfaceIntersection::Meets { curves, points } =
-            SurfaceIntersection::from(torus.intersect(&cone, TOL))
+        let ExactSurfaceIntersection::Meets { curves, points } =
+            ExactSurfaceIntersection::from(torus.intersect_exact(&cone, TOL))
         else {
             panic!("expected curves");
         };
@@ -1243,16 +1411,16 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(
-            plane.intersect(&patch, TOL),
-            SurfaceIntersection::NotAnalytic
+            plane.intersect_exact(&patch, TOL),
+            ExactSurfaceIntersection::NotAnalytic
         );
         assert_eq!(
-            patch.intersect(&plane, TOL),
-            SurfaceIntersection::NotAnalytic
+            patch.intersect_exact(&plane, TOL),
+            ExactSurfaceIntersection::NotAnalytic
         );
         assert_eq!(
-            plane.intersect(&plane, TOL),
-            SurfaceIntersection::Coincident
+            plane.intersect_exact(&plane, TOL),
+            ExactSurfaceIntersection::Coincident
         );
     }
 
@@ -1298,12 +1466,12 @@ mod tests {
     /// Hits are ordered, on the curve at their parameter, on the surface,
     /// and the whole curve lies on the surface when coincident.
     fn assert_curve_surface_valid(
-        result: &CurveSurfaceIntersection,
+        result: &ExactCurveSurfaceIntersection,
         curve: &ElementaryCurve,
         surface: &ElementarySurface,
     ) {
         match result {
-            CurveSurfaceIntersection::Points(hits) => {
+            ExactCurveSurfaceIntersection::Points(hits) => {
                 assert!(!hits.is_empty());
                 for pair in hits.windows(2) {
                     assert!(pair[0].parameter <= pair[1].parameter, "{hits:?}");
@@ -1319,7 +1487,7 @@ mod tests {
                     assert!(hit.multiplicity >= 1);
                 }
             }
-            CurveSurfaceIntersection::Coincident => {
+            ExactCurveSurfaceIntersection::Coincident => {
                 for p in samples(curve) {
                     assert!(
                         surface.contains(p, TOL),
@@ -1327,7 +1495,7 @@ mod tests {
                     );
                 }
             }
-            CurveSurfaceIntersection::Empty | CurveSurfaceIntersection::NotAnalytic => {}
+            ExactCurveSurfaceIntersection::Empty | ExactCurveSurfaceIntersection::NotAnalytic => {}
         }
     }
 
@@ -1335,8 +1503,8 @@ mod tests {
     fn test_curve_surface_intersection_is_symmetric_and_valid() {
         for curve in &curves() {
             for surface in &surfaces() {
-                let result = curve.intersect(surface, TOL);
-                assert_eq!(result, surface.intersect(curve, TOL));
+                let result = curve.intersect_exact(surface, TOL);
+                assert_eq!(result, surface.intersect_exact(curve, TOL));
                 assert_curve_surface_valid(&result, curve, surface);
             }
         }
@@ -1349,12 +1517,12 @@ mod tests {
         let mut compared = 0;
         for curve in &curves() {
             for surface in &surfaces() {
-                let hits = match curve.intersect(surface, TOL) {
-                    CurveSurfaceIntersection::Points(hits) => hits,
-                    CurveSurfaceIntersection::Empty => InlineList::new(),
+                let hits = match curve.intersect_exact(surface, TOL) {
+                    ExactCurveSurfaceIntersection::Points(hits) => hits,
+                    ExactCurveSurfaceIntersection::Empty => InlineList::new(),
                     _ => continue,
                 };
-                let numeric = intersect_curve_surface(curve, surface, TOL);
+                let numeric = search_curve_surface(curve, surface, TOL);
                 let near = |p: Point3D, q: Point3D| {
                     (p - q).magnitude() <= 1e-6 * (1.0 + p.distance(Point3D::ORIGIN))
                 };
@@ -1387,7 +1555,7 @@ mod tests {
         let torus: ElementarySurface = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0)
             .unwrap()
             .into();
-        let CurveSurfaceIntersection::Points(hits) = line.intersect(&torus, TOL) else {
+        let ExactCurveSurfaceIntersection::Points(hits) = line.intersect_exact(&torus, TOL) else {
             panic!("expected hits");
         };
         assert_eq!(hits.len(), 4);
@@ -1398,8 +1566,8 @@ mod tests {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Y, 4.0).unwrap();
         let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
         assert_eq!(
-            ElementaryCurve::from(circle).intersect(&ElementarySurface::from(torus), TOL),
-            CurveSurfaceIntersection::NotAnalytic
+            ElementaryCurve::from(circle).intersect_exact(&ElementarySurface::from(torus), TOL),
+            ExactCurveSurfaceIntersection::NotAnalytic
         );
         let bspline = Curve3D::from(
             crate::BSplineCurve3D::new(
@@ -1413,115 +1581,18 @@ mod tests {
         );
         let plane = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
         assert_eq!(
-            bspline.intersect(&plane, TOL),
-            CurveSurfaceIntersection::NotAnalytic
+            bspline.intersect_exact(&plane, TOL),
+            ExactCurveSurfaceIntersection::NotAnalytic
         );
         assert_eq!(
-            plane.intersect(&bspline, TOL),
-            CurveSurfaceIntersection::NotAnalytic
+            plane.intersect_exact(&bspline, TOL),
+            ExactCurveSurfaceIntersection::NotAnalytic
         );
         let line = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
-        let CurveSurfaceIntersection::Points(hits) = line.intersect(&plane, TOL) else {
+        let ExactCurveSurfaceIntersection::Points(hits) = line.intersect_exact(&plane, TOL) else {
             panic!("expected a hit");
         };
         assert_eq!((hits.len(), hits[0].point), (1, Point3D::ORIGIN));
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_deprecated_curve_surface_methods_match_the_trait() {
-        let plane = Plane::new(Point3D::new(0.0, 0.0, 0.5), Vector3D::Z).unwrap();
-        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.0).unwrap();
-        let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 0.0).unwrap();
-        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 4.0, 1.0).unwrap();
-        let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.3), Vector3D::X).unwrap();
-        assert_eq!(
-            line.intersect_plane(&plane, TOL),
-            line.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            line.intersect_sphere(&sphere, TOL),
-            line.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            line.intersect_cylinder(&cylinder, TOL),
-            line.intersect(&cylinder, TOL)
-        );
-        assert_eq!(line.intersect_cone(&cone, TOL), line.intersect(&cone, TOL));
-        assert_eq!(
-            line.intersect_torus(&torus, TOL),
-            line.intersect(&torus, TOL)
-        );
-        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Y, 2.0).unwrap();
-        assert_eq!(
-            circle.intersect_plane(&plane, TOL),
-            circle.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            circle.intersect_sphere(&sphere, TOL),
-            circle.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            circle.intersect_cylinder(&cylinder, TOL),
-            circle.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            circle.intersect_cone(&cone, TOL),
-            circle.intersect(&cone, TOL)
-        );
-        let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Y, Vector3D::X, 3.0, 1.5).unwrap();
-        assert_eq!(
-            ellipse.intersect_plane(&plane, TOL),
-            ellipse.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            ellipse.intersect_sphere(&sphere, TOL),
-            ellipse.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            ellipse.intersect_cylinder(&cylinder, TOL),
-            ellipse.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            ellipse.intersect_cone(&cone, TOL),
-            ellipse.intersect(&cone, TOL)
-        );
-        let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Y, Vector3D::X, 1.0).unwrap();
-        assert_eq!(
-            parabola.intersect_plane(&plane, TOL),
-            parabola.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            parabola.intersect_sphere(&sphere, TOL),
-            parabola.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            parabola.intersect_cylinder(&cylinder, TOL),
-            parabola.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            parabola.intersect_cone(&cone, TOL),
-            parabola.intersect(&cone, TOL)
-        );
-        let hyperbola =
-            Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Y, Vector3D::X, 1.0, 1.0).unwrap();
-        assert_eq!(
-            hyperbola.intersect_plane(&plane, TOL),
-            hyperbola.intersect(&plane, TOL)
-        );
-        assert_eq!(
-            hyperbola.intersect_sphere(&sphere, TOL),
-            hyperbola.intersect(&sphere, TOL)
-        );
-        assert_eq!(
-            hyperbola.intersect_cylinder(&cylinder, TOL),
-            hyperbola.intersect(&cylinder, TOL)
-        );
-        assert_eq!(
-            hyperbola.intersect_cone(&cone, TOL),
-            hyperbola.intersect(&cone, TOL)
-        );
     }
 
     fn near(p: Point3D, q: Point3D) -> bool {
@@ -1531,29 +1602,35 @@ mod tests {
     /// Hits are ordered, on both curves at their parameters, and the whole
     /// first curve lies on the second when coincident.
     fn assert_curve_curve_valid(
-        result: &CurveCurveIntersection,
+        result: &ExactCurveCurveIntersection,
         a: &ElementaryCurve,
         b: &ElementaryCurve,
     ) {
         match result {
-            CurveCurveIntersection::Points(hits) => {
+            ExactCurveCurveIntersection::Points(hits) => {
                 assert!(!hits.is_empty());
-                for pair in hits.windows(2) {
-                    assert!(pair[0].first_param <= pair[1].first_param, "{hits:?}");
+                // Sorted by first parameter when every hit stores one.
+                if hits.iter().all(|h| h.first_parameter.is_some()) {
+                    for pair in hits.windows(2) {
+                        assert!(
+                            pair[0].first_parameter <= pair[1].first_parameter,
+                            "{hits:?}"
+                        );
+                    }
                 }
                 for hit in hits {
-                    assert!(
-                        near(a.eval_point(hit.first_param), hit.point),
-                        "{hit:?} off {a:?}"
-                    );
-                    assert!(
-                        near(b.eval_point(hit.second_param), hit.point),
-                        "{hit:?} off {b:?}"
-                    );
+                    if let Some(t) = hit.first_parameter {
+                        assert!(near(a.eval_point(t), hit.point), "{hit:?} off {a:?}");
+                    }
+                    if let Some(t) = hit.second_parameter {
+                        assert!(near(b.eval_point(t), hit.point), "{hit:?} off {b:?}");
+                    }
+                    assert!(near(a.eval_point(a.parameter_of(hit.point)), hit.point));
+                    assert!(near(b.eval_point(b.parameter_of(hit.point)), hit.point));
                     assert!(hit.multiplicity >= 1);
                 }
             }
-            CurveCurveIntersection::Coincident => {
+            ExactCurveCurveIntersection::Coincident => {
                 for p in samples(a) {
                     assert!(
                         distance_to(b, p) <= TOL.confusion,
@@ -1561,7 +1638,7 @@ mod tests {
                     );
                 }
             }
-            CurveCurveIntersection::Empty | CurveCurveIntersection::NotAnalytic => {}
+            ExactCurveCurveIntersection::Empty | ExactCurveCurveIntersection::NotAnalytic => {}
         }
     }
 
@@ -1575,11 +1652,14 @@ mod tests {
         );
         for a in &ellipses {
             for b in &ellipses {
-                let ab = a.intersect(b, TOL);
-                let ba = b.intersect(a, TOL);
+                let ab = a.intersect_exact(b, TOL);
+                let ba = b.intersect_exact(a, TOL);
                 assert_curve_curve_valid(&ab, a, b);
                 match (&ab, &ba) {
-                    (CurveCurveIntersection::Points(h1), CurveCurveIntersection::Points(h2)) => {
+                    (
+                        ExactCurveCurveIntersection::Points(h1),
+                        ExactCurveCurveIntersection::Points(h2),
+                    ) => {
                         assert_eq!(h1.len(), h2.len(), "{ab:?} vs {ba:?}");
                         for h in h1 {
                             assert!(
@@ -1603,12 +1683,12 @@ mod tests {
         let mut compared = 0;
         for a in &curves() {
             for b in &curves() {
-                let hits = match a.intersect(b, TOL) {
-                    CurveCurveIntersection::Points(hits) => hits,
-                    CurveCurveIntersection::Empty => InlineList::new(),
+                let hits = match a.intersect_exact(b, TOL) {
+                    ExactCurveCurveIntersection::Points(hits) => hits,
+                    ExactCurveCurveIntersection::Empty => InlineList::new(),
                     _ => continue,
                 };
-                let numeric = intersect_curve_curve(a, b, TOL);
+                let numeric = search_curve_curve(a, b, TOL);
                 let close = |p: Point3D, q: Point3D| {
                     p.distance(q) <= 1e-6 * (1.0 + p.distance(Point3D::ORIGIN))
                 };
@@ -1619,7 +1699,16 @@ mod tests {
                     );
                 }
                 for h in hits.iter().filter(|h| {
-                    h.multiplicity == 1 && window(a, h.first_param) && window(b, h.second_param)
+                    h.multiplicity == 1
+                        && window(
+                            a,
+                            h.first_parameter.unwrap_or_else(|| a.parameter_of(h.point)),
+                        )
+                        && window(
+                            b,
+                            h.second_parameter
+                                .unwrap_or_else(|| b.parameter_of(h.point)),
+                        )
                 }) {
                     assert!(
                         numeric.iter().any(|n| close(h.point, n.point)),
@@ -1637,15 +1726,16 @@ mod tests {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let crossing = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         let grazing = Line3D::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::X).unwrap();
-        let multiplicities = |hits: crate::CurveCurveHits| -> Vec<u32> {
-            hits.iter().map(|h| h.multiplicity).collect()
-        };
+        let multiplicities =
+            |hits: crate::intersect::curve_curve_hull::CurveCurveHits| -> Vec<u32> {
+                hits.iter().map(|h| h.multiplicity).collect()
+            };
         assert_eq!(
-            multiplicities(intersect_curve_curve(&crossing, &circle, TOL)),
+            multiplicities(search_curve_curve(&crossing, &circle, TOL)),
             [1, 1]
         );
         assert_eq!(
-            multiplicities(intersect_curve_curve(&grazing, &circle, TOL)),
+            multiplicities(search_curve_curve(&grazing, &circle, TOL)),
             [2]
         );
     }
@@ -1653,8 +1743,8 @@ mod tests {
     #[test]
     fn test_curve_curve_multiplicity_marks_only_tangency() {
         let multiplicities = |a: ElementaryCurve, b: ElementaryCurve| -> Vec<u32> {
-            match a.intersect(&b, TOL) {
-                CurveCurveIntersection::Points(hits) => {
+            match a.intersect_exact(&b, TOL) {
+                ExactCurveCurveIntersection::Points(hits) => {
                     hits.iter().map(|h| h.multiplicity).collect()
                 }
                 other => panic!("expected hits, got {other:?}"),
@@ -1708,8 +1798,8 @@ mod tests {
     fn test_curve_curve_intersection_holds_four_hits() {
         let a = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 1.5).unwrap();
         let b = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Y, 3.0, 1.5).unwrap();
-        let CurveCurveIntersection::Points(hits) =
-            ElementaryCurve::from(a).intersect(&ElementaryCurve::from(b), TOL)
+        let ExactCurveCurveIntersection::Points(hits) =
+            ElementaryCurve::from(a).intersect_exact(&ElementaryCurve::from(b), TOL)
         else {
             panic!("expected hits");
         };
@@ -1726,7 +1816,8 @@ mod tests {
             Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0)
                 .unwrap()
                 .into();
-        let CurveCurveIntersection::Points(hits) = parabola.intersect(&hyperbola, TOL) else {
+        let ExactCurveCurveIntersection::Points(hits) = parabola.intersect_exact(&hyperbola, TOL)
+        else {
             panic!("expected the parabola to cross the hyperbola");
         };
         assert_eq!(hits.len(), 2);
@@ -1739,7 +1830,7 @@ mod tests {
             Circle3D::new(Point3D::new(0.0, 0.0, 1.0), Vector3D::Y, 5f64.sqrt())
                 .unwrap()
                 .into();
-        let CurveCurveIntersection::Points(hits) = flat.intersect(&upright, TOL) else {
+        let ExactCurveCurveIntersection::Points(hits) = flat.intersect_exact(&upright, TOL) else {
             panic!("expected hits");
         };
         assert_eq!(hits.len(), 2);
@@ -1759,82 +1850,16 @@ mod tests {
         );
         let line = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
         assert_eq!(
-            bspline.intersect(&line, TOL),
-            CurveCurveIntersection::NotAnalytic
+            bspline.intersect_exact(&line, TOL),
+            ExactCurveCurveIntersection::NotAnalytic
         );
         assert_eq!(
-            line.intersect(&bspline, TOL),
-            CurveCurveIntersection::NotAnalytic
+            line.intersect_exact(&bspline, TOL),
+            ExactCurveCurveIntersection::NotAnalytic
         );
         assert_eq!(
-            line.intersect(&line, TOL),
-            CurveCurveIntersection::Coincident
-        );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn test_deprecated_curve_curve_methods_match_the_trait() {
-        let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
-        let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-        let ellipse = Ellipse3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::Y, 3.0, 1.5).unwrap();
-        let parabola = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
-        let hyperbola =
-            Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0, 1.0).unwrap();
-        assert_eq!(line.intersect_line(&line, TOL), line.intersect(&line, TOL));
-        assert_eq!(
-            line.intersect_circle(&circle, TOL),
-            line.intersect(&circle, TOL)
-        );
-        assert_eq!(
-            line.intersect_ellipse(&ellipse, TOL),
-            line.intersect(&ellipse, TOL)
-        );
-        assert_eq!(
-            line.intersect_parabola(&parabola, TOL),
-            line.intersect(&parabola, TOL)
-        );
-        assert_eq!(
-            line.intersect_hyperbola(&hyperbola, TOL),
-            line.intersect(&hyperbola, TOL)
-        );
-        assert_eq!(
-            circle.intersect_circle(&circle, TOL),
-            circle.intersect(&circle, TOL)
-        );
-        assert_eq!(
-            circle.intersect_ellipse(&ellipse, TOL),
-            circle.intersect(&ellipse, TOL)
-        );
-        assert_eq!(
-            circle.intersect_parabola(&parabola, TOL),
-            circle.intersect(&parabola, TOL)
-        );
-        assert_eq!(
-            circle.intersect_hyperbola(&hyperbola, TOL),
-            circle.intersect(&hyperbola, TOL)
-        );
-        assert_eq!(
-            ellipse.intersect_ellipse(&ellipse, TOL),
-            ellipse.intersect(&ellipse, TOL)
-        );
-        let line2 = Line2D::new(Point2D::new(-5.0, 0.0), Vector2D::new(1.0, 0.0)).unwrap();
-        let circle2 = Circle2D::new(Point2D::new(0.0, 0.0), 2.0).unwrap();
-        assert_eq!(
-            line2.intersect_line(&line2, TOL),
-            line2.intersect(&line2, TOL)
-        );
-        assert_eq!(
-            line2.intersect_circle(&circle2, TOL),
-            line2.intersect(&circle2, TOL)
-        );
-        assert_eq!(
-            circle2.intersect_circle(&circle2, TOL),
-            circle2.intersect(&circle2, TOL)
-        );
-        assert_eq!(
-            circle2.intersect(&line2, TOL),
-            line2.intersect(&circle2, TOL)
+            line.intersect_exact(&line, TOL),
+            ExactCurveCurveIntersection::Coincident
         );
     }
 
@@ -1971,7 +1996,9 @@ mod tests {
             ];
             for curve in &curves {
                 for surface in &surfaces {
-                    if let CurveSurfaceIntersection::Points(list) = curve.intersect(surface, TOL) {
+                    if let ExactCurveSurfaceIntersection::Points(list) =
+                        curve.intersect_exact(surface, TOL)
+                    {
                         for h in list.iter() {
                             in_bounds(curve, h.parameter);
                             hits += 1;
@@ -1981,14 +2008,18 @@ mod tests {
                 }
                 for other in &others {
                     for (first, second, swapped) in [(curve, other, false), (other, curve, true)] {
-                        if let CurveCurveIntersection::Points(list) = first.intersect(second, TOL) {
+                        if let ExactCurveCurveIntersection::Points(list) =
+                            first.intersect_exact(second, TOL)
+                        {
                             for h in list.iter() {
-                                let t = if swapped {
-                                    h.second_param
+                                let stored = if swapped {
+                                    h.second_parameter
                                 } else {
-                                    h.first_param
+                                    h.first_parameter
                                 };
-                                in_bounds(curve, t);
+                                if let Some(t) = stored {
+                                    in_bounds(curve, t);
+                                }
                                 hits += 1;
                             }
                         }
@@ -2020,8 +2051,8 @@ mod tests {
             ElementaryCurve::from(circle),
             ElementaryCurve::from(ellipse),
         ] {
-            let params = |surface: ElementarySurface| match curve.intersect(&surface, TOL) {
-                CurveSurfaceIntersection::Points(list) => {
+            let params = |surface: ElementarySurface| match curve.intersect_exact(&surface, TOL) {
+                ExactCurveSurfaceIntersection::Points(list) => {
                     list.iter().map(|h| h.parameter).collect::<Vec<_>>()
                 }
                 other => panic!("expected hits, got {other:?}"),

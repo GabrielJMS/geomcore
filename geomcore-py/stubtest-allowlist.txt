@@ -1,0 +1,5 @@
+# PyO3 fills both the forward and the reflected slot (__radd__, __rsub__) of
+# each binary operator from one implementation. The reflected wrappers are not
+# a separate API: the stubs type the forward operators only.
+geomcore\.(Point2D|Point3D|Vector2D|Vector3D)\.__radd__
+geomcore\.(Point2D|Point3D|Vector2D|Vector3D)\.__rsub__

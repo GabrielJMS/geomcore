@@ -70,13 +70,25 @@ ones before them. If you'd like to help with any of it, see
   deviations. B-spline intersections and extrema pruned with Bézier hulls,
   reporting whether their search was complete. Faster evaluation, fitting
   and projection.
+- **0.33–0.35** — Isoparametric curves `u_iso` / `v_iso` on every
+  surface, in Rust and Python. Point coincidence within the confusion
+  tolerance; exact value equality in Python.
+- **0.36** — `a.intersect(&b)` answers every pair of curves and
+  surfaces, B-splines and trimmed curves included: exact when a closed
+  form exists, numeric otherwise, and the result says which method ran
+  and whether every hit was found. The typed exact path becomes
+  `intersect_exact`. Marching seeds from exact iso-curve intersections,
+  so curves far along unbounded surfaces are found, and runs to the
+  model-size cube. Projections give the closest point. Python results
+  are objects holding their operands, Python exceptions mirror the Rust
+  errors, and the bindings cover the Rust API.
 
 ## Next
 
 1. **Marching intersection** — trace through points where the two
-   surfaces touch, and find isolated loops smaller than the seed grid on
-   surfaces other than B-splines (two B-spline surfaces already find them
-   from overlapping patch pairs, #30).
+   surfaces touch, and find isolated loops smaller than the iso-curve
+   spacing on surfaces other than B-splines (two B-spline surfaces
+   already find them from overlapping patch pairs, #30).
 2. **Hosted documentation** — tutorials on the docs site, and a Python
    API reference generated from docstrings.
 

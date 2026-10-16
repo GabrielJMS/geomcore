@@ -8,7 +8,8 @@ use super::pieces::{
     CurvePieces, Pool, apart_along, bounding_box, box_size, dot, euclidean, meets_at_most_once,
     net_normal, norm, sub,
 };
-use super::{Completeness, CurveSurfaceHit};
+use super::results::sort_by_known_parameter;
+use super::{Completeness, CurveSurfaceHit, curve_surface_multiplicity};
 use crate::curves::BSplineCurve3D;
 use crate::math::boxtree::{Aabb, boxes_apart};
 use crate::math::solve_3x3;
@@ -19,36 +20,11 @@ use std::ops::Deref;
 
 /// The hits of a numeric curve–surface intersection, ordered by curve
 /// parameter, and whether they are all of them (see
-/// [`intersect_curve_surface`](crate::intersect_curve_surface)).
+/// [`search_curve_surface`](crate::search_curve_surface)).
 ///
 /// It reads as the slice of its hits.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{BSplineCurve3D, BSplineSurface, Point3D, Tolerance, intersect_curve_surface};
-/// let poles = vec![
-///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
-///     vec![Point3D::new(2.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0)],
-/// ];
-/// let (knots, mults) = (vec![0.0, 1.0], vec![2, 2]);
-/// let square = BSplineSurface::new(
-///     1, 1, poles, knots.clone(), mults.clone(), knots.clone(), mults.clone(), false, false,
-/// )
-/// .unwrap();
-/// let ends = vec![Point3D::new(0.5, 1.0, -1.0), Point3D::new(1.5, 1.0, 1.0)];
-/// let segment = BSplineCurve3D::new(1, ends, knots, mults, false).unwrap();
-/// let hits = intersect_curve_surface(&segment, &square, Tolerance::DEFAULT);
-/// // Both are B-splines: the search proves there is no other hit.
-/// assert!(hits.is_complete());
-/// assert_eq!(hits.len(), 1);
-/// assert!(hits[0].point.distance(Point3D::new(1.0, 1.0, 0.0)) < 1e-12);
-/// for hit in &hits {
-///     assert!((hit.curve_param - 0.5).abs() < 1e-12);
-/// }
-/// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveSurfaceHits {
+pub(crate) struct CurveSurfaceHits {
     pub(super) hits: Vec<CurveSurfaceHit>,
     pub(super) completeness: Completeness<CurveSurfaceRegion>,
 }
@@ -95,67 +71,21 @@ impl CurveSurfaceHits {
                 self.hits.push(hit);
             }
         }
-        self.hits
-            .sort_by(|a, b| a.curve_param.total_cmp(&b.curve_param));
-    }
-
-    /// The hits, ordered by curve parameter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
-    /// assert_eq!(hits.hits().len(), 2);
-    /// ```
-    pub fn hits(&self) -> &[CurveSurfaceHit] {
-        &self.hits
+        sort_by_known_parameter(&mut self.hits, |hit| hit.curve_parameter);
     }
 
     /// The hits, ordered by curve parameter, without the completeness.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// let hits: Vec<_> = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT).into_hits();
-    /// assert!(hits[0].curve_param < hits[1].curve_param);
-    /// ```
     pub fn into_hits(self) -> Vec<CurveSurfaceHit> {
         self.hits
     }
 
     /// Whether the hits are all of them, and if not, why and where hits
     /// may be missing.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Completeness, Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// let hits = intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT);
-    /// assert_eq!(hits.completeness(), &Completeness::Sampled);
-    /// ```
     pub fn completeness(&self) -> &Completeness<CurveSurfaceRegion> {
         &self.completeness
     }
 
     /// Whether the hits are all of them ([`Completeness::Complete`]).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Line3D, Point3D, Sphere, Tolerance, Vector3D, intersect_curve_surface};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
-    /// // Sampled hits are not proven complete.
-    /// assert!(!intersect_curve_surface(&line, &sphere, Tolerance::DEFAULT).is_complete());
-    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
@@ -197,7 +127,7 @@ impl<'a> IntoIterator for &'a CurveSurfaceHits {
 ///
 /// ```
 /// use geomcore::{
-///     BSplineCurve3D, BSplineSurface, Completeness, Point3D, Tolerance, intersect_curve_surface,
+///     BSplineCurve3D, BSplineSurface, Completeness, Intersect, Point3D, Tolerance,
 /// };
 /// let poles = vec![
 ///     vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 2.0, 0.0)],
@@ -215,8 +145,8 @@ impl<'a> IntoIterator for &'a CurveSurfaceHits {
 ///     Point3D::new(1.5, 1.0, 1.0),
 /// ];
 /// let parabola = BSplineCurve3D::new(2, poles, knots, vec![3, 3], false).unwrap();
-/// let hits = intersect_curve_surface(&parabola, &square, Tolerance::DEFAULT);
-/// let Completeness::Incomplete { regions, .. } = hits.completeness() else {
+/// let result = parabola.intersect(&square, Tolerance::DEFAULT);
+/// let Completeness::Incomplete { regions, .. } = result.completeness() else {
 ///     panic!("a tangent contact never separates");
 /// };
 /// assert_eq!(regions.len(), 1);
@@ -715,9 +645,14 @@ impl<'a> Search<'a> {
             return None;
         }
         let hit = CurveSurfaceHit {
-            curve_param: t,
-            surface_params: (u, v),
+            curve_parameter: Some(t),
+            surface_parameters: Some((u, v)),
             point,
+            multiplicity: {
+                let (_, tangent) = self.curve.eval_d1(t);
+                let (_, [su, sv]) = self.surface.eval_d1(u, v);
+                curve_surface_multiplicity(tangent, su.cross(sv), point, self.tol)
+            },
         };
         self.found.push((hit, distance));
         Some(point)
@@ -739,7 +674,7 @@ impl<'a> Search<'a> {
                 hits.push(hit);
             }
         }
-        hits.sort_by(|a, b| a.curve_param.total_cmp(&b.curve_param));
+        sort_by_known_parameter(&mut hits, |hit| hit.curve_parameter);
         hits
     }
 }
@@ -750,7 +685,7 @@ mod tests {
     use crate::Point3D;
     use crate::curves::{Curve3D, ParametricCurve3D, TrimmedCurve3D};
     use crate::intersect::curve_surface::sampled_curve_surface;
-    use crate::intersect::{IncompleteReason, intersect_curve_surface};
+    use crate::intersect::{IncompleteReason, search_curve_surface};
     use crate::surfaces::Surface;
 
     const TOL: Tolerance = Tolerance::DEFAULT;
@@ -865,14 +800,18 @@ mod tests {
         let (lo, hi) = curve.bounds();
         let ((u0, u1), (v0, v1)) = (surface.u_bounds(), surface.v_bounds());
         for hit in hits {
-            let (u, v) = hit.surface_params;
-            assert!((lo..=hi).contains(&hit.curve_param), "{hit:?}");
+            let (u, v) = hit.surface_parameters.unwrap();
+            assert!((lo..=hi).contains(&hit.curve_parameter.unwrap()), "{hit:?}");
             assert!((u0..=u1).contains(&u) && (v0..=v1).contains(&v), "{hit:?}");
-            assert!(hit.point.distance(curve.eval_point(hit.curve_param)) < 1e-12);
+            assert!(
+                hit.point
+                    .distance(curve.eval_point(hit.curve_parameter.unwrap()))
+                    < 1e-12
+            );
             assert!(hit.point.distance(surface.eval_point(u, v)) <= TOL.confusion);
         }
         for pair in hits.windows(2) {
-            assert!(pair[0].curve_param < pair[1].curve_param);
+            assert!(pair[0].curve_parameter < pair[1].curve_parameter);
             assert!(pair[0].point.distance(pair[1].point) > TOL.confusion.sqrt());
         }
     }
@@ -890,7 +829,7 @@ mod tests {
         let periodic = curve.period().is_some();
         let sampled: Vec<_> = sampled_curve_surface(curve, surface, TOL)
             .into_iter()
-            .filter(|h| periodic || (lo - 1e-9..=hi + 1e-9).contains(&h.curve_param))
+            .filter(|h| periodic || (lo - 1e-9..=hi + 1e-9).contains(&h.curve_parameter.unwrap()))
             .collect();
         assert_eq!(found.len(), sampled.len(), "{found:#?}\n{sampled:#?}");
         for hit in &sampled {
@@ -961,7 +900,7 @@ mod tests {
             let ray = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
             let hits = assert_matches_sampled(&ray, &cylinder);
             assert_eq!(hits.len(), 1);
-            assert!((hits[0].curve_param - 0.5).abs() < 1e-12);
+            assert!((hits[0].curve_parameter.unwrap() - 0.5).abs() < 1e-12);
             assert!((hits[0].point.z - 0.5).abs() < 1e-12);
         }
     }
@@ -986,7 +925,7 @@ mod tests {
         let ring = periodic_loop();
         let hits = assert_matches_sampled(&ring, &surface);
         assert!(hits.len() >= 8);
-        assert!(hits.iter().all(|h| h.curve_param < 8.0));
+        assert!(hits.iter().all(|h| h.curve_parameter.unwrap() < 8.0));
     }
 
     #[test]
@@ -999,13 +938,17 @@ mod tests {
         let wrapped = |t: f64| if t < 6.5 { t + 8.0 } else { t };
         let expected: Vec<f64> = all
             .iter()
-            .map(|h| wrapped(h.curve_param))
+            .map(|h| wrapped(h.curve_parameter.unwrap()))
             .filter(|&t| t <= 9.5)
             .collect();
         assert!(expected.iter().any(|&t| t < 8.0) && expected.iter().any(|&t| t > 8.0));
         assert_eq!(hits.len(), expected.len());
         for hit in &hits {
-            assert!(expected.iter().any(|&t| (t - hit.curve_param).abs() < 1e-9));
+            assert!(
+                expected
+                    .iter()
+                    .any(|&t| (t - hit.curve_parameter.unwrap()).abs() < 1e-9)
+            );
         }
     }
 
@@ -1049,7 +992,7 @@ mod tests {
             let ray = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
             let hits = assert_matches_sampled(&ray, &tube);
             assert_eq!(hits.len(), 1);
-            let (u, _) = hits[0].surface_params;
+            let (u, _) = hits[0].surface_parameters.unwrap();
             assert!((0.0..6.0).contains(&u));
         }
         // Through the seam, slanting either way across it.
@@ -1062,7 +1005,7 @@ mod tests {
             let hits = assert_matches_sampled(&line, &tube);
             assert_eq!(hits.len(), 1, "{hits:#?}");
             assert!(hits[0].point.distance(seam) < 1e-12);
-            let (u, v) = hits[0].surface_params;
+            let (u, v) = hits[0].surface_parameters.unwrap();
             assert!(u.min(6.0 - u) < 1e-9 && (v - 0.5).abs() < 1e-9, "{u} {v}");
         }
     }
@@ -1085,30 +1028,36 @@ mod tests {
         let curve = zigzag();
         let all = assert_matches_sampled(&curve, &surface);
         assert!(all.len() >= 6);
-        for (first, last) in [(0.7, 2.9), (1.0, 5.0), (all[2].curve_param, 6.0)] {
+        for (first, last) in [
+            (0.7, 2.9),
+            (1.0, 5.0),
+            (all[2].curve_parameter.unwrap(), 6.0),
+        ] {
             let expected: Vec<_> = all
                 .iter()
-                .filter(|h| (first - 1e-9..=last + 1e-9).contains(&h.curve_param))
+                .filter(|h| (first - 1e-9..=last + 1e-9).contains(&h.curve_parameter.unwrap()))
                 .collect();
             let borrowed = TrimmedCurve3D::new(&curve, first, last).unwrap();
             let owned = TrimmedCurve3D::new(curve.clone(), first, last).unwrap();
             for hits in [
                 assert_matches_sampled(&borrowed, &surface),
                 assert_matches_sampled(&owned, &surface),
-                intersect_curve_surface(&owned, &Surface::from(&surface), TOL).into_hits(),
+                search_curve_surface(&owned, &Surface::from(&surface), TOL).into_hits(),
             ] {
                 assert_eq!(hits.len(), expected.len());
                 for (hit, want) in hits.iter().zip(&expected) {
-                    assert!((hit.curve_param - want.curve_param).abs() < 1e-9);
+                    assert!(
+                        (hit.curve_parameter.unwrap() - want.curve_parameter.unwrap()).abs() < 1e-9
+                    );
                 }
             }
         }
-        let enums = intersect_curve_surface(
+        let enums = search_curve_surface(
             &Curve3D::BSpline(curve.clone()),
             &Surface::from(&surface),
             TOL,
         );
-        assert_eq!(enums, intersect_curve_surface(&curve, &surface, TOL));
+        assert_eq!(enums, search_curve_surface(&curve, &surface, TOL));
     }
 
     fn segment(from: Point3D, to: Point3D) -> BSplineCurve3D {
@@ -1155,8 +1104,8 @@ mod tests {
             BSplineCurve3D::new(1, poles, vec![0.0, 1.0, 2.0], vec![2, 1, 2], false).unwrap();
         let hits = assert_matches_sampled(&curve, &surface);
         assert_eq!(hits.len(), 1);
-        assert!((hits[0].curve_param - 1.0).abs() < 1e-12);
-        let (u, v) = hits[0].surface_params;
+        assert!((hits[0].curve_parameter.unwrap() - 1.0).abs() < 1e-12);
+        let (u, v) = hits[0].surface_parameters.unwrap();
         assert!((u - 1.0).abs() < 1e-12 && (v - 2.0).abs() < 1e-12);
     }
 
@@ -1180,8 +1129,8 @@ mod tests {
             assert_on_both(&hits, &curve, &plane);
             let half = 0.5 * (depth / (1.0 + depth)).sqrt();
             assert_eq!(hits.len(), 2, "{hits:?}");
-            assert!((hits[0].curve_param - (0.5 - half)).abs() < 1e-9);
-            assert!((hits[1].curve_param - (0.5 + half)).abs() < 1e-9);
+            assert!((hits[0].curve_parameter.unwrap() - (0.5 - half)).abs() < 1e-9);
+            assert!((hits[1].curve_parameter.unwrap() - (0.5 + half)).abs() < 1e-9);
         }
     }
 
@@ -1207,7 +1156,7 @@ mod tests {
             && within(p.z, (lo.z, hi.z))
     }
 
-    /// Asserts the hits of `intersect_curve_surface` include the sampled
+    /// Asserts the hits of `search_curve_surface` include the sampled
     /// search's, every one lying on both shapes.
     #[track_caller]
     fn assert_sampled_hits_kept(
@@ -1216,7 +1165,11 @@ mod tests {
         plane: &BSplineSurface,
     ) {
         for hit in hits {
-            assert!(hit.point.distance(curve.eval_point(hit.curve_param)) < 1e-12);
+            assert!(
+                hit.point
+                    .distance(curve.eval_point(hit.curve_parameter.unwrap()))
+                    < 1e-12
+            );
             assert!(plane.project_point(hit.point, TOL).distance <= TOL.confusion);
         }
         for hit in sampled_curve_surface(curve, plane, TOL) {
@@ -1244,7 +1197,7 @@ mod tests {
                 "{t}: {regions:?}"
             );
         }
-        let hits = intersect_curve_surface(&lying, &plane, TOL);
+        let hits = search_curve_surface(&lying, &plane, TOL);
         assert_eq!(hits.completeness(), found.completeness());
         assert!(!hits.is_empty());
         assert_sampled_hits_kept(&hits, &lying, &plane);
@@ -1270,7 +1223,7 @@ mod tests {
             assert!(t0 <= 0.5 + 1e-3 && t1 >= 0.5 - 1e-3, "{region:?}");
             assert!(t1 - t0 < 1e-2, "{region:?}");
         }
-        let hits = intersect_curve_surface(&tangent, &plane, TOL);
+        let hits = search_curve_surface(&tangent, &plane, TOL);
         assert_eq!(hits.completeness(), found.completeness());
         assert_eq!(hits.len(), 1, "{hits:?}");
         assert!(hits[0].point.distance(contact) < TOL.confusion.sqrt());
@@ -1321,9 +1274,11 @@ mod tests {
             assert_on_both(&found, &curve, &surface);
             // Every hit is either found or within a region.
             for hit in &all {
-                let held = regions
-                    .iter()
-                    .any(|r| holds(r, hit.curve_param, hit.surface_params, hit.point));
+                let held = regions.iter().any(|r| {
+                    let curve_parameter = hit.curve_parameter.unwrap();
+                    let surface_parameters = hit.surface_parameters.unwrap();
+                    holds(r, curve_parameter, surface_parameters, hit.point)
+                });
                 let near = |h: &CurveSurfaceHit| h.point.distance(hit.point) < 1e-9;
                 assert!(held || found.iter().any(near), "{hit:?}: {regions:#?}");
             }
@@ -1339,7 +1294,7 @@ mod tests {
         let mut rng = Lcg(11);
         for _ in 0..8 {
             let curve = rising(&mut rng, true);
-            let hits = intersect_curve_surface(&curve, &surface, TOL);
+            let hits = search_curve_surface(&curve, &surface, TOL);
             assert!(hits.is_complete(), "{:?}", hits.completeness());
             assert!(!hits.is_empty());
         }
@@ -1350,15 +1305,15 @@ mod tests {
         let surface = wavy(false);
         let cylinder = crate::Cylinder::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
         let ray = segment(Point3D::new(0.0, 0.0, 0.5), Point3D::new(4.0, 0.0, 0.5));
-        let hits = intersect_curve_surface(&ray, &cylinder, TOL);
+        let hits = search_curve_surface(&ray, &cylinder, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 1);
         let line = crate::Line3D::new(Point3D::new(2.0, 2.0, -1.0), crate::Vector3D::Z).unwrap();
-        let hits = intersect_curve_surface(&line, &surface, TOL);
+        let hits = search_curve_surface(&line, &surface, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 1);
         let axis = crate::Line3D::new(Point3D::new(1.0, 0.0, 0.0), crate::Vector3D::X).unwrap();
-        let hits = intersect_curve_surface(&axis, &cylinder, TOL);
+        let hits = search_curve_surface(&axis, &cylinder, TOL);
         assert_eq!(hits.completeness(), &Completeness::Sampled);
         assert_eq!(hits.len(), 2);
     }

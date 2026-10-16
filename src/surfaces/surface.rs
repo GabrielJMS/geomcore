@@ -1,7 +1,7 @@
 //! [`ParametricSurface`] trait and the [`Surface`] enum adaptor unifying the
 //! concrete analytic surface types.
 
-use crate::curves::{BSplineCurve3D, Curve3D};
+use crate::curves::Curve3D;
 use crate::surfaces::{BSplineSurface, Cone, Cylinder, Plane, Sphere, SurfaceIsoError, Torus};
 use crate::{Point3D, SurfaceProjection, Tolerance, Vector3D};
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -130,8 +130,8 @@ pub trait ParametricSurface {
 
     /// The surface as a B-spline, or `None` for any other surface.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to work on the B-spline's polynomial patches. Default
     /// implementation: `None`.
     ///
@@ -162,8 +162,8 @@ pub trait ParametricSurface {
     /// The surface as an elementary surface, or `None` for any other
     /// surface.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to convert the surface to an exact B-spline when the curve is one.
     /// Default implementation: `None`.
     ///
@@ -433,25 +433,6 @@ pub enum Surface {
 }
 
 impl Surface {
-    /// Marching intersection with another surface: traces the meeting
-    /// curves numerically and fits [`BSplineCurve3D`] approximants.
-    ///
-    /// See [`marching_intersection`](crate::marching_intersection) for the
-    /// algorithm, scope, and approximation guarantees.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Plane, Point3D, Surface, Tolerance, Vector3D};
-    /// let xy = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
-    /// let zy = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::X).unwrap());
-    /// let curves = xy.intersect_marching(&zy, Tolerance::DEFAULT);
-    /// assert_eq!(curves.len(), 1);
-    /// ```
-    pub fn intersect_marching(&self, other: &Surface, tol: Tolerance) -> Vec<BSplineCurve3D> {
-        crate::marching_intersection(self, other, tol)
-    }
-
     /// The `u` isoparametric curve at `u`: `u` fixed, running along `v`,
     /// so `u_iso(u).eval_point(t)` is `eval_point(u, t)` for every `t`.
     /// A line on a plane, cylinder or cone, a circle on a sphere or torus,
@@ -761,6 +742,64 @@ pub enum ElementarySurface {
 }
 
 impl Surface {
+    /// Projects `point` onto the surface: the closest parameters, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::Surface;
+    /// use geomcore::{Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// let surface = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let projection = surface.project_point(Point3D::new(1.0, 2.0, 3.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point3D::new(1.0, 2.0, 0.0));
+    /// assert_eq!(projection.distance, 3.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        ParametricSurface::project_point(self, point, tol)
+    }
+
+    /// Projects each point in `points` onto the surface.
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// The surface parameters `(u, v)` of the point of the surface closest
+    /// to `point`.
+    ///
+    /// An elementary surface uses its closed form (see
+    /// [`ElementarySurface::parameters_of`]). A B-spline projects the point
+    /// with [`Tolerance::DEFAULT`] and returns the projection's parameters;
+    /// call [`project_point`](Surface::project_point) to choose the
+    /// tolerance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::Surface;
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let surface = Surface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let (u, v) = surface.parameters_of(Point3D::new(1.0, 2.0, 0.0));
+    /// let back = geomcore::ParametricSurface::eval_point(&surface, u, v);
+    /// assert!(back.distance(Point3D::new(1.0, 2.0, 0.0)) < 1e-12);
+    /// ```
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
+        match self {
+            Surface::Plane(s) => s.parameters_of(point),
+            Surface::Cylinder(s) => s.parameters_of(point),
+            Surface::Cone(s) => s.parameters_of(point),
+            Surface::Sphere(s) => s.parameters_of(point),
+            Surface::Torus(s) => s.parameters_of(point),
+            Surface::BSpline(s) => {
+                let projection = s.project_point(point, Tolerance::DEFAULT);
+                (projection.u, projection.v)
+            }
+        }
+    }
+
     /// The surface as an [`ElementarySurface`], or `None` for a B-spline.
     pub fn as_elementary(&self) -> Option<ElementarySurface> {
         match self {
@@ -771,6 +810,56 @@ impl Surface {
             Surface::Torus(s) => Some(ElementarySurface::Torus(*s)),
             Surface::BSpline(_) => None,
         }
+    }
+}
+
+impl ElementarySurface {
+    /// The surface parameters `(u, v)` of the point of the surface closest
+    /// to `point`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ElementarySurface;
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    ///
+    /// let surface = ElementarySurface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let (u, v) = surface.parameters_of(Point3D::new(1.0, 2.0, 0.0));
+    /// let back = geomcore::ParametricSurface::eval_point(&surface, u, v);
+    /// assert!(back.distance(Point3D::new(1.0, 2.0, 0.0)) < 1e-12);
+    /// ```
+    pub fn parameters_of(&self, point: Point3D) -> (f64, f64) {
+        match self {
+            ElementarySurface::Plane(s) => s.parameters_of(point),
+            ElementarySurface::Cylinder(s) => s.parameters_of(point),
+            ElementarySurface::Cone(s) => s.parameters_of(point),
+            ElementarySurface::Sphere(s) => s.parameters_of(point),
+            ElementarySurface::Torus(s) => s.parameters_of(point),
+        }
+    }
+
+    /// Projects `point` onto the surface: the closest parameters, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ElementarySurface;
+    /// use geomcore::{Plane, Point3D, Tolerance, Vector3D};
+    ///
+    /// let surface = ElementarySurface::from(Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap());
+    /// let projection = surface.project_point(Point3D::new(1.0, 2.0, 3.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point3D::new(1.0, 2.0, 0.0));
+    /// assert_eq!(projection.distance, 3.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> SurfaceProjection {
+        ParametricSurface::project_point(self, point, tol)
+    }
+
+    /// Projects each point in `points` onto the surface.
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<SurfaceProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 }
 

@@ -50,27 +50,69 @@
 //!
 //! # Intersections
 //!
-//! [`Intersect`] is the one entry point for exact intersections. Between
-//! two concrete types it returns the pair's own result, in either order:
+//! `a.intersect(&b, tol)` ([`Intersect`]) is the entry point. It works for
+//! every supported pair of curves and surfaces, in either order: it solves
+//! the pair exactly when a closed form exists and runs a numeric search
+//! otherwise, and the result says which method ran and whether it found
+//! every hit.
 //!
 //! ```
-//! use geomcore::{Intersect, PlaneSphereIntersection, Point3D, Vector3D};
+//! use geomcore::curves::TrimmedCurve3D;
+//! use geomcore::{
+//!     BSplineCurve3D, Completeness, Intersect, IntersectionMethod, Line3D, Point3D, Sphere,
+//!     Tolerance, Vector3D,
+//! };
+//!
+//! let tol = Tolerance::DEFAULT;
+//! let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+//!
+//! // A line through a sphere has a closed form: exact, and so complete.
+//! let line = Line3D::new(Point3D::new(0.0, 0.0, -5.0), Vector3D::Z).unwrap();
+//! let result = line.intersect(&sphere, tol);
+//! assert_eq!(result.method(), IntersectionMethod::Exact);
+//! assert_eq!(result.completeness(), &Completeness::Complete);
+//! let parameters: Vec<Option<f64>> = result.hits().iter().map(|h| h.curve_parameter).collect();
+//! assert_eq!(parameters, [Some(3.0), Some(7.0)]);
+//! // A parameter the solver did not compute is `None`: the caller reads it
+//! // from the point, here the sphere's.
+//! assert_eq!(result.hits()[0].surface_parameters, None);
+//! let (_, latitude) = sphere.parameters_of(result.hits()[0].point);
+//! assert!((latitude + std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+//!
+//! // A segment keeps only the hits in its range.
+//! let segment = TrimmedCurve3D::new(line, 0.0, 5.0).unwrap();
+//! assert_eq!(segment.intersect(&sphere, tol).hits().len(), 1);
+//!
+//! // A B-spline has no closed form: the numeric search runs.
+//! let poles = vec![Point3D::new(0.0, 0.0, -5.0), Point3D::new(0.0, 0.0, 5.0)];
+//! let spline = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
+//! let result = spline.intersect(&sphere, tol);
+//! assert_eq!(result.method(), IntersectionMethod::Numeric);
+//! assert_eq!(result.hits().len(), 2);
+//! ```
+//!
+//! [`IntersectExact::intersect_exact`] is the typed fast path: between two
+//! concrete types it returns the pair's own exact result. It recovers no
+//! parameters it does not need and never falls back to a numeric search.
+//!
+//! ```
+//! use geomcore::{IntersectExact, PlaneSphereIntersection, Point3D, Vector3D};
 //! use geomcore::surfaces::{Plane, Sphere};
 //!
 //! let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
 //! let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
 //! let tol = geomcore::Tolerance::default();
-//! let PlaneSphereIntersection::Circle(circle) = plane.intersect(&sphere, tol) else {
+//! let PlaneSphereIntersection::Circle(circle) = plane.intersect_exact(&sphere, tol) else {
 //!     panic!("expected a circle");
 //! };
-//! assert_eq!(sphere.intersect(&plane, tol), PlaneSphereIntersection::Circle(circle));
+//! assert_eq!(sphere.intersect_exact(&plane, tol), PlaneSphereIntersection::Circle(circle));
 //! ```
 //!
 //! Between [`surfaces::Surface`] or [`curves::Curve3D`] values it returns
-//! a general result such as [`SurfaceIntersection`], which reports
-//! `NotAnalytic` for a B-spline or a pair without a closed form; the
-//! numeric functions ([`marching_intersection`],
-//! [`intersect_curve_surface`], [`intersect_curve_curve`]) cover those.
+//! a general result such as [`ExactSurfaceIntersection`], which reports
+//! `NotAnalytic` for a B-spline or a pair without a closed form, where
+//! [`Intersect::intersect`] runs the numeric search. Two surfaces without
+//! a closed form are traced numerically by the same call.
 //!
 //! # Extending the kernel
 //!
@@ -78,6 +120,10 @@
 //! [`curves::ParametricCurve3D`] (or [`curves::ParametricCurve2D`]) and
 //! [`surfaces::ParametricSurface`] respectively, without touching the
 //! existing dispatch code in [`curves::Curve3D`]/[`surfaces::Surface`].
+//! Such types are intersected by [`intersect_curve_curve`] and
+//! [`intersect_curve_surface`], which run the numeric search on any
+//! curve and surface and return the same result types as
+//! [`Intersect::intersect`], solved numerically.
 #![warn(missing_docs)]
 
 pub(crate) mod tol {
@@ -100,7 +146,8 @@ pub mod curves;
 pub mod discretization;
 /// Axis and frame placement types.
 pub mod frame;
-/// Exact intersection result types.
+/// Intersections of curves and surfaces: the routed [`Intersect`], the
+/// typed exact [`IntersectExact`], and their results.
 pub mod intersect;
 /// Internal numerical toolbox (polynomial roots, Newton, Brent).
 pub(crate) mod math;
@@ -135,8 +182,7 @@ pub use discretization::{
     Discretize2D, Discretize3D,
 };
 pub use frame::{Axis2D, Axis3D, Frame2D, Frame3D, FrameConstructionError};
-pub use intersect::intersect_curve_surface;
-pub use intersect::marching_intersection;
+pub use intersect::curve_curve_extrema;
 pub use intersect::{
     CircleCircle2DIntersection, CircleCircle3DIntersection, CircleSurfaceIntersection,
     ConeConeIntersection, ConeCylinderIntersection, ConicConicIntersection, ConicSurfaceHit,
@@ -150,15 +196,22 @@ pub use intersect::{
     TorusPlaneIntersection, TorusSphereIntersection, TorusTorusIntersection,
 };
 pub use intersect::{
-    Completeness, CurveCurveExtrema, CurveCurveHits, CurveCurveRegion, CurveSurfaceHits,
-    CurveSurfaceRegion, IncompleteReason,
+    Completeness, CurveCurveExtrema, CurveCurveRegion, CurveSurfaceRegion, IncompleteReason,
 };
 pub use intersect::{
-    CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
+    CurveCurveHit2D, CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap,
+    CurveSurfaceIntersection, IntersectionCurve, IntersectionMethod, SurfaceSurfaceIntersection,
+    SurfaceSurfaceRegion,
 };
-pub use intersect::{curve_curve_extrema, intersect_curve_curve};
+pub use intersect::{
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
+    InlineList, Intersect, IntersectExact,
+};
+pub use intersect::{intersect_curve_curve, intersect_curve_surface};
+#[cfg(test)]
+pub(crate) use intersect::{search_curve_curve, search_curve_surface};
 pub use point::{Point2D, Point3D};
-pub use projection::{CurveProjection, SurfaceProjection};
+pub use projection::{CurveProjection, CurveProjection2D, SurfaceProjection};
 pub use surfaces::{
     BSplineSurface, Cone, ConeConstructionError, Cylinder, CylinderConstructionError,
     ElementarySurface, ParametricSurface, Plane, PlaneConstructionError, Sphere,

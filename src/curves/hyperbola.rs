@@ -2,7 +2,7 @@
 //! center+two-points construction, a thin wrapper over
 //! [`crate::curve_math::analytic`].
 
-use crate::Intersect;
+use crate::IntersectExact;
 use crate::curve_math::analytic;
 use crate::curves::{Curve2D, ParametrizeError};
 use crate::frame::frame_error;
@@ -448,9 +448,11 @@ impl Hyperbola3D {
         if s2 == 0.0 {
             // Both radii zero: the branch is its centre, every parameter
             // equally close.
-            let distance = self.center().distance(point);
+            let centre = self.center();
+            let distance = centre.distance(point);
             return vec![CurveProjection {
                 parameter: 0.0,
+                point: centre,
                 distance: projection::snap_distance(distance, tol.confusion),
             }];
         }
@@ -472,9 +474,11 @@ impl Hyperbola3D {
             .filter(|r| r.value > 0.0)
             .map(|r| {
                 let t = polish_root(g, dg, r.value.ln(), 8);
-                let distance = self.eval_point(t).distance(point);
+                let foot = self.eval_point(t);
+                let distance = foot.distance(point);
                 CurveProjection {
                     parameter: t,
+                    point: foot,
                     distance: projection::snap_distance(distance, tol.confusion),
                 }
             })
@@ -514,34 +518,6 @@ impl Hyperbola3D {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
-    /// Intersects with a [`Plane`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_plane(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
-        self.intersect(plane, tol)
-    }
-
-    /// Intersects with a [`Sphere`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_sphere(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
-        self.intersect(sphere, tol)
-    }
-
-    /// Intersects with a [`Cylinder`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cylinder(
-        &self,
-        cylinder: &Cylinder,
-        tol: Tolerance,
-    ) -> ConicSurfaceIntersection {
-        self.intersect(cylinder, tol)
-    }
-
-    /// Intersects with a [`Cone`]; see its [`Intersect`] implementation.
-    #[deprecated(since = "0.29.0", note = "use `Intersect::intersect`")]
-    pub fn intersect_cone(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
-        self.intersect(cone, tol)
-    }
-
     /// Computes the exact 2D representation of this hyperbola in a surface's
     /// parameter space.
     ///
@@ -571,7 +547,7 @@ impl Hyperbola3D {
     }
 }
 
-impl Intersect<Plane> for Hyperbola3D {
+impl IntersectExact<Plane> for Hyperbola3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this hyperbola with a plane: quadratic in `u = e^t`.
@@ -579,101 +555,101 @@ impl Intersect<Plane> for Hyperbola3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{ConicSurfaceIntersection, Hyperbola3D, Plane, Point3D, Tolerance, Vector3D};
     /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
     /// let plane = Plane::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::X).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match hyperbola.intersect(&plane, tol) {
+    /// match hyperbola.intersect_exact(&plane, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert_eq!(hits.len(), 1),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, plane: &Plane, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, plane, tol)
     }
 }
 
-impl Intersect<Sphere> for Hyperbola3D {
+impl IntersectExact<Sphere> for Hyperbola3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this hyperbola with a sphere; hits verified on the
-    /// sphere. See [`Hyperbola3D::intersect_plane`] for the calling shape.
+    /// sphere. See [`Hyperbola3D::intersect_exact`] for the calling shape.
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{ConicSurfaceIntersection, Hyperbola3D, Point3D, Sphere, Tolerance, Vector3D};
     /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
     /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match hyperbola.intersect(&sphere, tol) {
+    /// match hyperbola.intersect_exact(&sphere, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, sphere: &Sphere, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, sphere, tol)
     }
 }
 
-impl Intersect<Cylinder> for Hyperbola3D {
+impl IntersectExact<Cylinder> for Hyperbola3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this hyperbola with a cylinder; hits verified on the
     /// cylinder. See
-    /// [`Hyperbola3D::intersect_plane`] for the calling shape.
+    /// [`Hyperbola3D::intersect_exact`] for the calling shape.
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{ConicSurfaceIntersection, Cylinder, Hyperbola3D, Point3D, Tolerance, Vector3D};
     /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
     /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match hyperbola.intersect(&cylinder, tol) {
+    /// match hyperbola.intersect_exact(&cylinder, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, cylinder: &Cylinder, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, cylinder, tol)
     }
 }
 
-impl Intersect<Cone> for Hyperbola3D {
+impl IntersectExact<Cone> for Hyperbola3D {
     type Output = ConicSurfaceIntersection;
 
     /// Intersects this hyperbola with a cone; hits verified on
     /// either nappe.
-    /// See [`Hyperbola3D::intersect_plane`] for the calling shape.
+    /// See [`Hyperbola3D::intersect_exact`] for the calling shape.
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::Intersect;
+    /// use geomcore::IntersectExact;
     /// use geomcore::{Cone, ConicSurfaceIntersection, Frame3D, Hyperbola3D, Point3D, Tolerance, Vector3D};
     /// let hyperbola = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
     /// let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
     /// let tol = Tolerance::DEFAULT;
-    /// match hyperbola.intersect(&cone, tol) {
+    /// match hyperbola.intersect_exact(&cone, tol) {
     ///     ConicSurfaceIntersection::Hits(hits) => assert!(!hits.is_empty()),
     ///     _ => panic!("expected hits"),
     /// }
     /// ```
-    fn intersect(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
+    fn intersect_exact(&self, cone: &Cone, tol: Tolerance) -> ConicSurfaceIntersection {
         intersect_conic_quadric(self, cone, tol)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::Intersect;
+    use crate::IntersectExact;
     use crate::{
         Cone, ConicSurfaceIntersection, Frame3D, Hyperbola3D, HyperbolaConstructionError, Point3D,
-        Tolerance, Vector3D, intersect_curve_surface,
+        Tolerance, Vector3D, search_curve_surface,
     };
 
     // ---- construction ----
@@ -909,13 +885,13 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 2.0, 1.0).unwrap();
         let cone = Cone::from_frame(Frame3D::WORLD, 0.4, 2.0).unwrap();
-        match h.intersect(&cone, tol) {
+        match h.intersect_exact(&cone, tol) {
             ConicSurfaceIntersection::Hits(hits) => {
                 assert!(!hits.is_empty());
                 for h in &hits {
                     assert!(cone.contains(h.point, tol));
                 }
-                let generic = intersect_curve_surface(&h, &cone, tol);
+                let generic = search_curve_surface(&h, &cone, tol);
                 assert_eq!(generic.len(), hits.len());
             }
             _ => panic!("expected hits"),

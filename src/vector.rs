@@ -353,23 +353,30 @@ impl Vector3D {
     /// ```
     /// use std::f64::consts::PI;
     /// use geomcore::Vector3D;
-    /// let angle = Vector3D::X.angle_with_ref(Vector3D::Y, Vector3D::Z);
+    /// let angle = Vector3D::X.angle_with_reference(Vector3D::Y, Vector3D::Z);
     /// assert!((angle - PI / 2.0).abs() < 1e-10);
     /// ```
-    pub fn angle_with_ref(self, other: Vector3D, reference: Vector3D) -> f64 {
-        let cross_prod = self.cross(other);
-        let dot_prod = self.dot(other);
+    pub fn angle_with_reference(self, other: Vector3D, reference: Vector3D) -> f64 {
+        let cross_product = self.cross(other);
+        let dot_product = self.dot(other);
 
         match reference.normalized() {
-            Some(ref_normalized) => {
-                let signed_mag = ref_normalized.dot(cross_prod);
-                signed_mag.atan2(dot_prod)
+            Some(unit_reference) => {
+                let signed_magnitude = unit_reference.dot(cross_product);
+                signed_magnitude.atan2(dot_product)
             }
             None => {
                 // Degenerate reference: sign is unknowable; collapse to the unsigned 0/π case
-                f64::atan2(0.0, dot_prod)
+                f64::atan2(0.0, dot_product)
             }
         }
+    }
+
+    /// Signed angle from self to other around reference: the former name
+    /// of [`Vector3D::angle_with_reference`].
+    #[deprecated(since = "0.36.0", note = "renamed `angle_with_reference`")]
+    pub fn angle_with_ref(self, other: Vector3D, reference: Vector3D) -> f64 {
+        self.angle_with_reference(other, reference)
     }
 }
 
@@ -566,23 +573,23 @@ mod tests {
     }
 
     #[test]
-    fn test_vector3_angle_with_ref() {
-        let angle = Vector3D::X.angle_with_ref(Vector3D::Y, Vector3D::Z);
+    fn test_vector3_angle_with_reference() {
+        let angle = Vector3D::X.angle_with_reference(Vector3D::Y, Vector3D::Z);
         assert!((angle - PI / 2.0).abs() < 1e-10);
 
-        let angle2 = Vector3D::Y.angle_with_ref(Vector3D::X, Vector3D::Z);
+        let angle2 = Vector3D::Y.angle_with_reference(Vector3D::X, Vector3D::Z);
         assert!((angle2 + PI / 2.0).abs() < 1e-10);
     }
 
     #[test]
-    fn test_vector3_angle_with_ref_degenerate_reference() {
+    fn test_vector3_angle_with_reference_degenerate_reference() {
         // Degenerate reference (zero vector): should return unsigned angle
         // For orthogonal vectors (dot product = 0), result should be 0
-        let angle1 = Vector3D::X.angle_with_ref(Vector3D::Y, Vector3D::ZERO);
+        let angle1 = Vector3D::X.angle_with_reference(Vector3D::Y, Vector3D::ZERO);
         assert!((angle1 - 0.0).abs() < 1e-10);
 
         // For opposite vectors (dot product < 0), result should be π
-        let angle2 = Vector3D::X.angle_with_ref(-Vector3D::X, Vector3D::ZERO);
+        let angle2 = Vector3D::X.angle_with_reference(-Vector3D::X, Vector3D::ZERO);
         assert!((angle2 - PI).abs() < 1e-10);
     }
 

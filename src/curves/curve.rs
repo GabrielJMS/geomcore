@@ -127,8 +127,8 @@ pub trait ParametricCurve3D {
     /// of a trimmed B-spline, of which the curve is the piece over
     /// [`bounds`](Self::bounds). `None` for any other curve.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to work on the B-spline's polynomial pieces. Default
     /// implementation: `None`.
     ///
@@ -154,8 +154,8 @@ pub trait ParametricCurve3D {
     /// basis of a trimmed elementary curve, of which the curve is the
     /// piece over [`bounds`](Self::bounds). `None` for any other curve.
     ///
-    /// Numeric algorithms such as
-    /// [`intersect_curve_surface`](crate::intersect_curve_surface) use it
+    /// The numeric search behind
+    /// [`Intersect::intersect`](crate::Intersect::intersect) uses it
     /// to convert the curve to an exact B-spline when the other shape is
     /// one. Default implementation: `None`.
     ///
@@ -684,6 +684,66 @@ pub enum ElementaryCurve {
 }
 
 impl Curve3D {
+    /// Projects `point` onto the curve: the closest parameter, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::Curve3D;
+    /// use geomcore::{Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let curve = Curve3D::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+    /// let projection = curve.project_point(Point3D::new(2.0, 1.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point3D::new(2.0, 0.0, 0.0));
+    /// assert_eq!(projection.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        match self {
+            Curve3D::Line(c) => c.project_point(point, tol),
+            Curve3D::Circle(c) => c.project_point(point, tol),
+            Curve3D::Ellipse(c) => c.project_point(point, tol),
+            Curve3D::Parabola(c) => c.project_point(point, tol),
+            Curve3D::Hyperbola(c) => c.project_point(point, tol),
+            Curve3D::BSpline(c) => c.project_point(point, tol),
+        }
+    }
+
+    /// Projects each point in `points` onto the curve.
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// The parameter of the point of the curve closest to `point`.
+    ///
+    /// An elementary curve uses its closed form (see
+    /// [`ElementaryCurve::parameter_of`]). A B-spline projects the point
+    /// with [`Tolerance::DEFAULT`] and returns the projection's parameter;
+    /// call [`project_point`](Curve3D::project_point) to choose the
+    /// tolerance.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::Curve3D;
+    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    ///
+    /// let curve = Curve3D::from(Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
+    /// let parameter = curve.parameter_of(Point3D::new(0.0, 2.0, 0.0));
+    /// assert!((parameter - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    /// ```
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
+        match self {
+            Curve3D::Line(c) => c.parameter_of(point),
+            Curve3D::Circle(c) => c.parameter_of(point),
+            Curve3D::Ellipse(c) => c.parameter_of(point),
+            Curve3D::Parabola(c) => c.parameter_of(point),
+            Curve3D::Hyperbola(c) => c.parameter_of(point),
+            Curve3D::BSpline(c) => c.project_point(point, Tolerance::DEFAULT).parameter,
+        }
+    }
+
     /// The curve as an [`ElementaryCurve`], or `None` for a B-spline.
     pub fn as_elementary(&self) -> Option<ElementaryCurve> {
         match self {
@@ -693,6 +753,71 @@ impl Curve3D {
             Curve3D::Parabola(c) => Some(ElementaryCurve::Parabola(*c)),
             Curve3D::Hyperbola(c) => Some(ElementaryCurve::Hyperbola(*c)),
             Curve3D::BSpline(_) => None,
+        }
+    }
+}
+
+impl ElementaryCurve {
+    /// The parameter of the point of the curve closest to `point`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ElementaryCurve;
+    /// use geomcore::{Line3D, Point3D, Vector3D};
+    ///
+    /// let curve = ElementaryCurve::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+    /// assert_eq!(curve.parameter_of(Point3D::new(2.0, 0.0, 0.0)), 2.0);
+    /// ```
+    pub fn parameter_of(&self, point: Point3D) -> f64 {
+        match self {
+            ElementaryCurve::Line(c) => c.parameter_of(point),
+            ElementaryCurve::Circle(c) => c.parameter_of(point),
+            ElementaryCurve::Ellipse(c) => c.parameter_of(point),
+            ElementaryCurve::Parabola(c) => c.parameter_of(point),
+            ElementaryCurve::Hyperbola(c) => c.parameter_of(point),
+        }
+    }
+
+    /// Projects `point` onto the curve: the closest parameter, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ElementaryCurve;
+    /// use geomcore::{Line3D, Point3D, Tolerance, Vector3D};
+    ///
+    /// let curve = ElementaryCurve::from(Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap());
+    /// let projection = curve.project_point(Point3D::new(2.0, 1.0, 0.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point3D::new(2.0, 0.0, 0.0));
+    /// assert_eq!(projection.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point3D, tol: Tolerance) -> CurveProjection {
+        match self {
+            ElementaryCurve::Line(c) => c.project_point(point, tol),
+            ElementaryCurve::Circle(c) => c.project_point(point, tol),
+            ElementaryCurve::Ellipse(c) => c.project_point(point, tol),
+            ElementaryCurve::Parabola(c) => c.project_point(point, tol),
+            ElementaryCurve::Hyperbola(c) => c.project_point(point, tol),
+        }
+    }
+
+    /// Projects each point in `points` onto the curve.
+    pub fn project_points(&self, points: &[Point3D], tol: Tolerance) -> Vec<CurveProjection> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+}
+
+impl PointExtrema3D for ElementaryCurve {
+    fn extrema(&self, point: Point3D, tol: Tolerance) -> Vec<CurveProjection> {
+        match self {
+            ElementaryCurve::Line(c) => PointExtrema3D::extrema(c, point, tol),
+            ElementaryCurve::Circle(c) => PointExtrema3D::extrema(c, point, tol),
+            ElementaryCurve::Ellipse(c) => PointExtrema3D::extrema(c, point, tol),
+            ElementaryCurve::Parabola(c) => PointExtrema3D::extrema(c, point, tol),
+            ElementaryCurve::Hyperbola(c) => PointExtrema3D::extrema(c, point, tol),
         }
     }
 }

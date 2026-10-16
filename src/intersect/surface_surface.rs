@@ -225,7 +225,7 @@ mod tests {
     use crate::Point3D;
     use crate::curves::BSplineCurve3D;
     use crate::intersect::marching::grid_marching;
-    use crate::intersect::marching_intersection;
+    use crate::intersect::marching::marched_curves;
 
     const TOL: Tolerance = Tolerance::DEFAULT;
 
@@ -375,7 +375,7 @@ mod tests {
     fn test_bspline_pairs_trace_every_curve_once() {
         let a = wavy();
         for b in crossing_wavy() {
-            let curves = marching_intersection(&a, &b, TOL);
+            let curves = marched_curves(&a, &b, TOL);
             assert!(patch_pairs(&a, &b, TOL).complete);
             assert_on_both_once(&curves, &a, &b);
             assert_every_crossing(&curves, &a, &b);
@@ -399,7 +399,7 @@ mod tests {
         let sheet = graph(&THIRDS, |x, y| 0.1 * (x - 2.1) + 0.005 * y.sin(), None);
         let spacing = 5.0 / 24.0;
         for (a, b) in [(&bump, &sheet), (&sheet, &bump)] {
-            let curves = marching_intersection(a, b, TOL);
+            let curves = marched_curves(a, b, TOL);
             assert_on_both_once(&curves, a, b);
             assert_eq!(curves.len(), 2, "{curves:?}");
             let loops: Vec<_> = curves.iter().filter(|c| is_closed(c)).collect();
@@ -434,7 +434,7 @@ mod tests {
             None,
         );
         for curves in [
-            marching_intersection(&sheet, &flat, TOL),
+            marched_curves(&sheet, &flat, TOL),
             grid_marching(&sheet, &flat, TOL),
         ] {
             assert_on_both_once(&curves, &sheet, &flat);
@@ -454,7 +454,7 @@ mod tests {
         let weight = |i: usize, j: usize| 0.6 + 0.2 * ((3 * i + 5 * j) % 4) as f64;
         let a = graph(&THIRDS, |x, y| (0.25 * x * y).sin(), Some(&weight));
         for b in crossing_wavy().into_iter().take(2) {
-            let curves = marching_intersection(&a, &b, TOL);
+            let curves = marched_curves(&a, &b, TOL);
             assert_on_both_once(&curves, &a, &b);
             let grid = grid_marching(&a, &b, TOL);
             assert!(!grid.is_empty());
@@ -498,7 +498,7 @@ mod tests {
         // A tilted sheet over `[-2.5, 2.5]^2`, through the tube.
         let shift = crate::Transform::translation(crate::Vector3D::new(-2.5, -2.5, 0.0));
         let sheet = graph(&THIRDS, |x, y| 0.2 * x + 0.1 * (y - 2.5), None).transformed(shift);
-        let curves = marching_intersection(&tube, &sheet, TOL);
+        let curves = marched_curves(&tube, &sheet, TOL);
         assert_on_both_once(&curves, &tube, &sheet);
         assert_eq!(curves.len(), 1);
         assert!(is_closed(&curves[0]));
@@ -513,6 +513,6 @@ mod tests {
         assert!(!patch_pairs(&a, &a, TOL).complete);
         // The grid seeds take over; the surfaces are tangent everywhere,
         // so nothing traces.
-        assert!(marching_intersection(&a, &a, TOL).is_empty());
+        assert!(marched_curves(&a, &a, TOL).is_empty());
     }
 }

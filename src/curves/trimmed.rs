@@ -9,7 +9,7 @@ use crate::curves::{
     BSplineCurve3D, Curve2D, Curve3D, ElementaryCurve, Line2D, Line3D, LineConstructionError,
     ParametricCurve2D, ParametricCurve3D, PointExtrema2D, PointExtrema3D,
 };
-use crate::projection::CurveProjection;
+use crate::projection::{CurveProjection, CurveProjection2D};
 use crate::{Point2D, Point3D, Tolerance, Vector2D, Vector3D};
 use std::fmt;
 
@@ -70,42 +70,69 @@ fn check_range(
     }
 }
 
+/// What [`restrict`] needs from a projection, so one implementation serves
+/// the 2D and 3D trimmed curves.
+trait RestrictableProjection: Copy {
+    fn parameter(&self) -> f64;
+    fn distance(&self) -> f64;
+    /// The same projection moved to the equivalent `parameter` one or more
+    /// periods away: the point and distance are unchanged.
+    fn with_parameter(self, parameter: f64) -> Self;
+}
+
+impl RestrictableProjection for CurveProjection {
+    fn parameter(&self) -> f64 {
+        self.parameter
+    }
+    fn distance(&self) -> f64 {
+        self.distance
+    }
+    fn with_parameter(self, parameter: f64) -> Self {
+        CurveProjection { parameter, ..self }
+    }
+}
+
+impl RestrictableProjection for CurveProjection2D {
+    fn parameter(&self) -> f64 {
+        self.parameter
+    }
+    fn distance(&self) -> f64 {
+        self.distance
+    }
+    fn with_parameter(self, parameter: f64) -> Self {
+        CurveProjection2D { parameter, ..self }
+    }
+}
+
 /// The extrema of a trimmed curve from those of its basis: the basis
 /// extrema inside `[first, last]` (shifted by whole periods into it), then
 /// the two ends, ordered by ascending distance. On a tie the interior
 /// extremum wins, and an end at the parameter of a kept extremum is
-/// dropped.
-fn restrict(
-    extrema: Vec<CurveProjection>,
+/// dropped. `end_projection` builds the projection at an end parameter.
+fn restrict<P: RestrictableProjection>(
+    extrema: Vec<P>,
     (first, last): (f64, f64),
     period: Option<f64>,
-    end_distance: impl Fn(f64) -> f64,
+    end_projection: impl Fn(f64) -> P,
     tol: Tolerance,
-) -> Vec<CurveProjection> {
-    let mut out: Vec<CurveProjection> = extrema
+) -> Vec<P> {
+    let mut out: Vec<P> = extrema
         .into_iter()
         .filter_map(|e| {
             let t = match period {
-                Some(period) => first + (e.parameter - first).rem_euclid(period),
-                None => e.parameter,
+                Some(period) => first + (e.parameter() - first).rem_euclid(period),
+                None => e.parameter(),
             };
-            (first <= t && t <= last).then_some(CurveProjection {
-                parameter: t,
-                distance: e.distance,
-            })
+            (first <= t && t <= last).then(|| e.with_parameter(t))
         })
         .collect();
     for t in [first, last] {
-        let same =
-            |e: &CurveProjection| (e.parameter - t).abs() <= tol.parametric * (1.0 + t.abs());
+        let same = |e: &P| (e.parameter() - t).abs() <= tol.parametric * (1.0 + t.abs());
         if !out.iter().any(same) {
-            out.push(CurveProjection {
-                parameter: t,
-                distance: end_distance(t),
-            });
+            out.push(end_projection(t));
         }
     }
-    out.sort_by(|x, y| x.distance.total_cmp(&y.distance));
+    out.sort_by(|x, y| x.distance().total_cmp(&y.distance()));
     out
 }
 
@@ -373,17 +400,19 @@ impl<C: PointExtrema3D> PointExtrema3D for TrimmedCurve3D<C> {
         if !point.is_finite() {
             return Vec::new();
         }
-        let end_distance = |t: f64| {
-            crate::projection::snap_distance(
-                self.basis.eval_point(t).distance(point),
-                tol.confusion,
-            )
+        let end_projection = |t: f64| {
+            let foot = self.basis.eval_point(t);
+            CurveProjection {
+                parameter: t,
+                point: foot,
+                distance: crate::projection::snap_distance(foot.distance(point), tol.confusion),
+            }
         };
         restrict(
             self.basis.extrema(point, tol),
             (self.first, self.last),
             self.basis.period(),
-            end_distance,
+            end_projection,
             tol,
         )
     }
@@ -499,15 +528,15 @@ impl<C: PointExtrema2D> TrimmedCurve2D<C> {
     ///
     /// A query point with a non-finite coordinate projects to a NaN
     /// parameter and distance.
-    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection {
+    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection2D {
         PointExtrema2D::extrema(self, point, tol)
             .into_iter()
             .next()
-            .unwrap_or(CurveProjection::UNDEFINED)
+            .unwrap_or(CurveProjection2D::UNDEFINED)
     }
 
     /// Projects each point in `points` onto the trimmed curve.
-    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection> {
+    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection2D> {
         points.iter().map(|&p| self.project_point(p, tol)).collect()
     }
 
@@ -562,21 +591,23 @@ impl<C: ParametricCurve2D> ParametricCurve2D for TrimmedCurve2D<C> {
 }
 
 impl<C: PointExtrema2D> PointExtrema2D for TrimmedCurve2D<C> {
-    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection2D> {
         if !point.is_finite() {
             return Vec::new();
         }
-        let end_distance = |t: f64| {
-            crate::projection::snap_distance(
-                self.basis.eval_point(t).distance(point),
-                tol.confusion,
-            )
+        let end_projection = |t: f64| {
+            let foot = self.basis.eval_point(t);
+            CurveProjection2D {
+                parameter: t,
+                point: foot,
+                distance: crate::projection::snap_distance(foot.distance(point), tol.confusion),
+            }
         };
         restrict(
             self.basis.extrema(point, tol),
             (self.first, self.last),
             self.basis.period(),
-            end_distance,
+            end_projection,
             tol,
         )
     }
@@ -585,7 +616,7 @@ impl<C: PointExtrema2D> PointExtrema2D for TrimmedCurve2D<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intersect::{curve_curve_extrema, intersect_curve_curve, intersect_curve_surface};
+    use crate::intersect::{curve_curve_extrema, search_curve_curve, search_curve_surface};
     use crate::{Circle2D, Circle3D, Ellipse3D, Sphere};
     use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -776,10 +807,10 @@ mod tests {
     fn test_intersect_curve_curve_ignores_hits_outside_the_ranges() {
         let s = TrimmedCurve3D::segment(Point3D::new(-2.0, 0.5, 0.0), Point3D::new(2.0, 0.5, 0.0))
             .unwrap();
-        let full = intersect_curve_curve(&s, &circle(), TOL);
+        let full = search_curve_curve(&s, &circle(), TOL);
         assert_eq!(full.len(), 2);
         let upper_right = TrimmedCurve3D::new(circle(), 0.0, FRAC_PI_2).unwrap();
-        let hits = intersect_curve_curve(&s, &upper_right, TOL);
+        let hits = search_curve_curve(&s, &upper_right, TOL);
         assert_eq!(hits.len(), 1);
         assert!(hits[0].point.x > 0.0);
     }
@@ -790,11 +821,11 @@ mod tests {
         let through =
             TrimmedCurve3D::segment(Point3D::new(-2.0, 0.0, 0.0), Point3D::new(2.0, 0.0, 0.0))
                 .unwrap();
-        assert_eq!(intersect_curve_surface(&through, &sphere, TOL).len(), 2);
+        assert_eq!(search_curve_surface(&through, &sphere, TOL).len(), 2);
         let half = TrimmedCurve3D::segment(Point3D::ORIGIN, Point3D::new(2.0, 0.0, 0.0)).unwrap();
-        let hits = intersect_curve_surface(&half, &sphere, TOL);
+        let hits = search_curve_surface(&half, &sphere, TOL);
         assert_eq!(hits.len(), 1);
-        assert!(close(hits[0].curve_param, 1.0));
+        assert!(close(hits[0].curve_parameter.unwrap(), 1.0));
     }
 
     #[test]
@@ -804,8 +835,8 @@ mod tests {
             .unwrap();
         let ext = curve_curve_extrema(&a, &b, TOL);
         assert!(close(ext[0].distance, 5.0_f64.sqrt()));
-        assert!(close(ext[0].first_param, 1.0));
-        assert!(close(ext[0].second_param, 1.0));
+        assert!(close(ext[0].first_parameter, 1.0));
+        assert!(close(ext[0].second_parameter, 1.0));
     }
 
     // ---- borrowed basis ----
@@ -838,8 +869,8 @@ mod tests {
             TrimmedCurve3D::segment(Point3D::new(2.0, -3.0, 0.0), Point3D::new(2.0, 3.0, 0.0))
                 .unwrap();
         assert_eq!(
-            intersect_curve_curve(&borrowed, &line, TOL),
-            intersect_curve_curve(&owned, &line, TOL)
+            search_curve_curve(&borrowed, &line, TOL),
+            search_curve_curve(&owned, &line, TOL)
         );
         assert_eq!(
             curve_curve_extrema(&line, &borrowed, TOL),
@@ -847,8 +878,8 @@ mod tests {
         );
         let sphere = Sphere::new(Point3D::new(2.0, 0.0, 0.0), 1.0).unwrap();
         assert_eq!(
-            intersect_curve_surface(&borrowed, &sphere, TOL),
-            intersect_curve_surface(&owned, &sphere, TOL)
+            search_curve_surface(&borrowed, &sphere, TOL),
+            search_curve_surface(&owned, &sphere, TOL)
         );
 
         let circle = Circle2D::new(Point2D::new(1.0, 1.0), 2.0).unwrap();

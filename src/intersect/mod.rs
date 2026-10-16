@@ -1,17 +1,43 @@
-//! Exact intersection result types.
+//! Intersections of curves and surfaces, and their results.
 //!
-//! [`Intersect::intersect`] on two elementary curves or surfaces returns one
-//! of these enums: the intersecting geometry on success, or an explicit
-//! classification when the pair is tangent, disjoint, parallel, or
-//! coincident. Tangency and coincidence are decided with
-//! [`crate::Tolerance`], so near-degenerate configurations classify
-//! robustly instead of collapsing to noise.
+//! [`Intersect::intersect`] is the entry point: it solves a pair exactly
+//! when a closed form exists and runs a numeric search otherwise. Its
+//! family results ([`CurveCurveIntersection`],
+//! [`CurveCurveIntersection2D`], [`CurveSurfaceIntersection`]) carry the
+//! hits, the overlaps, the method that ran ([`IntersectionMethod`]) and
+//! whether every hit was found ([`Completeness`]); for two surfaces,
+//! [`SurfaceSurfaceIntersection`] carries the curves, the contact points
+//! and whether the surfaces coincide. A hit stores the
+//! parameters the solver computed on its way to the point and leaves the
+//! others `None`, for the caller to recover with the operand's
+//! `parameter_of` or `parameters_of` when it needs them.
+//!
+//! ```
+//! use geomcore::{Circle3D, Completeness, Intersect, IntersectionMethod, Line3D, Point3D};
+//! use geomcore::{Tolerance, Vector3D};
+//!
+//! let line = Line3D::new(Point3D::new(-5.0, 0.0, 0.0), Vector3D::X).unwrap();
+//! let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+//! let result = line.intersect(&circle, Tolerance::DEFAULT);
+//! assert_eq!(result.method(), IntersectionMethod::Exact);
+//! assert_eq!(result.completeness(), &Completeness::Complete);
+//! assert_eq!(result.hits().len(), 2);
+//! ```
+//!
+//! [`IntersectExact::intersect_exact`] is the typed fast path. On two
+//! elementary curves or surfaces it returns one of the pair's own enums:
+//! the intersecting geometry on success, or an explicit classification
+//! when the pair is tangent, disjoint, parallel, or coincident. Tangency
+//! and coincidence are decided with [`crate::Tolerance`], so
+//! near-degenerate configurations classify robustly instead of collapsing
+//! to noise. It recovers no parameters it does not need and never falls
+//! back to a numeric search.
 //!
 //! When the types are only known at run time, the same call on
 //! [`crate::surfaces::Surface`], [`crate::curves::Curve3D`] or their
 //! elementary enums returns a general result instead:
-//! [`SurfaceIntersection`], [`CurveSurfaceIntersection`] or
-//! [`CurveCurveIntersection`].
+//! [`ExactSurfaceIntersection`], [`ExactCurveSurfaceIntersection`] or
+//! [`ExactCurveCurveIntersection`].
 
 use crate::{
     Circle3D, Ellipse3D, Hyperbola3D, Line3D, Parabola3D, Plane, Point2D, Point3D, Vector3D,
@@ -24,20 +50,35 @@ mod curve_curve_hull;
 mod curve_surface;
 mod curve_surface_hull;
 mod dispatch;
+mod inline_or_heap_list;
 mod marching;
 mod mixed;
+mod overlap_runs;
 mod pieces;
+mod results;
+mod routing;
 pub use completeness::{Completeness, IncompleteReason};
 mod surface_surface;
 pub(crate) use conic::{Conic, intersect_conic_conic, intersect_conic_quadric};
-pub use curve_curve::{curve_curve_extrema, intersect_curve_curve};
-pub use curve_curve_hull::{CurveCurveExtrema, CurveCurveHits, CurveCurveRegion};
+pub use curve_curve::curve_curve_extrema;
+pub use curve_curve::intersect_curve_curve;
+#[cfg(test)]
+pub(crate) use curve_curve::search_curve_curve;
+pub use curve_curve_hull::{CurveCurveExtrema, CurveCurveRegion};
 pub use curve_surface::intersect_curve_surface;
-pub use curve_surface_hull::{CurveSurfaceHits, CurveSurfaceRegion};
+#[cfg(test)]
+pub(crate) use curve_surface::search_curve_surface;
+pub use curve_surface_hull::CurveSurfaceRegion;
 pub use dispatch::{
-    CurveCurveIntersection, CurveSurfaceIntersection, InlineList, Intersect, SurfaceIntersection,
+    ExactCurveCurveIntersection, ExactCurveSurfaceIntersection, ExactSurfaceIntersection,
+    InlineList, IntersectExact,
 };
-pub use marching::marching_intersection;
+pub(crate) use results::curve_surface_multiplicity;
+pub use results::{
+    CurveCurveIntersection, CurveCurveIntersection2D, CurveCurveOverlap, CurveSurfaceIntersection,
+    IntersectionCurve, IntersectionMethod, SurfaceSurfaceIntersection, SurfaceSurfaceRegion,
+};
+pub use routing::Intersect;
 
 /// Result of intersecting two planes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -164,11 +205,11 @@ pub enum LineTorusIntersection {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineTorusHit {
     /// Parameter on the line.
-    pub line_param: f64,
+    pub line_parameter: f64,
     /// The hit point.
     pub point: Point3D,
     /// Parameters on the torus.
-    pub surface_params: (f64, f64),
+    pub surface_parameters: (f64, f64),
     /// Root multiplicity (≥ 2 signals tangency).
     pub multiplicity: u32,
 }
@@ -443,9 +484,13 @@ pub enum LineCircle3DIntersection {
 
 /// Result of intersecting two 3D circles.
 ///
-/// Only coplanar pairs admit a closed form (via 2D images in the shared
+/// This typed solver handles coplanar pairs (via 2D images in the shared
 /// plane). Distinct parallel planes are [`CircleCircle3DIntersection::Empty`];
-/// crossing planes report [`CircleCircle3DIntersection::NotAnalytic`].
+/// crossing planes report [`CircleCircle3DIntersection::NotAnalytic`]: they
+/// meet in up to two points, one of which may be a lone crossing, which the
+/// variants here cannot hold. The routed
+/// [`Intersect::intersect`] solves them exactly
+/// as conics, on the line the planes share.
 /// Parameters are omitted (no natural primary curve); recover them with
 /// [`Circle3D::parameter_of`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -458,7 +503,8 @@ pub enum CircleCircle3DIntersection {
     Empty,
     /// Same center, radius, and plane within tolerance.
     Coincident,
-    /// No closed form: the circle planes cross.
+    /// The circle planes cross: no closed form in this typed solver (the
+    /// routed `intersect` solves the pair exactly as conics).
     NotAnalytic,
 }
 
@@ -467,11 +513,11 @@ pub enum CircleCircle3DIntersection {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineConicHit {
     /// Parameter on the line.
-    pub line_param: f64,
+    pub line_parameter: f64,
     /// The hit point.
     pub point: Point3D,
     /// Parameter on the conic.
-    pub conic_param: f64,
+    pub conic_parameter: f64,
 }
 
 /// Result of intersecting a 3D line with an ellipse, parabola, or
@@ -635,10 +681,10 @@ pub enum ConicSurfaceIntersection {
 /// # Examples
 ///
 /// ```
-/// use geomcore::{ConicConicIntersection, Ellipse3D, Frame3D, Hyperbola3D, Intersect, Tolerance};
+/// use geomcore::{ConicConicIntersection, Ellipse3D, Frame3D, Hyperbola3D, IntersectExact, Tolerance};
 /// let ellipse = Ellipse3D::from_frame(Frame3D::WORLD, 3.0, 2.0).unwrap();
 /// let hyperbola = Hyperbola3D::from_frame(Frame3D::WORLD, 1.0, 0.5).unwrap();
-/// match ellipse.intersect(&hyperbola, Tolerance::DEFAULT) {
+/// match ellipse.intersect_exact(&hyperbola, Tolerance::DEFAULT) {
 ///     // The branch x > 0 meets the ellipse at (2.4739, ±1.1314).
 ///     ConicConicIntersection::Hits(hits) => assert_eq!(hits.len(), 2),
 ///     other => panic!("expected two hits, got {other:?}"),
@@ -646,8 +692,9 @@ pub enum ConicSurfaceIntersection {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConicConicIntersection {
-    /// The hits, ordered by parameter on the first conic; a multiplicity
-    /// of 2 or more marks a tangency.
+    /// The hits, ordered by parameter on the first conic when every hit
+    /// stores one; a multiplicity of 2 or more marks a tangency. Only the
+    /// parameter of the conic that was solved for is stored.
     Hits(Vec<CurveCurveHit>),
     /// The two conics are the same curve.
     Coincident,
@@ -660,34 +707,121 @@ pub enum ConicConicIntersection {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveExtremum {
     /// Parameter on the first curve.
-    pub first_param: f64,
+    pub first_parameter: f64,
     /// Parameter on the second curve.
-    pub second_param: f64,
+    pub second_parameter: f64,
     /// Distance between the two points.
     pub distance: f64,
 }
 
 /// One meeting of two 3D curves.
+///
+/// A parameter is stored only when the solver computed it on its way to
+/// the point; the others are `None`, and the caller recovers one with the
+/// curve's `parameter_of(hit.point)` when it needs it.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{Circle3D, Intersect, Point3D, Tolerance, Vector3D};
+///
+/// // Two coplanar circles: the solver finds the points, not the angles.
+/// let first = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+/// let second = Circle3D::new(Point3D::new(2.0, 0.0, 0.0), Vector3D::Z, 2.0).unwrap();
+/// let result = first.intersect(&second, Tolerance::DEFAULT);
+/// let hit = result.hits()[0];
+/// assert_eq!(hit.first_parameter, None);
+/// let angle = first.parameter_of(hit.point);
+/// assert!(first.eval_point(angle).distance(hit.point) < 1e-12);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveHit {
-    /// Parameter on the first curve, within its bounds (on a circle or
-    /// ellipse, a hit at the seam reports the start of the bounds).
-    pub first_param: f64,
-    /// The meeting point (on the first curve; within tolerance of both).
+    /// Parameter on the first curve, in its bounds or the trimmed curve's
+    /// range: the hit lies within `tol.confusion` in space of the range,
+    /// and a hit just beyond an end (the seam included) reports that end.
+    /// `None` when the solver did not compute it; recover it with the
+    /// curve's `parameter_of(hit.point)`.
+    pub first_parameter: Option<f64>,
+    /// Parameter on the second curve, in its bounds or the trimmed curve's
+    /// range, within `tol.confusion` in space of the range (a hit just
+    /// beyond an end reports that end). `None` when the solver did not
+    /// compute it; recover it with the curve's `parameter_of(hit.point)`.
+    pub second_parameter: Option<f64>,
+    /// The meeting point, within tolerance of both curves.
     pub point: Point3D,
-    /// Parameter on the second curve, within its bounds.
-    pub second_param: f64,
     /// 1 where the curves cross, 2 or more where they are tangent.
     pub multiplicity: u32,
 }
 
-/// One transversal meeting of a curve and a surface.
+/// One meeting of two 2D curves.
+///
+/// A parameter is stored only when the solver computed it on its way to
+/// the point (a line's, or a trimmed curve's for its range test); the
+/// others are `None`, and the caller recovers one with the curve's
+/// `parameter_of(hit.point)` when it needs it.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{CurveCurveHit2D, Point2D};
+/// let hit = CurveCurveHit2D {
+///     first_parameter: Some(1.0),
+///     second_parameter: None,
+///     point: Point2D::new(1.0, 0.0),
+///     multiplicity: 1,
+/// };
+/// assert_eq!(hit.multiplicity, 1);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CurveCurveHit2D {
+    /// Parameter on the first curve, in its bounds or the trimmed curve's
+    /// range, within `tol.confusion` in space of the range (a hit just
+    /// beyond an end reports that end). `None` when the solver did not
+    /// compute it; recover it with the curve's `parameter_of(hit.point)`.
+    pub first_parameter: Option<f64>,
+    /// Parameter on the second curve, in its bounds or the trimmed curve's
+    /// range, within `tol.confusion` in space of the range (a hit just
+    /// beyond an end reports that end). `None` when the solver did not
+    /// compute it; recover it with the curve's `parameter_of(hit.point)`.
+    pub second_parameter: Option<f64>,
+    /// The meeting point, within tolerance of both curves.
+    pub point: Point2D,
+    /// 1 where the curves cross, 2 or more where they are tangent.
+    pub multiplicity: u32,
+}
+
+/// One meeting of a curve and a surface.
+///
+/// The numeric search stores every parameter. An exact solver stores the
+/// curve parameter, which it solves for, and leaves the surface
+/// parameters `None`, for the caller to recover with the surface's
+/// `parameters_of(hit.point)` when it needs them.
+///
+/// # Examples
+///
+/// ```
+/// use geomcore::{CurveSurfaceHit, Point3D};
+/// let hit = CurveSurfaceHit {
+///     curve_parameter: Some(2.0),
+///     surface_parameters: None,
+///     point: Point3D::new(2.0, 0.0, 0.0),
+///     multiplicity: 1,
+/// };
+/// assert_eq!(hit.curve_parameter, Some(2.0));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveSurfaceHit {
-    /// Parameter on the curve.
-    pub curve_param: f64,
-    /// Parameters on the surface.
-    pub surface_params: (f64, f64),
+    /// Parameter on the curve, in its bounds or the trimmed curve's range,
+    /// within `tol.confusion` in space of the range (a hit just beyond an
+    /// end reports that end). `None` when the solver did not compute it;
+    /// recover it with the curve's `parameter_of(hit.point)`.
+    pub curve_parameter: Option<f64>,
+    /// Parameters on the surface. `None` when the solver did not compute
+    /// them; recover them with the surface's `parameters_of(hit.point)`.
+    pub surface_parameters: Option<(f64, f64)>,
     /// The meeting point (on the curve; within tolerance of the surface).
     pub point: Point3D,
+    /// 1 where the curve crosses the surface, 2 or more where the curve is
+    /// tangent to it.
+    pub multiplicity: u32,
 }

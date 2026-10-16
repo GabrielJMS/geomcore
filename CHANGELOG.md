@@ -9,6 +9,282 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-15
+
+One breaking release for Rust and Python. `a.intersect(&b, tol)` now
+answers every supported pair of curves and surfaces: exactly when a
+closed form exists, numerically otherwise, and the result says which
+method ran and whether every hit was found (ADR 0011, superseding ADR
+0001). Results describe themselves: every hit has its point, every
+projection its closest point, and Python results are objects instead
+of tuples (ADR 0012). The migration table below lists every renamed or
+removed call.
+
+### Migration
+
+Rust:
+
+| 0.35 | 0.36 |
+|---|---|
+| `a.intersect(&b, tol)` returning the pair's exact enum (`PlaneSphereIntersection`, …) | `a.intersect_exact(&b, tol)` (`use geomcore::IntersectExact`) |
+| `a.intersect(&b, tol)` on `Surface`, `Curve3D` or the elementary enums, returning `SurfaceIntersection`, `CurveSurfaceIntersection`, `CurveCurveIntersection` | `a.intersect_exact(&b, tol)`, returning `ExactSurfaceIntersection`, `ExactCurveSurfaceIntersection`, `ExactCurveCurveIntersection`; or `a.intersect(&b, tol)` for the routed result |
+| `NotAnalytic`, then `marching_intersection(&a, &b, tol)` or `surface.intersect_marching(&other, tol)` | `a.intersect(&b, tol).curves()` (a `SurfaceSurfaceIntersection`; `method()` says `Numeric`) |
+| `intersect_curve_surface(&c, &s, tol)` returning `CurveSurfaceHits` | `c.intersect(&s, tol)` for the crate's types; `intersect_curve_surface` (now returning `CurveSurfaceIntersection`) for types defined outside the crate; read `.hits()` and `.completeness()` |
+| `intersect_curve_curve(&a, &b, tol)` returning `CurveCurveHits` | `a.intersect(&b, tol)`, or `intersect_curve_curve` returning `CurveCurveIntersection` |
+| per-pair methods deprecated in 0.29 (`line.intersect_sphere(&sphere, tol)`, …) | `line.intersect_exact(&sphere, tol)` |
+| `hit.first_param`, `hit.second_param`, `hit.curve_param`, `hit.surface_params` | `hit.first_parameter`, `hit.second_parameter`, `hit.curve_parameter`, `hit.surface_parameters`, each an `Option`; `None` → `curve.parameter_of(hit.point)` / `surface.parameters_of(hit.point)` |
+| `LineTorusHit::line_param`, `surface_params`; `LineConicHit::line_param`, `conic_param`; `CurveCurveExtremum::first_param`, `second_param` | `line_parameter`, `surface_parameters`; `line_parameter`, `conic_parameter`; `first_parameter`, `second_parameter` (plain `f64`) |
+| `projection.parameter` / `(u, v)` then `curve.eval_point(…)` for the closest point | `projection.point` |
+| `project_point`, `project_points` and `PointExtrema2D::extrema` on 2D curves returning `CurveProjection` | the same calls, returning `CurveProjection2D` (with a `Point2D` `point`) |
+| `v.angle_with_ref(other, reference)` (deprecated) | `v.angle_with_reference(other, reference)` |
+
+Python:
+
+| 0.35 | 0.36 |
+|---|---|
+| `kind, payload = a.intersect(b)` | `result = a.intersect(b)`: a `CurveCurveIntersection`, `CurveCurveIntersection2D`, `CurveSurfaceIntersection` or `SurfaceSurfaceIntersection` with `hits`, `overlaps`, `curves`, `contact_points`, `method`, `completeness` |
+| `a.intersect_sphere(b)`, `a.intersect_line(b)`, … | `a.intersect(b)` |
+| `geomcore.intersect_marching(a, b)` | `[piece.curve for piece in a.intersect(b).curves]` |
+| `geomcore.intersect_curve_surface(curve, surface)` → `[(t, (u, v), point)]` | `curve.intersect(surface).hits` → `[CurveSurfaceHit]` with `curve_parameter`, `surface_parameters`, `point`, `multiplicity` |
+| `geomcore.intersect_curve_curve(a, b)` → `[(t1, point, t2)]` | `a.intersect(b).hits` → `[CurveCurveHit]` with `first_parameter`, `second_parameter`, `point`, `multiplicity` |
+| `curve_curve_extrema(a, b)` → `[(t1, t2, distance)]` | `curve_curve_extrema(a, b).minima` → `[CurveCurveExtremum]` with `first_parameter`, `second_parameter`, `distance` |
+| `curve_curve_extrema(curve_a=a, curve_b=b)` | `curve_curve_extrema(first=a, second=b)` |
+| `parametrize_numeric(curve, surface, n=64)` | `parametrize_numeric(curve, surface, sample_count=64)` |
+| `parameter, distance = curve.project_point(p)` | `foot = curve.project_point(p)`: `foot.parameter`, `foot.point`, `foot.distance` |
+| `u, v, distance = surface.project_point(p)` | `foot = surface.project_point(p)`: `foot.u`, `foot.v`, `foot.point`, `foot.distance` |
+| `curve.extrema(p)` → `[(parameter, distance)]` | `curve.extrema(p)` → `[CurveProjection]` |
+| `Vector3D.x()`, `Vector3D.y()`, `Vector3D.z()` | `Vector3D.unit_x()`, `unit_y()`, `unit_z()` (`v.x` is now the component) |
+| `except ValueError` | still works; `except geomcore.ConstructionError` (and the other subclasses of `GeomcoreError`) to tell errors apart |
+
+### Added
+
+- `Intersect<B>::intersect` routes (ADR 0011): for every pair of curves
+  and surfaces, in either order, concrete types, the `Curve3D`,
+  `Curve2D`, `ElementaryCurve`, `Surface` and `ElementarySurface` enums,
+  B-splines and trimmed curves (`TrimmedCurve3D`, `TrimmedCurve2D`), it
+  solves the pair in closed form when one exists and runs the numeric
+  search otherwise: the Bézier-hull search for curve–curve and
+  curve–surface, marching for surface–surface. A pair of concrete types
+  calls its typed solver directly, with no run-time dispatch. Swapping
+  the arguments swaps the parameters in each hit.
+- Family results, structs with accessors: `CurveCurveIntersection`,
+  `CurveCurveIntersection2D`, `CurveSurfaceIntersection` and
+  `SurfaceSurfaceIntersection`. Each has `method()`
+  (`IntersectionMethod::Exact` or `Numeric`), `completeness()`,
+  `is_complete()` and `is_empty()`; the curve results have `hits()` and
+  `overlaps()`, the surface result `curves()`, `contact_points()` and
+  `is_coincident()`. An exact result is always complete. The curve results store up to
+  four hits inline (two in 2D) and spill to the heap beyond; the exact
+  line–torus and conic–surface solvers still allocate.
+- `CurveCurveHit2D`, `CurveCurveOverlap` (a parameter range on each
+  curve plus `same_direction`; a coincidence that crosses either curve's
+  seam is split there, so each range increases in its own curve's
+  parameter), `IntersectionCurve` (a `Curve3D` plus a `tangent` flag)
+  and `SurfaceSurfaceRegion`. `CurveSurfaceIntersection::overlaps()`
+  gives the curve's parameter ranges that lie on the surface.
+- The numeric curve–curve and curve–surface search reports overlaps:
+  where a curve lies on the other operand (a planar B-spline in a plane,
+  a straight B-spline on a line, two B-splines along one line), the hits
+  and regions left along it are joined into an overlap instead of a
+  string of hits, its ends found within `tol.confusion`; the result
+  stays `Incomplete`, with an `Unseparated` region over the overlap.
+- `CurveSurfaceHit::multiplicity` (breaking for code that builds the
+  struct with a literal): 1 where the curve crosses the surface, 2 or
+  more where it is tangent.
+- A trimmed curve is intersected as its basis, then its range applies:
+  a hit is kept when it lies within `tol.confusion` in space of the
+  range (the parameter excess beyond an end times the curve's speed
+  there) and reports that end as its parameter; this holds at every
+  end, the seam of a circle or ellipse included. Overlaps are clipped
+  to the range, and a clipped piece no longer than `tol.confusion` in
+  space is reported as a hit where the curves touch.
+- The closest point on every projection: `CurveProjection::point` and
+  `SurfaceProjection::point` (breaking for code that builds these
+  structs with a literal), and `CurveProjection2D` (with a `Point2D`)
+  for 2D curves.
+- `project_point` and `project_points` as inherent methods on
+  `Curve3D`, `ElementaryCurve`, `Curve2D`, `Surface` and
+  `ElementarySurface`, so no trait import is needed (`Surface` and
+  `ElementarySurface` had them through `ParametricSurface` before; the
+  curve enums did not); `PointExtrema3D` for `ElementaryCurve`.
+- `parameter_of` on `Curve3D`, `Curve2D` and `ElementaryCurve`, and
+  `parameters_of` on `Surface` and `ElementarySurface`: the parameters
+  of a point on a curve or surface held as an enum, by the closed form
+  of an elementary variant; a B-spline projects the point with
+  `Tolerance::DEFAULT`.
+- `ParametricCurve2D::eval_d1` and `eval_d2`, mirroring the 3D trait.
+- Python result classes mirroring Rust: `CurveCurveIntersection`,
+  `CurveCurveIntersection2D`, `CurveSurfaceIntersection`,
+  `SurfaceSurfaceIntersection`, `CurveCurveHit`, `CurveCurveHit2D`,
+  `CurveSurfaceHit`, `CurveCurveOverlap`, `IntersectionCurve`,
+  `Completeness` (`status`, `reason`, `regions`, `is_complete()`),
+  `CompletenessStatus`, `IncompleteReason`, `IntersectionMethod`,
+  `CurveCurveRegion`, `CurveSurfaceRegion`, `SurfaceSurfaceRegion`,
+  `CurveCurveExtrema` and `CurveCurveExtremum`, with read-only
+  properties named as in Rust, reprs and value equality. The enums are
+  hashable and have a `name`; an empty result is falsy. Intersection
+  results and `CurveCurveExtrema` hold their operands as `first` and
+  `second`; `CurveSurfaceIntersection` also names them by role, `curve`
+  and `surface`, whichever was the receiver. The stubs type the operands
+  as unions of the curve or surface classes.
+- Python `intersect` accepts every curve and surface class, B-splines
+  and trimmed curves included, in either order, routed as in Rust.
+- Python exceptions mirror the Rust error types: `GeomcoreError` (a
+  `ValueError`) with `ConstructionError`, `FrameConstructionError`,
+  `TrimmedCurveConstructionError`, `KnotInsertionError`, `KnotRemovalError`,
+  `DegreeElevationError`, `BSplineSplitError`, `BSplineConversionError`,
+  `ParametrizeError`, `SurfaceIsoError` and `DiscretizationCriteriaError`.
+  Code that catches `ValueError` keeps working.
+- Python binding gaps closed against the Rust API: `Axis2D` and `Frame2D`;
+  `frame()` on every curve and surface that has one, `axis()` on `Line3D`,
+  `Line2D` and `Cylinder`, `Torus.center()`, `Parabola3D.apex()`;
+  `period()` and `is_periodic()` on curves, `u_period()` and `v_period()` on
+  surfaces; `eval_d1` and `eval_d2` on curves and surfaces; `bounds()` on
+  `Line2D` and `Circle2D`; `Line2D.from_two_points` and `Line2D.from_axis`;
+  `extrema` on `Line3D`, `Circle3D`, `Line2D` and `Circle2D`; `point_count`
+  on the discretizable curves; `+`, `-` and `*` on points and vectors;
+  `Vector3D.normalized`, `square_magnitude`, `is_finite` and
+  `angle_with_reference`, the members of `Vector2D` that `Vector3D` has, and
+  `Frame3D.axis`, `local_coordinates` and `point_at`.
+
+### Changed
+
+- The exact, typed intersection moves to `IntersectExact<B>::intersect_exact`
+  (breaking): the same per-pair enums, stack-only, never numeric. The
+  untyped exact results are renamed `ExactSurfaceIntersection`,
+  `ExactCurveSurfaceIntersection` and `ExactCurveCurveIntersection`,
+  freeing the plain names for the family results. "Not analytic" is now
+  an outcome of `intersect_exact` only.
+- Hit fields are renamed `*_param` → `*_parameter` (breaking), on
+  `CurveCurveHit`, `CurveSurfaceHit`, `LineTorusHit`, `LineConicHit` and
+  `CurveCurveExtremum`.
+- Hit parameters are optional (breaking, ADR 0012):
+  `CurveCurveHit::first_parameter` / `second_parameter`, the same on
+  `CurveCurveHit2D`, and `CurveSurfaceHit::curve_parameter` /
+  `surface_parameters` are `Option`s, `Some` only when the solver
+  computed the value on its way to the point: every parameter on the
+  numeric path, the line's for a line against a quadric, both for two 2D
+  lines, and always a trimmed operand's. Recover a `None` with the
+  operand's `parameter_of(hit.point)` (curves) or
+  `parameters_of(hit.point)` (surfaces). Hits are sorted by parameter
+  when every hit has one, and otherwise keep the solver's order. Routed
+  circle–circle drops from about 145 to 76 ns per pair, 2D circle–circle
+  from 111 to 35 ns, line–cylinder from 184 to 127 ns, against eager
+  recovery.
+- `ConicConicIntersection::Hits` stores only the parameter on the conic
+  the solver substituted (plus the other one where a tangency test
+  computed it); the other parameter is `None`.
+- `intersect_curve_surface` and `intersect_curve_curve` return the
+  family results `CurveSurfaceIntersection` and `CurveCurveIntersection`
+  (breaking): read the hits with `.hits()` and the search status with
+  `completeness()`; `method()` is always `Numeric`. They stay generic
+  over `ParametricCurve3D` / `ParametricSurface`, as the entry point for
+  curve and surface types defined outside the crate. For the crate's own
+  types, the routed `a.intersect(&b, tol)` solves the pairs with a
+  closed form exactly and runs the same search for the others.
+- 2D curve projections (`project_point` and `project_points` on
+  `Line2D`, `Circle2D` and `TrimmedCurve2D`, and
+  `PointExtrema2D::extrema`) return `CurveProjection2D` instead of
+  `CurveProjection` (breaking).
+- Marching, run by the routed `intersect` of two surfaces without a
+  closed form, seeds from the points where the iso-curves of an
+  elementary surface meet the other surface: rulings and circles of a
+  cylinder or cone, circles of a sphere or torus (not against a torus),
+  lines of a plane across the other surface's bounding box. A B-spline
+  side adds its own parameter grid, and so do both sides when both
+  surfaces are bounded (spheres, tori, B-splines). This replaces the
+  parameter grid limited to `[-10, 10]` along unbounded directions, so an
+  intersection far from the parameter origin is found. A marched
+  result reports `Sampled`, or `Incomplete` where the surfaces lie on
+  each other (below).
+- Before seeding, marching checks whether a bounded surface lies on the
+  other (a 7 × 7 grid of its points and the centres of its cells within
+  confusion, normals parallel within the tilt that distance allows
+  between samples): surfaces lying on each other, such as a sphere and
+  its `to_bspline()` or that copy moved by up to the confusion,
+  come back coincident; a patch lying on a larger surface comes back
+  `Incomplete` with one `Unseparated` region over the patch. Where the
+  surfaces touch along a curve, the curve is traced along the direction
+  in which they keep touching and reported with `tangent` set; a touch
+  at a point is a contact point. Patches overlapping in part report an
+  `Unseparated` region around the overlap. A sphere against its own
+  `to_bspline()` takes 0.3 ms instead of 6.8 ms (and 2 spurious curves),
+  a B-spline sphere against itself 0.6 ms instead of 270 ms (and 35
+  curves); a plane tangent to a cylinder patch 0.1 ms instead of 1.9 ms
+  (and no curve).
+- A marching trace ends where it leaves the cube of side
+  `Tolerance::MODEL_SIZE` centred on the origin, instead of after 2000
+  steps: an unbounded curve now runs to the cube, and a long loop closes.
+  The step follows the curvature with no fixed cap of 0.1; a step is
+  halved when the intersection at its midpoint strays from its chord, or
+  when it crosses more than one knot of a B-spline side (so uneven knot
+  spans cannot hide a feature from it). Traced curves of low curvature
+  take fewer points; each step costs one more Newton solve.
+- `parameter_of` on `Circle3D` and `Ellipse3D` no longer normalizes the
+  frame's z direction on every call (it is unit by construction): about
+  13 ns faster per call, and the parameters may differ in the last bits.
+- Python `intersect` returns a result object instead of a
+  `(kind, payload)` tuple (breaking); hit parameters are `None` where
+  Rust's are, recovered with `operand.parameter_of(hit.point)` or
+  `operand.parameters_of(hit.point)`.
+- Python `project_point`, `project_points` and `extrema` return
+  `CurveProjection`, `CurveProjection2D` and `SurfaceProjection` objects
+  with `parameter` (or `u`, `v`), `point` and `distance`, plus the
+  `target` they were computed on and the `query_point`, instead of
+  tuples (breaking).
+- Python `curve_curve_extrema` returns a `CurveCurveExtrema` (`minima`,
+  `completeness`, `len()`) instead of a list of tuples (breaking), and
+  its arguments are named `first` and `second`, as on the result
+  (breaking for callers passing `curve_a=` or `curve_b=`).
+- `parametrize_numeric` names its sample count `sample_count` (breaking
+  in Python for callers passing `n=`).
+- `Vector3D::angle_with_ref` is renamed `angle_with_reference`; the old
+  name stays, deprecated.
+- Python `intersect` reads its operands by type tests that raise nothing
+  on a miss, the surface classes first when the call is on a surface:
+  from Python, line–cylinder drops from about 590 to 340 ns per call,
+  cylinder–line from 595 to 350 ns, circle–circle from 380 to 320 ns.
+  The routed calls that may run the numeric search or marching (a
+  B-spline operand, a conic against a torus, two surfaces),
+  `curve_curve_extrema` and `parametrize_numeric` release the
+  interpreter lock while they compute, so other Python threads run.
+- Python: the `Vector3D` unit constructors `x()`, `y()` and `z()` are
+  renamed `unit_x()`, `unit_y()` and `unit_z()` (breaking), matching
+  `Vector3D::X`, `Y` and `Z`; `x`, `y` and `z` are now the component
+  properties, as on `Point3D`.
+- Python reprs print floats as Python does (`1.0`, `1e-07`) and show
+  coordinates below `1e-15` as `0.0`, so rounding noise such as
+  `cos(pi / 2)` no longer clutters them.
+- The Python type stubs no longer import `typing_extensions`, and CI
+  checks them against the module with `mypy.stubtest`.
+- CI runs the Python tests on Python 3.9, the floor of the wheel, as
+  well as 3.12.
+
+### Removed
+
+- The 49 per-pair `intersect_*` methods deprecated in 0.29 (breaking):
+  use `intersect_exact`, or the routed `intersect`.
+- `marching_intersection` and `Surface::intersect_marching` are no longer
+  public (breaking): use the routed `intersect`, which marches the pairs
+  without a closed form.
+- `CurveSurfaceHits` and `CurveCurveHits`, the former results of
+  `intersect_curve_surface` and `intersect_curve_curve`, are no longer
+  public (breaking). `ConicSurfaceHit` stays public, as the exact results
+  carry it.
+- Python (breaking): the `(kind, payload)` results, the per-pair
+  `intersect_*` methods, and the free functions `intersect_curve_surface`,
+  `intersect_curve_curve` and `intersect_marching`, all superseded by
+  `intersect`.
+
+## [0.35.0] - 2026-10-13
+
+### Added
+
+- Python bindings for the 0.33 isoparametric curves (#63): `u_iso(u)` and
+  `v_iso(v)` on `Plane`, `Cylinder`, `Cone`, `Sphere`, `Torus` and
+  `BSplineSurface`, returning `Line3D`, `Circle3D` or `BSplineCurve3D` like
+  the Rust methods, with `SurfaceIsoError` as `ValueError`.
+
 ## [0.34.0] - 2026-10-13
 
 ### Added
@@ -1189,7 +1465,9 @@ the Python distribution are versioned in lockstep.
 - Golden-fixture validation of all numeric results at 1e-7 tolerance, and
   criterion throughput benchmarks (`docs/benchmarks.md`).
 
-[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/geomcore/geomcore/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/geomcore/geomcore/releases/tag/v0.36.0
+[0.35.0]: https://github.com/geomcore/geomcore/releases/tag/v0.35.0
 [0.34.0]: https://github.com/geomcore/geomcore/releases/tag/v0.34.0
 [0.33.0]: https://github.com/geomcore/geomcore/releases/tag/v0.33.0
 [0.32.2]: https://github.com/geomcore/geomcore/releases/tag/v0.32.2

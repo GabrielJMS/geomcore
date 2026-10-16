@@ -1,11 +1,12 @@
 //! Cost of the numeric curve–curve intersection and extrema on B-splines.
 //!
-//! Times `intersect_curve_curve` on 64 pairs of cubic B-spline curves lying
+//! Times the routed `intersect`, which takes the numeric path for these
+//! pairs, on 64 pairs of cubic B-spline curves lying
 //! in one plane, one crossing the square `[0, 5]^2` from left to right and
 //! the other from bottom to top along wavy paths, so that every pair
 //! crosses at least once; and `curve_curve_extrema` on 64 pairs of skew
 //! cubic B-spline curves, wavy in all three directions, one above the
-//! other. Then mixed pairs: `intersect_curve_curve` on 64 circles in the
+//! other. Then mixed pairs: `intersect` on 64 circles in the
 //! plane of the crossing pairs against their first curve, and
 //! `curve_curve_extrema` on 64 tilted ellipses, their halves, and the
 //! lines along their major axes, whole and over `[-2, 2]`, above the skew
@@ -18,8 +19,8 @@ use std::hint::black_box;
 
 use geomcore::curves::TrimmedCurve3D;
 use geomcore::{
-    BSplineCurve3D, Circle3D, Ellipse3D, Line3D, Point3D, Tolerance, Vector3D, curve_curve_extrema,
-    intersect_curve_curve,
+    BSplineCurve3D, Circle3D, Ellipse3D, Intersect, Line3D, Point3D, Tolerance, Vector3D,
+    curve_curve_extrema,
 };
 
 const PAIRS: usize = 64;
@@ -137,7 +138,7 @@ fn bench_curve_curve(c: &mut Criterion) {
     group.bench_function("intersect_crossing_bsplines", |b| {
         b.iter(|| {
             for (p, q) in black_box(&crossing) {
-                black_box(intersect_curve_curve(p, q, tol));
+                black_box(p.intersect(q, tol));
             }
         })
     });
@@ -151,7 +152,7 @@ fn bench_curve_curve(c: &mut Criterion) {
     group.bench_function("intersect_circle_bspline", |b| {
         b.iter(|| {
             for (circle, (p, _)) in black_box(&circles).iter().zip(&crossing) {
-                black_box(intersect_curve_curve(circle, p, tol));
+                black_box(circle.intersect(p, tol));
             }
         })
     });

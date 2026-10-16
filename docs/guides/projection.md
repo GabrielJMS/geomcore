@@ -59,15 +59,20 @@ pointer or topology.
 
 ## project_point
 
-Returns the parameter(s) and the distance; sub-tolerance distances
-snap to `0.0`, so projection agrees with `contains`. Batch variants
-(`project_points`) share the setup.
+Returns the closest point: its parameter(s), the point itself and the
+distance; sub-tolerance distances snap to `0.0`, so projection agrees
+with `contains`. In Python the result is a `CurveProjection`,
+`CurveProjection2D` or `SurfaceProjection` that also holds the `target`
+it was computed on and the `query_point`. Batch variants
+(`project_points`) share the setup and return a list.
 
 === "Python"
 
     ```python
-    t, dist = circle.project_point(Point3D(3, 0, 0))
-    u, v, dist = sphere.project_point(Point3D(0, 0, 5))
+    foot = circle.project_point(Point3D(3, 0, 0))
+    foot.parameter, foot.point, foot.distance, foot.target is circle
+    sfoot = sphere.project_point(Point3D(0, 0, 5))
+    sfoot.u, sfoot.v, sfoot.point, sfoot.distance
     ```
 
 === "Rust"
@@ -75,6 +80,7 @@ snap to `0.0`, so projection agrees with `contains`. Batch variants
     ```rust
     let foot = circle.project_point(Point3D::new(3.0, 0.0, 0.0), tol);
     assert_eq!((foot.parameter, foot.distance), (0.0, 1.0));
+    assert_eq!(foot.point, Point3D::new(2.0, 0.0, 0.0));
 
     let sfoot = sphere.project_point(Point3D::new(0.0, 0.0, 5.0), tol);
     ```
@@ -88,7 +94,7 @@ returns whole.
 === "Python"
 
     ```python
-    minima = ellipse.extrema(Point3D(4, 1, 0))   # [(t, dist), ...] nearest first
+    minima = ellipse.extrema(Point3D(4, 1, 0))   # [CurveProjection, ...] nearest first
     ```
 
 === "Rust"
@@ -113,7 +119,8 @@ queries and trimmed-arc handling.
     ```python
     from geomcore import curve_curve_extrema
 
-    minima = curve_curve_extrema(line, circle)   # [(s, t, dist), ...]
+    minima = curve_curve_extrema(line, circle).minima
+    distances = [m.distance for m in minima]
     ```
 
 === "Rust"

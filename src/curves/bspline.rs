@@ -1281,6 +1281,7 @@ impl BSplineCurve3D {
             kept.push(p);
             out.push(CurveProjection {
                 parameter: t,
+                point: p,
                 distance: snap_distance(p.distance(point), tol.confusion),
             });
         }
@@ -1343,9 +1344,11 @@ impl BSplineCurve3D {
         } else {
             best.1
         };
+        let foot = self.eval_point(t);
         CurveProjection {
             parameter: t,
-            distance: snap_distance(self.eval_point(t).distance(point), tol.confusion),
+            point: foot,
+            distance: snap_distance(foot.distance(point), tol.confusion),
         }
     }
 

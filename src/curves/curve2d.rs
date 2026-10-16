@@ -2,7 +2,7 @@
 //! concrete 2D curve types.
 
 use crate::curves::{Circle2D, Line2D};
-use crate::projection::CurveProjection;
+use crate::projection::CurveProjection2D;
 use crate::{Point2D, Tolerance, Vector2D};
 use std::f64::consts::TAU;
 
@@ -51,6 +51,50 @@ pub trait ParametricCurve2D {
     /// Evaluates the derivative of the given `order` at parameter `u`.
     fn eval_derivative(&self, u: f64, order: u32) -> Vector2D;
 
+    /// Evaluates the point and the first derivative at parameter `u`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative) of order 1.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve2D;
+    /// use geomcore::{Circle2D, Point2D, Vector2D};
+    ///
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let (point, tangent) = ParametricCurve2D::eval_d1(&circle, 0.0);
+    /// assert_eq!(point, Point2D::new(2.0, 0.0));
+    /// assert!((tangent - Vector2D::new(0.0, 2.0)).magnitude() < 1e-15);
+    /// ```
+    fn eval_d1(&self, u: f64) -> (Point2D, Vector2D) {
+        (self.eval_point(u), self.eval_derivative(u, 1))
+    }
+
+    /// Evaluates the point and the first two derivatives at parameter `u`.
+    ///
+    /// Default implementation: [`eval_point`](Self::eval_point) and
+    /// [`eval_derivative`](Self::eval_derivative) of orders 1 and 2.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::ParametricCurve2D;
+    /// use geomcore::{Circle2D, Point2D, Vector2D};
+    ///
+    /// let circle = Circle2D::new(Point2D::ORIGIN, 2.0).unwrap();
+    /// let (point, _, acceleration) = ParametricCurve2D::eval_d2(&circle, 0.0);
+    /// assert_eq!(point, Point2D::new(2.0, 0.0));
+    /// assert!((acceleration - Vector2D::new(-2.0, 0.0)).magnitude() < 1e-15);
+    /// ```
+    fn eval_d2(&self, u: f64) -> (Point2D, Vector2D, Vector2D) {
+        (
+            self.eval_point(u),
+            self.eval_derivative(u, 1),
+            self.eval_derivative(u, 2),
+        )
+    }
+
     /// Returns the curve's parameter bounds as `(first, last)`. Unbounded
     /// curves use `(f64::NEG_INFINITY, f64::INFINITY)`.
     fn bounds(&self) -> (f64, f64);
@@ -97,7 +141,7 @@ pub trait PointExtrema2D: ParametricCurve2D {
     /// point first. Distances within `tol.confusion` snap to `0.0`.
     ///
     /// A query point with a non-finite coordinate has no extrema.
-    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection>;
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection2D>;
 }
 
 /// A reference to a curve is the curve, so a
@@ -110,6 +154,14 @@ impl<C: ParametricCurve2D + ?Sized> ParametricCurve2D for &C {
 
     fn eval_derivative(&self, u: f64, order: u32) -> Vector2D {
         (**self).eval_derivative(u, order)
+    }
+
+    fn eval_d1(&self, u: f64) -> (Point2D, Vector2D) {
+        (**self).eval_d1(u)
+    }
+
+    fn eval_d2(&self, u: f64) -> (Point2D, Vector2D, Vector2D) {
+        (**self).eval_d2(u)
     }
 
     fn bounds(&self) -> (f64, f64) {
@@ -126,14 +178,14 @@ impl<C: ParametricCurve2D + ?Sized> ParametricCurve2D for &C {
 }
 
 impl<C: PointExtrema2D + ?Sized> PointExtrema2D for &C {
-    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection2D> {
         (**self).extrema(point, tol)
     }
 }
 
 /// The single local minimum of a line, or of a circle (whose distance
 /// from a point falls monotonically to it from the farthest point).
-fn only_minimum(point: Point2D, project: impl Fn() -> CurveProjection) -> Vec<CurveProjection> {
+fn only_minimum(point: Point2D, project: impl Fn() -> CurveProjection2D) -> Vec<CurveProjection2D> {
     if point.is_finite() {
         vec![project()]
     } else {
@@ -142,13 +194,13 @@ fn only_minimum(point: Point2D, project: impl Fn() -> CurveProjection) -> Vec<Cu
 }
 
 impl PointExtrema2D for Line2D {
-    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection2D> {
         only_minimum(point, || self.project_point(point, tol))
     }
 }
 
 impl PointExtrema2D for Circle2D {
-    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection2D> {
         only_minimum(point, || self.project_point(point, tol))
     }
 }
@@ -265,10 +317,59 @@ impl ParametricCurve2D for Curve2D {
 }
 
 impl PointExtrema2D for Curve2D {
-    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection> {
+    fn extrema(&self, point: Point2D, tol: Tolerance) -> Vec<CurveProjection2D> {
         match self {
             Curve2D::Line(c) => PointExtrema2D::extrema(c, point, tol),
             Curve2D::Circle(c) => PointExtrema2D::extrema(c, point, tol),
+        }
+    }
+}
+
+impl Curve2D {
+    /// Projects `point` onto the curve: the closest parameter, the closest
+    /// point and the distance. Distances within `tol.confusion` snap to
+    /// `0.0`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::Curve2D;
+    /// use geomcore::{Line2D, Point2D, Tolerance, Vector2D};
+    ///
+    /// let curve = Curve2D::from(Line2D::new(Point2D::ORIGIN, Vector2D::X).unwrap());
+    /// let projection = curve.project_point(Point2D::new(2.0, 1.0), Tolerance::DEFAULT);
+    /// assert_eq!(projection.point, Point2D::new(2.0, 0.0));
+    /// assert_eq!(projection.distance, 1.0);
+    /// ```
+    pub fn project_point(&self, point: Point2D, tol: Tolerance) -> CurveProjection2D {
+        match self {
+            Curve2D::Line(c) => c.project_point(point, tol),
+            Curve2D::Circle(c) => c.project_point(point, tol),
+        }
+    }
+
+    /// Projects each point in `points` onto the curve.
+    pub fn project_points(&self, points: &[Point2D], tol: Tolerance) -> Vec<CurveProjection2D> {
+        points.iter().map(|&p| self.project_point(p, tol)).collect()
+    }
+
+    /// The parameter of the point of the curve closest to `point`, by the
+    /// curve's closed form.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::curves::Curve2D;
+    /// use geomcore::{Circle2D, Point2D};
+    ///
+    /// let curve = Curve2D::from(Circle2D::new(Point2D::ORIGIN, 2.0).unwrap());
+    /// let parameter = curve.parameter_of(Point2D::new(0.0, 2.0));
+    /// assert!((parameter - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    /// ```
+    pub fn parameter_of(&self, point: Point2D) -> f64 {
+        match self {
+            Curve2D::Line(c) => c.parameter_of(point),
+            Curve2D::Circle(c) => c.parameter_of(point),
         }
     }
 }

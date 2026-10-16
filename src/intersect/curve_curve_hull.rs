@@ -9,6 +9,7 @@ use super::pieces::{
     CurvePieces, Pool, apart_along, bounding_box, box_size, cross, curves_meet_at_most_once, dot,
     euclidean, extent, norm, sub, tangent_sign,
 };
+use super::results::sort_by_known_parameter;
 use super::{Completeness, CurveCurveExtremum, CurveCurveHit};
 use crate::curve_math::bspline::LARGE;
 use crate::curves::BSplineCurve3D;
@@ -20,30 +21,11 @@ use std::ops::Deref;
 
 /// The hits of a numeric curve–curve intersection, ordered by parameter
 /// on the first curve, and whether they are all of them (see
-/// [`intersect_curve_curve`](crate::intersect_curve_curve)).
+/// [`search_curve_curve`](crate::search_curve_curve)).
 ///
 /// It reads as the slice of its hits.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{BSplineCurve3D, Point3D, Tolerance, intersect_curve_curve};
-/// let segment = |from: Point3D, to: Point3D| {
-///     BSplineCurve3D::new(1, vec![from, to], vec![0.0, 1.0], vec![2, 2], false).unwrap()
-/// };
-/// let up = segment(Point3D::new(0.0, 0.0, 0.0), Point3D::new(2.0, 2.0, 0.0));
-/// let down = segment(Point3D::new(0.0, 2.0, 0.0), Point3D::new(2.0, 0.0, 0.0));
-/// let hits = intersect_curve_curve(&up, &down, Tolerance::DEFAULT);
-/// // Both are B-splines: the search proves there is no other hit.
-/// assert!(hits.is_complete());
-/// assert_eq!(hits.len(), 1);
-/// assert!(hits[0].point.distance(Point3D::new(1.0, 1.0, 0.0)) < 1e-12);
-/// for hit in &hits {
-///     assert!((hit.first_param - 0.5).abs() < 1e-12);
-/// }
-/// ```
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveCurveHits {
+pub(crate) struct CurveCurveHits {
     hits: Vec<CurveCurveHit>,
     completeness: Completeness<CurveCurveRegion>,
 }
@@ -76,68 +58,22 @@ impl CurveCurveHits {
                 self.hits.push(hit);
             }
         }
-        self.hits
-            .sort_by(|a, b| a.first_param.total_cmp(&b.first_param));
-    }
-
-    /// The hits, ordered by first-curve parameter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
-    /// assert_eq!(hits.hits().len(), 2);
-    /// ```
-    pub fn hits(&self) -> &[CurveCurveHit] {
-        &self.hits
+        sort_by_known_parameter(&mut self.hits, |hit| hit.first_parameter);
     }
 
     /// The hits, ordered by first-curve parameter, without the
     /// completeness.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let hits: Vec<_> = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT).into_hits();
-    /// assert!(hits[0].first_param < hits[1].first_param);
-    /// ```
     pub fn into_hits(self) -> Vec<CurveCurveHit> {
         self.hits
     }
 
     /// Whether the hits are all of them, and if not, why and where hits
     /// may be missing.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Completeness, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
-    /// assert_eq!(hits.completeness(), &Completeness::Sampled);
-    /// ```
     pub fn completeness(&self) -> &Completeness<CurveCurveRegion> {
         &self.completeness
     }
 
     /// Whether the hits are all of them ([`Completeness::Complete`]).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use geomcore::{Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-    /// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-    /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-    /// // Sampled hits are not proven complete.
-    /// assert!(!intersect_curve_curve(&line, &circle, Tolerance::DEFAULT).is_complete());
-    /// ```
     pub fn is_complete(&self) -> bool {
         self.completeness.is_complete()
     }
@@ -194,7 +130,7 @@ impl<'a> IntoIterator for &'a CurveCurveHits {
 /// assert_eq!(minima.len(), 1);
 /// assert!((minima[0].distance - 1.0).abs() < 1e-12);
 /// for minimum in &minima {
-///     assert!((minimum.first_param - 0.5).abs() < 1e-9);
+///     assert!((minimum.first_parameter - 0.5).abs() < 1e-9);
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -318,7 +254,7 @@ impl<'a> IntoIterator for &'a CurveCurveExtrema {
 /// # Examples
 ///
 /// ```
-/// use geomcore::{BSplineCurve3D, Completeness, Point3D, Tolerance, intersect_curve_curve};
+/// use geomcore::{BSplineCurve3D, Completeness, Intersect, Point3D, Tolerance};
 /// // A parabola touching the segment at (2, 0, 0), at s = 0.5.
 /// let poles = vec![
 ///     Point3D::new(0.0, 1.0, 0.0),
@@ -328,8 +264,8 @@ impl<'a> IntoIterator for &'a CurveCurveExtrema {
 /// let parabola = BSplineCurve3D::new(2, poles, vec![0.0, 1.0], vec![3, 3], false).unwrap();
 /// let ends = vec![Point3D::new(0.0, 0.0, 0.0), Point3D::new(4.0, 0.0, 0.0)];
 /// let segment = BSplineCurve3D::new(1, ends, vec![0.0, 1.0], vec![2, 2], false).unwrap();
-/// let hits = intersect_curve_curve(&parabola, &segment, Tolerance::DEFAULT);
-/// let Completeness::Incomplete { regions, .. } = hits.completeness() else {
+/// let result = parabola.intersect(&segment, Tolerance::DEFAULT);
+/// let Completeness::Incomplete { regions, .. } = result.completeness() else {
 ///     panic!("a tangent contact never separates");
 /// };
 /// assert_eq!(regions.len(), 1);
@@ -337,7 +273,7 @@ impl<'a> IntoIterator for &'a CurveCurveExtrema {
 /// assert!(s0 <= 0.5 && 0.5 <= s1 && s1 - s0 < 1e-2);
 /// assert!(regions[0].min_corner.x <= 2.0 && 2.0 <= regions[0].max_corner.x);
 /// // The sampled search, run as well, finds the contact.
-/// assert_eq!(hits.len(), 1);
+/// assert_eq!(result.hits().len(), 1);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CurveCurveRegion {
@@ -515,8 +451,8 @@ fn meeting(
             .iter()
             .all(|p| norm(sub(*p, [point.x, point.y, point.z])) <= merge_gap);
     let hit = CurveCurveExtremum {
-        first_param: s,
-        second_param: t,
+        first_parameter: s,
+        second_parameter: t,
         distance,
     };
     Some((hit, settles))
@@ -1101,7 +1037,7 @@ mod tests {
     use crate::intersect::curve_curve::{
         ParamDomain, curve_curve_minima, hits_at_minima, refine_minima, sampled_curve_curve,
     };
-    use crate::intersect::{IncompleteReason, curve_curve_extrema, intersect_curve_curve};
+    use crate::intersect::{IncompleteReason, curve_curve_extrema, search_curve_curve};
 
     const TOL: Tolerance = Tolerance::DEFAULT;
 
@@ -1248,25 +1184,37 @@ mod tests {
         let found = search(a, b);
         let ((a0, a1), (b0, b1)) = (a.bounds(), b.bounds());
         for hit in &found {
-            assert!((a0..=a1).contains(&hit.first_param), "{hit:?}");
-            assert!((b0..=b1).contains(&hit.second_param), "{hit:?}");
-            assert!(hit.point.distance(a.eval_point(hit.first_param)) < 1e-12);
-            assert!(hit.point.distance(b.eval_point(hit.second_param)) <= TOL.confusion);
+            assert!((a0..=a1).contains(&hit.first_parameter.unwrap()), "{hit:?}");
+            assert!(
+                (b0..=b1).contains(&hit.second_parameter.unwrap()),
+                "{hit:?}"
+            );
+            assert!(
+                hit.point
+                    .distance(a.eval_point(hit.first_parameter.unwrap()))
+                    < 1e-12
+            );
+            assert!(
+                hit.point
+                    .distance(b.eval_point(hit.second_parameter.unwrap()))
+                    <= TOL.confusion
+            );
         }
         for pair in found.windows(2) {
-            assert!(pair[0].first_param < pair[1].first_param);
+            assert!(pair[0].first_parameter < pair[1].first_parameter);
         }
         let sampled = sampled_curve_curve(a, b, TOL);
         for want in &sampled {
             assert!(
                 found.iter().any(|hit| hit.point.distance(want.point) < 1e-9
-                    && (hit.first_param - want.first_param).abs() < 1e-9
-                    && (hit.second_param - want.second_param).abs() < 1e-9
+                    && (hit.first_parameter.unwrap() - want.first_parameter.unwrap()).abs() < 1e-9
+                    && (hit.second_parameter.unwrap() - want.second_parameter.unwrap()).abs()
+                        < 1e-9
                     && hit.multiplicity == want.multiplicity),
                 "{want:?} missing from {found:#?}"
             );
         }
-        let hits = intersect_curve_curve(a, b, TOL);
+        let hits = search_curve_curve(a, b, TOL);
         assert!(hits.is_complete(), "{:?}", hits.completeness());
         assert_eq!(hits.into_hits(), found);
         found
@@ -1286,8 +1234,8 @@ mod tests {
             assert!(
                 found
                     .iter()
-                    .any(|e| (e.first_param - want.first_param).abs() < 1e-7
-                        && (e.second_param - want.second_param).abs() < 1e-7
+                    .any(|e| (e.first_parameter - want.first_parameter).abs() < 1e-7
+                        && (e.second_parameter - want.second_parameter).abs() < 1e-7
                         && (e.distance - want.distance).abs() < 1e-12),
                 "{want:?} missing from {found:#?}"
             );
@@ -1297,7 +1245,7 @@ mod tests {
         for e in &found {
             for (ds, dt) in [(1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, -1.0)] {
                 for h in [-1e-4, 1e-4] {
-                    let (s, t) = (e.first_param + h * ds, e.second_param + h * dt);
+                    let (s, t) = (e.first_parameter + h * ds, e.second_parameter + h * dt);
                     let s = if da.is_periodic() { s } else { s.clamp(a0, a1) };
                     let t = if db.is_periodic() { t } else { t.clamp(b0, b1) };
                     let d = a.eval_point(s).distance(b.eval_point(t));
@@ -1384,8 +1332,14 @@ mod tests {
         let loop_b = ring([3.5, 2.0, 0.0], 1.5, 0.0);
         let hits = assert_hits_match(&loop_a, &loop_b);
         assert_eq!(hits.len(), 2);
-        assert!(hits.iter().all(|h| (0.0..8.0).contains(&h.first_param)));
-        assert!(hits.iter().all(|h| (0.0..8.0).contains(&h.second_param)));
+        assert!(
+            hits.iter()
+                .all(|h| (0.0..8.0).contains(&h.first_parameter.unwrap()))
+        );
+        assert!(
+            hits.iter()
+                .all(|h| (0.0..8.0).contains(&h.second_parameter.unwrap()))
+        );
         assert_minima_match(&loop_a, &loop_b);
         let mut rng = Lcg(5);
         for _ in 0..8 {
@@ -1443,7 +1397,7 @@ mod tests {
         let wrapped = |t: f64| if t < 6.5 { t + 8.0 } else { t };
         let expected: Vec<f64> = all
             .iter()
-            .map(|h| wrapped(h.first_param))
+            .map(|h| wrapped(h.first_parameter.unwrap()))
             .filter(|&t| t <= 9.5)
             .collect();
         assert!(expected.iter().any(|&t| t < 8.0) && expected.iter().any(|&t| t > 8.0));
@@ -1455,15 +1409,25 @@ mod tests {
         ] {
             assert_eq!(hits.len(), expected.len());
             for hit in &hits {
-                assert!(expected.iter().any(|&t| (t - hit.first_param).abs() < 1e-9));
+                assert!(
+                    expected
+                        .iter()
+                        .any(|&t| (t - hit.first_parameter.unwrap()).abs() < 1e-9)
+                );
             }
         }
-        let (first, last) = (all[1].second_param.min(all[2].second_param), 4.2);
+        let (first, last) = (
+            all[1]
+                .second_parameter
+                .unwrap()
+                .min(all[2].second_parameter.unwrap()),
+            4.2,
+        );
         let middle = TrimmedCurve3D::new(&wavy, first, last).unwrap();
         let hits = assert_hits_match(&ring, &middle);
         let inside = all
             .iter()
-            .filter(|h| (first - 1e-9..=last + 1e-9).contains(&h.second_param))
+            .filter(|h| (first - 1e-9..=last + 1e-9).contains(&h.second_parameter.unwrap()))
             .count();
         assert_eq!(hits.len(), inside);
         assert_minima_match(&borrowed, &wavy);
@@ -1488,11 +1452,15 @@ mod tests {
     fn assert_search_hits(a: &BSplineCurve3D, b: &BSplineCurve3D) -> Vec<CurveCurveHit> {
         let hits = search(a, b);
         for hit in &hits {
-            assert!((a.bounds().0..=a.bounds().1).contains(&hit.first_param));
-            assert!((b.bounds().0..=b.bounds().1).contains(&hit.second_param));
-            assert!(hit.point.distance(b.eval_point(hit.second_param)) <= TOL.confusion);
+            assert!((a.bounds().0..=a.bounds().1).contains(&hit.first_parameter.unwrap()));
+            assert!((b.bounds().0..=b.bounds().1).contains(&hit.second_parameter.unwrap()));
+            assert!(
+                hit.point
+                    .distance(b.eval_point(hit.second_parameter.unwrap()))
+                    <= TOL.confusion
+            );
         }
-        assert_eq!(intersect_curve_curve(a, b, TOL).into_hits(), hits);
+        assert_eq!(search_curve_curve(a, b, TOL).into_hits(), hits);
         hits
     }
 
@@ -1554,12 +1522,19 @@ mod tests {
     ) {
         let ((a0, a1), (b0, b1)) = (a.bounds(), b.bounds());
         for hit in hits {
-            assert!((a0..=a1).contains(&hit.first_param), "{hit:?}");
-            assert!((b0..=b1).contains(&hit.second_param), "{hit:?}");
-            assert!(hit.point.distance(b.eval_point(hit.second_param)) <= TOL.confusion);
+            assert!((a0..=a1).contains(&hit.first_parameter.unwrap()), "{hit:?}");
+            assert!(
+                (b0..=b1).contains(&hit.second_parameter.unwrap()),
+                "{hit:?}"
+            );
+            assert!(
+                hit.point
+                    .distance(b.eval_point(hit.second_parameter.unwrap()))
+                    <= TOL.confusion
+            );
         }
         for pair in hits.windows(2) {
-            assert!(pair[0].first_param <= pair[1].first_param);
+            assert!(pair[0].first_parameter <= pair[1].first_parameter);
         }
         for want in sampled_curve_curve(a, b, TOL) {
             let near = |h: &CurveCurveHit| h.point.distance(want.point) <= TOL.confusion.sqrt();
@@ -1577,7 +1552,7 @@ mod tests {
             (&touching, &line, (0.5, 0.5)),
             (&line, &touching, (0.5, 0.5)),
         ] {
-            let hits = intersect_curve_curve(a, b, TOL);
+            let hits = search_curve_curve(a, b, TOL);
             let (reason, regions) = incomplete(hits.completeness());
             assert_eq!(reason, IncompleteReason::Unseparated);
             assert_eq!(regions.len(), 1, "{regions:#?}");
@@ -1611,9 +1586,9 @@ mod tests {
         let part = segment(along(1.5), along(3.5));
         for swapped in [false, true] {
             let hits = if swapped {
-                intersect_curve_curve(&part, &polyline, TOL)
+                search_curve_curve(&part, &polyline, TOL)
             } else {
-                intersect_curve_curve(&polyline, &part, TOL)
+                search_curve_curve(&polyline, &part, TOL)
             };
             let (reason, regions) = incomplete(hits.completeness());
             assert_eq!(reason, IncompleteReason::Unseparated);
@@ -1642,7 +1617,7 @@ mod tests {
         let mut rng = Lcg(1);
         let (curve, _) = crossing(&mut rng, false, 1.0);
         let part = TrimmedCurve3D::new(&curve, 0.5, 2.0).unwrap();
-        let hits = intersect_curve_curve(&curve, &part, TOL);
+        let hits = search_curve_curve(&curve, &part, TOL);
         let (_, regions) = incomplete(hits.completeness());
         for k in 0..=16 {
             let s = 0.5 + 1.5 * k as f64 / 16.0;
@@ -1688,9 +1663,13 @@ mod tests {
             let regions = exhausted(&completeness);
             count += usize::from(!regions.is_empty());
             for hit in &all {
-                let held = regions
-                    .iter()
-                    .any(|r| holds(r, (&a, hit.first_param), (&b, hit.second_param)));
+                let held = regions.iter().any(|r| {
+                    holds(
+                        r,
+                        (&a, hit.first_parameter.unwrap()),
+                        (&b, hit.second_parameter.unwrap()),
+                    )
+                });
                 let near = |h: &CurveCurveHit| h.point.distance(hit.point) < 1e-9;
                 assert!(held || found.iter().any(near), "{hit:?}: {regions:#?}");
             }
@@ -1704,10 +1683,10 @@ mod tests {
             let regions = exhausted(&completeness);
             count += usize::from(!regions.is_empty());
             for e in &all {
-                let (s, t) = (e.first_param, e.second_param);
+                let (s, t) = (e.first_parameter, e.second_parameter);
                 let held = regions.iter().any(|r| holds(r, (&a, s), (&b, t)));
                 let near = |f: &CurveCurveExtremum| {
-                    (f.first_param - s).abs() < 1e-7 && (f.second_param - t).abs() < 1e-7
+                    (f.first_parameter - s).abs() < 1e-7 && (f.second_parameter - t).abs() < 1e-7
                 };
                 assert!(held || found.iter().any(near), "{e:?}: {regions:#?}");
             }
@@ -1720,14 +1699,14 @@ mod tests {
         let mut rng = Lcg(23);
         for k in 0..8 {
             let (a, b) = crossing(&mut rng, k % 2 == 1, 1.0);
-            let hits = intersect_curve_curve(&a, &b, TOL);
+            let hits = search_curve_curve(&a, &b, TOL);
             assert!(hits.is_complete(), "{:?}", hits.completeness());
             assert!(!hits.is_empty());
             let (below, above) = skew(&mut rng, k % 2 == 0);
             let extrema = curve_curve_extrema(&below, &above, TOL);
             assert_eq!(extrema.completeness(), &Completeness::Complete);
             assert!(!extrema.is_empty());
-            assert!(intersect_curve_curve(&below, &above, TOL).is_complete());
+            assert!(search_curve_curve(&below, &above, TOL).is_complete());
         }
     }
 
@@ -1735,7 +1714,7 @@ mod tests {
     fn test_elementary_pairs_are_sampled_and_mixed_pairs_are_not() {
         let circle = crate::Circle3D::new(Point3D::ORIGIN, crate::Vector3D::Z, 2.0).unwrap();
         let line = crate::Line3D::new(Point3D::ORIGIN, crate::Vector3D::X).unwrap();
-        let hits = intersect_curve_curve(&line, &circle, TOL);
+        let hits = search_curve_curve(&line, &circle, TOL);
         assert_eq!(hits.completeness(), &Completeness::Sampled);
         assert_eq!(hits.len(), 2);
         assert_eq!(
@@ -1743,7 +1722,7 @@ mod tests {
             &Completeness::Sampled
         );
         let chord = segment([-3.0, 0.5, 0.0], [3.0, 0.5, 0.0]);
-        let hits = intersect_curve_curve(&chord, &circle, TOL);
+        let hits = search_curve_curve(&chord, &circle, TOL);
         assert_eq!(hits.completeness(), &Completeness::Complete);
         assert_eq!(hits.len(), 2);
         let extrema = curve_curve_extrema(&circle, &chord, TOL);
@@ -1800,7 +1779,10 @@ mod tests {
         let b = knotted([[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.5, 3.0, 0.0]]);
         let hits = assert_search_hits(&a, &b);
         assert_eq!(hits.len(), 1, "{hits:#?}");
-        assert_eq!((hits[0].first_param, hits[0].second_param), (1.0, 1.0));
+        assert_eq!(
+            (hits[0].first_parameter, hits[0].second_parameter),
+            (Some(1.0), Some(1.0))
+        );
     }
 
     #[test]
@@ -1809,8 +1791,8 @@ mod tests {
         let (a, b) = crossing(&mut rng, true, 2.0);
         let (ea, eb) = (Curve3D::BSpline(a.clone()), Curve3D::BSpline(b.clone()));
         let hits = assert_hits_match(&ea, &eb);
-        assert_eq!(hits, intersect_curve_curve(&a, &b, TOL).into_hits());
-        assert_eq!(hits, intersect_curve_curve(&&a, &b, TOL).into_hits());
+        assert_eq!(hits, search_curve_curve(&a, &b, TOL).into_hits());
+        assert_eq!(hits, search_curve_curve(&&a, &b, TOL).into_hits());
         assert_eq!(
             curve_curve_extrema(&ea, &eb, TOL).into_minima(),
             assert_minima_match(&a, &b)
@@ -1855,8 +1837,8 @@ mod tests {
         assert_eq!(ext.len(), 1, "{ext:#?}");
         assert!((ext[0].distance - 1.0).abs() < 1e-12);
         // Apart, the arcs never meet: no hit, and none missing.
-        assert!(intersect_curve_curve(&a, &b, TOL).is_empty());
-        assert!(intersect_curve_curve(&a, &b, TOL).is_complete());
+        assert!(search_curve_curve(&a, &b, TOL).is_empty());
+        assert!(search_curve_curve(&a, &b, TOL).is_complete());
     }
 
     #[test]
@@ -1867,17 +1849,17 @@ mod tests {
         let ext = assert_minima_match(&bow, &rail);
         assert!(
             ext.iter()
-                .any(|e| e.first_param == 0.0 || e.first_param == 1.0),
+                .any(|e| e.first_parameter == 0.0 || e.first_parameter == 1.0),
             "{ext:#?}"
         );
         // An end of one closest to the interior of the other.
         let stub = segment([1.0, 2.0, 0.5], [1.2, 4.0, 0.5]);
         let ext = assert_minima_match(&bow, &stub);
-        assert!(ext.iter().any(|e| e.second_param == 0.0), "{ext:#?}");
+        assert!(ext.iter().any(|e| e.second_parameter == 0.0), "{ext:#?}");
         // A closed loop: no ends of its own.
         let loop_a = ring([0.0, 0.0, 0.0], 2.0, 0.3);
         let ext = assert_minima_match(&stub, &loop_a);
-        assert!(ext.iter().any(|e| e.first_param == 0.0), "{ext:#?}");
-        assert!(ext.iter().all(|e| (0.0..8.0).contains(&e.second_param)));
+        assert!(ext.iter().any(|e| e.first_parameter == 0.0), "{ext:#?}");
+        assert!(ext.iter().all(|e| (0.0..8.0).contains(&e.second_parameter)));
     }
 }

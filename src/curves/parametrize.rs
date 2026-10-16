@@ -264,7 +264,7 @@ fn circle_on_cylinder(
     let u = wrap_to_turn(
         frame
             .x_direction()
-            .angle_with_ref(circle.frame().x_direction(), axis),
+            .angle_with_reference(circle.frame().x_direction(), axis),
     );
     let v = (circle.center() - frame.origin()).dot(axis);
     let du = if normal.dot(axis) > 0.0 { 1.0 } else { -1.0 };
@@ -407,7 +407,11 @@ fn sphere_meridian(circle: &Circle3D, frame: crate::Frame3D) -> Line2D {
 fn sphere_parallel(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, ParametrizeError> {
     let z = frame.z_direction();
     let cf = circle.frame();
-    let u = wrap_to_turn(frame.x_direction().angle_with_ref(cf.x_direction(), z));
+    let u = wrap_to_turn(
+        frame
+            .x_direction()
+            .angle_with_reference(cf.x_direction(), z),
+    );
     // Recover the sphere radius from an actual on-surface point (the circle's
     // own radius is the parallel's radius, not the sphere's).
     let r = circle.eval_point(0.0).distance(frame.origin());
@@ -545,8 +549,8 @@ fn torus_poloidal(circle: &Circle3D, frame: crate::Frame3D) -> Result<Line2D, Pa
     let z = frame.z_direction();
     let oc = circle.center() - frame.origin();
     let cf = circle.frame();
-    let u = wrap_to_turn(frame.x_direction().angle_with_ref(oc, z));
-    let mut v1 = oc.angle_with_ref(cf.x_direction(), oc.cross(z));
+    let u = wrap_to_turn(frame.x_direction().angle_with_reference(oc, z));
+    let mut v1 = oc.angle_with_reference(cf.x_direction(), oc.cross(z));
     if v1 < 0.0 {
         v1 += TAU;
     }
@@ -615,8 +619,8 @@ fn angle_or_zero(y: f64, x: f64) -> f64 {
 
 /// Numeric curve-on-surface parametrization for pairs without closed form.
 ///
-/// Samples the curve uniformly over its bounds (`[-10, 10]` for unbounded
-/// curves) and inverts each sample onto the surface with
+/// Samples the curve at `sample_count` uniform parameters (at least 2)
+/// over its bounds (`[-10, 10]` for unbounded curves) and inverts each sample onto the surface with
 /// [`ParametricSurface::project_point`]. The returned `(u, v)` points
 /// approximate the exact pcurve; where a closed form exists, prefer the
 /// exact [`parametrize_on`](crate::Line3D::parametrize_on) methods.
@@ -634,7 +638,12 @@ fn angle_or_zero(y: f64, x: f64) -> f64 {
 ///     assert!(p.y.abs() < 1e-9);
 /// }
 /// ```
-pub fn parametrize_numeric<C, S>(curve: &C, surface: &S, n: usize, tol: Tolerance) -> Vec<Point2D>
+pub fn parametrize_numeric<C, S>(
+    curve: &C,
+    surface: &S,
+    sample_count: usize,
+    tol: Tolerance,
+) -> Vec<Point2D>
 where
     C: crate::curves::ParametricCurve3D,
     S: ParametricSurface,
@@ -646,10 +655,10 @@ where
         if t0.is_finite() { t0 } else { -WINDOW },
         if t1.is_finite() { t1 } else { WINDOW },
     );
-    let n = n.max(2);
-    (0..n)
+    let sample_count = sample_count.max(2);
+    (0..sample_count)
         .map(|i| {
-            let t = lo + (hi - lo) * i as f64 / (n - 1) as f64;
+            let t = lo + (hi - lo) * i as f64 / (sample_count - 1) as f64;
             let p = surface.project_point(curve.eval_point(t), tol);
             Point2D::new(p.u, p.v)
         })

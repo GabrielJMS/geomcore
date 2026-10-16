@@ -1,6 +1,6 @@
 //! Cost of the exact conic–quadric intersections.
 //!
-//! Times a batch of typed `Intersect::intersect` calls for each of the 16
+//! Times a batch of typed `IntersectExact::intersect_exact` calls for each of the 16
 //! pairs of a conic (circle, ellipse, parabola, hyperbola) and a quadric
 //! (plane, sphere, cylinder, cone). The conics are placed at random near
 //! the quadrics, so each batch mixes crossings, tangencies and misses.
@@ -12,7 +12,7 @@ use std::hint::black_box;
 
 use geomcore::curves::{Circle3D, Ellipse3D, Hyperbola3D, Parabola3D};
 use geomcore::surfaces::{Cone, Cylinder, Plane, Sphere};
-use geomcore::{Frame3D, Intersect, Point3D, Tolerance, Vector3D};
+use geomcore::{Frame3D, IntersectExact, Point3D, Tolerance, Vector3D};
 
 const BATCH: usize = 1024;
 
@@ -80,28 +80,28 @@ macro_rules! bench_conic {
         group.bench_function("plane", |b| {
             b.iter(|| {
                 for x in black_box(&conics) {
-                    black_box(x.intersect(&plane, tol));
+                    black_box(x.intersect_exact(&plane, tol));
                 }
             })
         });
         group.bench_function("sphere", |b| {
             b.iter(|| {
                 for x in black_box(&conics) {
-                    black_box(x.intersect(&sphere, tol));
+                    black_box(x.intersect_exact(&sphere, tol));
                 }
             })
         });
         group.bench_function("cylinder", |b| {
             b.iter(|| {
                 for x in black_box(&conics) {
-                    black_box(x.intersect(&cylinder, tol));
+                    black_box(x.intersect_exact(&cylinder, tol));
                 }
             })
         });
         group.bench_function("cone", |b| {
             b.iter(|| {
                 for x in black_box(&conics) {
-                    black_box(x.intersect(&cone, tol));
+                    black_box(x.intersect_exact(&cone, tol));
                 }
             })
         });

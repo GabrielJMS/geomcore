@@ -1,22 +1,19 @@
-//! Cost of the `Intersect` entry point.
+//! Cost of the `IntersectExact` entry point.
 //!
 //! For a few representative pairs, times a batch of exact intersections
-//! four ways: the typed trait call, the deprecated per-pair method it
-//! replaces, the untyped call on `ElementaryCurve` / `ElementarySurface`,
-//! and the untyped call on `Curve3D` / `Surface`. The typed call and the
-//! per-pair method should match; the untyped calls add a `match` and the
-//! conversion to the general result.
+//! three ways: the typed trait call, the untyped call on `ElementaryCurve`
+//! / `ElementarySurface`, and the untyped call on `Curve3D` / `Surface`.
+//! The untyped calls add a `match` and the conversion to the general
+//! result.
 //!
 //! Informational only, like `eval_throughput`; not a correctness gate.
-
-#![allow(deprecated)]
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use geomcore::curves::{Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Line3D};
+use geomcore::curves::{Circle2D, Circle3D, Curve3D, ElementaryCurve, Ellipse3D, Line3D};
 use geomcore::surfaces::{Cone, Cylinder, ElementarySurface, Plane, Sphere, Surface, Torus};
-use geomcore::{Intersect, Point3D, Tolerance, Vector3D};
+use geomcore::{Intersect, IntersectExact, Point2D, Point3D, Tolerance, Vector3D};
 
 const BATCH: usize = 1024;
 
@@ -41,7 +38,7 @@ fn direction(i: usize) -> Vector3D {
 
 /// Times one pair kind four ways over the same batch.
 macro_rules! bench_pair {
-    ($c:expr, $name:literal, $pairs:expr, $per_pair:ident, $elem_a:ty, $elem_b:ty, $erased_a:ty, $erased_b:ty) => {{
+    ($c:expr, $name:literal, $pairs:expr, $elem_a:ty, $elem_b:ty, $erased_a:ty, $erased_b:ty) => {{
         let pairs = $pairs;
         let elementary: Vec<($elem_a, $elem_b)> = pairs
             .iter()
@@ -57,28 +54,21 @@ macro_rules! bench_pair {
         group.bench_function("typed", |b| {
             b.iter(|| {
                 for (x, y) in black_box(&pairs) {
-                    black_box(x.intersect(y, tol));
-                }
-            })
-        });
-        group.bench_function("per_pair", |b| {
-            b.iter(|| {
-                for (x, y) in black_box(&pairs) {
-                    black_box(x.$per_pair(y, tol));
+                    black_box(x.intersect_exact(y, tol));
                 }
             })
         });
         group.bench_function("elementary", |b| {
             b.iter(|| {
                 for (x, y) in black_box(&elementary) {
-                    black_box(x.intersect(y, tol));
+                    black_box(x.intersect_exact(y, tol));
                 }
             })
         });
         group.bench_function("erased", |b| {
             b.iter(|| {
                 for (x, y) in black_box(&erased) {
-                    black_box(x.intersect(y, tol));
+                    black_box(x.intersect_exact(y, tol));
                 }
             })
         });
@@ -99,7 +89,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "plane_sphere",
         plane_sphere,
-        intersect_sphere,
         ElementarySurface,
         ElementarySurface,
         Surface,
@@ -119,7 +108,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "torus_cone",
         torus_cone,
-        intersect_cone,
         ElementarySurface,
         ElementarySurface,
         Surface,
@@ -140,7 +128,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "line_torus",
         line_torus,
-        intersect_torus,
         ElementaryCurve,
         ElementarySurface,
         Curve3D,
@@ -161,7 +148,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "circle_cylinder",
         circle_cylinder,
-        intersect_cylinder,
         ElementaryCurve,
         ElementarySurface,
         Curve3D,
@@ -183,7 +169,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "line_circle",
         line_circle,
-        intersect_circle,
         ElementaryCurve,
         ElementaryCurve,
         Curve3D,
@@ -205,7 +190,6 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
         c,
         "ellipse_ellipse",
         ellipse_ellipse,
-        intersect_ellipse,
         ElementaryCurve,
         ElementaryCurve,
         Curve3D,
@@ -213,5 +197,77 @@ fn bench_intersect_dispatch(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, bench_intersect_dispatch);
+/// Times the routed call against the typed exact call over one batch. The
+/// routed result stores only the parameters the solver computed, so the
+/// typed call is the fair baseline: the gap is building the result.
+macro_rules! bench_routed {
+    ($c:expr, $name:literal, $pairs:expr) => {{
+        let pairs = $pairs;
+        let tol = Tolerance::default();
+        let mut group = $c.benchmark_group(concat!("intersect_routed/", $name));
+        group.throughput(Throughput::Elements(BATCH as u64));
+        group.bench_function("exact", |b| {
+            b.iter(|| {
+                for (x, y) in black_box(&pairs) {
+                    black_box(x.intersect_exact(y, tol));
+                }
+            })
+        });
+        group.bench_function("routed", |b| {
+            b.iter(|| {
+                for (x, y) in black_box(&pairs) {
+                    black_box(x.intersect(y, tol));
+                }
+            })
+        });
+        group.finish();
+    }};
+}
+
+fn bench_intersect_routed(c: &mut Criterion) {
+    // Lines through the axis region of a cylinder: two hits each.
+    let line_cylinder: Vec<(Line3D, Cylinder)> = (0..BATCH)
+        .map(|i| {
+            let origin = Point3D::new(-3.0, 0.5 * jitter(i, 14), 0.5 * jitter(i, 15));
+            let line = Line3D::new(origin, Vector3D::new(1.0, 0.2 * jitter(i, 16), 0.0));
+            let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 1.5);
+            (line.unwrap(), cylinder.unwrap())
+        })
+        .collect();
+    bench_routed!(c, "line_cylinder", line_cylinder);
+
+    // Coplanar circles of radius 2 and 1.5 with centres 1 to 2 apart: two hits each.
+    let circle_circle: Vec<(Circle3D, Circle3D)> = (0..BATCH)
+        .map(|i| {
+            let a = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+            let angle = 3.0 * jitter(i, 17);
+            let distance = 1.5 + 0.5 * jitter(i, 18);
+            let center = Point3D::new(distance * angle.cos(), distance * angle.sin(), 0.0);
+            (a, Circle3D::new(center, Vector3D::Z, 1.5).unwrap())
+        })
+        .collect();
+    bench_routed!(c, "circle_circle", circle_circle.clone());
+
+    // The same circles in the plane.
+    let circle_circle_2d: Vec<(Circle2D, Circle2D)> = circle_circle
+        .iter()
+        .map(|(a, b)| {
+            let center = |c: &Circle3D| Point2D::new(c.center().x, c.center().y);
+            let a = Circle2D::new(center(a), a.radius()).unwrap();
+            (a, Circle2D::new(center(b), b.radius()).unwrap())
+        })
+        .collect();
+    bench_routed!(c, "circle_circle_2d", circle_circle_2d);
+
+    // Planes at heights across a unit sphere: a circle each.
+    let plane_sphere: Vec<(Plane, Sphere)> = (0..BATCH)
+        .map(|i| {
+            let plane = Plane::new(Point3D::new(0.0, 0.0, 0.9 * jitter(i, 19)), Vector3D::Z);
+            (plane.unwrap(), Sphere::new(Point3D::ORIGIN, 1.0).unwrap())
+        })
+        .collect();
+    bench_routed!(c, "plane_sphere", plane_sphere);
+}
+
+criterion_group!(benches, bench_intersect_dispatch, bench_intersect_routed);
 criterion_main!(benches);

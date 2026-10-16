@@ -2,7 +2,11 @@
 //! curves: grid-seeded box minimisation of the distance between them.
 
 use super::curve_curve_hull::{CurveCurveExtrema, CurveCurveHits};
-use super::{CurveCurveExtremum, CurveCurveHit, curve_surface_hull, mixed};
+use super::results::sort_by_known_parameter;
+use super::{
+    CurveCurveExtremum, CurveCurveHit, CurveCurveIntersection, curve_surface_hull, mixed,
+    overlap_runs,
+};
 use crate::curves::ParametricCurve3D;
 use crate::math::{newton_min_1d, newton_min_2d};
 use crate::{Point3D, Tolerance, Vector3D};
@@ -240,8 +244,8 @@ where
     B: ParametricCurve3D,
 {
     CurveCurveExtremum {
-        first_param: s,
-        second_param: t,
+        first_parameter: s,
+        second_parameter: t,
         distance: a.eval_point(s).distance(b.eval_point(t)),
     }
 }
@@ -314,7 +318,7 @@ where
 /// let l3 = Line3D::new(Point3D::new(0.0, 2.0, 0.0), Vector3D::X).unwrap();
 /// let ext = curve_curve_extrema(&l1, &l3, Tolerance::DEFAULT);
 /// assert_eq!(ext.len(), 1);
-/// assert_eq!((ext[0].first_param, ext[0].distance), (0.0, 2.0));
+/// assert_eq!((ext[0].first_parameter, ext[0].distance), (0.0, 2.0));
 /// ```
 pub fn curve_curve_extrema<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveExtrema
 where
@@ -354,8 +358,8 @@ where
         (None, Some(lb)) if db.is_unbounded() => line_curve_minima(b, lb, a, da, tol)
             .into_iter()
             .map(|e| CurveCurveExtremum {
-                first_param: e.second_param,
-                second_param: e.first_param,
+                first_parameter: e.second_parameter,
+                second_parameter: e.first_parameter,
                 distance: e.distance,
             })
             .collect(),
@@ -475,11 +479,11 @@ where
             .distance(curve.eval_point(t))
     };
     let same_valley = |p: &CurveCurveExtremum, q: &CurveCurveExtremum| {
-        let dt = dom.step(p.second_param, q.second_param);
+        let dt = dom.step(p.second_parameter, q.second_parameter);
         flat_between(
             p.distance,
             q.distance,
-            |f| distance(p.second_param + f * dt),
+            |f| distance(p.second_parameter + f * dt),
             tol,
         )
     };
@@ -582,14 +586,14 @@ where
         }
     }
     let same_valley = |p: &CurveCurveExtremum, q: &CurveCurveExtremum| {
-        let ds = da.step(p.first_param, q.first_param);
-        let dt = db.step(p.second_param, q.second_param);
+        let ds = da.step(p.first_parameter, q.first_parameter);
+        let dt = db.step(p.second_parameter, q.second_parameter);
         flat_between(
             p.distance,
             q.distance,
             |f| {
-                a.eval_point(p.first_param + f * ds)
-                    .distance(b.eval_point(p.second_param + f * dt))
+                a.eval_point(p.first_parameter + f * ds)
+                    .distance(b.eval_point(p.second_parameter + f * dt))
             },
             tol,
         )
@@ -604,7 +608,7 @@ where
             let r = p - q;
             (0.5 * r.dot(r), -r.dot(b1), b1.dot(b1) - r.dot(b2))
         };
-        let t = newton_min_1d(objective, e.second_param, db.bounds(), 1e-14, 100);
+        let t = newton_min_1d(objective, e.second_parameter, db.bounds(), 1e-14, 100);
         curve_pair_extremum(a, b, s, db.wrap(t))
     };
     merge_valleys(found, same_valley, representative, tol)
@@ -744,8 +748,8 @@ fn merge_valleys(
     for e in found {
         match kept.iter_mut().find(|(k, _)| same_valley(k, &e)) {
             Some((k, valley)) => {
-                *valley |=
-                    apart(k.first_param, e.first_param) || apart(k.second_param, e.second_param);
+                *valley |= apart(k.first_parameter, e.first_parameter)
+                    || apart(k.second_parameter, e.second_parameter);
             }
             None => kept.push((e, false)),
         }
@@ -763,12 +767,77 @@ fn merge_valleys(
         .collect()
 }
 
+/// Intersects two parametric curves of any type by the numeric search:
+/// the entry point for curve types defined outside this crate.
+///
+/// For the crate's own types, call [`Intersect::intersect`](crate::Intersect::intersect)
+/// instead: it solves the pairs with a closed form exactly, and runs this
+/// same search for the others. This function always searches, so its
+/// result's [`method`](CurveCurveIntersection::method) is
+/// [`Numeric`](crate::IntersectionMethod::Numeric), its
+/// [`completeness`](CurveCurveIntersection::completeness) says whether
+/// every hit was found. Where the B-spline search leaves the curves
+/// unseparated along a stretch on which they coincide, its hits and
+/// regions are joined into an overlap, and the result stays
+/// [`Incomplete`](crate::Completeness::Incomplete) with an `Unseparated`
+/// region over it (see [`CurveCurveIntersection::overlaps`]); sampled
+/// coincident curves yield a representative hit.
+///
+/// # Examples
+///
+/// A helix, defined by the caller, crossing a vertical line:
+///
+/// ```
+/// use geomcore::curves::ParametricCurve3D;
+/// use geomcore::{IntersectionMethod, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
+///
+/// /// A helix of radius 1 about the z axis, rising 1 per turn.
+/// struct Helix;
+///
+/// impl ParametricCurve3D for Helix {
+///     fn eval_point(&self, u: f64) -> Point3D {
+///         let turn = std::f64::consts::TAU;
+///         Point3D::new(u.cos(), u.sin(), u / turn)
+///     }
+///     fn eval_derivative(&self, u: f64, order: u32) -> Vector3D {
+///         let turn = std::f64::consts::TAU;
+///         match order {
+///             1 => Vector3D::new(-u.sin(), u.cos(), 1.0 / turn),
+///             _ => Vector3D::new(-u.cos(), -u.sin(), 0.0),
+///         }
+///     }
+///     fn bounds(&self) -> (f64, f64) {
+///         (0.0, 3.0 * std::f64::consts::TAU)
+///     }
+///     fn period(&self) -> Option<f64> {
+///         None
+///     }
+/// }
+///
+/// // A vertical line through (1, 0, 0) meets the helix once per turn.
+/// let line = Line3D::new(Point3D::new(1.0, 0.0, 0.0), Vector3D::Z).unwrap();
+/// let result = intersect_curve_curve(&Helix, &line, Tolerance::DEFAULT);
+/// assert_eq!(result.method(), IntersectionMethod::Numeric);
+/// assert_eq!(result.hits().len(), 4);
+/// ```
+pub fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveIntersection
+where
+    A: ParametricCurve3D,
+    B: ParametricCurve3D,
+{
+    let hits = search_curve_curve(a, b, tol);
+    let completeness = hits.completeness().clone();
+    let (hits, overlaps, completeness) =
+        overlap_runs::curve_curve_overlaps(a, b, hits.into_hits(), completeness, tol);
+    CurveCurveIntersection::numeric(hits, overlaps, completeness)
+}
+
 /// Generic 3D curve-curve intersection: [`curve_curve_extrema`] filtered
 /// to meetings within `tol.confusion`, ordered by first-curve parameter.
 /// A hit where the tangents are parallel within `tol.angular` has
 /// multiplicity 2.
 /// Overlapping curves report a single representative point; use the
-/// exact intersection ([`Intersect::intersect`](crate::Intersect::intersect))
+/// exact intersection ([`IntersectExact::intersect_exact`](crate::IntersectExact::intersect_exact))
 /// to detect coincidence.
 ///
 /// The hits are [`Completeness::Sampled`](crate::Completeness::Sampled),
@@ -794,26 +863,7 @@ fn merge_valleys(
 /// those found, together with the hits of the grid-seeded extrema that do
 /// not merge into them.
 /// Parameters are reported on the curves themselves.
-///
-/// # Examples
-///
-/// ```
-/// use geomcore::{BSplineCurve3D, Circle3D, Line3D, Point3D, Tolerance, Vector3D, intersect_curve_curve};
-/// let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
-/// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-/// let hits = intersect_curve_curve(&line, &circle, Tolerance::DEFAULT);
-/// assert_eq!(hits.len(), 2);
-/// assert!(!hits.is_complete());
-///
-/// // A B-spline chord across the circle: the search proves both hits.
-/// let poles = vec![Point3D::new(-3.0, 0.0, 0.0), Point3D::new(3.0, 0.0, 0.0)];
-/// let chord = BSplineCurve3D::new(1, poles, vec![0.0, 1.0], vec![2, 2], false).unwrap();
-/// let hits = intersect_curve_curve(&circle, &chord, Tolerance::DEFAULT);
-/// assert_eq!(hits.len(), 2);
-/// assert!(hits.is_complete());
-/// assert!(hits[0].first_param.abs() < 1e-9); // the circle's own angle
-/// ```
-pub fn intersect_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
+pub(crate) fn search_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> CurveCurveHits
 where
     A: ParametricCurve3D,
     B: ParametricCurve3D,
@@ -829,7 +879,7 @@ where
     CurveCurveHits::sampled(hits_at_minima(a, b, extrema, tol))
 }
 
-/// [`intersect_curve_curve`] through the grid-seeded extrema alone.
+/// [`search_curve_curve`] through the grid-seeded extrema alone.
 pub(super) fn sampled_curve_curve<A, B>(a: &A, b: &B, tol: Tolerance) -> Vec<CurveCurveHit>
 where
     A: ParametricCurve3D,
@@ -860,18 +910,18 @@ where
         .into_iter()
         .filter(|e| e.distance <= tol.confusion)
         .map(|e| {
-            let ta = a.eval_derivative(e.first_param, 1);
-            let tb = b.eval_derivative(e.second_param, 1);
+            let ta = a.eval_derivative(e.first_parameter, 1);
+            let tb = b.eval_derivative(e.second_parameter, 1);
             let sin = ta.cross(tb).magnitude() / (ta.magnitude() * tb.magnitude());
             CurveCurveHit {
-                first_param: e.first_param,
-                point: a.eval_point(e.first_param),
-                second_param: e.second_param,
+                first_parameter: Some(e.first_parameter),
+                point: a.eval_point(e.first_parameter),
+                second_parameter: Some(e.second_parameter),
                 multiplicity: if sin <= tol.angular { 2 } else { 1 },
             }
         })
         .collect();
-    // Contact-level dedupe (see intersect_curve_surface).
+    // Contact-level dedupe (see search_curve_surface).
     let merge_gap = tol.confusion.sqrt();
     let mut merged: Vec<CurveCurveHit> = Vec::new();
     for h in hits {
@@ -882,7 +932,7 @@ where
             merged.push(h);
         }
     }
-    merged.sort_by(|x, y| x.first_param.partial_cmp(&y.first_param).unwrap());
+    sort_by_known_parameter(&mut merged, |hit| hit.first_parameter);
     merged
 }
 
@@ -890,7 +940,7 @@ where
 mod tests {
     use super::*;
     use crate::curves::BSplineCurve3D;
-    use crate::{Intersect, Line3D, LineCircle3DIntersection};
+    use crate::{IntersectExact, Line3D, LineCircle3DIntersection};
 
     #[test]
     fn test_curve_curve_extrema_skew_matches_exact() {
@@ -901,10 +951,10 @@ mod tests {
         let ext = curve_curve_extrema(&l1, &l2, tol);
         assert_eq!(ext.len(), 1);
         assert!((ext[0].distance - 1.0).abs() < 1e-9);
-        match l1.intersect(&l2, tol) {
+        match l1.intersect_exact(&l2, tol) {
             LineLine3DIntersection::Skew { s, t, distance } => {
-                assert!((ext[0].first_param - s).abs() < 1e-9);
-                assert!((ext[0].second_param - t).abs() < 1e-9);
+                assert!((ext[0].first_parameter - s).abs() < 1e-9);
+                assert!((ext[0].second_parameter - t).abs() < 1e-9);
                 assert!((ext[0].distance - distance).abs() < 1e-12);
             }
             _ => panic!("exact intersection expected skew"),
@@ -951,8 +1001,8 @@ mod tests {
             for (ds, dt) in [(1.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, -1.0)] {
                 for sign in [-1.0, 1.0] {
                     let h = 1e-4 * sign;
-                    let s = (e.first_param + h * ds).clamp(a0, a1);
-                    let t = (e.second_param + h * dt).clamp(b0, b1);
+                    let s = (e.first_parameter + h * ds).clamp(a0, a1);
+                    let t = (e.second_parameter + h * dt).clamp(b0, b1);
                     let d = a.eval_point(s).distance(b.eval_point(t));
                     assert!(
                         d >= e.distance - 1e-12,
@@ -972,11 +1022,17 @@ mod tests {
         let b = arc(Point3D::ORIGIN, 10.0, 2.0, 4.0);
         let ext = curve_curve_extrema(&a, &b, tol);
         assert!((ext[0].distance - 5.0).abs() < 1e-12, "{ext:?}");
-        assert_eq!((ext[0].first_param, ext[0].second_param), (2.0, 2.0));
+        assert_eq!(
+            (ext[0].first_parameter, ext[0].second_parameter),
+            (2.0, 2.0)
+        );
         // The far corner (0, 4) is a genuine local minimum of the box
         // too; nothing else is reported.
         assert_eq!(ext.len(), 2, "{ext:?}");
-        assert_eq!((ext[1].first_param, ext[1].second_param), (0.0, 4.0));
+        assert_eq!(
+            (ext[1].first_parameter, ext[1].second_parameter),
+            (0.0, 4.0)
+        );
         assert_local_minima(&a, &b, &ext);
     }
 
@@ -989,8 +1045,8 @@ mod tests {
         let ext = curve_curve_extrema(&a, &b, tol);
         assert_eq!(ext.len(), 1, "{ext:?}");
         assert!((ext[0].distance - 5.0).abs() < 1e-12);
-        assert_eq!(ext[0].first_param, 0.0);
-        assert!(ext[0].second_param.abs() < 1e-9, "{ext:?}");
+        assert_eq!(ext[0].first_parameter, 0.0);
+        assert!(ext[0].second_parameter.abs() < 1e-9, "{ext:?}");
     }
 
     #[test]
@@ -1001,8 +1057,8 @@ mod tests {
         let ext = curve_curve_extrema(&a, &b, tol);
         assert_eq!(ext.len(), 1, "{ext:?}");
         assert!((ext[0].distance - 50.0).abs() < 1e-12);
-        assert_eq!(ext[0].first_param, 0.0);
-        assert!(ext[0].second_param.abs() < 1e-9, "{ext:?}");
+        assert_eq!(ext[0].first_parameter, 0.0);
+        assert!(ext[0].second_parameter.abs() < 1e-9, "{ext:?}");
     }
 
     #[test]
@@ -1014,8 +1070,8 @@ mod tests {
         let ext = curve_curve_extrema(&segment(p0, p1), &segment(q0, q1), tol);
         assert_eq!(ext.len(), 1, "{ext:?}");
         assert!((ext[0].distance - 4.47213595499958).abs() < 1e-12);
-        assert!((ext[0].first_param - 2.0).abs() < 1e-12);
-        assert_eq!(ext[0].second_param, 0.0);
+        assert!((ext[0].first_parameter - 2.0).abs() < 1e-12);
+        assert_eq!(ext[0].second_parameter, 0.0);
         // The same pair as degree-1 B-splines.
         let spline = |p: Point3D, q: Point3D| {
             BSplineCurve3D::new(1, vec![p, q], vec![0.0, 1.0], vec![2, 2], false).unwrap()
@@ -1034,11 +1090,11 @@ mod tests {
         let ext = curve_curve_extrema(&a, &b, tol);
         assert_eq!(ext.len(), 1, "{ext:?}");
         assert!((ext[0].distance - 106f64.sqrt()).abs() < 1e-12);
-        assert_eq!(ext[0].first_param, 0.0);
+        assert_eq!(ext[0].first_parameter, 0.0);
         // The representative's foot: (3, 9, 5) on the second line.
-        let foot = b.eval_point(ext[0].second_param);
+        let foot = b.eval_point(ext[0].second_parameter);
         assert!(foot.distance(Point3D::new(3.0, 9.0, 5.0)) < 1e-12);
-        match a.intersect(&b, tol) {
+        match a.intersect_exact(&b, tol) {
             LineLine3DIntersection::Parallel(d) => assert!((ext[0].distance - d).abs() < 1e-12),
             _ => panic!("exact intersection expected parallel"),
         }
@@ -1052,7 +1108,10 @@ mod tests {
         let ext = curve_curve_extrema(&a, &b, tol);
         assert_eq!(ext.len(), 1, "{ext:?}");
         assert_eq!(ext[0].distance, 4.0);
-        assert_eq!((ext[0].first_param, ext[0].second_param), (0.0, 0.0));
+        assert_eq!(
+            (ext[0].first_parameter, ext[0].second_parameter),
+            (0.0, 0.0)
+        );
     }
 
     #[test]
@@ -1064,8 +1123,8 @@ mod tests {
         let b = segment(Point3D::new(2.5, -0.5, 1.5), Point3D::new(2.5, 0.5, 1.5));
         let ext = curve_curve_extrema(&a, &b, tol);
         assert_eq!(ext.len(), 1, "{ext:?}");
-        assert_eq!(ext[0].first_param, 1.0);
-        assert!((ext[0].second_param - 0.5).abs() < 1e-12);
+        assert_eq!(ext[0].first_parameter, 1.0);
+        assert!((ext[0].second_parameter - 0.5).abs() < 1e-12);
         assert!((ext[0].distance - 1.5 * 2f64.sqrt()).abs() < 1e-12);
     }
 
@@ -1086,18 +1145,18 @@ mod tests {
         let ext = curve_curve_extrema(&line, &ellipse, tol);
         assert_eq!(ext.len(), 2, "{ext:?}");
         let quarter = std::f64::consts::FRAC_PI_2;
-        let mut params: Vec<f64> = ext.iter().map(|e| e.second_param).collect();
+        let mut params: Vec<f64> = ext.iter().map(|e| e.second_parameter).collect();
         params.sort_by(f64::total_cmp);
         assert!((params[0] - quarter).abs() < 1e-7, "{ext:?}");
         assert!((params[1] - 3.0 * quarter).abs() < 1e-7, "{ext:?}");
         for e in &ext {
             assert!((e.distance - 3.0).abs() < 1e-12, "{e:?}");
-            assert!((e.first_param - 40.0).abs() < 1e-9, "{e:?}");
+            assert!((e.first_parameter - 40.0).abs() < 1e-9, "{e:?}");
         }
         // Swapped order swaps the parameters.
         let swapped = curve_curve_extrema(&ellipse, &line, tol);
         assert_eq!(swapped.len(), 2);
-        assert!((swapped[0].second_param - 40.0).abs() < 1e-9);
+        assert!((swapped[0].second_parameter - 40.0).abs() < 1e-9);
     }
 
     #[test]
@@ -1117,7 +1176,7 @@ mod tests {
         let circle = Circle3D::new(center, Vector3D::Z, 1.0).unwrap();
         let ext = curve_curve_extrema(&parabola, &circle, tol);
         assert!((ext[0].distance - 4.0).abs() < 1e-9, "{ext:?}");
-        assert!((ext[0].first_param - u).abs() < 1e-7, "{ext:?}");
+        assert!((ext[0].first_parameter - u).abs() < 1e-7, "{ext:?}");
     }
 
     #[test]
@@ -1167,15 +1226,15 @@ mod tests {
         let tol = Tolerance::DEFAULT;
         let line = Line3D::new(Point3D::ORIGIN, Vector3D::X).unwrap();
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
-        let hits = intersect_curve_curve(&line, &circle, tol);
+        let hits = search_curve_curve(&line, &circle, tol);
         assert_eq!(hits.len(), 2);
-        assert!((hits[0].first_param + 2.0).abs() < 1e-9);
-        assert!((hits[1].first_param - 2.0).abs() < 1e-9);
+        assert!((hits[0].first_parameter.unwrap() + 2.0).abs() < 1e-9);
+        assert!((hits[1].first_parameter.unwrap() - 2.0).abs() < 1e-9);
         // Cross-check against the exact intersection.
-        match line.intersect(&circle, tol) {
+        match line.intersect_exact(&circle, tol) {
             LineCircle3DIntersection::Points((t1, _), (t2, _)) => {
-                assert!((hits[0].first_param - t1).abs() < 1e-9);
-                assert!((hits[1].first_param - t2).abs() < 1e-9);
+                assert!((hits[0].first_parameter.unwrap() - t1).abs() < 1e-9);
+                assert!((hits[1].first_parameter.unwrap() - t2).abs() < 1e-9);
             }
             _ => panic!("exact intersection expected two points"),
         }
