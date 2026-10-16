@@ -399,8 +399,9 @@ impl BSplineSurface {
     }
 
     /// Returns whether travelling in `u` returns to its start: a periodic
-    /// surface, or a clamped one whose first and last pole rows coincide
-    /// within `tol.confusion` (with matching weights where rational).
+    /// surface, or one whose boundary curves at the two `u` bounds
+    /// coincide, their poles within `tol.confusion` (and their weights
+    /// proportional where rational).
     ///
     /// # Examples
     ///
@@ -413,21 +414,13 @@ impl BSplineSurface {
     /// assert!(!surface.is_v_closed(Tolerance::DEFAULT));
     /// ```
     pub fn is_u_closed(&self, tol: Tolerance) -> bool {
-        if self.is_u_periodic() {
-            return true;
-        }
-        let (nu, nv) = (self.u_pole_count(), self.v_pole_count());
-        self.is_clamped_u()
-            && self.edges_meet(
-                &(0..nv).collect::<Vec<_>>(),
-                &((nu - 1) * nv..nu * nv).collect::<Vec<_>>(),
-                tol,
-            )
+        self.is_u_periodic() || self.boundaries_meet(Direction::U, tol)
     }
 
     /// Returns whether travelling in `v` returns to its start: a periodic
-    /// surface, or a clamped one whose first and last pole columns coincide
-    /// within `tol.confusion` (with matching weights where rational).
+    /// surface, or one whose boundary curves at the two `v` bounds
+    /// coincide, their poles within `tol.confusion` (and their weights
+    /// proportional where rational).
     ///
     /// # Examples
     ///
@@ -439,43 +432,37 @@ impl BSplineSurface {
     /// assert!(!surface.is_v_closed(Tolerance::DEFAULT));
     /// ```
     pub fn is_v_closed(&self, tol: Tolerance) -> bool {
-        if self.is_v_periodic() {
-            return true;
-        }
-        let (nu, nv) = (self.u_pole_count(), self.v_pole_count());
-        self.is_clamped_v()
-            && self.edges_meet(
-                &(0..nu).map(|i| i * nv).collect::<Vec<_>>(),
-                &(0..nu).map(|i| i * nv + nv - 1).collect::<Vec<_>>(),
-                tol,
-            )
+        self.is_v_periodic() || self.boundaries_meet(Direction::V, tol)
     }
 
-    /// Whether the pole runs at flat indices `a` and `b` coincide
-    /// pointwise within `tol.confusion` (weights included where rational).
-    fn edges_meet(&self, a: &[usize], b: &[usize], tol: Tolerance) -> bool {
-        a.len() == b.len()
-            && a.iter().zip(b).all(|(&i, &j)| {
-                self.poles[i].distance(self.poles[j]) <= tol.confusion
-                    && self.weights.as_deref().is_none_or(|w| {
-                        (w[i] - w[j]).abs() <= tol.confusion * w[i].max(w[j]).max(f64::MIN_POSITIVE)
-                    })
-            })
-    }
-
-    /// Whether the `u` ends are clamped (end multiplicity `degree + 1`), so
-    /// the `u` edges interpolate the first and last pole rows.
-    fn is_clamped_u(&self) -> bool {
-        let need = self.u_degree() as u32 + 1;
-        let m = self.u_multiplicities();
-        m.first() == Some(&need) && m.last() == Some(&need)
-    }
-
-    /// Whether the `v` ends are clamped, as [`is_clamped_u`](Self::is_clamped_u) for `v`.
-    fn is_clamped_v(&self) -> bool {
-        let need = self.v_degree() as u32 + 1;
-        let m = self.v_multiplicities();
-        m.first() == Some(&need) && m.last() == Some(&need)
+    /// Whether the isoparametric curves at the two bounds of `direction`
+    /// coincide. Both share the knot vector across `direction`, so they
+    /// are the same curve exactly when their poles match and their weights
+    /// are proportional; that holds for clamped and unclamped knots alike.
+    fn boundaries_meet(&self, direction: Direction, tol: Tolerance) -> bool {
+        let (first, last) = match direction {
+            Direction::U => self.u_knots.bounds(),
+            Direction::V => self.v_knots.bounds(),
+        };
+        let start = self.iso(direction, first);
+        let end = self.iso(direction, last);
+        let poles_meet = start
+            .poles()
+            .iter()
+            .zip(end.poles())
+            .all(|(a, b)| a.distance(*b) <= tol.confusion);
+        poles_meet
+            && match (start.weights(), end.weights()) {
+                (None, None) => true,
+                (Some(a), Some(b)) => {
+                    let scale = a[0] / b[0];
+                    a.iter()
+                        .zip(b)
+                        .all(|(&wa, &wb)| (wa - wb * scale).abs() <= tol.confusion * wa)
+                }
+                // One boundary has uniform weights, the other does not.
+                _ => false,
+            }
     }
 
     /// Returns whether the surface is rational (has per-pole weights).

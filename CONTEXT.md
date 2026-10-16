@@ -19,7 +19,7 @@ A circle, ellipse, parabola or hyperbola: an elementary curve other than the lin
 A plane, sphere, cylinder or cone: an elementary surface whose implicit equation has degree at most two, the plane being the degree-one case.
 
 **Closed**:
-A curve or surface direction whose edges meet, so travelling along it returns to its start. Periodicity implies closedness, not conversely: a clamped shape with coincident ends is closed without a period.
+A curve whose two ends meet, or a surface direction whose boundary curves at its two bounds coincide, so travelling along it returns to its start. Periodicity implies closedness, not conversely: a clamped shape with coincident ends is closed without a period.
 _Avoid_: periodic for merely closed shapes, seamless
 
 **Lies on**:

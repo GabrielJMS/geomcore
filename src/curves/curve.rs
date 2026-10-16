@@ -258,6 +258,10 @@ impl<C: ParametricCurve3D + ?Sized> ParametricCurve3D for &C {
         (**self).period()
     }
 
+    fn is_closed(&self, tol: Tolerance) -> bool {
+        (**self).is_closed(tol)
+    }
+
     fn eval_points(&self, us: &[f64]) -> Vec<Point3D> {
         (**self).eval_points(us)
     }
@@ -1249,6 +1253,12 @@ mod tests {
         assert!(ParametricCurve3D::is_closed(&c, tol));
         assert!(c.is_closed(tol));
         assert!(!ParametricCurve3D::is_closed(&bspline(), tol));
+    }
+
+    #[test]
+    fn test_curve_reference_forwards_closedness() {
+        let triangle = closed_triangle();
+        assert!(ParametricCurve3D::is_closed(&&triangle, Tolerance::DEFAULT));
     }
 
     #[test]
