@@ -269,9 +269,11 @@ impl Hyperbola3D {
     /// and frame directions map point-wise while both radii scale by the
     /// transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the transverse
-    /// direction reverses. Fails with
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u)` equals
+    /// `t.apply_point(self.eval_point(u))`, and a mirror changes the
+    /// frame's handedness. Fails with
     /// [`HyperbolaConstructionError::NullNormal`] only when the transform
     /// collapses the frame (a zero scale factor).
     ///

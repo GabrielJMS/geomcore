@@ -299,22 +299,27 @@ impl Transform {
     /// image frame and the uniform scale factor applied to lengths.
     ///
     /// The linear part of every `Transform` is a uniform scale composed
-    /// with an orthogonal map, so the transformed x/z directions stay
-    /// perpendicular and share one scale factor (the magnitude of the
-    /// transformed x direction). A mirror flips handedness; the image is
-    /// re-derived as a right-handed frame via [`Frame3D::new`], which
-    /// reverses the parametrization direction but preserves the point
-    /// set. Fails only when the transform collapses directions (a zero
-    /// scale factor).
+    /// with an orthogonal map, so the three transformed directions stay
+    /// mutually perpendicular and share one scale factor (the magnitude
+    /// of the transformed x direction). Each axis is mapped as-is and
+    /// divided by that factor, so the image frame is the transform of the
+    /// frame: anything placed by the frame (a point at local coordinates
+    /// `(a, b, c)`) maps to the same local coordinates in the image. A
+    /// mirror (negative determinant) therefore changes the handedness
+    /// (see [`Frame3D::is_direct`]); a rotation keeps it. Fails only when
+    /// the transform collapses directions (a zero scale factor).
     pub(crate) fn apply_frame(
         self,
         frame: Frame3D,
     ) -> Result<(Frame3D, f64), FrameConstructionError> {
-        let origin = self.apply_point(frame.origin());
         let x = self.apply_vector(frame.x_direction());
-        let z = self.apply_vector(frame.z_direction());
         let scale = x.magnitude();
-        let mapped = Frame3D::new(origin, z, x)?;
+        let mapped = Frame3D::from_axes(
+            self.apply_point(frame.origin()),
+            x,
+            self.apply_vector(frame.y_direction()),
+            self.apply_vector(frame.z_direction()),
+        )?;
         Ok((mapped, scale))
     }
 }
@@ -323,6 +328,37 @@ impl Transform {
 mod tests {
     use crate::{Axis3D, Frame3D, Point3D, Transform, Vector3D};
     use std::f64::consts::PI;
+
+    #[test]
+    fn test_apply_frame_maps_every_axis_so_placed_points_commute() {
+        let frame = Frame3D::new(
+            Point3D::new(1.0, -2.0, 0.5),
+            Vector3D::new(0.3, -0.4, 0.86),
+            Vector3D::new(1.0, 0.2, 0.0),
+        )
+        .unwrap();
+        let axis = Axis3D::new(Point3D::ORIGIN, Vector3D::new(0.2, 1.0, 0.3)).unwrap();
+        let cases = [
+            (Transform::rotation(axis, 0.7), 1.0, true),
+            (
+                Transform::scaling(Point3D::new(1.0, 1.0, 0.0), 2.5),
+                2.5,
+                true,
+            ),
+            (Transform::mirror_plane(Frame3D::WORLD), 1.0, false),
+            (Transform::scaling(Point3D::ORIGIN, -0.5), 0.5, false),
+        ];
+        for start in [frame, frame.flipped_y()] {
+            for (transform, scale, keeps_handedness) in cases {
+                let (image, image_scale) = transform.apply_frame(start).unwrap();
+                assert!((image_scale - scale).abs() < 1e-14);
+                assert_eq!(image.is_direct() == start.is_direct(), keeps_handedness);
+                let placed = start.point_at(0.7, -1.2, 2.0);
+                let image_placed = image.point_at(0.7 * scale, -1.2 * scale, 2.0 * scale);
+                assert!(image_placed.distance(transform.apply_point(placed)) < 1e-12);
+            }
+        }
+    }
 
     #[test]
     fn test_identity_leaves_point_unchanged() {

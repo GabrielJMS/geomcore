@@ -223,6 +223,81 @@ impl Cone {
         self.frame
     }
 
+    /// Returns the cone running in the opposite angular direction: the
+    /// same point set with the frame's y direction negated, so the frame
+    /// turns indirect and the normal reverses.
+    /// `reversed_u().eval_point(u, v)` is `eval_point(-u, v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+    /// let reversed = cone.reversed_u();
+    /// assert!(!reversed.frame().is_direct());
+    /// assert_eq!(reversed.eval_point(1.0, 3.0), cone.eval_point(-1.0, 3.0));
+    /// ```
+    pub fn reversed_u(&self) -> Cone {
+        Cone {
+            frame: self.frame.flipped_y(),
+            semi_angle: self.semi_angle,
+            ref_radius: self.ref_radius,
+        }
+    }
+
+    /// Returns the cone running in the opposite axial direction: the same
+    /// point set with a negated semi-angle and the frame's z direction
+    /// negated. `reversed_v().eval_point(u, v)` is `eval_point(u, -v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+    /// let reversed = cone.reversed_v();
+    /// assert_eq!(reversed.semi_angle(), -0.4);
+    /// assert_eq!(reversed.eval_point(1.0, 3.0), cone.eval_point(1.0, -3.0));
+    /// ```
+    pub fn reversed_v(&self) -> Cone {
+        Cone {
+            frame: self.frame.flipped_z(),
+            semi_angle: -self.semi_angle,
+            ref_radius: self.ref_radius,
+        }
+    }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) cone: the
+    /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+    /// let u = cone.u_reversed_parameter(1.0);
+    /// let there = cone.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(cone.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        use std::f64::consts::TAU;
+        TAU - u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) cone.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cone, Point3D, Vector3D};
+    /// let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+    /// let v = cone.v_reversed_parameter(0.5);
+    /// let there = cone.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(cone.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        -v
+    }
+
     /// Returns the cone's semi-angle.
     ///
     /// # Examples
@@ -311,7 +386,7 @@ impl Cone {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, v * self.semi_angle.cos()),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.ref_radius + v * self.semi_angle.sin(),
         )
@@ -322,10 +397,17 @@ impl Cone {
     /// similarity preserves angles), and the reference radius scales by
     /// the transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
-    /// reverses. Fails with [`ConeConstructionError::NullNormal`] only
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with [`ConeConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
+    /// `v` is a length along the generatrix, so under a scale `s` the
+    /// image of the point at `(u, v)` sits at `(u, s * v)`.
     ///
     /// # Examples
     ///
@@ -652,6 +734,7 @@ impl Intersect<Cylinder> for Cone {
 mod tests {
     use super::*;
     use crate::Vector3D;
+    use crate::surfaces::ParametricSurface;
     use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
     // ---- construction: from_frame ----
@@ -1068,5 +1151,26 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(cone.eval_point(u, v)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), cone);
+    }
+
+    #[test]
+    fn test_reversed_cones_share_point_set() {
+        let cone = Cone::new(Point3D::ORIGIN, Vector3D::Z, 0.4, 2.0).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0), (5.0, 3.0)] {
+            let ru = cone.reversed_u();
+            assert!(!ru.frame().is_direct());
+            assert!((ru.eval_point(u, v) - cone.eval_point(-u, v)).magnitude() < 1e-12);
+            assert!((ru.u_reversed_parameter(cone.u_reversed_parameter(u)) - u).abs() < 1e-12);
+            let (_, [su, sv]) = cone.eval_d1(-u, v);
+            let (_, [rsu, rsv]) = ru.eval_d1(u, v);
+            assert!((rsu.cross(rsv) + su.cross(sv)).magnitude() < 1e-9);
+            let rv = cone.reversed_v();
+            assert!(!rv.frame().is_direct());
+            assert_eq!(rv.semi_angle(), -0.4);
+            assert!((rv.eval_point(u, v) - cone.eval_point(u, -v)).magnitude() < 1e-12);
+            assert_eq!(rv.v_reversed_parameter(cone.v_reversed_parameter(v)), v);
+        }
+        assert_eq!(cone.reversed_u().reversed_u(), cone);
+        assert_eq!(cone.reversed_v().reversed_v(), cone);
     }
 }

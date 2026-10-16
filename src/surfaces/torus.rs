@@ -155,6 +155,82 @@ impl Torus {
         self.frame
     }
 
+    /// Returns the torus running in the opposite angular direction: the
+    /// same point set with the frame's y direction negated, so the frame
+    /// turns indirect and the normal reverses.
+    /// `reversed_u().eval_point(u, v)` is `eval_point(-u, v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let reversed = torus.reversed_u();
+    /// assert!(!reversed.frame().is_direct());
+    /// assert_eq!(reversed.eval_point(1.0, 0.5), torus.eval_point(-1.0, 0.5));
+    /// ```
+    pub fn reversed_u(&self) -> Torus {
+        Torus {
+            frame: self.frame.flipped_y(),
+            major_radius: self.major_radius,
+            minor_radius: self.minor_radius,
+        }
+    }
+
+    /// Returns the torus running in the opposite tube direction: the same
+    /// point set with the frame's z direction negated.
+    /// `reversed_v().eval_point(u, v)` is `eval_point(u, -v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let reversed = torus.reversed_v();
+    /// assert_eq!(reversed.eval_point(1.0, 0.5), torus.eval_point(1.0, -0.5));
+    /// ```
+    pub fn reversed_v(&self) -> Torus {
+        Torus {
+            frame: self.frame.flipped_z(),
+            major_radius: self.major_radius,
+            minor_radius: self.minor_radius,
+        }
+    }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) torus: the
+    /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let u = torus.u_reversed_parameter(1.0);
+    /// let there = torus.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(torus.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        use std::f64::consts::TAU;
+        TAU - u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) torus: the
+    /// parameter of the same point there (`period − v`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let v = torus.v_reversed_parameter(0.5);
+    /// let there = torus.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(torus.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        use std::f64::consts::TAU;
+        TAU - v
+    }
+
     /// Returns the torus's major radius (the distance from the center to
     /// the tube's centerline circle).
     ///
@@ -234,7 +310,7 @@ impl Torus {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, self.minor_radius * v.sin()),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.major_radius + self.minor_radius * v.cos(),
         )
@@ -244,9 +320,14 @@ impl Torus {
     /// frame directions map point-wise while both radii scale by the
     /// transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
-    /// reverses. Fails with [`TorusConstructionError::NullNormal`] only
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with [`TorusConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
     ///
     /// # Examples
@@ -1299,5 +1380,22 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(torus.eval_point(u, v)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), torus);
+    }
+
+    #[test]
+    fn test_reversed_tori_share_point_set() {
+        let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3), (5.0, 2.0)] {
+            let ru = torus.reversed_u();
+            assert!(!ru.frame().is_direct());
+            assert!((ru.eval_point(u, v) - torus.eval_point(-u, v)).magnitude() < 1e-11);
+            assert!((ru.u_reversed_parameter(torus.u_reversed_parameter(u)) - u).abs() < 1e-12);
+            let rv = torus.reversed_v();
+            assert!(!rv.frame().is_direct());
+            assert!((rv.eval_point(u, v) - torus.eval_point(u, -v)).magnitude() < 1e-11);
+            assert!((rv.v_reversed_parameter(torus.v_reversed_parameter(v)) - v).abs() < 1e-12);
+        }
+        assert_eq!(torus.reversed_u().reversed_u(), torus);
+        assert_eq!(torus.reversed_v().reversed_v(), torus);
     }
 }

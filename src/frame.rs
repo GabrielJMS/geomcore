@@ -111,8 +111,11 @@ impl Axis3D {
     }
 }
 
-/// A right-handed 3D coordinate frame: an origin and three mutually
-/// orthogonal unit directions (x, y, z) with `x × y = z`.
+/// A 3D coordinate frame: an origin and three mutually orthogonal unit
+/// directions (x, y, z). It is direct (right-handed, `x × y = z`) unless
+/// built with [`Frame3D::from_axes`], flipped (`flipped_x/y/z`) as a
+/// reversed surface's frame is, or mirrored by a transform; see
+/// [`Frame3D::is_direct`].
 ///
 /// # Examples
 ///
@@ -249,6 +252,152 @@ impl Frame3D {
             })
             .unwrap();
         Frame3D::new(origin, z_dir, hint)
+    }
+
+    /// Creates a frame from an origin and three directions, stored as
+    /// given (up to normalization).
+    ///
+    /// Unlike [`Frame3D::new`], either handedness is accepted: a frame
+    /// with `x × y = -z` is left-handed (indirect), reported by
+    /// [`is_direct`](Self::is_direct). Single-axis flips of a frame —
+    /// what surface reversal does — stay orthonormal and only change
+    /// handedness, so they need no renormalization.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FrameConstructionError::NullDirection`] if any direction
+    /// cannot be normalized (zero length),
+    /// [`FrameConstructionError::NotOrthogonal`] if any pair is not
+    /// orthogonal (`|a·b| >` the default angular tolerance, 1e-12), or
+    /// [`FrameConstructionError::NonFinite`] if any input coordinate is NaN
+    /// or infinite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Frame3D, Point3D, Vector3D};
+    /// let right = Frame3D::from_axes(
+    ///     Point3D::ORIGIN,
+    ///     Vector3D::X,
+    ///     Vector3D::Y,
+    ///     Vector3D::Z,
+    /// )
+    /// .unwrap();
+    /// assert!(right.is_direct());
+    /// let left = Frame3D::from_axes(
+    ///     Point3D::ORIGIN,
+    ///     Vector3D::X,
+    ///     -Vector3D::Y,
+    ///     Vector3D::Z,
+    /// )
+    /// .unwrap();
+    /// assert!(!left.is_direct());
+    /// ```
+    pub fn from_axes(
+        origin: Point3D,
+        x_direction: Vector3D,
+        y_direction: Vector3D,
+        z_direction: Vector3D,
+    ) -> Result<Frame3D, FrameConstructionError> {
+        if !origin.is_finite()
+            || !x_direction.is_finite()
+            || !y_direction.is_finite()
+            || !z_direction.is_finite()
+        {
+            return Err(FrameConstructionError::NonFinite);
+        }
+        let (x_dir, y_dir, z_dir) = (
+            x_direction
+                .normalized()
+                .ok_or(FrameConstructionError::NullDirection)?,
+            y_direction
+                .normalized()
+                .ok_or(FrameConstructionError::NullDirection)?,
+            z_direction
+                .normalized()
+                .ok_or(FrameConstructionError::NullDirection)?,
+        );
+        if x_dir.dot(y_dir).abs() > tol::ANGULAR
+            || y_dir.dot(z_dir).abs() > tol::ANGULAR
+            || z_dir.dot(x_dir).abs() > tol::ANGULAR
+        {
+            return Err(FrameConstructionError::NotOrthogonal);
+        }
+        Ok(Frame3D {
+            origin,
+            x_dir,
+            y_dir,
+            z_dir,
+        })
+    }
+
+    /// Returns whether the frame is right-handed (`x × y = z`) as opposed
+    /// to left-handed (`x × y = -z`).
+    ///
+    /// [`Frame3D::new`] and [`Frame3D::from_z`] always build right-handed
+    /// frames; [`Frame3D::from_axes`] accepts either handedness. Surface
+    /// reversal flips a single axis, so a reversed surface's frame is
+    /// indirect and its normal points the other way. A transform maps
+    /// every axis, so a mirror changes the handedness too.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Frame3D;
+    /// assert!(Frame3D::WORLD.is_direct());
+    /// ```
+    pub fn is_direct(self) -> bool {
+        self.x_dir.cross(self.y_dir).dot(self.z_dir) > 0.0
+    }
+
+    /// Returns the frame with the x direction negated. Orthonormality is
+    /// preserved; handedness flips.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Frame3D, Vector3D};
+    /// let flipped = Frame3D::WORLD.flipped_x();
+    /// assert_eq!(flipped.x_direction(), -Vector3D::X);
+    /// assert!(!flipped.is_direct());
+    /// ```
+    pub fn flipped_x(self) -> Frame3D {
+        Frame3D {
+            x_dir: -self.x_dir,
+            ..self
+        }
+    }
+
+    /// Returns the frame with the y direction negated. Orthonormality is
+    /// preserved; handedness flips.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Frame3D;
+    /// assert!(!Frame3D::WORLD.flipped_y().is_direct());
+    /// ```
+    pub fn flipped_y(self) -> Frame3D {
+        Frame3D {
+            y_dir: -self.y_dir,
+            ..self
+        }
+    }
+
+    /// Returns the frame with the z direction negated. Orthonormality is
+    /// preserved; handedness flips.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::Frame3D;
+    /// assert!(!Frame3D::WORLD.flipped_z().is_direct());
+    /// ```
+    pub fn flipped_z(self) -> Frame3D {
+        Frame3D {
+            z_dir: -self.z_dir,
+            ..self
+        }
     }
 
     /// Returns the origin point of the frame.
@@ -834,5 +983,20 @@ mod tests {
     fn test_frame_construction_error_is_std_error() {
         fn takes_error(_e: &dyn std::error::Error) {}
         takes_error(&FrameConstructionError::NullDirection);
+    }
+
+    #[test]
+    fn test_from_axes_accepts_either_handedness_rejects_skew() {
+        let left =
+            Frame3D::from_axes(Point3D::ORIGIN, Vector3D::X, -Vector3D::Y, Vector3D::Z).unwrap();
+        assert!(!left.is_direct());
+        assert_eq!(left.x_direction(), Vector3D::X);
+        let skewed = Frame3D::from_axes(
+            Point3D::ORIGIN,
+            Vector3D::X,
+            Vector3D::new(1.0, 1.0, 0.0),
+            Vector3D::Z,
+        );
+        assert_eq!(skewed, Err(FrameConstructionError::NotOrthogonal));
     }
 }

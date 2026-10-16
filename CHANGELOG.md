@@ -9,6 +9,34 @@ the Python distribution are versioned in lockstep.
 
 ## [Unreleased]
 
+### Added
+
+- Surface reversal, part 1 (#71): `reversed_u()` / `reversed_v()` on
+  every elementary surface plus `Surface`, with `u/v_reversed_parameter`
+  on every surface type and `Surface` mapping parameters onto the
+  reversed shape. Reversal flips one frame axis (frames may now be
+  indirect: `Frame3D::from_axes`, `Frame3D::is_direct`,
+  `flipped_x/y/z`). Isoparametric curves, projection, conversion to
+  B-splines, intersections and curve-on-surface parametrization follow
+  the reversed parametrization. Sided evaluation at seams follows
+  separately.
+
+### Changed
+
+- `transformed` on every elementary surface and on circles, ellipses,
+  parabolas and hyperbolas maps each frame axis through the transform,
+  so the image's parametrization is the image of the original one
+  (`s.transformed(t).eval_point(u, v) == t.apply_point(s.eval_point(u, v))`
+  under rotations, translations and mirrors), as `BSplineSurface` and
+  `BSplineCurve3D` already did. A mirror now turns the frame indirect
+  and the normal to the opposite of the mirrored normal, where it used
+  to re-derive a direct frame and keep the side; call `reversed_u` or
+  `reversed_v` on the image to keep it.
+- `Plane::normal` and `Circle3D::normal` follow orientation: the frame's
+  z direction on a direct frame, its negation on an indirect one.
+  Unchanged for every plane and circle built by a constructor (all
+  direct).
+
 ## [0.34.0] - 2026-10-13
 
 ### Added

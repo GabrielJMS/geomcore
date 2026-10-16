@@ -11,6 +11,7 @@ use crate::{
     Axis3D, Circle3D, CylinderCylinderIntersection, Frame3D, Line3D, Point3D, Tolerance, Transform,
     Vector3D,
 };
+use std::f64::consts::TAU;
 use std::fmt;
 
 /// Error returned when a [`Cylinder`] cannot be constructed from the given
@@ -192,6 +193,77 @@ impl Cylinder {
         self.frame.axis()
     }
 
+    /// Returns the cylinder running in the opposite angular direction:
+    /// the same point set with the frame's y direction negated, so the
+    /// frame turns indirect and the normal reverses.
+    /// `reversed_u().eval_point(u, v)` is `eval_point(-u, v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let reversed = cylinder.reversed_u();
+    /// assert!(!reversed.frame().is_direct());
+    /// assert_eq!(reversed.eval_point(1.0, 3.0), cylinder.eval_point(-1.0, 3.0));
+    /// ```
+    pub fn reversed_u(&self) -> Cylinder {
+        Cylinder {
+            frame: self.frame.flipped_y(),
+            radius: self.radius,
+        }
+    }
+
+    /// Returns the cylinder running in the opposite axial direction:
+    /// the same point set with the frame's z direction negated.
+    /// `reversed_v().eval_point(u, v)` is `eval_point(u, -v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let reversed = cylinder.reversed_v();
+    /// assert_eq!(reversed.eval_point(1.0, 3.0), cylinder.eval_point(1.0, -3.0));
+    /// ```
+    pub fn reversed_v(&self) -> Cylinder {
+        Cylinder {
+            frame: self.frame.flipped_z(),
+            radius: self.radius,
+        }
+    }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) cylinder: the
+    /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let u = cylinder.u_reversed_parameter(1.0);
+    /// let there = cylinder.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(cylinder.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        TAU - u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) cylinder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let v = cylinder.v_reversed_parameter(0.5);
+    /// let there = cylinder.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(cylinder.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        -v
+    }
+
     /// The `u` isoparametric line at `u`: the generator through the point
     /// at `(u, 0)`, parallel to the axis, so `u_iso(u).eval_point(t)` is
     /// `eval_point(u, t)` for every `t`.
@@ -233,7 +305,7 @@ impl Cylinder {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, v),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.radius,
         )
@@ -243,9 +315,14 @@ impl Cylinder {
     /// origin and directions map point-wise while the radius scales by
     /// the transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
-    /// reverses. Fails with [`CylinderConstructionError::NullNormal`]
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with [`CylinderConstructionError::NullNormal`]
     /// only when the transform collapses the frame (a zero scale factor).
     /// `v` is an axial length, so under a scale `s` the image of the
     /// point at `(u, v)` sits at `(u, s * v)`.
@@ -477,6 +554,7 @@ impl Intersect<Cylinder> for Cylinder {
 mod tests {
     use super::*;
     use crate::Vector3D;
+    use crate::surfaces::ParametricSurface;
     use std::f64::consts::PI;
 
     // ---- construction ----
@@ -722,5 +800,25 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(cylinder.eval_point(u, v)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), cylinder);
+    }
+
+    #[test]
+    fn test_reversed_cylinders_share_point_set_with_flipped_normal() {
+        let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0), (5.0, 0.5)] {
+            let ru = cylinder.reversed_u();
+            assert!(!ru.frame().is_direct());
+            assert!((ru.eval_point(u, v) - cylinder.eval_point(-u, v)).magnitude() < 1e-12);
+            assert!((ru.u_reversed_parameter(cylinder.u_reversed_parameter(u)) - u).abs() < 1e-12);
+            let (_, [su, sv]) = cylinder.eval_d1(-u, v);
+            let (_, [rsu, rsv]) = ru.eval_d1(u, v);
+            assert!((rsu.cross(rsv) + su.cross(sv)).magnitude() < 1e-12);
+            let rv = cylinder.reversed_v();
+            assert!(!rv.frame().is_direct());
+            assert!((rv.eval_point(u, v) - cylinder.eval_point(u, -v)).magnitude() < 1e-12);
+            assert_eq!(rv.v_reversed_parameter(cylinder.v_reversed_parameter(v)), v);
+        }
+        assert_eq!(cylinder.reversed_u().reversed_u(), cylinder);
+        assert_eq!(cylinder.reversed_v().reversed_v(), cylinder);
     }
 }

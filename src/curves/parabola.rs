@@ -160,10 +160,14 @@ impl Parabola3D {
     /// frame directions map point-wise while the focal distance scales by
     /// the transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the axis direction
-    /// reverses. Fails with [`ParabolaConstructionError::NullNormal`]
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u)` equals
+    /// `t.apply_point(self.eval_point(u))`, and a mirror changes the
+    /// frame's handedness. Fails with [`ParabolaConstructionError::NullNormal`]
     /// only when the transform collapses the frame (a zero scale factor).
+    /// `u` is a length along the y direction, so under a scale `s` the
+    /// image of the point at `u` sits at `s * u`.
     ///
     /// # Examples
     ///

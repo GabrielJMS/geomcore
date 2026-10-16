@@ -256,26 +256,40 @@ impl Circle3D {
         self.frame
     }
 
-    /// Returns the unit normal of the circle's plane.
+    /// Returns the unit normal of the circle's plane on the side the
+    /// circle turns counterclockwise about: `x × y` of its frame. That is
+    /// the frame's z direction on a direct frame and its negation on an
+    /// indirect one (such as the image of a circle under a mirror).
     ///
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Circle3D, Point3D, Vector3D};
+    /// use geomcore::{Circle3D, Frame3D, Point3D, Transform, Vector3D};
     /// let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
     /// assert_eq!(circle.normal(), Vector3D::Z);
+    /// // Mirrored across its own plane, every point stays put, so the
+    /// // normal is unchanged while the frame's z direction flips.
+    /// let mirrored = circle.transformed(Transform::mirror_plane(Frame3D::WORLD)).unwrap();
+    /// assert_eq!(mirrored.normal(), Vector3D::Z);
+    /// assert_eq!(mirrored.frame().z_direction(), -Vector3D::Z);
     /// ```
     pub fn normal(&self) -> Vector3D {
-        self.frame.z_direction()
+        if self.frame.is_direct() {
+            self.frame.z_direction()
+        } else {
+            -self.frame.z_direction()
+        }
     }
 
     /// Returns the image of this circle under `transform`: the center and
     /// frame directions map point-wise while the radius scales by the
     /// transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
-    /// reverses. Fails with [`CircleConstructionError::NullNormal`] only
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u)` equals
+    /// `t.apply_point(self.eval_point(u))`, and a mirror changes the
+    /// frame's handedness. Fails with [`CircleConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
     ///
     /// # Examples
@@ -1901,19 +1915,23 @@ mod tests {
     }
 
     #[test]
-    fn test_circle3d_transformed_mirror_reverses_orientation() {
+    fn test_circle3d_transformed_mirror_commutes_with_evaluation() {
         let circle = Circle3D::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
         let m = Transform::mirror_plane(Frame3D::WORLD);
         let moved = circle.transformed(m).unwrap();
         assert_eq!(moved.center(), Point3D::ORIGIN);
         assert_eq!(moved.radius(), 2.0);
-        assert_eq!(moved.normal(), -Vector3D::Z);
-        // Same point set, opposite angular direction.
+        // Mirrored across its own plane, every point stays put: the
+        // parametrization and the normal are unchanged, only the frame's
+        // z direction flips.
+        assert_eq!(moved.normal(), Vector3D::Z);
+        assert!(!moved.frame().is_direct());
         let tol = Tolerance::DEFAULT;
         for u in [0.0, 0.7, 2.1] {
             let expected = m.apply_point(circle.eval_point(u));
             assert!(moved.contains(expected, tol));
-            assert!(moved.eval_point(-u).distance(expected) < 1e-9);
+            assert!(moved.eval_point(u).distance(expected) < 1e-12);
+            assert!((moved.parameter_of(expected) - u).abs() < 1e-12);
         }
         // Mirroring twice is the identity.
         assert_eq!(moved.transformed(m).unwrap(), circle);

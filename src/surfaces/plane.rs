@@ -227,7 +227,11 @@ impl Plane {
         self.frame
     }
 
-    /// Returns the unit normal of the plane.
+    /// Returns the unit normal of the plane: the frame's z direction on
+    /// a direct frame, its negation on an indirect one (see
+    /// [`Frame3D::is_direct`]), so the normal follows the orientation
+    /// and reverses with [`reversed_u`](Self::reversed_u) or
+    /// [`reversed_v`](Self::reversed_v).
     ///
     /// # Examples
     ///
@@ -235,9 +239,84 @@ impl Plane {
     /// use geomcore::{Plane, Point3D, Vector3D};
     /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
     /// assert_eq!(plane.normal(), Vector3D::Z);
+    /// assert_eq!(plane.reversed_u().normal(), -Vector3D::Z);
     /// ```
     pub fn normal(&self) -> Vector3D {
-        self.frame.z_direction()
+        if self.frame.is_direct() {
+            self.frame.z_direction()
+        } else {
+            -self.frame.z_direction()
+        }
+    }
+
+    /// Returns the plane running in the opposite `u` direction: the same
+    /// point set with the frame's x direction negated, so the frame turns
+    /// indirect (see [`Frame3D::is_direct`]) and the normal reverses.
+    /// `reversed_u().eval_point(u, v)` is `eval_point(-u, v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let reversed = plane.reversed_u();
+    /// assert!(!reversed.frame().is_direct());
+    /// assert_eq!(reversed.eval_point(1.0, 2.0), plane.eval_point(-1.0, 2.0));
+    /// assert_eq!(reversed.normal(), -Vector3D::Z);
+    /// ```
+    pub fn reversed_u(&self) -> Plane {
+        Plane {
+            frame: self.frame.flipped_x(),
+        }
+    }
+
+    /// Returns the plane running in the opposite `v` direction: the same
+    /// point set with the frame's y direction negated.
+    /// `reversed_v().eval_point(u, v)` is `eval_point(u, -v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let reversed = plane.reversed_v();
+    /// assert_eq!(reversed.eval_point(1.0, 2.0), plane.eval_point(1.0, -2.0));
+    /// ```
+    pub fn reversed_v(&self) -> Plane {
+        Plane {
+            frame: self.frame.flipped_y(),
+        }
+    }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) plane: the
+    /// parameter of the same point there.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let u = plane.u_reversed_parameter(1.0);
+    /// let there = plane.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(plane.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        -u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) plane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let v = plane.v_reversed_parameter(0.5);
+    /// let there = plane.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(plane.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        -v
     }
 
     /// The `u` isoparametric line at `u`: `u` fixed, running along `v`.
@@ -283,11 +362,18 @@ impl Plane {
     /// Returns the image of this plane under `transform`: the frame origin
     /// and directions map point-wise.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed (the normal reverses): the point set is preserved but
-    /// the `(u, v)` orientation reverses. Fails with
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with
     /// [`PlaneConstructionError::NullNormal`] only when the transform
-    /// collapses the frame (a zero scale factor).
+    /// collapses the frame (a zero scale factor). `u` and `v` are
+    /// lengths, so under a scale `s` the image of the point at `(u, v)`
+    /// sits at `(s * u, s * v)`.
     ///
     /// # Examples
     ///
@@ -1461,5 +1547,23 @@ mod tests {
         let mirrored = plane.transformed(m).unwrap();
         assert!(mirrored.contains(m.apply_point(Point3D::new(4.0, -2.0, 1.0)), tol));
         assert_eq!(mirrored.transformed(m).unwrap(), plane);
+    }
+
+    #[test]
+    fn test_reversed_planes_share_point_set_with_flipped_normal() {
+        let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, -2.0), (-3.0, 0.5)] {
+            let ru = plane.reversed_u();
+            assert!(!ru.frame().is_direct());
+            assert_eq!(ru.eval_point(u, v), plane.eval_point(-u, v));
+            assert_eq!(ru.u_reversed_parameter(plane.u_reversed_parameter(u)), u);
+            let rv = plane.reversed_v();
+            assert!(!rv.frame().is_direct());
+            assert_eq!(rv.eval_point(u, v), plane.eval_point(u, -v));
+            assert_eq!(rv.v_reversed_parameter(plane.v_reversed_parameter(v)), v);
+        }
+        assert_eq!(plane.reversed_u().normal(), -Vector3D::Z);
+        assert_eq!(plane.reversed_u().reversed_u(), plane);
+        assert_eq!(plane.reversed_v().reversed_v(), plane);
     }
 }

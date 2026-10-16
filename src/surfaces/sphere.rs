@@ -131,6 +131,78 @@ impl Sphere {
         self.frame
     }
 
+    /// Returns the sphere running in the opposite angular direction: the
+    /// same point set with the frame's y direction negated, so the frame
+    /// turns indirect and the normal reverses.
+    /// `reversed_u().eval_point(u, v)` is `eval_point(-u, v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, Vector3D};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let reversed = sphere.reversed_u();
+    /// assert!(!reversed.frame().is_direct());
+    /// assert_eq!(reversed.eval_point(1.0, 0.2), sphere.eval_point(-1.0, 0.2));
+    /// ```
+    pub fn reversed_u(&self) -> Sphere {
+        Sphere {
+            frame: self.frame.flipped_y(),
+            radius: self.radius,
+        }
+    }
+
+    /// Returns the sphere running from the opposite pole: the same point
+    /// set with the frame's z direction negated.
+    /// `reversed_v().eval_point(u, v)` is `eval_point(u, -v)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, Vector3D};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let reversed = sphere.reversed_v();
+    /// assert_eq!(reversed.eval_point(1.0, 0.2), sphere.eval_point(1.0, -0.2));
+    /// ```
+    pub fn reversed_v(&self) -> Sphere {
+        Sphere {
+            frame: self.frame.flipped_z(),
+            radius: self.radius,
+        }
+    }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) sphere: the
+    /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let u = sphere.u_reversed_parameter(1.0);
+    /// let there = sphere.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(sphere.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        use std::f64::consts::TAU;
+        TAU - u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) sphere.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let v = sphere.v_reversed_parameter(0.5);
+    /// let there = sphere.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(sphere.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        -v
+    }
+
     /// Returns the sphere's radius.
     ///
     /// # Examples
@@ -195,7 +267,7 @@ impl Sphere {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, self.radius * v.sin()),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.radius * v.cos(),
         )
@@ -205,9 +277,14 @@ impl Sphere {
     /// frame directions map point-wise while the radius scales by the
     /// transform's uniform scale factor.
     ///
-    /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
-    /// reverses. Fails with [`SphereConstructionError::NullNormal`] only
+    /// Every frame axis maps through the transform, so the image's
+    /// parametrization is the transform of this one: under a rotation,
+    /// translation or mirror, `transformed(t).eval_point(u, v)` equals
+    /// `t.apply_point(self.eval_point(u, v))`. A mirror changes the
+    /// frame's handedness, so the image's normal is the opposite of
+    /// the mirrored normal (as for any map that reverses orientation);
+    /// call `reversed_u` or `reversed_v` on the image to keep the
+    /// mirrored side. Fails with [`SphereConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
     ///
     /// # Examples
@@ -900,5 +977,22 @@ mod tests {
             assert!(mirrored.contains(m.apply_point(sphere.eval_point(u, v)), tol));
         }
         assert_eq!(mirrored.transformed(m).unwrap(), sphere);
+    }
+
+    #[test]
+    fn test_reversed_spheres_share_point_set() {
+        let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+        for (u, v) in [(0.0, 0.0), (1.0, 0.3), (5.0, -0.5)] {
+            let ru = sphere.reversed_u();
+            assert!(!ru.frame().is_direct());
+            assert!((ru.eval_point(u, v) - sphere.eval_point(-u, v)).magnitude() < 1e-12);
+            assert!((ru.u_reversed_parameter(sphere.u_reversed_parameter(u)) - u).abs() < 1e-12);
+            let rv = sphere.reversed_v();
+            assert!(!rv.frame().is_direct());
+            assert!((rv.eval_point(u, v) - sphere.eval_point(u, -v)).magnitude() < 1e-12);
+            assert_eq!(rv.v_reversed_parameter(sphere.v_reversed_parameter(v)), v);
+        }
+        assert_eq!(sphere.reversed_u().reversed_u(), sphere);
+        assert_eq!(sphere.reversed_v().reversed_v(), sphere);
     }
 }
