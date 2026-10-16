@@ -98,9 +98,9 @@ _Avoid_: containment, contains (reserved for a point that lies on a curve or sur
 ## Local properties
 
 **Tangent**:
-The unit direction of a curve's motion at a parameter. It is undefined where the speed vanishes, as at a cusp.
+The unit direction of a curve's motion at a parameter. It is undefined where the speed vanishes, as at a cusp. The speed counts as zero when the distance it would cover across the curve's parameter range is within `tol.confusion`, so the tangent does not depend on how the curve is parametrized.
 _Avoid_: derivative (the un-normalized rate), tangent for a surface partial derivative
 
 **Curvature**:
-How fast a curve's tangent turns per unit of arc length. Its reciprocal is the radius of the osculating circle, whose centre is the centre of curvature; both are undefined on a straight run and where the speed vanishes.
+How fast a curve's tangent turns per unit of arc length. Its reciprocal is the radius of the osculating circle, whose centre is the centre of curvature; both are undefined on a straight run and where the speed vanishes. A run is straight where the part of the second derivative that turns away from the tangent is negligible by the same distance rule, or is parallel to the tangent within `tol.angular`.
 _Avoid_: bend, curvature for a surface (which has two principal values, not one)
