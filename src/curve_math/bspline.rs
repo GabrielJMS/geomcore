@@ -20,7 +20,7 @@
 use std::sync::OnceLock;
 
 use super::analytic::in_period;
-use crate::{Point3D, Vector3D};
+use crate::{Point3D, Tolerance, Vector3D};
 
 /// Maximum supported B-spline degree.
 pub(crate) const MAX_DEGREE: usize = 25;
@@ -1184,9 +1184,162 @@ pub(crate) fn validate_direction(
     Ok(())
 }
 
+/// The continuity order a knot of `multiplicity` guarantees in a
+/// direction of `degree`: `degree − multiplicity`. Validation caps every
+/// knot inside the range at `degree`, so this never underflows there.
+fn knot_continuity(degree: usize, multiplicity: u32) -> u32 {
+    (degree as u32).saturating_sub(multiplicity)
+}
+
+/// Continuity order `C^n` at parameter `u` for one knot direction:
+/// `degree − multiplicity` at a knot within `tol.parametric` (relative to
+/// the knot's magnitude), smooth (`u32::MAX`) anywhere else. A periodic
+/// direction wraps `u` into its period first, so its seam is a knot like
+/// any other. A non-periodic direction reports smooth at and beyond its
+/// bounds, where the shape is seen from the inside only.
+pub(crate) fn continuity_at(
+    degree: usize,
+    knots: &[f64],
+    multiplicities: &[u32],
+    bounds: (f64, f64),
+    periodic: bool,
+    u: f64,
+    tol: Tolerance,
+) -> u32 {
+    let (first, last) = bounds;
+    let u = if periodic {
+        in_period(u, first, last)
+    } else {
+        u
+    };
+    let on_knot = knots
+        .iter()
+        .zip(multiplicities)
+        .find(|(knot, _)| (u - **knot).abs() <= tol.parametric * (1.0 + knot.abs()));
+    match on_knot {
+        Some((&knot, _)) if !periodic && (knot <= first || knot >= last) => u32::MAX,
+        Some((_, &multiplicity)) => knot_continuity(degree, multiplicity),
+        None => u32::MAX,
+    }
+}
+
+/// Minimum continuity order over a whole direction: the worst knot a
+/// periodic direction holds (its seam included), or the worst knot
+/// strictly inside a non-periodic direction's bounds (`u32::MAX` when
+/// there is none).
+pub(crate) fn min_continuity(
+    degree: usize,
+    knots: &[f64],
+    multiplicities: &[u32],
+    bounds: (f64, f64),
+    periodic: bool,
+) -> u32 {
+    if periodic {
+        let period = bounds.1 - bounds.0;
+        return min_continuity_within(degree, knots, multiplicities, Some(period), bounds)
+            .min(knot_continuity(degree, multiplicities[0]));
+    }
+    min_continuity_within(degree, knots, multiplicities, None, bounds)
+}
+
+/// Minimum continuity order over the open range `(first, last)` of a
+/// direction: the worst knot strictly inside it, a periodic direction's
+/// knots shifted by whole periods into the range (which spans at most one
+/// period). `u32::MAX` when no knot falls inside.
+pub(crate) fn min_continuity_within(
+    degree: usize,
+    knots: &[f64],
+    multiplicities: &[u32],
+    period: Option<f64>,
+    (first, last): (f64, f64),
+) -> u32 {
+    knots
+        .iter()
+        .zip(multiplicities)
+        .filter(|(knot, _)| {
+            let shifted = match period {
+                Some(period) => first + (**knot - first).rem_euclid(period),
+                None => **knot,
+            };
+            first < shifted && shifted < last
+        })
+        .map(|(_, &multiplicity)| knot_continuity(degree, multiplicity))
+        .min()
+        .unwrap_or(u32::MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- continuity: degree minus multiplicity over the knots ----
+
+    #[test]
+    fn test_continuity_wraps_a_periodic_parameter_into_the_period() {
+        // Degree 2, period 4, double knot at 1.
+        let (knots, multiplicities) = ([0.0, 1.0, 2.0, 3.0, 4.0], [1, 2, 1, 1, 1]);
+        let tol = Tolerance::DEFAULT;
+        let at = |u| continuity_at(2, &knots, &multiplicities, (0.0, 4.0), true, u, tol);
+        assert_eq!(at(1.0), 0);
+        assert_eq!(at(5.0), 0);
+        assert_eq!(at(-3.0), 0);
+        // The seam is a single-multiplicity knot from either side.
+        assert_eq!(at(0.0), 1);
+        assert_eq!(at(4.0), 1);
+        assert_eq!(at(-1e-12), 1);
+        assert_eq!(at(0.5), u32::MAX);
+        assert_eq!(
+            min_continuity(2, &knots, &multiplicities, (0.0, 4.0), true),
+            0
+        );
+        // A seam knot of multiplicity 2 is the worst one.
+        let seam = [2, 1, 1, 1, 2];
+        assert_eq!(min_continuity(2, &knots, &seam, (0.0, 4.0), true), 0);
+        assert_eq!(
+            min_continuity(2, &knots, &[1, 1, 1, 1, 1], (0.0, 4.0), true),
+            1
+        );
+    }
+
+    #[test]
+    fn test_continuity_ignores_knots_outside_an_unclamped_range() {
+        // Unclamped degree 2: range [1, 4] between knots 0..=6, the
+        // double knot at 0 lies outside it.
+        let knots = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let multiplicities = [2, 1, 1, 1, 1, 1, 1];
+        let tol = Tolerance::DEFAULT;
+        assert_eq!(
+            min_continuity(2, &knots, &multiplicities, (1.0, 4.0), false),
+            1
+        );
+        let at = |u| continuity_at(2, &knots, &multiplicities, (1.0, 4.0), false, u, tol);
+        assert_eq!(at(0.0), u32::MAX);
+        assert_eq!(at(1.0), u32::MAX);
+        assert_eq!(at(2.0), 1);
+        assert_eq!(at(4.0), u32::MAX);
+    }
+
+    #[test]
+    fn test_continuity_tolerance_is_relative_to_the_knot() {
+        let knots = [0.0, 1e6, 2e6];
+        let multiplicities = [2, 1, 2];
+        let tol = Tolerance::DEFAULT;
+        let at = |u| continuity_at(1, &knots, &multiplicities, (0.0, 2e6), false, u, tol);
+        assert_eq!(at(1e6 + 1e-4), 0);
+        assert_eq!(at(1e6 + 1e-2), u32::MAX);
+        assert_eq!(at(f64::NAN), u32::MAX);
+    }
+
+    #[test]
+    fn test_min_continuity_within_shifts_periodic_knots_into_the_range() {
+        let (knots, multiplicities) = ([0.0, 1.0, 2.0, 3.0, 4.0], [1, 2, 1, 1, 1]);
+        let within = |range| min_continuity_within(2, &knots, &multiplicities, Some(4.0), range);
+        assert_eq!(within((4.5, 5.5)), 0);
+        assert_eq!(within((1.5, 2.5)), 1);
+        assert_eq!(within((1.0, 1.9)), u32::MAX);
+        // Across the seam, which is a single knot.
+        assert_eq!(within((-0.5, 0.5)), 1);
+    }
 
     #[test]
     fn test_basis_second_matches_general_derivatives() {
