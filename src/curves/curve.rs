@@ -1564,4 +1564,31 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_parabola_vertex_curvature_matches_closed_form() {
+        // P(u) = (u²/4, u): vertex k = 1/(2f) = 0.5, centre (2f, 0, 0).
+        let tol = Tolerance::DEFAULT;
+        let p = Parabola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 1.0).unwrap();
+        assert_eq!(p.tangent(0.0, tol), Some(Vector3D::Y));
+        assert_eq!(p.curvature(0.0, tol), Some(0.5));
+        assert_eq!(
+            p.curvature_center(0.0, tol),
+            Some(Point3D::new(2.0, 0.0, 0.0))
+        );
+        let k = p.curvature(2.0, tol).unwrap();
+        assert!((k - 0.5 / (2.0 * 2.0f64.sqrt())).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_hyperbola_apex_curvature_matches_closed_form() {
+        // P(u) = (a cosh u, b sinh u): apex k = a/b² = 0.75,
+        // centre (a + b²/a, 0, 0).
+        let tol = Tolerance::DEFAULT;
+        let h = Hyperbola3D::new(Point3D::ORIGIN, Vector3D::Z, Vector3D::X, 3.0, 2.0).unwrap();
+        assert_eq!(h.tangent(0.0, tol), Some(Vector3D::Y));
+        assert_eq!(h.curvature(0.0, tol), Some(0.75));
+        let c = h.curvature_center(0.0, tol).unwrap();
+        assert!((c - Point3D::new(3.0 + 4.0 / 3.0, 0.0, 0.0)).magnitude() < 1e-12);
+    }
 }
