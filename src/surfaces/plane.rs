@@ -290,11 +290,31 @@ impl Plane {
 
     /// Maps `u` onto the [`reversed_u`](Self::reversed_u) plane: the
     /// parameter of the same point there.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let u = plane.u_reversed_parameter(1.0);
+    /// let there = plane.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(plane.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn u_reversed_parameter(&self, u: f64) -> f64 {
         -u
     }
 
     /// Maps `v` onto the [`reversed_v`](Self::reversed_v) plane.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Plane, Point3D, Vector3D};
+    /// let plane = Plane::new(Point3D::ORIGIN, Vector3D::Z).unwrap();
+    /// let v = plane.v_reversed_parameter(0.5);
+    /// let there = plane.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(plane.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn v_reversed_parameter(&self, v: f64) -> f64 {
         -v
     }
@@ -343,7 +363,8 @@ impl Plane {
     /// and directions map point-wise.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed (the normal reverses): the point set is preserved but
+    /// with the handedness it had (the normal maps onto the image's
+    /// normal): the point set is preserved but
     /// the `(u, v)` orientation reverses. Fails with
     /// [`PlaneConstructionError::NullNormal`] only when the transform
     /// collapses the frame (a zero scale factor).

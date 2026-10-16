@@ -235,11 +235,31 @@ impl Cylinder {
 
     /// Maps `u` onto the [`reversed_u`](Self::reversed_u) cylinder: the
     /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let u = cylinder.u_reversed_parameter(1.0);
+    /// let there = cylinder.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(cylinder.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn u_reversed_parameter(&self, u: f64) -> f64 {
         TAU - u
     }
 
     /// Maps `v` onto the [`reversed_v`](Self::reversed_v) cylinder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Cylinder, Point3D, Vector3D};
+    /// let cylinder = Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap();
+    /// let v = cylinder.v_reversed_parameter(0.5);
+    /// let there = cylinder.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(cylinder.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn v_reversed_parameter(&self, v: f64) -> f64 {
         -v
     }
@@ -285,7 +305,7 @@ impl Cylinder {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, v),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.radius,
         )
@@ -296,7 +316,7 @@ impl Cylinder {
     /// the transform's uniform scale factor.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
+    /// with the handedness it had: the point set is preserved but the angular direction
     /// reverses. Fails with [`CylinderConstructionError::NullNormal`]
     /// only when the transform collapses the frame (a zero scale factor).
     /// `v` is an axial length, so under a scale `s` the image of the

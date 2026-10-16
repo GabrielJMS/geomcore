@@ -555,6 +555,53 @@ impl Surface {
             Surface::BSpline(s) => Surface::BSpline(s.reversed_v()),
         }
     }
+
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) surface: the
+    /// parameter of the same point there. `period - u` on a periodic
+    /// elementary direction, `-u` on an unbounded one, `first + last - u`
+    /// on a B-spline. The map is its own inverse.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::surfaces::ParametricSurface;
+    /// use geomcore::{Cylinder, Point3D, Surface, Vector3D};
+    /// let cylinder = Surface::from(Cylinder::new(Point3D::ORIGIN, Vector3D::Z, 2.0).unwrap());
+    /// let u = cylinder.u_reversed_parameter(1.0);
+    /// let there = cylinder.reversed_u().eval_point(u, 3.0);
+    /// assert!(there.distance(cylinder.eval_point(1.0, 3.0)) < 1e-12);
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        match self {
+            Surface::Plane(s) => s.u_reversed_parameter(u),
+            Surface::Cylinder(s) => s.u_reversed_parameter(u),
+            Surface::Cone(s) => s.u_reversed_parameter(u),
+            Surface::Sphere(s) => s.u_reversed_parameter(u),
+            Surface::Torus(s) => s.u_reversed_parameter(u),
+            Surface::BSpline(s) => s.u_reversed_parameter(u),
+        }
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) surface, as
+    /// [`u_reversed_parameter`](Self::u_reversed_parameter) for `u`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere, Surface};
+    /// let sphere = Surface::from(Sphere::new(Point3D::ORIGIN, 2.0).unwrap());
+    /// assert_eq!(sphere.v_reversed_parameter(0.5), -0.5);
+    /// ```
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        match self {
+            Surface::Plane(s) => s.v_reversed_parameter(v),
+            Surface::Cylinder(s) => s.v_reversed_parameter(v),
+            Surface::Cone(s) => s.v_reversed_parameter(v),
+            Surface::Sphere(s) => s.v_reversed_parameter(v),
+            Surface::Torus(s) => s.v_reversed_parameter(v),
+            Surface::BSpline(s) => s.v_reversed_parameter(v),
+        }
+    }
 }
 
 impl ParametricSurface for Surface {

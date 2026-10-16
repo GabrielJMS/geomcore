@@ -301,11 +301,13 @@ impl Transform {
     /// The linear part of every `Transform` is a uniform scale composed
     /// with an orthogonal map, so the transformed x/z directions stay
     /// perpendicular and share one scale factor (the magnitude of the
-    /// transformed x direction). A mirror flips handedness; the image is
-    /// re-derived as a right-handed frame via [`Frame3D::new`], which
-    /// reverses the parametrization direction but preserves the point
-    /// set. Fails only when the transform collapses directions (a zero
-    /// scale factor).
+    /// transformed x direction). The image keeps the handedness of
+    /// `frame` (see [`Frame3D::is_direct`]): under a rotation the frame
+    /// maps axis for axis, so a reversed surface stays reversed; under a
+    /// mirror the y direction is re-derived, which reverses the
+    /// parametrization direction but preserves the point set and the
+    /// side the normal points to. Fails only when the transform collapses
+    /// directions (a zero scale factor).
     pub(crate) fn apply_frame(
         self,
         frame: Frame3D,
@@ -315,6 +317,11 @@ impl Transform {
         let z = self.apply_vector(frame.z_direction());
         let scale = x.magnitude();
         let mapped = Frame3D::new(origin, z, x)?;
+        let mapped = if frame.is_direct() {
+            mapped
+        } else {
+            mapped.flipped_y()
+        };
         Ok((mapped, scale))
     }
 }

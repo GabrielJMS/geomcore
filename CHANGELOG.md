@@ -13,10 +13,18 @@ the Python distribution are versioned in lockstep.
 
 - Surface reversal, part 1 (#71): `reversed_u()` / `reversed_v()` on
   every elementary surface plus `Surface`, with `u/v_reversed_parameter`
-  mapping parameters onto the reversed shape. Reversal flips one frame
-  axis (frames may now be indirect: `Frame3D::from_axes`,
-  `Frame3D::is_direct`, `flipped_x/y/z`). Sided evaluation at seams
-  follows separately.
+  on every surface type and `Surface` mapping parameters onto the
+  reversed shape. Reversal flips one frame axis (frames may now be
+  indirect: `Frame3D::from_axes`, `Frame3D::is_direct`,
+  `flipped_x/y/z`). Isoparametric curves, projection and transforms
+  follow the reversed parametrization; a transform keeps a frame's
+  handedness. Sided evaluation at seams follows separately.
+
+### Changed
+
+- `Plane::normal` follows orientation: the frame's z direction on a
+  direct frame, its negation on an indirect one. Unchanged for every
+  plane built before this release (all direct).
 
 ## [0.34.0] - 2026-10-13
 

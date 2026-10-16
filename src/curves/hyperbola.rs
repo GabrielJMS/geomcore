@@ -270,7 +270,7 @@ impl Hyperbola3D {
     /// transform's uniform scale factor.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the transverse
+    /// with the handedness it had: the point set is preserved but the transverse
     /// direction reverses. Fails with
     /// [`HyperbolaConstructionError::NullNormal`] only when the transform
     /// collapses the frame (a zero scale factor).

@@ -173,12 +173,32 @@ impl Sphere {
 
     /// Maps `u` onto the [`reversed_u`](Self::reversed_u) sphere: the
     /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let u = sphere.u_reversed_parameter(1.0);
+    /// let there = sphere.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(sphere.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn u_reversed_parameter(&self, u: f64) -> f64 {
         use std::f64::consts::TAU;
         TAU - u
     }
 
     /// Maps `v` onto the [`reversed_v`](Self::reversed_v) sphere.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Sphere};
+    /// let sphere = Sphere::new(Point3D::ORIGIN, 2.0).unwrap();
+    /// let v = sphere.v_reversed_parameter(0.5);
+    /// let there = sphere.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(sphere.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn v_reversed_parameter(&self, v: f64) -> f64 {
         -v
     }
@@ -247,7 +267,7 @@ impl Sphere {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, self.radius * v.sin()),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.radius * v.cos(),
         )
@@ -258,7 +278,7 @@ impl Sphere {
     /// transform's uniform scale factor.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
+    /// with the handedness it had: the point set is preserved but the angular direction
     /// reverses. Fails with [`SphereConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
     ///

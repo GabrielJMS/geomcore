@@ -273,7 +273,7 @@ impl Ellipse3D {
     /// transform's uniform scale factor.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
+    /// with the handedness it had: the point set is preserved but the angular direction
     /// reverses. Fails with [`EllipseConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
     ///

@@ -26,7 +26,7 @@ _Avoid_: inside (reserved for polygons), containment for anything other than thi
 A curve or surface defined by poles, knots and optional weights. Every curve or surface is either elementary or a B-spline.
 
 **Reversal**:
-Running a surface in the opposite `u` or `v` direction over the same point set, flipping one frame axis. The frame turns indirect and the normal reverses.
+Running a surface in the opposite `u` or `v` direction over the same point set, so the normal reverses. An elementary surface flips one frame axis and its frame turns indirect (left-handed); a B-spline reorders its poles and mirrors its knots.
 _Avoid_: mirror (a transform of space, not of traversal)
 
 **Bounding box**:

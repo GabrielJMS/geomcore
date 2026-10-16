@@ -1268,6 +1268,39 @@ impl BSplineSurface {
         }
     }
 
+    /// Maps `u` onto the [`reversed_u`](Self::reversed_u) surface: the
+    /// parameter of the same point there, `first + last - u`. The map is
+    /// its own inverse.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{BSplineSurface, Point3D};
+    ///
+    /// let poles: Vec<Vec<Point3D>> = (0..3)
+    ///     .map(|i| (0..2).map(|j| Point3D::new(i as f64, j as f64, (i * j) as f64)).collect())
+    ///     .collect();
+    /// let surface = BSplineSurface::new(
+    ///     2, 1, poles, vec![1.0, 4.0], vec![3, 3], vec![0.0, 1.0], vec![2, 2], false, false,
+    /// )
+    /// .unwrap();
+    /// let u = surface.u_reversed_parameter(1.5);
+    /// assert_eq!(u, 3.5);
+    /// assert_eq!(surface.reversed_u().eval_point(u, 0.5), surface.eval_point(1.5, 0.5));
+    /// ```
+    pub fn u_reversed_parameter(&self, u: f64) -> f64 {
+        let (first, last) = self.u_param_range();
+        first + last - u
+    }
+
+    /// Maps `v` onto the [`reversed_v`](Self::reversed_v) surface:
+    /// `first + last - v`, as [`u_reversed_parameter`](Self::u_reversed_parameter)
+    /// for `u`.
+    pub fn v_reversed_parameter(&self, v: f64) -> f64 {
+        let (first, last) = self.v_param_range();
+        first + last - v
+    }
+
     /// The `u` isoparametric curve at `u`: `u` fixed, running along `v`
     /// with the `v` degree, knots and periodicity, so
     /// `u_iso(u).eval_point(t)` is `eval_point(u, t)` for every `t`.

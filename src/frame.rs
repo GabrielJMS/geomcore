@@ -111,8 +111,10 @@ impl Axis3D {
     }
 }
 
-/// A right-handed 3D coordinate frame: an origin and three mutually
-/// orthogonal unit directions (x, y, z) with `x × y = z`.
+/// A 3D coordinate frame: an origin and three mutually orthogonal unit
+/// directions (x, y, z). It is direct (right-handed, `x × y = z`) unless
+/// built with [`Frame3D::from_axes`] or flipped (`flipped_x/y/z`), as a
+/// reversed surface's frame is; see [`Frame3D::is_direct`].
 ///
 /// # Examples
 ///
@@ -339,7 +341,7 @@ impl Frame3D {
     /// # Examples
     ///
     /// ```
-    /// use geomcore::{Frame3D, Point3D, Vector3D};
+    /// use geomcore::Frame3D;
     /// assert!(Frame3D::WORLD.is_direct());
     /// ```
     pub fn is_direct(self) -> bool {
@@ -358,8 +360,10 @@ impl Frame3D {
     /// assert!(!flipped.is_direct());
     /// ```
     pub fn flipped_x(self) -> Frame3D {
-        Frame3D::from_axes(self.origin, -self.x_dir, self.y_dir, self.z_dir)
-            .expect("negating one axis of an orthonormal frame stays orthonormal")
+        Frame3D {
+            x_dir: -self.x_dir,
+            ..self
+        }
     }
 
     /// Returns the frame with the y direction negated. Orthonormality is
@@ -372,8 +376,10 @@ impl Frame3D {
     /// assert!(!Frame3D::WORLD.flipped_y().is_direct());
     /// ```
     pub fn flipped_y(self) -> Frame3D {
-        Frame3D::from_axes(self.origin, self.x_dir, -self.y_dir, self.z_dir)
-            .expect("negating one axis of an orthonormal frame stays orthonormal")
+        Frame3D {
+            y_dir: -self.y_dir,
+            ..self
+        }
     }
 
     /// Returns the frame with the z direction negated. Orthonormality is
@@ -386,8 +392,10 @@ impl Frame3D {
     /// assert!(!Frame3D::WORLD.flipped_z().is_direct());
     /// ```
     pub fn flipped_z(self) -> Frame3D {
-        Frame3D::from_axes(self.origin, self.x_dir, self.y_dir, -self.z_dir)
-            .expect("negating one axis of an orthonormal frame stays orthonormal")
+        Frame3D {
+            z_dir: -self.z_dir,
+            ..self
+        }
     }
 
     /// Returns the origin point of the frame.

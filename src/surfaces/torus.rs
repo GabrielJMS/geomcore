@@ -199,6 +199,16 @@ impl Torus {
 
     /// Maps `u` onto the [`reversed_u`](Self::reversed_u) torus: the
     /// parameter of the same point there (`period − u`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let u = torus.u_reversed_parameter(1.0);
+    /// let there = torus.reversed_u().eval_point(u, 0.5);
+    /// assert!(there.distance(torus.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn u_reversed_parameter(&self, u: f64) -> f64 {
         use std::f64::consts::TAU;
         TAU - u
@@ -206,6 +216,16 @@ impl Torus {
 
     /// Maps `v` onto the [`reversed_v`](Self::reversed_v) torus: the
     /// parameter of the same point there (`period − v`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geomcore::{Point3D, Torus, Vector3D};
+    /// let torus = Torus::new(Point3D::ORIGIN, Vector3D::Z, 5.0, 1.5).unwrap();
+    /// let v = torus.v_reversed_parameter(0.5);
+    /// let there = torus.reversed_v().eval_point(1.0, v);
+    /// assert!(there.distance(torus.eval_point(1.0, 0.5)) < 1e-12);
+    /// ```
     pub fn v_reversed_parameter(&self, v: f64) -> f64 {
         use std::f64::consts::TAU;
         TAU - v
@@ -290,7 +310,7 @@ impl Torus {
         let frame = self.frame;
         iso_circle(
             frame.point_at(0.0, 0.0, self.minor_radius * v.sin()),
-            frame.z_direction(),
+            frame.x_direction().cross(frame.y_direction()),
             frame.x_direction(),
             self.major_radius + self.minor_radius * v.cos(),
         )
@@ -301,7 +321,7 @@ impl Torus {
     /// transform's uniform scale factor.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the angular direction
+    /// with the handedness it had: the point set is preserved but the angular direction
     /// reverses. Fails with [`TorusConstructionError::NullNormal`] only
     /// when the transform collapses the frame (a zero scale factor).
     ///

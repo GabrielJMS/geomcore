@@ -161,7 +161,7 @@ impl Parabola3D {
     /// the transform's uniform scale factor.
     ///
     /// A mirror flips handedness, so the image frame is re-derived
-    /// right-handed: the point set is preserved but the axis direction
+    /// with the handedness it had: the point set is preserved but the axis direction
     /// reverses. Fails with [`ParabolaConstructionError::NullNormal`]
     /// only when the transform collapses the frame (a zero scale factor).
     ///
